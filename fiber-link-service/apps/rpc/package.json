@@ -5,6 +5,7 @@
     "test": "vitest"
   },
   "dependencies": {
+    "@fiber-link/fiber-adapter": "workspace:*",
     "fastify": "^4.27.0"
   },
   "devDependencies": {

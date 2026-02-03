@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { verifyHmac } from "./auth/hmac";
+import { handleTipCreate } from "./methods/tip";
 
 type RpcRequest = {
   jsonrpc: "2.0";
@@ -29,6 +30,10 @@ export function registerRpc(app: FastifyInstance) {
 
     if (body.method === "health.ping") {
       return reply.send({ jsonrpc: "2.0", id: body.id, result: { status: "ok" } });
+    }
+    if (body.method === "tip.create") {
+      const result = await handleTipCreate(body.params as any);
+      return reply.send({ jsonrpc: "2.0", id: body.id, result });
     }
 
     return reply.status(404).send({
