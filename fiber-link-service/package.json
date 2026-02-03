@@ -1,0 +1,9 @@
+{
+  "name": "fiber-link-service",
+  "private": true,
+  "packageManager": "bun@1.1.8",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ]
+}
