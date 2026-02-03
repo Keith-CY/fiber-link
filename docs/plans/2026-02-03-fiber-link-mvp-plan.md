@@ -4,7 +4,7 @@
 
 **Goal:** Build an MVP that enables Discourse tipping via CKB Fiber with a custodial hub, internal ledger, and batched UDT withdrawals, plus an Admin Web console.
 
-**Architecture:** Split into two repos. `fiber-link-service` hosts a Fastify JSON-RPC API for the Discourse plugin, a Next.js Admin Web (tRPC), a Drizzle/Postgres data layer, a Fiber Adapter wrapper, and background workers for settlement/reconciliation/withdrawals. `fiber-link-discourse-plugin` delivers the UI, polling, and HMAC-authenticated RPC calls.
+**Architecture:** Split into two repos. `fiber-link-service` hosts a Fastify JSON-RPC API for the Discourse plugin, a Next.js Admin Web (tRPC), a Drizzle/Postgres data layer, a Fiber Adapter wrapper, and background workers for settlement/reconciliation/withdrawals. Admin Web uses role-based access with **super admin + community admin**. `fiber-link-discourse-plugin` delivers the UI, polling, and HMAC-authenticated RPC calls.
 
 **Tech Stack:** Node.js 20, Fastify, JSON-RPC, Next.js, tRPC, Drizzle, BetterAuth, Postgres, Vitest, Supertest, TypeScript, CCC, Ruby (Discourse plugin), RSpec, Ember/QUnit for UI.
 
@@ -160,6 +160,20 @@ export const apps = pgTable("apps", {
   id: uuid("id").primaryKey().defaultRandom(),
   appId: text("app_id").notNull().unique(),
   hmacSecret: text("hmac_secret").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const adminUsers = pgTable("admin_users", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  email: text("email").notNull().unique(),
+  role: text("role").notNull(), // SUPER_ADMIN | COMMUNITY_ADMIN
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const appAdmins = pgTable("app_admins", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  appId: text("app_id").notNull(),
+  adminUserId: text("admin_user_id").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -588,6 +602,8 @@ git commit -m "feat: add withdrawal request stub"
 - Create: `fiber-link-service/apps/admin/src/pages/index.tsx`
 - Create: `fiber-link-service/apps/admin/src/server/api/trpc.ts`
 - Create: `fiber-link-service/apps/admin/src/server/auth.ts`
+- Create: `fiber-link-service/apps/admin/src/server/auth/roles.ts`
+- Create: `fiber-link-service/apps/admin/src/server/auth/roles.test.ts`
 - Create: `fiber-link-service/apps/admin/src/server/api/routers/app.ts`
 - Create: `fiber-link-service/apps/admin/src/server/api/routers/withdrawal.ts`
 
@@ -601,6 +617,18 @@ import { appRouter } from "./app";
 describe("app router", () => {
   it("exports router", () => {
     expect(appRouter).toBeDefined();
+  });
+});
+```
+
+```ts
+// fiber-link-service/apps/admin/src/server/auth/roles.test.ts
+import { describe, it, expect } from "vitest";
+import { requireRole } from "./roles";
+
+describe("roles", () => {
+  it("throws when role missing", () => {
+    expect(() => requireRole("SUPER_ADMIN", "COMMUNITY_ADMIN")).toThrow();
   });
 });
 ```
@@ -623,6 +651,15 @@ export const appRouter = t.router({
 ```
 
 ```ts
+// fiber-link-service/apps/admin/src/server/auth/roles.ts
+export function requireRole(required: "SUPER_ADMIN" | "COMMUNITY_ADMIN", actual?: string) {
+  if (actual !== required) {
+    throw new Error("FORBIDDEN");
+  }
+}
+```
+
+```ts
 // fiber-link-service/apps/admin/src/server/api/routers/withdrawal.ts
 import { initTRPC } from "@trpc/server";
 const t = initTRPC.create();
@@ -640,7 +677,7 @@ Expected: PASS
 **Step 5: Commit**
 
 ```bash
-git add fiber-link-service/apps/admin/src/server/api/routers
+git add fiber-link-service/apps/admin/src/server/api/routers fiber-link-service/apps/admin/src/server/auth/roles.ts fiber-link-service/apps/admin/src/server/auth/roles.test.ts
 git commit -m "feat: add admin tRPC routers"
 ```
 

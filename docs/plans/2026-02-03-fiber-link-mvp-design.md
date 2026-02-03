@@ -12,6 +12,7 @@ Deliver an end-to-end tipping and withdrawal flow for Discourse communities on C
 - Discourse: **official plugin** for Discourse 3.x (Docker install).
 - Integration: **JSON-RPC over HTTP** (single `/rpc`), HMAC signed requests.
 - Service stack: **Fastify JSON-RPC service**, **Next.js Admin Web (tRPC)**, **Drizzle**, **BetterAuth**.
+- Admin roles: **super admin + community admin** (MVP).
 - Ledger: **per-community isolation**, strict idempotency, audit log.
 - Settlement detection: **subscription + polling reconciliation**.
 - Withdrawals: **batch every 30 minutes**, **mixed auto/manual approval**, **CCC for UDT transfers**.
@@ -60,6 +61,8 @@ Auth: HMAC headers (`x-app-id`, `x-ts`, `x-nonce`, `x-signature`). 5-minute wind
 - `ledger_entries` (credit/debit, amount, asset, ref_id, idempotency_key)
 - `withdrawals` (state, amount, asset, to_address, tx_hash)
 - `audit_logs` (admin actions, manual adjustments)
+- `admin_users` (BetterAuth users with role)
+- `app_admins` (community → admin mapping)
 
 ### Ledger Invariants
 - One settled invoice → at most one credit entry.
