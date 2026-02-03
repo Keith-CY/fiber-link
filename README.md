@@ -14,6 +14,7 @@ Primary reference thread:
 - `docs/02-architecture.md` — proposed architecture + components
 - `docs/03-risks-open-questions.md` — risks, assumptions, open questions
 - `docs/04-research-plan.md` — research checklist + milestones
+- `docs/05-threat-model.md` — threat model + risk controls (MVP)
 
 ## Next steps
 1) Confirm MVP UX and custody model boundaries.
