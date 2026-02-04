@@ -86,8 +86,17 @@ export function registerRpc(app: FastifyInstance) {
           error: { code: -32602, message: "Invalid params", data: parsed.error.issues },
         });
       }
-      const result = await handleTipCreate({ ...parsed.data, appId });
-      return reply.send({ jsonrpc: "2.0", id: body.id, result });
+      try {
+        const result = await handleTipCreate({ ...parsed.data, appId });
+        return reply.send({ jsonrpc: "2.0", id: body.id, result });
+      } catch (error) {
+        req.log.error(error);
+        return reply.status(500).send({
+          jsonrpc: "2.0",
+          id: body.id ?? null,
+          error: { code: -32603, message: "Internal error" },
+        });
+      }
     }
 
     return reply.status(404).send({

@@ -68,4 +68,43 @@ describe("json-rpc", () => {
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ jsonrpc: "2.0", id: 1, result: { status: "ok" } });
   });
+
+  it("returns JSON-RPC error when handler throws", async () => {
+    const app = buildServer();
+    delete process.env.FIBER_RPC_URL;
+    const rawPayload = JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tip.create",
+      params: { amount: "1", asset: "CKB", postId: "p1", fromUserId: "u1", toUserId: "u2" },
+    });
+    const ts = String(Math.floor(Date.now() / 1000));
+    const nonce = "n3";
+    const signature = verifyHmac.sign({
+      secret: "replace-with-lookup",
+      payload: rawPayload,
+      ts,
+      nonce,
+    });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/rpc",
+      payload: rawPayload,
+      headers: {
+        "content-type": "application/json",
+        "x-app-id": "app1",
+        "x-ts": ts,
+        "x-nonce": nonce,
+        "x-signature": signature,
+      },
+    });
+
+    expect(res.statusCode).toBe(500);
+    expect(res.json()).toEqual({
+      jsonrpc: "2.0",
+      id: 1,
+      error: { code: -32603, message: "Internal error" },
+    });
+  });
 });
