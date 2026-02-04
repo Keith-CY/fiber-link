@@ -32,7 +32,11 @@ module ::FiberLink
         render body: response.body, status: response.status, content_type: "application/json"
       rescue Excon::Error => error
         Rails.logger.error("Fiber Link RPC proxy error: #{error.message}")
-        request_id = JSON.parse(payload).dig("id") rescue nil
+        request_id = begin
+          JSON.parse(payload).dig("id")
+        rescue JSON::ParserError
+          nil
+        end
         render json: {
                  jsonrpc: "2.0",
                  id: request_id,

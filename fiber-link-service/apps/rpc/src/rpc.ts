@@ -47,7 +47,8 @@ function isTimestampFresh(ts: string) {
 export function registerRpc(app: FastifyInstance) {
   app.post("/rpc", async (req, reply) => {
     const body = req.body as RpcRequest;
-    const payload = JSON.stringify(body);
+    const rawBody = (req as { rawBody?: string }).rawBody;
+    const payload = typeof rawBody === "string" ? rawBody : JSON.stringify(body);
     const appId = String(req.headers["x-app-id"] ?? "");
     const ts = String(req.headers["x-ts"] ?? "");
     const nonce = String(req.headers["x-nonce"] ?? "");
