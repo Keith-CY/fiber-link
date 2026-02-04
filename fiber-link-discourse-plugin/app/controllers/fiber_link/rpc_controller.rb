@@ -28,7 +28,7 @@ module ::FiberLink
       }
 
       response = Excon.post("#{service_url}/rpc", body: payload, headers: headers)
-      render json: response.body, status: response.status
+      render body: response.body, status: response.status, content_type: "application/json"
     end
   end
 end

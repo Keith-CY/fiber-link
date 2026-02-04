@@ -11,7 +11,6 @@ type RpcRequest = {
 };
 
 const TipCreateSchema = z.object({
-  appId: z.string().min(1),
   postId: z.string().min(1),
   fromUserId: z.string().min(1),
   toUserId: z.string().min(1),
@@ -52,7 +51,7 @@ export function registerRpc(app: FastifyInstance) {
     }
     if (body.method === "tip.create") {
       const params = TipCreateSchema.parse(body.params);
-      const result = await handleTipCreate(params);
+      const result = await handleTipCreate({ ...params, appId });
       return reply.send({ jsonrpc: "2.0", id: body.id, result });
     }
 
