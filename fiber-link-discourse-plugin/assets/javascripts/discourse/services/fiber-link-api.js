@@ -11,7 +11,7 @@ function csrfToken() {
 }
 
 export async function createTip({ amount, asset, postId, fromUserId, toUserId }) {
-  return fetch("/fiber-link/rpc", {
+  const response = await fetch("/fiber-link/rpc", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -23,5 +23,11 @@ export async function createTip({ amount, asset, postId, fromUserId, toUserId })
       method: "tip.create",
       params: { amount, asset, postId, fromUserId, toUserId },
     }),
-  }).then((r) => r.json());
+  });
+
+  const data = await response.json();
+  if (!response.ok) {
+    throw data.error || new Error(`HTTP error ${response.status}`);
+  }
+  return data;
 }

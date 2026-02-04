@@ -28,7 +28,8 @@ function getSecretForApp(appId: string) {
       const parsed = JSON.parse(mapRaw) as Record<string, string>;
       if (parsed[appId]) return parsed[appId];
       return "";
-    } catch {
+    } catch (error) {
+      console.error("Failed to parse FIBER_LINK_HMAC_SECRET_MAP", error);
       return "";
     }
   }
@@ -90,8 +91,15 @@ export function registerRpc(app: FastifyInstance) {
       return reply.send({ jsonrpc: "2.0", id: body.id, result: { status: "ok" } });
     }
     if (body.method === "tip.create") {
-      const params = TipCreateSchema.parse(body.params);
-      const result = await handleTipCreate({ ...params, appId });
+      const parsed = TipCreateSchema.safeParse(body.params);
+      if (!parsed.success) {
+        return reply.status(400).send({
+          jsonrpc: "2.0",
+          id: body.id ?? null,
+          error: { code: -32602, message: "Invalid params", data: parsed.error.issues },
+        });
+      }
+      const result = await handleTipCreate({ ...parsed.data, appId });
       return reply.send({ jsonrpc: "2.0", id: body.id, result });
     }
 

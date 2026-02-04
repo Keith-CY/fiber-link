@@ -27,8 +27,19 @@ module ::FiberLink
         "x-signature" => signature,
       }
 
-      response = Excon.post("#{service_url}/rpc", body: payload, headers: headers)
-      render body: response.body, status: response.status, content_type: "application/json"
+      begin
+        response = Excon.post("#{service_url}/rpc", body: payload, headers: headers)
+        render body: response.body, status: response.status, content_type: "application/json"
+      rescue Excon::Error => error
+        Rails.logger.error("Fiber Link RPC proxy error: #{error.message}")
+        request_id = JSON.parse(payload).dig("id") rescue nil
+        render json: {
+                 jsonrpc: "2.0",
+                 id: request_id,
+                 error: { code: -32000, message: "Service unavailable" },
+               },
+               status: :service_unavailable
+      end
     end
   end
 end
