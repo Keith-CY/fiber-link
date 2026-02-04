@@ -42,7 +42,7 @@ describe("json-rpc", () => {
 
 **Step 2: Run test to verify it fails**
 
-Run: `pnpm -C fiber-link-service/apps/rpc test`
+Run: `bun run test -- --run` (workdir: `fiber-link-service/apps/rpc`)
 Expected: FAIL (module or handler missing)
 
 **Step 3: Write minimal implementation**
@@ -108,7 +108,7 @@ export function registerRpc(app: FastifyInstance) {
 
 **Step 4: Run test to verify it passes**
 
-Run: `pnpm -C fiber-link-service/apps/rpc test`
+Run: `bun run test -- --run` (workdir: `fiber-link-service/apps/rpc`)
 Expected: PASS
 
 **Step 5: Commit**
@@ -145,7 +145,7 @@ describe("schema", () => {
 
 **Step 2: Run test to verify it fails**
 
-Run: `pnpm -C fiber-link-service/packages/db test`
+Run: `bun run test -- --run` (workdir: `fiber-link-service/packages/db`)
 Expected: FAIL (schema missing)
 
 **Step 3: Write minimal implementation**
@@ -225,7 +225,7 @@ export * from "./schema";
 
 **Step 4: Run test to verify it passes**
 
-Run: `pnpm -C fiber-link-service/packages/db test`
+Run: `bun run test -- --run` (workdir: `fiber-link-service/packages/db`)
 Expected: PASS
 
 **Step 5: Commit**
@@ -264,7 +264,7 @@ it("verifies valid signature", () => {
 
 **Step 2: Run test to verify it fails**
 
-Run: `pnpm -C fiber-link-service/apps/rpc test`
+Run: `bun run test -- --run` (workdir: `fiber-link-service/apps/rpc`)
 Expected: FAIL
 
 **Step 3: Write minimal implementation**
@@ -319,7 +319,7 @@ export function registerRpc(app: FastifyInstance) {
 
 **Step 4: Run test to verify it passes**
 
-Run: `pnpm -C fiber-link-service/apps/rpc test`
+Run: `bun run test -- --run` (workdir: `fiber-link-service/apps/rpc`)
 Expected: PASS
 
 **Step 5: Commit**
@@ -356,7 +356,7 @@ describe("fiber adapter", () => {
 
 **Step 2: Run test to verify it fails**
 
-Run: `pnpm -C fiber-link-service/packages/fiber-adapter test`
+Run: `bun run test -- --run` (workdir: `fiber-link-service/packages/fiber-adapter`)
 Expected: FAIL
 
 **Step 3: Write minimal implementation**
@@ -395,7 +395,7 @@ export function createAdapter(_: { endpoint: string }) {
 
 **Step 4: Run test to verify it passes**
 
-Run: `pnpm -C fiber-link-service/packages/fiber-adapter test`
+Run: `bun run test -- --run` (workdir: `fiber-link-service/packages/fiber-adapter`)
 Expected: PASS
 
 **Step 5: Commit**
@@ -437,7 +437,7 @@ it("creates a tip intent with invoice", async () => {
 
 **Step 2: Run test to verify it fails**
 
-Run: `pnpm -C fiber-link-service/apps/rpc test`
+Run: `bun run test -- --run` (workdir: `fiber-link-service/apps/rpc`)
 Expected: FAIL
 
 **Step 3: Write minimal implementation**
@@ -472,7 +472,7 @@ if (body.method === "tip.create") {
 
 **Step 4: Run test to verify it passes**
 
-Run: `pnpm -C fiber-link-service/apps/rpc test`
+Run: `bun run test -- --run` (workdir: `fiber-link-service/apps/rpc`)
 Expected: PASS
 
 **Step 5: Commit**
@@ -506,7 +506,7 @@ it("marks invoice settled and credits ledger", async () => {
 
 **Step 2: Run test to verify it fails**
 
-Run: `pnpm -C fiber-link-service/apps/worker test`
+Run: `bun run test -- --run` (workdir: `fiber-link-service/apps/worker`)
 Expected: FAIL
 
 **Step 3: Write minimal implementation**
@@ -520,7 +520,7 @@ export async function markSettled(_: { invoice: string }) {
 
 **Step 4: Run test to verify it passes**
 
-Run: `pnpm -C fiber-link-service/apps/worker test`
+Run: `bun run test -- --run` (workdir: `fiber-link-service/apps/worker`)
 Expected: PASS
 
 **Step 5: Commit**
@@ -561,7 +561,7 @@ it("creates withdrawal request", async () => {
 
 **Step 2: Run test to verify it fails**
 
-Run: `pnpm -C fiber-link-service/apps/rpc test`
+Run: `bun run test -- --run` (workdir: `fiber-link-service/apps/rpc`)
 Expected: FAIL
 
 **Step 3: Write minimal implementation**
@@ -581,7 +581,7 @@ export async function requestWithdrawal(input: {
 
 **Step 4: Run test to verify it passes**
 
-Run: `pnpm -C fiber-link-service/apps/rpc test`
+Run: `bun run test -- --run` (workdir: `fiber-link-service/apps/rpc`)
 Expected: PASS
 
 **Step 5: Commit**
@@ -633,7 +633,7 @@ describe("roles", () => {
 
 **Step 2: Run test to verify it fails**
 
-Run: `pnpm -C fiber-link-service/apps/admin test`
+Run: `bun run test -- --run` (workdir: `fiber-link-service/apps/admin`)
 Expected: FAIL
 
 **Step 3: Write minimal implementation**
@@ -669,7 +669,7 @@ export const withdrawalRouter = t.router({
 
 **Step 4: Run test to verify it passes**
 
-Run: `pnpm -C fiber-link-service/apps/admin test`
+Run: `bun run test -- --run` (workdir: `fiber-link-service/apps/admin`)
 Expected: PASS
 
 **Step 5: Commit**

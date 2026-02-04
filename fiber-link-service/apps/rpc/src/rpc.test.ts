@@ -10,7 +10,7 @@ describe("json-rpc", () => {
   it("health.ping returns ok", async () => {
     const app = buildServer();
     const payload = { jsonrpc: "2.0", id: 1, method: "health.ping", params: {} };
-    const ts = "1700000000";
+    const ts = String(Math.floor(Date.now() / 1000));
     const nonce = "n1";
     const signature = verifyHmac.sign({
       secret: "replace-with-lookup",

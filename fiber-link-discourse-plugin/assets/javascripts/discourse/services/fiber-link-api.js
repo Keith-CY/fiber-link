@@ -10,7 +10,7 @@ function csrfToken() {
   return el ? el.getAttribute("content") : "";
 }
 
-export async function createTip({ amount, asset }) {
+export async function createTip({ amount, asset, postId, fromUserId, toUserId }) {
   return fetch("/fiber-link/rpc", {
     method: "POST",
     headers: {
@@ -21,7 +21,7 @@ export async function createTip({ amount, asset }) {
       jsonrpc: "2.0",
       id: buildRequestId(),
       method: "tip.create",
-      params: { amount, asset },
+      params: { amount, asset, postId, fromUserId, toUserId },
     }),
   }).then((r) => r.json());
 }

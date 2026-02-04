@@ -10,9 +10,9 @@ module ::FiberLink
       app_id = SiteSetting.fiber_link_app_id
       app_secret = SiteSetting.fiber_link_app_secret
 
-      if service_url.blank? || app_id.blank? || app_secret.blank?
-        raise Discourse::InvalidParameters.new(:fiber_link_service_url)
-      end
+      raise Discourse::InvalidParameters.new(:fiber_link_service_url) if service_url.blank?
+      raise Discourse::InvalidParameters.new(:fiber_link_app_id) if app_id.blank?
+      raise Discourse::InvalidParameters.new(:fiber_link_app_secret) if app_secret.blank?
 
       payload = request.raw_post
       ts = Time.now.to_i.to_s
