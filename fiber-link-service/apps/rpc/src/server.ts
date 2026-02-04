@@ -4,9 +4,11 @@ import { registerRpc } from "./rpc";
 export function buildServer() {
   const app = Fastify({ logger: true });
 
+  app.decorateRequest("rawBody", "");
+
   app.addContentTypeParser("application/json", { parseAs: "string" }, (req, body, done) => {
     const rawBody = body as string;
-    (req as { rawBody?: string }).rawBody = rawBody;
+    req.rawBody = rawBody;
     try {
       done(null, JSON.parse(rawBody));
     } catch (error) {

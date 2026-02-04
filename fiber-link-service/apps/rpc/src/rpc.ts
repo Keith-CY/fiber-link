@@ -3,6 +3,7 @@ import { z } from "zod";
 import { verifyHmac } from "./auth/hmac";
 import { handleTipCreate } from "./methods/tip";
 import { createNonceStore } from "./nonce-store";
+import { loadSecretMap } from "./secret-map";
 
 type RpcRequest = {
   jsonrpc: "2.0";
@@ -21,19 +22,10 @@ const TipCreateSchema = z.object({
 
 const NONCE_TTL_MS = 5 * 60 * 1000;
 const nonceStore = createNonceStore();
+const secretMap = loadSecretMap();
 
 function getSecretForApp(appId: string) {
-  const mapRaw = process.env.FIBER_LINK_HMAC_SECRET_MAP;
-  if (mapRaw) {
-    try {
-      const parsed = JSON.parse(mapRaw) as Record<string, string>;
-      if (parsed[appId]) return parsed[appId];
-      return "";
-    } catch (error) {
-      console.error("Failed to parse FIBER_LINK_HMAC_SECRET_MAP", error);
-      return "";
-    }
-  }
+  if (secretMap) return secretMap[appId] ?? "";
   return process.env.FIBER_LINK_HMAC_SECRET ?? "";
 }
 
@@ -47,7 +39,7 @@ function isTimestampFresh(ts: string) {
 export function registerRpc(app: FastifyInstance) {
   app.post("/rpc", async (req, reply) => {
     const body = req.body as RpcRequest;
-    const rawBody = (req as { rawBody?: string }).rawBody;
+    const rawBody = req.rawBody;
     const payload = typeof rawBody === "string" ? rawBody : JSON.stringify(body);
     const appId = String(req.headers["x-app-id"] ?? "");
     const ts = String(req.headers["x-ts"] ?? "");
