@@ -40,7 +40,14 @@ export function registerRpc(app: FastifyInstance) {
   app.post("/rpc", async (req, reply) => {
     const body = req.body as RpcRequest;
     const rawBody = req.rawBody;
-    const payload = typeof rawBody === "string" ? rawBody : JSON.stringify(body);
+    if (!rawBody) {
+      return reply.status(500).send({
+        jsonrpc: "2.0",
+        id: (body as RpcRequest | undefined)?.id ?? null,
+        error: { code: -32603, message: "Internal error: could not read raw request body." },
+      });
+    }
+    const payload = rawBody;
     const appId = String(req.headers["x-app-id"] ?? "");
     const ts = String(req.headers["x-ts"] ?? "");
     const nonce = String(req.headers["x-nonce"] ?? "");

@@ -99,7 +99,7 @@ export function registerRpc(app: FastifyInstance) {
     "fastify": "^4.27.0"
   },
   "devDependencies": {
-    "supertest": "^6.4.2",
+    "supertest": "^6.3.3",
     "vitest": "^1.6.0",
     "typescript": "^5.6.0"
   }
@@ -626,7 +626,7 @@ import { requireRole } from "./roles";
 
 describe("roles", () => {
   it("throws when role missing", () => {
-    expect(() => requireRole("SUPER_ADMIN", "COMMUNITY_ADMIN")).toThrow();
+    expect(() => requireRole(["SUPER_ADMIN"], "COMMUNITY_ADMIN")).toThrow();
   });
 });
 ```
@@ -650,9 +650,11 @@ export const appRouter = t.router({
 
 ```ts
 // fiber-link-service/apps/admin/src/server/auth/roles.ts
-export function requireRole(required: "SUPER_ADMIN" | "COMMUNITY_ADMIN", actual?: string) {
-  if (actual !== required) {
-    throw new Error("FORBIDDEN");
+import { TRPCError } from "@trpc/server";
+
+export function requireRole(required: Array<"SUPER_ADMIN" | "COMMUNITY_ADMIN">, actual?: string) {
+  if (!actual || !required.includes(actual as "SUPER_ADMIN" | "COMMUNITY_ADMIN")) {
+    throw new TRPCError({ code: "FORBIDDEN" });
   }
 }
 ```

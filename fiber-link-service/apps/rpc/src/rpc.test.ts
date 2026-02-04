@@ -69,6 +69,32 @@ describe("json-rpc", () => {
     expect(res.json()).toEqual({ jsonrpc: "2.0", id: 1, result: { status: "ok" } });
   });
 
+  it("returns JSON-RPC error when raw body is missing", async () => {
+    const app = buildServer();
+    const rawPayload = JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "health.ping",
+      params: {},
+    });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/rpc",
+      payload: rawPayload,
+      headers: {
+        "content-type": "text/plain",
+      },
+    });
+
+    expect(res.statusCode).toBe(500);
+    expect(res.json()).toEqual({
+      jsonrpc: "2.0",
+      id: null,
+      error: { code: -32603, message: "Internal error: could not read raw request body." },
+    });
+  });
+
   it("returns JSON-RPC error when handler throws", async () => {
     const app = buildServer();
     delete process.env.FIBER_RPC_URL;

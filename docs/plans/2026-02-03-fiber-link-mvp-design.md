@@ -15,7 +15,7 @@ Deliver an end-to-end tipping and withdrawal flow for Discourse communities on C
 - Admin roles: **super admin + community admin** (MVP).
 - Ledger: **per-community isolation**, strict idempotency, audit log.
 - Settlement detection: **subscription + polling reconciliation**.
-- Withdrawals: **batch every 30 minutes**, **mixed auto/manual approval**, **CCC for UDT transfers**.
+- Withdrawals: **batch every 30 minutes**, **mixed auto/manual approval**, **CCC (ckb-devrel/ccc SDK) for UDT transfers**.
 - UX: **logged-in users only**, **free-amount input**, **public tip display with optional anonymity**, **5s polling**.
 
 ## Architecture
