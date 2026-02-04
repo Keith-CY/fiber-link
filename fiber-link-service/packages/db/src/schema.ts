@@ -1,4 +1,7 @@
-import { pgTable, text, timestamp, uuid, numeric } from "drizzle-orm/pg-core";
+import { pgTable, pgEnum, text, timestamp, uuid, numeric } from "drizzle-orm/pg-core";
+
+export const userRoleEnum = pgEnum("user_role", ["SUPER_ADMIN", "COMMUNITY_ADMIN"]);
+export const ledgerEntryTypeEnum = pgEnum("ledger_entry_type", ["credit", "debit"]);
 
 export const apps = pgTable("apps", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -10,7 +13,7 @@ export const apps = pgTable("apps", {
 export const adminUsers = pgTable("admin_users", {
   id: uuid("id").primaryKey().defaultRandom(),
   email: text("email").notNull().unique(),
-  role: text("role").notNull(), // SUPER_ADMIN | COMMUNITY_ADMIN
+  role: userRoleEnum("role").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -41,7 +44,7 @@ export const ledgerEntries = pgTable("ledger_entries", {
   userId: text("user_id").notNull(),
   asset: text("asset").notNull(),
   amount: numeric("amount").notNull(),
-  type: text("type").notNull(),
+  type: ledgerEntryTypeEnum("type").notNull(),
   refId: text("ref_id").notNull(),
   idempotencyKey: text("idempotency_key").notNull().unique(),
   createdAt: timestamp("created_at").defaultNow().notNull(),

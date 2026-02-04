@@ -1,0 +1,14 @@
+plugins:
+  fiber_link_enabled:
+    default: false
+    client: true
+  fiber_link_service_url:
+    default: ""
+    client: false
+  fiber_link_app_id:
+    default: ""
+    client: false
+  fiber_link_app_secret:
+    default: ""
+    type: secret
+    client: false

@@ -6,7 +6,8 @@
   },
   "dependencies": {
     "@fiber-link/fiber-adapter": "workspace:*",
-    "fastify": "^4.27.0"
+    "fastify": "^4.27.0",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "supertest": "^6.3.3",

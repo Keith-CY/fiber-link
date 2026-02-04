@@ -1,6 +1,10 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import { buildServer } from "./server";
 import { verifyHmac } from "./auth/hmac";
+
+beforeEach(() => {
+  process.env.FIBER_LINK_HMAC_SECRET = "replace-with-lookup";
+});
 
 describe("json-rpc", () => {
   it("health.ping returns ok", async () => {
@@ -20,6 +24,7 @@ describe("json-rpc", () => {
       url: "/rpc",
       payload,
       headers: {
+        "x-app-id": "app1",
         "x-ts": ts,
         "x-nonce": nonce,
         "x-signature": signature,
