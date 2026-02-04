@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { verifyHmac } from "./auth/hmac";
 import { handleTipCreate } from "./methods/tip";
+import { createNonceStore } from "./nonce-store";
 
 type RpcRequest = {
   jsonrpc: "2.0";
@@ -19,7 +20,7 @@ const TipCreateSchema = z.object({
 });
 
 const NONCE_TTL_MS = 5 * 60 * 1000;
-const nonceCache = new Map<string, number>();
+const nonceStore = createNonceStore();
 
 function getSecretForApp(appId: string) {
   const mapRaw = process.env.FIBER_LINK_HMAC_SECRET_MAP;
@@ -43,14 +44,6 @@ function isTimestampFresh(ts: string) {
   return delta <= NONCE_TTL_MS;
 }
 
-function isNonceReplay(appId: string, nonce: string) {
-  const key = `${appId}:${nonce}`;
-  if (nonceCache.has(key)) return true;
-  nonceCache.set(key, Date.now());
-  setTimeout(() => nonceCache.delete(key), NONCE_TTL_MS);
-  return false;
-}
-
 export function registerRpc(app: FastifyInstance) {
   app.post("/rpc", async (req, reply) => {
     const body = req.body as RpcRequest;
@@ -70,7 +63,8 @@ export function registerRpc(app: FastifyInstance) {
       });
     }
 
-    if (!isTimestampFresh(ts) || isNonceReplay(appId, nonce)) {
+    const isReplay = await nonceStore.isReplay(appId, nonce, NONCE_TTL_MS);
+    if (!isTimestampFresh(ts) || isReplay) {
       return reply.status(401).send({
         jsonrpc: "2.0",
         id: body.id ?? null,
