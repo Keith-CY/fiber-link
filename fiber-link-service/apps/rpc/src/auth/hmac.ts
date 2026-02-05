@@ -11,6 +11,7 @@ export const verifyHmac = {
   },
   check({ secret, payload, ts, nonce, signature }: CheckArgs) {
     const expected = verifyHmac.sign({ secret, payload, ts, nonce });
+    if (expected.length !== signature.length) return false;
     return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature));
   },
 };

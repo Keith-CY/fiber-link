@@ -69,6 +69,54 @@ describe("json-rpc", () => {
     expect(res.json()).toEqual({ jsonrpc: "2.0", id: 1, result: { status: "ok" } });
   });
 
+  it("does not burn nonce when signature is invalid", async () => {
+    const app = buildServer();
+    const rawPayload = JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "health.ping",
+      params: {},
+    });
+    const ts = String(Math.floor(Date.now() / 1000));
+    const nonce = "n-invalid-sig";
+    const validSig = verifyHmac.sign({
+      secret: "replace-with-lookup",
+      payload: rawPayload,
+      ts,
+      nonce,
+    });
+    const invalidSig = `${validSig.slice(0, -1)}0`;
+
+    const resInvalid = await app.inject({
+      method: "POST",
+      url: "/rpc",
+      payload: rawPayload,
+      headers: {
+        "content-type": "application/json",
+        "x-app-id": "app1",
+        "x-ts": ts,
+        "x-nonce": nonce,
+        "x-signature": invalidSig,
+      },
+    });
+
+    const resValid = await app.inject({
+      method: "POST",
+      url: "/rpc",
+      payload: rawPayload,
+      headers: {
+        "content-type": "application/json",
+        "x-app-id": "app1",
+        "x-ts": ts,
+        "x-nonce": nonce,
+        "x-signature": validSig,
+      },
+    });
+
+    expect(resInvalid.statusCode).toBe(401);
+    expect(resValid.statusCode).toBe(200);
+  });
+
   it("returns JSON-RPC error when raw body is missing", async () => {
     const app = buildServer();
     const rawPayload = JSON.stringify({
@@ -92,6 +140,39 @@ describe("json-rpc", () => {
       jsonrpc: "2.0",
       id: null,
       error: { code: -32603, message: "Internal error: could not read raw request body." },
+    });
+  });
+
+  it("returns JSON-RPC error on unexpected exception", async () => {
+    const app = buildServer();
+    const rawPayload = "null";
+    const ts = String(Math.floor(Date.now() / 1000));
+    const nonce = "n-unexpected";
+    const signature = verifyHmac.sign({
+      secret: "replace-with-lookup",
+      payload: rawPayload,
+      ts,
+      nonce,
+    });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/rpc",
+      payload: rawPayload,
+      headers: {
+        "content-type": "application/json",
+        "x-app-id": "app1",
+        "x-ts": ts,
+        "x-nonce": nonce,
+        "x-signature": signature,
+      },
+    });
+
+    expect(res.statusCode).toBe(500);
+    expect(res.json()).toEqual({
+      jsonrpc: "2.0",
+      id: null,
+      error: { code: -32603, message: "Internal error" },
     });
   });
 
