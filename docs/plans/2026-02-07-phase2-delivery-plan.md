@@ -390,9 +390,11 @@ end
 **Step 2: Bootstrap Discourse test harness and run plugin spec to verify RED**
 
 Run:
-`git clone https://github.com/discourse/discourse.git /tmp/discourse-dev`
-`cd /tmp/discourse-dev`
-`ln -sfn /Users/ChenYu/Documents/Github/fiber-link/fiber-link-discourse-plugin plugins/fiber-link-discourse-plugin`
+`export FIBER_LINK_ROOT="${FIBER_LINK_ROOT:-$(git rev-parse --show-toplevel)}"`
+`export DISCOURSE_DEV_ROOT="${DISCOURSE_DEV_ROOT:-/tmp/discourse-dev}"`
+`[ -d "$DISCOURSE_DEV_ROOT/.git" ] || git clone https://github.com/discourse/discourse.git "$DISCOURSE_DEV_ROOT"`
+`cd "$DISCOURSE_DEV_ROOT"`
+`ln -sfn "$FIBER_LINK_ROOT/fiber-link-discourse-plugin" plugins/fiber-link-discourse-plugin`
 `bundle install`
 `RAILS_ENV=test bundle exec rake db:create db:migrate`
 `bundle exec rspec plugins/fiber-link-discourse-plugin/spec/system/fiber_link_tip_spec.rb`
@@ -402,7 +404,7 @@ Expected: FAIL.
 
 **Step 4: Run plugin specs to verify GREEN**
 
-Run: `cd /tmp/discourse-dev && bundle exec rspec plugins/fiber-link-discourse-plugin/spec/system/fiber_link_tip_spec.rb`
+Run: `export DISCOURSE_DEV_ROOT="${DISCOURSE_DEV_ROOT:-/tmp/discourse-dev}" && cd "$DISCOURSE_DEV_ROOT" && bundle exec rspec plugins/fiber-link-discourse-plugin/spec/system/fiber_link_tip_spec.rb`
 Expected: PASS.
 
 **Step 5: Commit**
@@ -428,7 +430,7 @@ git commit -m "feat(plugin): implement tip flow ui states"
 ```md
 Core:
 - bun run test -- --run --silent (rpc/admin/worker/db)
-- cd /tmp/discourse-dev && bundle exec rspec plugins/fiber-link-discourse-plugin/spec/system/fiber_link_tip_spec.rb
+- export DISCOURSE_DEV_ROOT="${DISCOURSE_DEV_ROOT:-/tmp/discourse-dev}" && cd "$DISCOURSE_DEV_ROOT" && bundle exec rspec plugins/fiber-link-discourse-plugin/spec/system/fiber_link_tip_spec.rb
 
 Security/failure gates:
 - replay nonce rejected
