@@ -1,0 +1,248 @@
+import { describe, it, expect, beforeEach } from "vitest";
+import { buildServer } from "./server";
+import { verifyHmac } from "./auth/hmac";
+
+beforeEach(() => {
+  process.env.FIBER_LINK_HMAC_SECRET = "replace-with-lookup";
+});
+
+describe("json-rpc", () => {
+  it("health.ping returns ok", async () => {
+    const app = buildServer();
+    const payload = { jsonrpc: "2.0", id: 1, method: "health.ping", params: {} };
+    const ts = String(Math.floor(Date.now() / 1000));
+    const nonce = "n1";
+    const signature = verifyHmac.sign({
+      secret: "replace-with-lookup",
+      payload: JSON.stringify(payload),
+      ts,
+      nonce,
+    });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/rpc",
+      payload,
+      headers: {
+        "x-app-id": "app1",
+        "x-ts": ts,
+        "x-nonce": nonce,
+        "x-signature": signature,
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ jsonrpc: "2.0", id: 1, result: { status: "ok" } });
+  });
+
+  it("verifies HMAC against raw body payload", async () => {
+    const app = buildServer();
+    const rawPayload = `{
+  "id": 1,
+  "jsonrpc": "2.0",
+  "method": "health.ping",
+  "params": {}
+}`;
+    const ts = String(Math.floor(Date.now() / 1000));
+    const nonce = "n2";
+    const signature = verifyHmac.sign({
+      secret: "replace-with-lookup",
+      payload: rawPayload,
+      ts,
+      nonce,
+    });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/rpc",
+      payload: rawPayload,
+      headers: {
+        "content-type": "application/json",
+        "x-app-id": "app1",
+        "x-ts": ts,
+        "x-nonce": nonce,
+        "x-signature": signature,
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ jsonrpc: "2.0", id: 1, result: { status: "ok" } });
+  });
+
+  it("does not burn nonce when signature is invalid", async () => {
+    const app = buildServer();
+    const rawPayload = JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "health.ping",
+      params: {},
+    });
+    const ts = String(Math.floor(Date.now() / 1000));
+    const nonce = "n-invalid-sig";
+    const validSig = verifyHmac.sign({
+      secret: "replace-with-lookup",
+      payload: rawPayload,
+      ts,
+      nonce,
+    });
+    const invalidSig = `${validSig.slice(0, -1)}0`;
+
+    const resInvalid = await app.inject({
+      method: "POST",
+      url: "/rpc",
+      payload: rawPayload,
+      headers: {
+        "content-type": "application/json",
+        "x-app-id": "app1",
+        "x-ts": ts,
+        "x-nonce": nonce,
+        "x-signature": invalidSig,
+      },
+    });
+
+    const resValid = await app.inject({
+      method: "POST",
+      url: "/rpc",
+      payload: rawPayload,
+      headers: {
+        "content-type": "application/json",
+        "x-app-id": "app1",
+        "x-ts": ts,
+        "x-nonce": nonce,
+        "x-signature": validSig,
+      },
+    });
+
+    expect(resInvalid.statusCode).toBe(200);
+    expect(resInvalid.json()).toEqual({
+      jsonrpc: "2.0",
+      id: 1,
+      error: { code: -32001, message: "Unauthorized" },
+    });
+    expect(resValid.statusCode).toBe(200);
+  });
+
+  it("returns JSON-RPC error when raw body is missing", async () => {
+    const app = buildServer();
+    const rawPayload = JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "health.ping",
+      params: {},
+    });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/rpc",
+      payload: rawPayload,
+      headers: {
+        "content-type": "text/plain",
+      },
+    });
+
+    expect(res.statusCode).toBe(500);
+    expect(res.json()).toEqual({
+      jsonrpc: "2.0",
+      id: null,
+      error: { code: -32603, message: "Internal error: could not read raw request body." },
+    });
+  });
+
+  it("returns JSON-RPC invalid request for non-object payload", async () => {
+    const app = buildServer();
+    const rawPayload = "null";
+    const ts = String(Math.floor(Date.now() / 1000));
+    const nonce = "n-unexpected";
+    const signature = verifyHmac.sign({
+      secret: "replace-with-lookup",
+      payload: rawPayload,
+      ts,
+      nonce,
+    });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/rpc",
+      payload: rawPayload,
+      headers: {
+        "content-type": "application/json",
+        "x-app-id": "app1",
+        "x-ts": ts,
+        "x-nonce": nonce,
+        "x-signature": signature,
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({
+      jsonrpc: "2.0",
+      id: null,
+      error: { code: -32600, message: "Invalid Request" },
+    });
+  });
+
+  it("returns JSON-RPC error when handler throws", async () => {
+    const app = buildServer();
+    delete process.env.FIBER_RPC_URL;
+    const rawPayload = JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tip.create",
+      params: { amount: "1", asset: "CKB", postId: "p1", fromUserId: "u1", toUserId: "u2" },
+    });
+    const ts = String(Math.floor(Date.now() / 1000));
+    const nonce = "n3";
+    const signature = verifyHmac.sign({
+      secret: "replace-with-lookup",
+      payload: rawPayload,
+      ts,
+      nonce,
+    });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/rpc",
+      payload: rawPayload,
+      headers: {
+        "content-type": "application/json",
+        "x-app-id": "app1",
+        "x-ts": ts,
+        "x-nonce": nonce,
+        "x-signature": signature,
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({
+      jsonrpc: "2.0",
+      id: 1,
+      error: { code: -32603, message: "Internal error" },
+    });
+  });
+
+  it("returns JSON-RPC unauthorized when auth headers are missing", async () => {
+    const app = buildServer();
+    const rawPayload = JSON.stringify({
+      jsonrpc: "2.0",
+      id: 2,
+      method: "health.ping",
+      params: {},
+    });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/rpc",
+      payload: rawPayload,
+      headers: {
+        "content-type": "application/json",
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({
+      jsonrpc: "2.0",
+      id: 2,
+      error: { code: -32001, message: "Unauthorized" },
+    });
+  });
+});

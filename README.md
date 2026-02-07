@@ -16,6 +16,10 @@ Primary reference thread:
 - `docs/04-research-plan.md` — research checklist + milestones
 - `docs/05-threat-model.md` — threat model + risk controls (MVP)
 
+## Configuration (service)
+Environment variables used by the Fiber Link service:
+- `FIBER_LINK_NONCE_REDIS_URL` — Redis URL for shared nonce replay cache. If unset, the RPC service falls back to an in-memory cache (single-instance only).
+
 ## Next steps
 1) Confirm MVP UX and custody model boundaries.
 2) Confirm Fiber node APIs for invoice creation + settlement detection.
