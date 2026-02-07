@@ -4,13 +4,13 @@
 
 **Goal:** Convert the merged MVP scaffold into a working end-to-end tipping and withdrawal system on testnet with production-safe controls.
 
-**Architecture:** Keep the existing split (Discourse plugin -> RPC service -> adapter/worker -> DB) and replace stubs incrementally behind tested boundaries. Prioritize correctness and security first (idempotency, replay protection, auth source-of-truth), then feature completeness (dashboard, withdrawals), then hardening (ops, observability).
+**Architecture:** Keep the existing split (Discourse plugin -> RPC service -> adapter/worker -> DB) and replace stubs incrementally behind tested boundaries. Build prerequisites first (DB runtime, repositories, migration path), then core flows (tip, settlement, withdrawal), then control-plane and UX (admin + plugin), then hardening.
 
 **Tech Stack:** Bun workspaces, Fastify, tRPC, Drizzle ORM, Redis, Discourse plugin (Ruby + Ember), Vitest, GitHub Actions.
 
 ---
 
-### Task 1: Lock Product/Protocol Decisions Before More Code
+### Task 1: Lock Product and Protocol Decisions Before More Code
 
 **Files:**
 - Modify: `docs/04-research-plan.md`
@@ -27,15 +27,15 @@
 - Withdrawal batching target: ____
 ```
 
-**Step 2: Mark resolved vs unresolved research checklist items**
+**Step 2: Mark resolved vs unresolved research checklist items with owner/date**
 
 Run: `rg -n "\[ \]" docs/04-research-plan.md`
-Expected: list of unchecked items reduced and explicit owner/date added.
+Expected: all remaining open items have explicit owner and target date.
 
-**Step 3: Add risk decisions and controls mapping**
+**Step 3: Link each open risk to one implementation task in this plan**
 
-Run: `rg -n "Severity|control|mitigation" docs/03-risks-open-questions.md docs/decisions/2026-02-07-phase2-decisions.md`
-Expected: each open risk links to an implementation task.
+Run: `rg -n "mitigation|control|task" docs/03-risks-open-questions.md docs/decisions/2026-02-07-phase2-decisions.md`
+Expected: every high-risk item references a concrete task number.
 
 **Step 4: Commit**
 
@@ -46,35 +46,79 @@ git commit -m "docs: lock phase2 decisions and risk mapping"
 
 ---
 
-### Task 2: Replace Fiber Adapter Stubs With Real Node Calls
+### Task 2: Build DB Runtime Foundation Before DB-Heavy Features
+
+**Files:**
+- Create: `fiber-link-service/packages/db/src/client.ts`
+- Modify: `fiber-link-service/packages/db/src/index.ts`
+- Create: `fiber-link-service/packages/db/src/client.test.ts`
+- Create: `fiber-link-service/packages/db/drizzle.config.ts`
+- Modify: `fiber-link-service/.env.example`
+
+**Step 1: Write failing tests for DB client bootstrap**
+
+```ts
+it("creates a db client when DATABASE_URL is present", async () => {});
+it("throws a clear error when DATABASE_URL is missing", async () => {});
+```
+
+**Step 2: Run tests to verify RED**
+
+Run: `bun run test -- --run --silent` (in `fiber-link-service/packages/db`)
+Expected: FAIL for missing client implementation.
+
+**Step 3: Implement minimal DB runtime and export it**
+
+```ts
+export function createDbClient(url = process.env.DATABASE_URL) {
+  if (!url) throw new Error("DATABASE_URL is required");
+  // return drizzle(client)
+}
+```
+
+**Step 4: Add migration config and env docs**
+
+Run: `rg -n "DATABASE_URL" fiber-link-service/packages/db fiber-link-service/.env.example`
+Expected: env variable and migration entry point are documented.
+
+**Step 5: Run tests to verify GREEN**
+
+Run: `bun run test -- --run --silent` (in `fiber-link-service/packages/db`)
+Expected: PASS.
+
+**Step 6: Commit**
+
+```bash
+git add fiber-link-service/packages/db/src/client.ts fiber-link-service/packages/db/src/index.ts fiber-link-service/packages/db/src/client.test.ts fiber-link-service/packages/db/drizzle.config.ts fiber-link-service/.env.example
+git commit -m "feat(db): add runtime client foundation"
+```
+
+---
+
+### Task 3: Replace Fiber Adapter Stubs With Real Node Calls
 
 **Files:**
 - Modify: `fiber-link-service/packages/fiber-adapter/src/index.ts`
 - Modify: `fiber-link-service/packages/fiber-adapter/src/fiber-adapter.test.ts`
 - Create: `fiber-link-service/packages/fiber-adapter/src/fiber-client.ts`
 
-**Step 1: Write failing tests for real adapter behavior**
+**Step 1: Write failing tests for adapter request/response mapping**
 
 ```ts
-it("createInvoice calls node rpc and returns invoice string", async () => {
-  // mock transport response and assert request payload shape
-});
-
-it("getInvoiceStatus maps settled/failed states", async () => {
-  // assert domain mapping
-});
+it("createInvoice calls node rpc and returns invoice string", async () => {});
+it("getInvoiceStatus maps settled and failed states", async () => {});
 ```
 
 **Step 2: Run tests to verify RED**
 
 Run: `bun run test -- --run --silent` (in `fiber-link-service/packages/fiber-adapter`)
-Expected: FAIL for missing implementation.
+Expected: FAIL.
 
-**Step 3: Implement minimal transport and mapping**
+**Step 3: Implement transport and typed error handling**
 
 ```ts
 export async function rpcCall(endpoint: string, method: string, params: unknown) {
-  // fetch json-rpc and throw typed error when node returns error
+  // fetch JSON-RPC and normalize error surface
 }
 ```
 
@@ -92,37 +136,37 @@ git commit -m "feat(adapter): implement fiber rpc client"
 
 ---
 
-### Task 3: Persist Tip Intents and Settlement State in DB
+### Task 4: Persist Tip Intents and Invoice State in DB
 
 **Files:**
 - Modify: `fiber-link-service/apps/rpc/src/methods/tip.ts`
+- Modify: `fiber-link-service/apps/rpc/src/methods/tip.test.ts`
 - Modify: `fiber-link-service/packages/db/src/schema.ts`
 - Create: `fiber-link-service/apps/rpc/src/repositories/tip-intent-repo.ts`
 - Create: `fiber-link-service/apps/rpc/src/repositories/tip-intent-repo.test.ts`
-- Modify: `fiber-link-service/apps/rpc/src/methods/tip.test.ts`
 
-**Step 1: Write failing repo tests for create + state update**
-
-```ts
-it("creates tip_intent with UNPAID state", async () => {});
-it("marks tip_intent settled idempotently", async () => {});
-```
-
-**Step 2: Run repo tests to verify RED**
-
-Run: `bun run test -- --run --silent` (in `fiber-link-service/apps/rpc`)
-Expected: FAIL due missing repository.
-
-**Step 3: Implement repository + wire `tip.create` to persist intent**
+**Step 1: Write failing repository tests**
 
 ```ts
-await tipIntentRepo.create({ appId, postId, fromUserId, toUserId, asset, amount, invoice });
+it("creates tip_intent with UNPAID state and returns stable id", async () => {});
+it("updates invoice state idempotently", async () => {});
 ```
 
-**Step 4: Re-run tests**
+**Step 2: Run tests to verify RED**
 
 Run: `bun run test -- --run --silent` (in `fiber-link-service/apps/rpc`)
-Expected: PASS for tip path.
+Expected: FAIL.
+
+**Step 3: Implement repository and wire `tip.create` persistence**
+
+```ts
+const intent = await tipIntentRepo.create({ appId, postId, fromUserId, toUserId, asset, amount, invoice });
+```
+
+**Step 4: Run tests to verify GREEN**
+
+Run: `bun run test -- --run --silent` (in `fiber-link-service/apps/rpc`)
+Expected: PASS.
 
 **Step 5: Commit**
 
@@ -133,7 +177,7 @@ git commit -m "feat(rpc): persist tip intents"
 
 ---
 
-### Task 4: Implement Settlement Worker With Idempotent Ledger Credits
+### Task 5: Implement Settlement Worker With Collision-Safe Idempotency
 
 **Files:**
 - Modify: `fiber-link-service/apps/worker/src/settlement.ts`
@@ -141,26 +185,26 @@ git commit -m "feat(rpc): persist tip intents"
 - Create: `fiber-link-service/apps/worker/src/repositories/ledger-repo.ts`
 - Create: `fiber-link-service/apps/worker/src/repositories/ledger-repo.test.ts`
 
-**Step 1: Write failing tests for exactly-once crediting**
+**Step 1: Write failing tests for exactly-once settlement crediting**
 
 ```ts
-it("credits recipient once per invoice", async () => {});
-it("skips duplicate settlement events using idempotency key", async () => {});
+it("credits recipient once using tip_intent idempotency source", async () => {});
+it("ignores duplicate settlement events for same tip_intent", async () => {});
 ```
 
-**Step 2: Run worker tests (RED)**
+**Step 2: Run tests to verify RED**
 
 Run: `bun run test -- --run --silent` (in `fiber-link-service/apps/worker`)
 Expected: FAIL.
 
-**Step 3: Implement settlement job with idempotency key**
+**Step 3: Implement idempotency key from durable DB identity (not invoice string)**
 
 ```ts
-const idempotencyKey = `settlement:${invoice}`;
+const idempotencyKey = `settlement:tip_intent:${tipIntent.id}`;
 await ledgerRepo.creditOnce({ idempotencyKey, ... });
 ```
 
-**Step 4: Run worker tests (GREEN)**
+**Step 4: Run tests to verify GREEN**
 
 Run: `bun run test -- --run --silent` (in `fiber-link-service/apps/worker`)
 Expected: PASS.
@@ -169,12 +213,12 @@ Expected: PASS.
 
 ```bash
 git add fiber-link-service/apps/worker/src/settlement.ts fiber-link-service/apps/worker/src/settlement.test.ts fiber-link-service/apps/worker/src/repositories/ledger-repo.ts fiber-link-service/apps/worker/src/repositories/ledger-repo.test.ts
-git commit -m "feat(worker): idempotent settlement crediting"
+git commit -m "feat(worker): collision-safe settlement idempotency"
 ```
 
 ---
 
-### Task 5: Build Withdrawal Request + Batch Execution
+### Task 6: Build Withdrawal Lifecycle With Retryable Failures
 
 **Files:**
 - Modify: `fiber-link-service/apps/rpc/src/methods/withdrawal.ts`
@@ -183,28 +227,29 @@ git commit -m "feat(worker): idempotent settlement crediting"
 - Modify: `fiber-link-service/apps/worker/src/withdrawal-batch.test.ts`
 - Modify: `fiber-link-service/packages/db/src/schema.ts`
 
-**Step 1: Add failing tests for withdrawal lifecycle**
+**Step 1: Write failing tests for retry-capable state machine**
 
 ```ts
-it("creates pending withdrawal request", async () => {});
-it("batch picks eligible requests and marks processing", async () => {});
-it("successful send marks completed", async () => {});
+it("creates PENDING withdrawal request", async () => {});
+it("moves transient failure to RETRY_PENDING with nextRetryAt", async () => {});
+it("moves permanent failure to FAILED after retry budget exhausted", async () => {});
 ```
 
-**Step 2: Run rpc + worker tests (RED)**
+**Step 2: Run tests to verify RED**
 
 Run: `bun run test -- --run --silent` (in `fiber-link-service/apps/rpc`)
 Run: `bun run test -- --run --silent` (in `fiber-link-service/apps/worker`)
 Expected: FAIL.
 
-**Step 3: Implement minimal state machine**
+**Step 3: Implement state machine with retry metadata**
 
 ```ts
 PENDING -> PROCESSING -> COMPLETED
-PENDING -> PROCESSING -> FAILED
+PENDING -> PROCESSING -> RETRY_PENDING -> PROCESSING
+PENDING -> PROCESSING -> FAILED (after max retries)
 ```
 
-**Step 4: Run tests (GREEN)**
+**Step 4: Run tests to verify GREEN**
 
 Run: same commands as Step 2
 Expected: PASS.
@@ -213,48 +258,68 @@ Expected: PASS.
 
 ```bash
 git add fiber-link-service/apps/rpc/src/methods/withdrawal.ts fiber-link-service/apps/rpc/src/methods/withdrawal.test.ts fiber-link-service/apps/worker/src/withdrawal-batch.ts fiber-link-service/apps/worker/src/withdrawal-batch.test.ts fiber-link-service/packages/db/src/schema.ts
-git commit -m "feat: implement withdrawal lifecycle"
+git commit -m "feat: add retryable withdrawal state machine"
 ```
 
 ---
 
-### Task 6: Move App Secret Source of Truth to DB
+### Task 7: Move App Secret Source of Truth to DB With Safe Cutover
 
 **Files:**
 - Modify: `fiber-link-service/apps/rpc/src/rpc.ts`
 - Modify: `fiber-link-service/apps/rpc/src/secret-map.ts`
 - Modify: `fiber-link-service/apps/rpc/src/secret-map.test.ts`
 - Create: `fiber-link-service/apps/rpc/src/repositories/app-repo.ts`
+- Create: `fiber-link-service/apps/rpc/src/repositories/app-repo.test.ts`
+- Create: `fiber-link-service/apps/rpc/src/scripts/backfill-app-secrets.ts`
+- Create: `docs/runbooks/secret-cutover.md`
 
-**Step 1: Write failing tests for DB-backed secret lookup**
+**Step 1: Write failing tests for dual-read behavior during rollout**
 
 ```ts
-it("prefers app secret from apps table by x-app-id", async () => {});
-it("returns unauthorized when app record missing", async () => {});
+it("uses DB secret when app record exists", async () => {});
+it("falls back to env map only when DB record is missing", async () => {});
+it("returns unauthorized when neither DB nor env fallback has secret", async () => {});
 ```
 
-**Step 2: Run rpc tests (RED)**
+**Step 2: Run tests to verify RED**
 
 Run: `bun run test -- --run --silent` (in `fiber-link-service/apps/rpc`)
 Expected: FAIL.
 
-**Step 3: Implement repository lookup and remove env-map runtime path**
+**Step 3: Implement dual-read plus observability and backfill script**
 
-**Step 4: Run rpc tests (GREEN)**
+```ts
+// Phase A rollout
+secret = dbSecret ?? envFallbackSecret;
+```
+
+Run: `bun run tsx src/scripts/backfill-app-secrets.ts --dry-run`
+Expected: outputs missing apps and proposed updates.
+
+**Step 4: Add rollout phases in runbook**
+
+```md
+Phase A: dual-read + metrics
+Phase B: backfill complete and verify 100%
+Phase C: disable env fallback and remove code
+```
+
+**Step 5: Run tests to verify GREEN**
 
 Run: `bun run test -- --run --silent` (in `fiber-link-service/apps/rpc`)
 Expected: PASS.
 
-**Step 5: Commit**
+**Step 6: Commit**
 
 ```bash
-git add fiber-link-service/apps/rpc/src/rpc.ts fiber-link-service/apps/rpc/src/secret-map.ts fiber-link-service/apps/rpc/src/secret-map.test.ts fiber-link-service/apps/rpc/src/repositories/app-repo.ts
-git commit -m "feat(rpc): load hmac secret from db"
+git add fiber-link-service/apps/rpc/src/rpc.ts fiber-link-service/apps/rpc/src/secret-map.ts fiber-link-service/apps/rpc/src/secret-map.test.ts fiber-link-service/apps/rpc/src/repositories/app-repo.ts fiber-link-service/apps/rpc/src/repositories/app-repo.test.ts fiber-link-service/apps/rpc/src/scripts/backfill-app-secrets.ts docs/runbooks/secret-cutover.md
+git commit -m "feat(rpc): safe db secret cutover with dual-read"
 ```
 
 ---
 
-### Task 7: Wire Admin tRPC to Real Data + Role Checks
+### Task 8: Wire Admin tRPC to Real Data and Role Checks
 
 **Files:**
 - Modify: `fiber-link-service/apps/admin/src/server/api/routers/app.ts`
@@ -263,7 +328,7 @@ git commit -m "feat(rpc): load hmac secret from db"
 - Modify: `fiber-link-service/apps/admin/src/server/api/routers/app.test.ts`
 - Create: `fiber-link-service/apps/admin/src/server/api/routers/withdrawal.test.ts`
 
-**Step 1: Write failing tests for non-empty list responses and role gating**
+**Step 1: Write failing tests for data responses and role gating**
 
 ```ts
 it("returns apps for allowed role", async () => {});
@@ -271,14 +336,14 @@ it("returns withdrawals for allowed role", async () => {});
 it("rejects forbidden role", async () => {});
 ```
 
-**Step 2: Run admin tests (RED)**
+**Step 2: Run tests to verify RED**
 
 Run: `bun run test -- --run --silent` (in `fiber-link-service/apps/admin`)
 Expected: FAIL.
 
-**Step 3: Implement db reads and role checks in procedures**
+**Step 3: Implement DB-backed procedures with role checks**
 
-**Step 4: Run admin tests (GREEN)**
+**Step 4: Run tests to verify GREEN**
 
 Run: `bun run test -- --run --silent` (in `fiber-link-service/apps/admin`)
 Expected: PASS.
@@ -292,7 +357,7 @@ git commit -m "feat(admin): connect tRPC routers to data"
 
 ---
 
-### Task 8: Upgrade Discourse UI From Skeleton to Functional Flow
+### Task 9: Upgrade Discourse UI From Skeleton to Functional Flow
 
 **Files:**
 - Modify: `fiber-link-discourse-plugin/assets/javascripts/discourse/components/fiber-link-tip-modal.js`
@@ -301,24 +366,24 @@ git commit -m "feat(admin): connect tRPC routers to data"
 - Modify: `fiber-link-discourse-plugin/assets/javascripts/discourse/templates/fiber-link-dashboard.hbs`
 - Modify: `fiber-link-discourse-plugin/spec/system/fiber_link_tip_spec.rb`
 
-**Step 1: Add failing UI/spec assertions for status transitions**
+**Step 1: Add failing UI/spec assertions for tip lifecycle states**
 
 ```rb
-it "shows created invoice and pending state after submit" do
+it "shows invoice, pending, and settled states" do
   # ...
 end
 ```
 
-**Step 2: Run plugin specs (RED)**
+**Step 2: Run plugin specs to verify RED**
 
 Run: `bundle exec rspec spec/system/fiber_link_tip_spec.rb`
 Expected: FAIL.
 
-**Step 3: Implement invoice + status + error rendering in modal/dashboard**
+**Step 3: Implement status transitions, error rendering, and retry UX**
 
-**Step 4: Re-run plugin specs (GREEN)**
+**Step 4: Run plugin specs to verify GREEN**
 
-Run: same as Step 2
+Run: `bundle exec rspec spec/system/fiber_link_tip_spec.rb`
 Expected: PASS.
 
 **Step 5: Commit**
@@ -330,43 +395,53 @@ git commit -m "feat(plugin): implement tip flow ui states"
 
 ---
 
-### Task 9: Hardening + Verification Gate
+### Task 10: Hardening and Verification Gate (Happy Path + Failure Path)
 
 **Files:**
 - Modify: `.github/workflows/ci.yml`
 - Create: `docs/runbooks/phase2-verification.md`
 - Modify: `README.md`
 
-**Step 1: Add CI matrix + required test jobs**
+**Step 1: Add CI jobs for rpc/admin/worker/db and plugin smoke checks**
 
-**Step 2: Add verification runbook with exact commands**
+**Step 2: Add verification runbook with mandatory negative tests**
 
 ```md
+Core:
 - bun run test -- --run --silent (rpc/admin/worker/db)
 - bundle exec rspec (plugin)
-- smoke: tip.create -> settle -> dashboard balance -> withdrawal request
+
+Security/failure gates:
+- replay nonce rejected
+- unauthorized appId rejected
+- invalid signature rejected
+- insufficient funds withdrawal rejected
+- worker restart does not duplicate ledger credit
+- transient withdrawal failure retries then recovers
 ```
 
 **Step 3: Run local verification before merge**
 
 Run:
-- `bun run test -- --run --silent` in each workspace
+- `bun run test -- --run --silent` in each Bun workspace
 - plugin rspec commands
-Expected: all green.
+- targeted scenario tests from runbook
+Expected: all pass.
 
 **Step 4: Commit**
 
 ```bash
 git add .github/workflows/ci.yml docs/runbooks/phase2-verification.md README.md
-git commit -m "chore: add phase2 verification gate"
+git commit -m "chore: add phase2 failure-mode verification gate"
 ```
 
 ---
 
 ## Final Integration Checklist
-- [ ] All task-level tests are green.
-- [ ] No stubs remain in adapter/worker critical paths.
-- [ ] DB-backed app secret lookup replaces env-map fallback.
-- [ ] Discourse tip flow is demo-ready with user-visible state transitions.
+- [ ] DB runtime foundation exists before repository tasks.
+- [ ] No stubs remain in adapter and worker critical paths.
+- [ ] Settlement idempotency key is based on durable DB identity.
+- [ ] Withdrawal lifecycle supports retry and bounded failure.
+- [ ] Secret cutover uses dual-read + backfill before fallback removal.
+- [ ] Verification includes security and recovery failure paths.
 - [ ] CI enforces required tests.
-
