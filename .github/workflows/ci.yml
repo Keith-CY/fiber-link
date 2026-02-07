@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  test-service:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.1.8
+      - name: Install dependencies
+        working-directory: fiber-link-service
+        run: bun install --frozen-lockfile
+      - name: Test rpc
+        working-directory: fiber-link-service/apps/rpc
+        run: bun run test -- --run --silent
+      - name: Test admin
+        working-directory: fiber-link-service/apps/admin
+        run: bun run test -- --run --silent
+      - name: Test worker
+        working-directory: fiber-link-service/apps/worker
+        run: bun run test -- --run --silent
+      - name: Test db
+        working-directory: fiber-link-service/packages/db
+        run: bun run test -- --run --silent

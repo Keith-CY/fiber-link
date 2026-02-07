@@ -26,8 +26,11 @@ export async function createTip({ amount, asset, postId, fromUserId, toUserId })
   });
 
   const data = await response.json();
+  if (data?.error) {
+    throw data.error;
+  }
   if (!response.ok) {
-    throw data.error || new Error(`HTTP error ${response.status}`);
+    throw new Error(`HTTP error ${response.status}`);
   }
   return data;
 }

@@ -113,7 +113,12 @@ describe("json-rpc", () => {
       },
     });
 
-    expect(resInvalid.statusCode).toBe(401);
+    expect(resInvalid.statusCode).toBe(200);
+    expect(resInvalid.json()).toEqual({
+      jsonrpc: "2.0",
+      id: 1,
+      error: { code: -32001, message: "Unauthorized" },
+    });
     expect(resValid.statusCode).toBe(200);
   });
 
@@ -143,7 +148,7 @@ describe("json-rpc", () => {
     });
   });
 
-  it("returns JSON-RPC error on unexpected exception", async () => {
+  it("returns JSON-RPC invalid request for non-object payload", async () => {
     const app = buildServer();
     const rawPayload = "null";
     const ts = String(Math.floor(Date.now() / 1000));
@@ -168,11 +173,11 @@ describe("json-rpc", () => {
       },
     });
 
-    expect(res.statusCode).toBe(500);
+    expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({
       jsonrpc: "2.0",
       id: null,
-      error: { code: -32603, message: "Internal error" },
+      error: { code: -32600, message: "Invalid Request" },
     });
   });
 
@@ -207,11 +212,37 @@ describe("json-rpc", () => {
       },
     });
 
-    expect(res.statusCode).toBe(500);
+    expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({
       jsonrpc: "2.0",
       id: 1,
       error: { code: -32603, message: "Internal error" },
+    });
+  });
+
+  it("returns JSON-RPC unauthorized when auth headers are missing", async () => {
+    const app = buildServer();
+    const rawPayload = JSON.stringify({
+      jsonrpc: "2.0",
+      id: 2,
+      method: "health.ping",
+      params: {},
+    });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/rpc",
+      payload: rawPayload,
+      headers: {
+        "content-type": "application/json",
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({
+      jsonrpc: "2.0",
+      id: 2,
+      error: { code: -32001, message: "Unauthorized" },
     });
   });
 });
