@@ -32,7 +32,7 @@ export const tipIntents = pgTable("tip_intents", {
   toUserId: text("to_user_id").notNull(),
   asset: text("asset").notNull(),
   amount: numeric("amount").notNull(),
-  invoice: text("invoice").notNull(),
+  invoice: text("invoice").notNull().unique(),
   invoiceState: text("invoice_state").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   settledAt: timestamp("settled_at"),

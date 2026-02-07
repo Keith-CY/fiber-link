@@ -1,4 +1,5 @@
 import { createAdapter } from "@fiber-link/fiber-adapter";
+import { tipIntentRepo } from "../repositories/tip-intent-repo";
 
 export type HandleTipCreateInput = {
   appId: string;
@@ -16,5 +17,14 @@ export async function handleTipCreate(input: HandleTipCreateInput) {
   }
   const adapter = createAdapter({ endpoint: fiberRpcUrl });
   const invoice = await adapter.createInvoice({ amount: input.amount, asset: input.asset });
+  await tipIntentRepo.create({
+    appId: input.appId,
+    postId: input.postId,
+    fromUserId: input.fromUserId,
+    toUserId: input.toUserId,
+    asset: input.asset,
+    amount: input.amount,
+    invoice: invoice.invoice,
+  });
   return { invoice: invoice.invoice };
 }
