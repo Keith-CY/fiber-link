@@ -1,9 +1,12 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { __resetWithdrawalStoreForTests, getWithdrawalByIdOrThrow, requestWithdrawal } from "./withdrawal";
+import { createInMemoryWithdrawalRepo } from "@fiber-link/db";
+import { requestWithdrawal } from "./withdrawal";
 
 describe("requestWithdrawal", () => {
+  const repo = createInMemoryWithdrawalRepo();
+
   beforeEach(() => {
-    __resetWithdrawalStoreForTests();
+    repo.__resetForTests();
   });
 
   it("creates PENDING withdrawal request", async () => {
@@ -13,10 +16,10 @@ describe("requestWithdrawal", () => {
       asset: "USDI",
       amount: "10",
       toAddress: "ckt1q...",
-    });
+    }, { repo });
 
     expect(res.state).toBe("PENDING");
-    const saved = await getWithdrawalByIdOrThrow(res.id);
+    const saved = await repo.findByIdOrThrow(res.id);
     expect(saved.state).toBe("PENDING");
     expect(saved.retryCount).toBe(0);
     expect(saved.nextRetryAt).toBeNull();

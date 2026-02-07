@@ -1,12 +1,9 @@
 import {
-  getWithdrawalByIdOrThrow,
-  listWithdrawalsReadyForProcessing,
-  markWithdrawalCompleted,
-  markWithdrawalFailed,
-  markWithdrawalProcessing,
-  markWithdrawalRetryPending,
+  createDbClient,
+  createDbWithdrawalRepo,
   type WithdrawalRecord,
-} from "../../rpc/src/methods/withdrawal";
+  type WithdrawalRepo,
+} from "@fiber-link/db";
 
 export type WithdrawalExecutionResult =
   | { ok: true }
@@ -17,10 +14,20 @@ export type RunWithdrawalBatchOptions = {
   maxRetries?: number;
   retryDelayMs?: number;
   executeWithdrawal?: (withdrawal: WithdrawalRecord) => Promise<WithdrawalExecutionResult>;
+  repo?: WithdrawalRepo;
 };
 
 async function defaultExecuteWithdrawal(_: WithdrawalRecord): Promise<WithdrawalExecutionResult> {
   return { ok: true };
+}
+
+let defaultRepo: WithdrawalRepo | null = null;
+
+function getDefaultRepo(): WithdrawalRepo {
+  if (!defaultRepo) {
+    defaultRepo = createDbWithdrawalRepo(createDbClient());
+  }
+  return defaultRepo;
 }
 
 export async function runWithdrawalBatch(options: RunWithdrawalBatchOptions = {}) {
@@ -28,16 +35,17 @@ export async function runWithdrawalBatch(options: RunWithdrawalBatchOptions = {}
   const maxRetries = options.maxRetries ?? 3;
   const retryDelayMs = options.retryDelayMs ?? 60_000;
   const executeWithdrawal = options.executeWithdrawal ?? defaultExecuteWithdrawal;
+  const repo = options.repo ?? getDefaultRepo();
 
-  const ready = await listWithdrawalsReadyForProcessing(now);
+  const ready = await repo.listReadyForProcessing(now);
   let processed = 0;
   let completed = 0;
   let retryPending = 0;
   let failed = 0;
 
   for (const item of ready) {
-    await markWithdrawalProcessing(item.id, now);
-    const current = await getWithdrawalByIdOrThrow(item.id);
+    await repo.markProcessing(item.id, now);
+    const current = await repo.findByIdOrThrow(item.id);
 
     let result: WithdrawalExecutionResult;
     try {
@@ -52,7 +60,7 @@ export async function runWithdrawalBatch(options: RunWithdrawalBatchOptions = {}
 
     processed += 1;
     if (result.ok) {
-      await markWithdrawalCompleted(item.id, now);
+      await repo.markCompleted(item.id, now);
       completed += 1;
       continue;
     }
@@ -60,14 +68,14 @@ export async function runWithdrawalBatch(options: RunWithdrawalBatchOptions = {}
     if (result.kind === "transient") {
       const nextRetryCount = current.retryCount + 1;
       if (nextRetryCount >= maxRetries) {
-        await markWithdrawalFailed(item.id, {
+        await repo.markFailed(item.id, {
           now,
           error: result.reason,
           incrementRetryCount: true,
         });
         failed += 1;
       } else {
-        await markWithdrawalRetryPending(item.id, {
+        await repo.markRetryPending(item.id, {
           now,
           nextRetryAt: new Date(now.getTime() + retryDelayMs),
           error: result.reason,
@@ -77,7 +85,7 @@ export async function runWithdrawalBatch(options: RunWithdrawalBatchOptions = {}
       continue;
     }
 
-    await markWithdrawalFailed(item.id, { now, error: result.reason });
+    await repo.markFailed(item.id, { now, error: result.reason });
     failed += 1;
   }
 
