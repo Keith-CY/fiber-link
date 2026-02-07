@@ -150,6 +150,7 @@ git commit -m "feat(adapter): implement fiber rpc client"
 ```ts
 it("creates tip_intent with UNPAID state and returns stable id", async () => {});
 it("updates invoice state idempotently", async () => {});
+it("rejects duplicate invoice inserts to preserve 1:1 invoice mapping", async () => {});
 ```
 
 **Step 2: Run tests to verify RED**
@@ -157,10 +158,18 @@ it("updates invoice state idempotently", async () => {});
 Run: `bun run test -- --run --silent` (in `fiber-link-service/apps/rpc`)
 Expected: FAIL.
 
-**Step 3: Implement repository and wire `tip.create` persistence**
+**Step 3: Implement repository and wire `tip.create` persistence with unique invoice contract**
 
 ```ts
 const intent = await tipIntentRepo.create({ appId, postId, fromUserId, toUserId, asset, amount, invoice });
+// schema: tip_intents.invoice must be UNIQUE for settlement lookup safety
+```
+
+Run: `rg -n "invoice.*unique|unique.*invoice" fiber-link-service/packages/db/src/schema.ts`
+Expected: `tip_intents.invoice` has explicit uniqueness (or equivalent unique index) and repository lookup relies on that 1:1 mapping.
+
+```ts
+const tipIntent = await tipIntentRepo.findByInvoiceOrThrow(invoice);
 ```
 
 **Step 4: Run tests to verify GREEN**
@@ -190,6 +199,7 @@ git commit -m "feat(rpc): persist tip intents"
 ```ts
 it("credits recipient once using tip_intent idempotency source", async () => {});
 it("ignores duplicate settlement events for same tip_intent", async () => {});
+it("fails settlement when invoice does not resolve to exactly one tip_intent", async () => {});
 ```
 
 **Step 2: Run tests to verify RED**
@@ -197,9 +207,10 @@ it("ignores duplicate settlement events for same tip_intent", async () => {});
 Run: `bun run test -- --run --silent` (in `fiber-link-service/apps/worker`)
 Expected: FAIL.
 
-**Step 3: Implement idempotency key from durable DB identity (not invoice string)**
+**Step 3: Resolve settlement event by unique invoice, then derive idempotency key from durable DB identity**
 
 ```ts
+const tipIntent = await tipIntentRepo.findByInvoiceOrThrow(invoice);
 const idempotencyKey = `settlement:tip_intent:${tipIntent.id}`;
 await ledgerRepo.creditOnce({ idempotencyKey, ... });
 ```
@@ -294,7 +305,7 @@ Expected: FAIL.
 secret = dbSecret ?? envFallbackSecret;
 ```
 
-Run: `bun run tsx src/scripts/backfill-app-secrets.ts --dry-run`
+Run: `bun src/scripts/backfill-app-secrets.ts --dry-run`
 Expected: outputs missing apps and proposed updates.
 
 **Step 4: Add rollout phases in runbook**
@@ -359,6 +370,8 @@ git commit -m "feat(admin): connect tRPC routers to data"
 
 ### Task 9: Upgrade Discourse UI From Skeleton to Functional Flow
 
+Assumption: plugin specs run inside an external Discourse checkout that mounts this plugin under `plugins/fiber-link-discourse-plugin`.
+
 **Files:**
 - Modify: `fiber-link-discourse-plugin/assets/javascripts/discourse/components/fiber-link-tip-modal.js`
 - Modify: `fiber-link-discourse-plugin/assets/javascripts/discourse/services/fiber-link-api.js`
@@ -374,16 +387,22 @@ it "shows invoice, pending, and settled states" do
 end
 ```
 
-**Step 2: Run plugin specs to verify RED**
+**Step 2: Bootstrap Discourse test harness and run plugin spec to verify RED**
 
-Run: `bundle exec rspec spec/system/fiber_link_tip_spec.rb`
+Run:
+`git clone https://github.com/discourse/discourse.git /tmp/discourse-dev`
+`cd /tmp/discourse-dev`
+`ln -sfn /Users/ChenYu/Documents/Github/fiber-link/fiber-link-discourse-plugin plugins/fiber-link-discourse-plugin`
+`bundle install`
+`RAILS_ENV=test bundle exec rake db:create db:migrate`
+`bundle exec rspec plugins/fiber-link-discourse-plugin/spec/system/fiber_link_tip_spec.rb`
 Expected: FAIL.
 
 **Step 3: Implement status transitions, error rendering, and retry UX**
 
 **Step 4: Run plugin specs to verify GREEN**
 
-Run: `bundle exec rspec spec/system/fiber_link_tip_spec.rb`
+Run: `cd /tmp/discourse-dev && bundle exec rspec plugins/fiber-link-discourse-plugin/spec/system/fiber_link_tip_spec.rb`
 Expected: PASS.
 
 **Step 5: Commit**
@@ -409,7 +428,7 @@ git commit -m "feat(plugin): implement tip flow ui states"
 ```md
 Core:
 - bun run test -- --run --silent (rpc/admin/worker/db)
-- bundle exec rspec (plugin)
+- cd /tmp/discourse-dev && bundle exec rspec plugins/fiber-link-discourse-plugin/spec/system/fiber_link_tip_spec.rb
 
 Security/failure gates:
 - replay nonce rejected
