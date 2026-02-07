@@ -25,6 +25,24 @@ export type WithdrawalRecord = CreateWithdrawalInput & {
   completedAt: Date | null;
 };
 
+export class WithdrawalNotFoundError extends Error {
+  constructor(public readonly withdrawalId: string) {
+    super("withdrawal not found");
+    this.name = "WithdrawalNotFoundError";
+  }
+}
+
+export class WithdrawalTransitionConflictError extends Error {
+  constructor(
+    public readonly targetState: WithdrawalState,
+    public readonly currentState: string,
+    public readonly withdrawalId: string,
+  ) {
+    super(`invalid transition to ${targetState} from ${currentState}`);
+    this.name = "WithdrawalTransitionConflictError";
+  }
+}
+
 export type WithdrawalRepo = {
   create(input: CreateWithdrawalInput): Promise<WithdrawalRecord>;
   findByIdOrThrow(id: string): Promise<WithdrawalRecord>;
@@ -59,9 +77,9 @@ function toRecord(row: WithdrawalRow): WithdrawalRecord {
 async function throwInvalidTransition(db: DbClient, id: string, targetState: string): Promise<never> {
   const [existing] = await db.select().from(withdrawals).where(eq(withdrawals.id, id)).limit(1);
   if (!existing) {
-    throw new Error("withdrawal not found");
+    throw new WithdrawalNotFoundError(id);
   }
-  throw new Error(`invalid transition to ${targetState} from ${existing.state}`);
+  throw new WithdrawalTransitionConflictError(targetState as WithdrawalState, String(existing.state), id);
 }
 
 export function createDbWithdrawalRepo(db: DbClient): WithdrawalRepo {
@@ -91,7 +109,7 @@ export function createDbWithdrawalRepo(db: DbClient): WithdrawalRepo {
     async findByIdOrThrow(id) {
       const [row] = await db.select().from(withdrawals).where(eq(withdrawals.id, id)).limit(1);
       if (!row) {
-        throw new Error("withdrawal not found");
+        throw new WithdrawalNotFoundError(id);
       }
       return toRecord(row);
     },
@@ -219,7 +237,7 @@ export function createInMemoryWithdrawalRepo(): WithdrawalRepo {
     async findByIdOrThrow(id) {
       const record = records.find((item) => item.id === id);
       if (!record) {
-        throw new Error("withdrawal not found");
+        throw new WithdrawalNotFoundError(id);
       }
       return clone(record);
     },
@@ -237,10 +255,10 @@ export function createInMemoryWithdrawalRepo(): WithdrawalRepo {
     async markProcessing(id, now) {
       const record = records.find((item) => item.id === id);
       if (!record) {
-        throw new Error("withdrawal not found");
+        throw new WithdrawalNotFoundError(id);
       }
       if (record.state !== "PENDING" && record.state !== "RETRY_PENDING") {
-        throw new Error(`invalid transition to PROCESSING from ${record.state}`);
+        throw new WithdrawalTransitionConflictError("PROCESSING", record.state, id);
       }
       record.state = "PROCESSING";
       record.updatedAt = now;
@@ -250,10 +268,10 @@ export function createInMemoryWithdrawalRepo(): WithdrawalRepo {
     async markCompleted(id, now) {
       const record = records.find((item) => item.id === id);
       if (!record) {
-        throw new Error("withdrawal not found");
+        throw new WithdrawalNotFoundError(id);
       }
       if (record.state !== "PROCESSING") {
-        throw new Error(`invalid transition to COMPLETED from ${record.state}`);
+        throw new WithdrawalTransitionConflictError("COMPLETED", record.state, id);
       }
       record.state = "COMPLETED";
       record.nextRetryAt = null;
@@ -266,10 +284,10 @@ export function createInMemoryWithdrawalRepo(): WithdrawalRepo {
     async markRetryPending(id, params) {
       const record = records.find((item) => item.id === id);
       if (!record) {
-        throw new Error("withdrawal not found");
+        throw new WithdrawalNotFoundError(id);
       }
       if (record.state !== "PROCESSING") {
-        throw new Error(`invalid transition to RETRY_PENDING from ${record.state}`);
+        throw new WithdrawalTransitionConflictError("RETRY_PENDING", record.state, id);
       }
       record.state = "RETRY_PENDING";
       record.retryCount += 1;
@@ -282,10 +300,10 @@ export function createInMemoryWithdrawalRepo(): WithdrawalRepo {
     async markFailed(id, params) {
       const record = records.find((item) => item.id === id);
       if (!record) {
-        throw new Error("withdrawal not found");
+        throw new WithdrawalNotFoundError(id);
       }
       if (record.state !== "PROCESSING") {
-        throw new Error(`invalid transition to FAILED from ${record.state}`);
+        throw new WithdrawalTransitionConflictError("FAILED", record.state, id);
       }
       if (params.incrementRetryCount) {
         record.retryCount += 1;

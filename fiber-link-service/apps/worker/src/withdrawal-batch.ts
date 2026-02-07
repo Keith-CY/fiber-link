@@ -1,4 +1,6 @@
 import {
+  WithdrawalNotFoundError,
+  WithdrawalTransitionConflictError,
   createDbClient,
   createDbWithdrawalRepo,
   type WithdrawalRecord,
@@ -43,9 +45,20 @@ export async function runWithdrawalBatch(options: RunWithdrawalBatchOptions = {}
   let completed = 0;
   let retryPending = 0;
   let failed = 0;
+  let skipped = 0;
 
   for (const item of ready) {
-    const current = await repo.markProcessing(item.id, now);
+    let current: WithdrawalRecord;
+    try {
+      current = await repo.markProcessing(item.id, now);
+    } catch (error) {
+      if (error instanceof WithdrawalTransitionConflictError || error instanceof WithdrawalNotFoundError) {
+        // Another worker may have claimed/modified this record; continue batch.
+        skipped += 1;
+        continue;
+      }
+      throw error;
+    }
 
     let result: WithdrawalExecutionResult;
     try {
@@ -87,5 +100,5 @@ export async function runWithdrawalBatch(options: RunWithdrawalBatchOptions = {}
     failed += 1;
   }
 
-  return { processed, completed, retryPending, failed };
+  return { processed, completed, retryPending, failed, skipped };
 }

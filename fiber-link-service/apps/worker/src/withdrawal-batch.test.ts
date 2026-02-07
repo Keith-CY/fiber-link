@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { createInMemoryWithdrawalRepo } from "@fiber-link/db";
+import { WithdrawalTransitionConflictError, createInMemoryWithdrawalRepo } from "@fiber-link/db";
 import { runWithdrawalBatch } from "./withdrawal-batch";
 
 describe("runWithdrawalBatch", () => {
@@ -103,5 +103,45 @@ describe("runWithdrawalBatch", () => {
     expect(saved.state).toBe("FAILED");
     expect(saved.retryCount).toBe(0);
     expect(saved.nextRetryAt).toBeNull();
+  });
+
+  it("continues processing other items when markProcessing loses race", async () => {
+    const first = await repo.create({
+      appId: "app1",
+      userId: "u1",
+      asset: "USDI",
+      amount: "10",
+      toAddress: "ckt1q-first",
+    });
+    const second = await repo.create({
+      appId: "app1",
+      userId: "u2",
+      asset: "USDI",
+      amount: "20",
+      toAddress: "ckt1q-second",
+    });
+
+    const contentionRepo = {
+      ...repo,
+      async markProcessing(id: string, now: Date) {
+        if (id === first.id) {
+          throw new WithdrawalTransitionConflictError("PROCESSING", "PROCESSING", id);
+        }
+        return repo.markProcessing(id, now);
+      },
+    };
+
+    const res = await runWithdrawalBatch({
+      now: new Date("2026-02-07T11:00:00.000Z"),
+      executeWithdrawal: async () => ({ ok: true }),
+      repo: contentionRepo,
+    });
+
+    expect(res.processed).toBe(1);
+    expect(res.skipped).toBe(1);
+    const firstSaved = await repo.findByIdOrThrow(first.id);
+    const secondSaved = await repo.findByIdOrThrow(second.id);
+    expect(firstSaved.state).toBe("PENDING");
+    expect(secondSaved.state).toBe("COMPLETED");
   });
 });
