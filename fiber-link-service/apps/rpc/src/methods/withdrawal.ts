@@ -1,11 +1,27 @@
-export type RequestWithdrawalInput = {
-  appId: string;
-  userId: string;
-  asset: "CKB" | "USDI";
-  amount: string;
-  toAddress: string;
+import {
+  createDbClient,
+  createDbWithdrawalRepo,
+  type CreateWithdrawalInput,
+  type WithdrawalRepo,
+} from "@fiber-link/db";
+
+export type RequestWithdrawalInput = CreateWithdrawalInput;
+
+type RequestWithdrawalOptions = {
+  repo?: WithdrawalRepo;
 };
 
-export async function requestWithdrawal(input: RequestWithdrawalInput) {
-  return { id: "w1", state: "PENDING" as const };
+let defaultRepo: WithdrawalRepo | null = null;
+
+function getDefaultRepo(): WithdrawalRepo {
+  if (!defaultRepo) {
+    defaultRepo = createDbWithdrawalRepo(createDbClient());
+  }
+  return defaultRepo;
+}
+
+export async function requestWithdrawal(input: RequestWithdrawalInput, options: RequestWithdrawalOptions = {}) {
+  const repo = options.repo ?? getDefaultRepo();
+  const record = await repo.create(input);
+  return { id: record.id, state: record.state };
 }
