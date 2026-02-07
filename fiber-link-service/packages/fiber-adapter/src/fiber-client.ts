@@ -16,11 +16,11 @@ export async function rpcCall(endpoint: string, method: string, params: unknown)
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
   });
 
-  const payload = await response.json();
   if (!response.ok) {
     throw new FiberRpcError(`Fiber RPC HTTP ${response.status}`);
   }
 
+  const payload = await response.json();
   if (payload?.error) {
     throw new FiberRpcError(payload.error.message ?? "Fiber RPC error", payload.error.code, payload.error.data);
   }

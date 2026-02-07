@@ -25,6 +25,19 @@ describe("fiber adapter", () => {
     );
   });
 
+  it("createInvoice throws when invoice is missing in rpc result", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({ jsonrpc: "2.0", id: 1, result: {} }),
+    } as Response);
+
+    const adapter = createAdapter({ endpoint: "http://localhost:8119" });
+
+    await expect(adapter.createInvoice({ amount: "10", asset: "USDI" })).rejects.toThrow(
+      "create_invoice response is missing 'invoice' string",
+    );
+  });
+
   it("getInvoiceStatus maps settled and failed states", async () => {
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
@@ -44,5 +57,18 @@ describe("fiber adapter", () => {
     expect(settled.state).toBe("SETTLED");
     expect(failed.state).toBe("FAILED");
     expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it("getInvoiceStatus throws when state is missing in rpc result", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({ jsonrpc: "2.0", id: 1, result: {} }),
+    } as Response);
+
+    const adapter = createAdapter({ endpoint: "http://localhost:8119" });
+
+    await expect(adapter.getInvoiceStatus({ invoice: "inv-missing" })).rejects.toThrow(
+      "get_invoice response is missing 'state' string",
+    );
   });
 });

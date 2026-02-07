@@ -13,11 +13,17 @@ export function createAdapter({ endpoint }: { endpoint: string }) {
   return {
     async createInvoice({ amount, asset }: CreateInvoiceArgs) {
       const result = await rpcCall(endpoint, "create_invoice", { amount, asset });
-      return { invoice: String(result?.invoice ?? "") };
+      if (typeof result?.invoice !== "string" || !result.invoice) {
+        throw new Error("create_invoice response is missing 'invoice' string");
+      }
+      return { invoice: result.invoice };
     },
     async getInvoiceStatus({ invoice }: { invoice: string }) {
       const result = await rpcCall(endpoint, "get_invoice", { invoice });
-      return { state: mapInvoiceState(String(result?.state ?? "")) };
+      if (typeof result?.state !== "string" || !result.state) {
+        throw new Error("get_invoice response is missing 'state' string");
+      }
+      return { state: mapInvoiceState(result.state) };
     },
     async subscribeSettlements(_: { onSettled: (invoice: string) => void }) {
       return { close: () => undefined };
