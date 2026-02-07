@@ -67,10 +67,41 @@ describe("runWithdrawalBatch", () => {
       executeWithdrawal,
       repo,
     });
+    await runWithdrawalBatch({
+      now: new Date("2026-02-07T10:02:00.000Z"),
+      maxRetries: 2,
+      retryDelayMs: 60_000,
+      executeWithdrawal,
+      repo,
+    });
 
     const saved = await repo.findByIdOrThrow(created.id);
     expect(saved.state).toBe("FAILED");
     expect(saved.retryCount).toBe(2);
+    expect(saved.nextRetryAt).toBeNull();
+  });
+
+  it("treats unexpected executor exception as permanent failure", async () => {
+    const created = await repo.create({
+      appId: "app1",
+      userId: "u1",
+      asset: "USDI",
+      amount: "10",
+      toAddress: "ckt1q...",
+    });
+
+    const res = await runWithdrawalBatch({
+      now: new Date("2026-02-07T10:00:00.000Z"),
+      executeWithdrawal: async () => {
+        throw new Error("invalid withdrawal payload");
+      },
+      repo,
+    });
+
+    expect(res.failed).toBe(1);
+    const saved = await repo.findByIdOrThrow(created.id);
+    expect(saved.state).toBe("FAILED");
+    expect(saved.retryCount).toBe(0);
     expect(saved.nextRetryAt).toBeNull();
   });
 });

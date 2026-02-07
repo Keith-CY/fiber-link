@@ -32,6 +32,7 @@ function getDefaultRepo(): WithdrawalRepo {
 
 export async function runWithdrawalBatch(options: RunWithdrawalBatchOptions = {}) {
   const now = options.now ?? new Date();
+  // maxRetries counts retry attempts after the initial processing attempt.
   const maxRetries = options.maxRetries ?? 3;
   const retryDelayMs = options.retryDelayMs ?? 60_000;
   const executeWithdrawal = options.executeWithdrawal ?? defaultExecuteWithdrawal;
@@ -44,8 +45,7 @@ export async function runWithdrawalBatch(options: RunWithdrawalBatchOptions = {}
   let failed = 0;
 
   for (const item of ready) {
-    await repo.markProcessing(item.id, now);
-    const current = await repo.findByIdOrThrow(item.id);
+    const current = await repo.markProcessing(item.id, now);
 
     let result: WithdrawalExecutionResult;
     try {
@@ -53,7 +53,7 @@ export async function runWithdrawalBatch(options: RunWithdrawalBatchOptions = {}
     } catch (error) {
       result = {
         ok: false,
-        kind: "transient",
+        kind: "permanent",
         reason: error instanceof Error ? error.message : "withdrawal execution failed",
       };
     }
@@ -66,12 +66,10 @@ export async function runWithdrawalBatch(options: RunWithdrawalBatchOptions = {}
     }
 
     if (result.kind === "transient") {
-      const nextRetryCount = current.retryCount + 1;
-      if (nextRetryCount >= maxRetries) {
+      if (current.retryCount >= maxRetries) {
         await repo.markFailed(item.id, {
           now,
           error: result.reason,
-          incrementRetryCount: true,
         });
         failed += 1;
       } else {
