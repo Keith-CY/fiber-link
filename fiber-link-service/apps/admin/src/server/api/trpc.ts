@@ -1,8 +1,8 @@
 import { initTRPC } from "@trpc/server";
-import type { DbClient } from "@fiber-link/db";
+import type { DbClient, UserRole } from "@fiber-link/db";
 
 export type TrpcContext = {
-  role?: string;
+  role?: UserRole;
   // Identity of the admin user from BetterAuth (needed to scope COMMUNITY_ADMIN access).
   adminUserId?: string;
   db?: DbClient;

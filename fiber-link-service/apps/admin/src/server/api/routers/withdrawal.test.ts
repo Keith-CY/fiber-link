@@ -139,7 +139,7 @@ describe("withdrawal router", () => {
 
   it("rejects forbidden role", async () => {
     const db = createDbMock({ withdrawalsRows: [], appAdminsRows: [] });
-    const ctx = { role: "USER", db } satisfies TrpcContext;
+    const ctx = { db } satisfies TrpcContext;
     const caller = withdrawalRouter.createCaller(ctx);
 
     await expect(caller.list()).rejects.toMatchObject({ code: "FORBIDDEN" });

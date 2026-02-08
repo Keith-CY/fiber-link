@@ -84,7 +84,7 @@ describe("app router", () => {
 
   it("rejects forbidden role", async () => {
     const db = createDbMock({ appsRows: [], appAdminsRows: [] });
-    const ctx = { role: "USER", db } satisfies TrpcContext;
+    const ctx = { db } satisfies TrpcContext;
     const caller = appRouter.createCaller(ctx);
 
     await expect(caller.list()).rejects.toMatchObject({ code: "FORBIDDEN" });
