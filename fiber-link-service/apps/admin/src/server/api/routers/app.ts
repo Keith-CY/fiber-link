@@ -1,5 +1,4 @@
 import { TRPCError } from "@trpc/server";
-import { apps } from "@fiber-link/db";
 import { requireRole } from "../../auth/roles";
 import { t } from "../trpc";
 
@@ -10,6 +9,29 @@ export const appRouter = t.router({
       throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB not configured" });
     }
 
-    return ctx.db.select({ appId: apps.appId, createdAt: apps.createdAt }).from(apps);
+    if (ctx.role === "SUPER_ADMIN") {
+      return ctx.db.query.apps.findMany({ columns: { appId: true, createdAt: true } });
+    }
+
+    if (!ctx.adminUserId) {
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Admin identity not configured",
+      });
+    }
+
+    const memberships = await ctx.db.query.appAdmins.findMany({
+      columns: { appId: true },
+      where: (a, { eq }) => eq(a.adminUserId, ctx.adminUserId),
+    });
+    const appIds = memberships.map((m) => m.appId);
+    if (appIds.length === 0) {
+      return [];
+    }
+
+    return ctx.db.query.apps.findMany({
+      columns: { appId: true, createdAt: true },
+      where: (a, { inArray }) => inArray(a.appId, appIds),
+    });
   }),
 });
