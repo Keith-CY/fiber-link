@@ -10,10 +10,10 @@ Run all service tests:
 cd fiber-link-service
 bun install --frozen-lockfile
 
-cd apps/rpc && bun run test -- --run --silent
-cd ../admin && bun run test -- --run --silent
-cd ../worker && bun run test -- --run --silent
-cd ../../packages/db && bun run test -- --run --silent
+(cd apps/rpc && bun run test -- --run --silent) && \
+(cd apps/admin && bun run test -- --run --silent) && \
+(cd apps/worker && bun run test -- --run --silent) && \
+(cd packages/db && bun run test -- --run --silent)
 ```
 
 ## Discourse Plugin Smoke/Specs
