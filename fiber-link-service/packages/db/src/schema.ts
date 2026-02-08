@@ -1,6 +1,7 @@
 import { pgTable, pgEnum, text, timestamp, uuid, numeric, integer } from "drizzle-orm/pg-core";
 
 export const userRoleEnum = pgEnum("user_role", ["SUPER_ADMIN", "COMMUNITY_ADMIN"]);
+export type UserRole = (typeof userRoleEnum.enumValues)[number];
 export const ledgerEntryTypeEnum = pgEnum("ledger_entry_type", ["credit", "debit"]);
 export const withdrawalStateEnum = pgEnum("withdrawal_state", [
   "PENDING",
