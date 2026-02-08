@@ -29,3 +29,50 @@ jobs:
       - name: Test db
         working-directory: fiber-link-service/packages/db
         run: bun run test -- --run --silent
+
+  plugin-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Clone Discourse (dev harness)
+        run: git clone --depth 1 https://github.com/discourse/discourse.git discourse-dev
+
+      - name: Copy plugin into Discourse plugins/
+        run: |
+          rm -rf discourse-dev/plugins/fiber-link-discourse-plugin
+          cp -R fiber-link-discourse-plugin discourse-dev/plugins/fiber-link-discourse-plugin
+
+      - name: Start Discourse dev container
+        working-directory: discourse-dev
+        run: |
+          docker pull discourse/discourse_dev:release
+          mkdir -p data/postgres
+          docker run -d \
+            --name discourse_dev \
+            --hostname discourse \
+            -v "$PWD/data/postgres:/shared/postgres_data" \
+            -v "$PWD:/src" \
+            -e UNICORN_BIND_ALL=true \
+            discourse/discourse_dev:release /sbin/boot
+
+      - name: Install Discourse gems
+        working-directory: discourse-dev
+        run: docker exec -u discourse:discourse -w /src discourse_dev bundle install
+
+      - name: Install Discourse JS deps
+        working-directory: discourse-dev
+        run: docker exec -u discourse:discourse -w /src discourse_dev pnpm install
+
+      - name: Prepare test DB
+        working-directory: discourse-dev
+        run: docker exec -u discourse:discourse -w /src -e RAILS_ENV=test discourse_dev bin/rake db:create db:migrate
+
+      - name: Plugin smoke spec (requests)
+        working-directory: discourse-dev
+        run: docker exec -u discourse:discourse -w /src -e RAILS_ENV=test discourse_dev bin/rspec plugins/fiber-link-discourse-plugin/spec/requests/fiber_link_spec.rb
+
+      - name: Shutdown Discourse dev container
+        if: always()
+        run: docker rm -f discourse_dev
