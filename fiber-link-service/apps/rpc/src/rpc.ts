@@ -1,9 +1,11 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { createDbClient } from "@fiber-link/db";
 import { verifyHmac } from "./auth/hmac";
 import { handleTipCreate } from "./methods/tip";
 import { createNonceStore } from "./nonce-store";
-import { loadSecretMap } from "./secret-map";
+import { type AppRepo, createDbAppRepo } from "./repositories/app-repo";
+import { loadSecretMap, resolveSecretForApp } from "./secret-map";
 
 type RpcRequest = {
   jsonrpc: "2.0";
@@ -31,9 +33,18 @@ const NONCE_TTL_MS = 5 * 60 * 1000;
 const nonceStore = createNonceStore();
 const secretMap = loadSecretMap();
 
-function getSecretForApp(appId: string) {
-  if (secretMap) return secretMap[appId] ?? "";
-  return process.env.FIBER_LINK_HMAC_SECRET ?? "";
+let defaultAppRepo: AppRepo | null | undefined;
+
+function getDefaultAppRepo(): AppRepo | null {
+  if (defaultAppRepo !== undefined) {
+    return defaultAppRepo;
+  }
+  try {
+    defaultAppRepo = createDbAppRepo(createDbClient());
+  } catch {
+    defaultAppRepo = null;
+  }
+  return defaultAppRepo;
 }
 
 function isTimestampFresh(ts: string) {
@@ -43,7 +54,11 @@ function isTimestampFresh(ts: string) {
   return delta <= NONCE_TTL_MS;
 }
 
-export function registerRpc(app: FastifyInstance) {
+function getFallbackSecret() {
+  return process.env.FIBER_LINK_HMAC_SECRET ?? "";
+}
+
+export function registerRpc(app: FastifyInstance, options: { appRepo?: AppRepo } = {}) {
   app.post("/rpc", async (req, reply) => {
     try {
       const body = req.body as unknown;
@@ -71,7 +86,19 @@ export function registerRpc(app: FastifyInstance) {
       }
       const rpc = parsedRequest.data;
 
-      const secret = getSecretForApp(appId);
+      const appRepo = options.appRepo ?? getDefaultAppRepo();
+      const secret = appRepo
+        ? await resolveSecretForApp(appId, {
+            appRepo,
+            envSecretMap: secretMap,
+            envFallbackSecret: getFallbackSecret(),
+            onResolve: ({ source }) => {
+              if (source !== "db") {
+                req.log.info({ appId, source }, "RPC secret resolved by fallback source");
+              }
+            },
+          })
+        : secretMap?.[appId] ?? getFallbackSecret();
 
       if (!appId || !ts || !nonce || !signature || !secret) {
         return reply.send({
