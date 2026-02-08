@@ -85,7 +85,8 @@ describe("json-rpc", () => {
       ts,
       nonce,
     });
-    const invalidSig = `${validSig.slice(0, -1)}0`;
+    const invalidTail = validSig.endsWith("0") ? "1" : "0";
+    const invalidSig = `${validSig.slice(0, -1)}${invalidTail}`;
 
     const resInvalid = await app.inject({
       method: "POST",
