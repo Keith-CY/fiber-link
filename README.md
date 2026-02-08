@@ -15,6 +15,7 @@ Primary reference thread:
 - `docs/03-risks-open-questions.md` — risks, assumptions, open questions
 - `docs/04-research-plan.md` — research checklist + milestones
 - `docs/05-threat-model.md` — threat model + risk controls (MVP)
+- `docs/runbooks/phase2-verification.md` — Phase 2 verification gate (happy path + failure path)
 
 ## Configuration (service)
 Environment variables used by the Fiber Link service:
