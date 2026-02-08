@@ -30,6 +30,7 @@ export DISCOURSE_DEV_ROOT="${DISCOURSE_DEV_ROOT:-/tmp/discourse-dev}"
 [ -d "$DISCOURSE_DEV_ROOT/.git" ] || git clone https://github.com/discourse/discourse.git "$DISCOURSE_DEV_ROOT"
 
 mkdir -p "$DISCOURSE_DEV_ROOT/plugins"
+rm -rf "$DISCOURSE_DEV_ROOT/plugins/fiber-link-discourse-plugin"
 ln -sfn "$FIBER_LINK_ROOT/fiber-link-discourse-plugin" "$DISCOURSE_DEV_ROOT/plugins/fiber-link-discourse-plugin"
 
 cd "$DISCOURSE_DEV_ROOT"
@@ -66,4 +67,3 @@ These scenarios must be verified before merge/deploy. Some are covered by unit t
   - Covered by: `fiber-link-service/apps/worker/src/settlement.test.ts` ("ignores duplicate settlement events for same tip_intent")
 - transient withdrawal failure retries then recovers
   - Covered by: `fiber-link-service/apps/worker/src/withdrawal-batch.test.ts` ("moves transient failure to RETRY_PENDING with nextRetryAt")
-

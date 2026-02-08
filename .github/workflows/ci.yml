@@ -33,11 +33,18 @@ jobs:
   plugin-smoke:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    env:
+      # Pin Discourse ref to reduce upstream-induced CI breakage. Update as needed.
+      DISCOURSE_REF: 26f3e2aa87a3abb35849183e0740fe7ab84cec67
+      DISCOURSE_DEV_IMAGE: discourse/discourse_dev:release
     steps:
       - uses: actions/checkout@v4
 
-      - name: Clone Discourse (dev harness)
-        run: git clone --depth 1 https://github.com/discourse/discourse.git discourse-dev
+      - name: Checkout Discourse (pinned)
+        run: |
+          git clone https://github.com/discourse/discourse.git discourse-dev
+          cd discourse-dev
+          git checkout "$DISCOURSE_REF"
 
       - name: Copy plugin into Discourse plugins/
         run: |
@@ -47,7 +54,7 @@ jobs:
       - name: Start Discourse dev container
         working-directory: discourse-dev
         run: |
-          docker pull discourse/discourse_dev:release
+          docker pull "$DISCOURSE_DEV_IMAGE"
           mkdir -p data/postgres
           docker run -d \
             --name discourse_dev \
@@ -55,7 +62,13 @@ jobs:
             -v "$PWD/data/postgres:/shared/postgres_data" \
             -v "$PWD:/src" \
             -e UNICORN_BIND_ALL=true \
-            discourse/discourse_dev:release /sbin/boot
+            "$DISCOURSE_DEV_IMAGE" /sbin/boot
+
+      - name: Fix checkout permissions for container user
+        working-directory: discourse-dev
+        run: |
+          docker exec -u root discourse_dev bash -lc \
+            "chown -R discourse:discourse /src /shared/postgres_data && chmod -R u+rwX /src /shared/postgres_data"
 
       - name: Install Discourse gems
         working-directory: discourse-dev
