@@ -4,8 +4,6 @@
 
 enabled_site_setting :fiber_link_enabled
 
-register_asset "javascripts/discourse/initializers/fiber-link.js"
-
 after_initialize do
   module ::FiberLink
     class Engine < ::Rails::Engine

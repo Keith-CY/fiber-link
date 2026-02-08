@@ -35,7 +35,7 @@ ln -sfn "$FIBER_LINK_ROOT/fiber-link-discourse-plugin" "$DISCOURSE_DEV_ROOT/plug
 
 cd "$DISCOURSE_DEV_ROOT"
 ./bin/docker/boot_dev
-RAILS_ENV=test ./bin/docker/rake db:create db:migrate
+LOAD_PLUGINS=1 RAILS_ENV=test ./bin/docker/rake db:create db:migrate
 ```
 
 Run plugin specs:
@@ -45,10 +45,10 @@ export DISCOURSE_DEV_ROOT="${DISCOURSE_DEV_ROOT:-/tmp/discourse-dev}"
 cd "$DISCOURSE_DEV_ROOT"
 
 # Smoke
-./bin/docker/rspec plugins/fiber-link-discourse-plugin/spec/requests/fiber_link_spec.rb
+LOAD_PLUGINS=1 RAILS_ENV=test ./bin/docker/rspec plugins/fiber-link-discourse-plugin/spec/requests/fiber_link_spec.rb
 
 # System (tip lifecycle)
-./bin/docker/rspec plugins/fiber-link-discourse-plugin/spec/system/fiber_link_tip_spec.rb
+LOAD_PLUGINS=1 RAILS_ENV=test ./bin/docker/rspec plugins/fiber-link-discourse-plugin/spec/system/fiber_link_tip_spec.rb
 ```
 
 ## Security/Failure Gates (Must Verify)
