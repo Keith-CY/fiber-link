@@ -30,8 +30,8 @@ export DISCOURSE_DEV_ROOT="${DISCOURSE_DEV_ROOT:-/tmp/discourse-dev}"
 [ -d "$DISCOURSE_DEV_ROOT/.git" ] || git clone https://github.com/discourse/discourse.git "$DISCOURSE_DEV_ROOT"
 
 mkdir -p "$DISCOURSE_DEV_ROOT/plugins"
-rm -rf "$DISCOURSE_DEV_ROOT/plugins/fiber-link-discourse-plugin"
-ln -sfn "$FIBER_LINK_ROOT/fiber-link-discourse-plugin" "$DISCOURSE_DEV_ROOT/plugins/fiber-link-discourse-plugin"
+rm -rf "$DISCOURSE_DEV_ROOT/plugins/fiber-link"
+ln -sfn "$FIBER_LINK_ROOT/fiber-link-discourse-plugin" "$DISCOURSE_DEV_ROOT/plugins/fiber-link"
 
 cd "$DISCOURSE_DEV_ROOT"
 ./bin/docker/boot_dev
@@ -45,10 +45,10 @@ export DISCOURSE_DEV_ROOT="${DISCOURSE_DEV_ROOT:-/tmp/discourse-dev}"
 cd "$DISCOURSE_DEV_ROOT"
 
 # Smoke
-LOAD_PLUGINS=1 RAILS_ENV=test ./bin/docker/rspec plugins/fiber-link-discourse-plugin/spec/requests/fiber_link_spec.rb
+LOAD_PLUGINS=1 RAILS_ENV=test ./bin/docker/rspec plugins/fiber-link/spec/requests/fiber_link_spec.rb
 
 # System (tip lifecycle)
-LOAD_PLUGINS=1 RAILS_ENV=test ./bin/docker/rspec plugins/fiber-link-discourse-plugin/spec/system/fiber_link_tip_spec.rb
+LOAD_PLUGINS=1 RAILS_ENV=test ./bin/docker/rspec plugins/fiber-link/spec/system/fiber_link_tip_spec.rb
 ```
 
 ## Security/Failure Gates (Must Verify)

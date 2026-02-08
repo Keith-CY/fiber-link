@@ -48,14 +48,15 @@ jobs:
 
       - name: Copy plugin into Discourse plugins/
         run: |
-          rm -rf discourse-dev/plugins/fiber-link-discourse-plugin
-          cp -R fiber-link-discourse-plugin discourse-dev/plugins/fiber-link-discourse-plugin
+          rm -rf discourse-dev/plugins/fiber-link
+          cp -R fiber-link-discourse-plugin discourse-dev/plugins/fiber-link
 
       - name: Start Discourse dev container
         working-directory: discourse-dev
         run: |
           docker pull "$DISCOURSE_DEV_IMAGE"
           mkdir -p data/postgres
+          chmod -R 777 data/postgres
           docker run -d \
             --name discourse_dev \
             --hostname discourse \
@@ -68,7 +69,7 @@ jobs:
         working-directory: discourse-dev
         run: |
           docker exec -u root discourse_dev bash -lc \
-            "chown -R discourse:discourse /src /shared/postgres_data && chmod -R u+rwX /src /shared/postgres_data"
+            "chown -R discourse:discourse /src && chmod -R u+rwX /src"
 
       - name: Install Discourse gems
         working-directory: discourse-dev
@@ -78,13 +79,19 @@ jobs:
         working-directory: discourse-dev
         run: docker exec -u discourse:discourse -w /src discourse_dev pnpm install
 
+      - name: Wait for Postgres
+        working-directory: discourse-dev
+        run: |
+          docker exec -u root discourse_dev bash -lc \
+            'for i in {1..60}; do [ -S /var/run/postgresql/.s.PGSQL.5432 ] && exit 0; sleep 1; done; echo "postgres socket not ready"; exit 1'
+
       - name: Prepare test DB
         working-directory: discourse-dev
         run: docker exec -u discourse:discourse -w /src -e RAILS_ENV=test -e LOAD_PLUGINS=1 discourse_dev bin/rake db:create db:migrate
 
       - name: Plugin smoke spec (requests)
         working-directory: discourse-dev
-        run: docker exec -u discourse:discourse -w /src -e RAILS_ENV=test -e LOAD_PLUGINS=1 discourse_dev bin/rspec plugins/fiber-link-discourse-plugin/spec/requests/fiber_link_spec.rb
+        run: docker exec -u discourse:discourse -w /src -e RAILS_ENV=test -e LOAD_PLUGINS=1 discourse_dev bin/rspec plugins/fiber-link/spec/requests/fiber_link_spec.rb
 
       - name: Shutdown Discourse dev container
         if: always()
