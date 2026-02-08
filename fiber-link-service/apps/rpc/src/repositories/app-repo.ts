@@ -15,11 +15,15 @@ export type AppRepo = {
 export function createDbAppRepo(db: DbClient): AppRepo {
   return {
     async findByAppId(appId) {
-      const [row] = await db.select().from(apps).where(eq(apps.appId, appId)).limit(1);
+      const [row] = await db
+        .select({ appId: apps.appId, hmacSecret: apps.hmacSecret })
+        .from(apps)
+        .where(eq(apps.appId, appId))
+        .limit(1);
       if (!row) {
         return null;
       }
-      return { appId: row.appId, hmacSecret: row.hmacSecret };
+      return row;
     },
 
     async upsert(input) {
@@ -30,8 +34,8 @@ export function createDbAppRepo(db: DbClient): AppRepo {
           target: apps.appId,
           set: { hmacSecret: input.hmacSecret },
         })
-        .returning();
-      return { appId: row.appId, hmacSecret: row.hmacSecret };
+        .returning({ appId: apps.appId, hmacSecret: apps.hmacSecret });
+      return row;
     },
   };
 }

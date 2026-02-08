@@ -41,7 +41,8 @@ function getDefaultAppRepo(): AppRepo | null {
   }
   try {
     defaultAppRepo = createDbAppRepo(createDbClient());
-  } catch {
+  } catch (error) {
+    console.error("Failed to initialize default AppRepo, RPC will fall back to env secrets.", error);
     defaultAppRepo = null;
   }
   return defaultAppRepo;

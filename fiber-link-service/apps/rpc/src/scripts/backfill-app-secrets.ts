@@ -33,25 +33,22 @@ async function main() {
   const appRepo = createDbAppRepo(createDbClient());
   for (const [appId, hmacSecret] of entries) {
     const existing = await appRepo.findByAppId(appId);
-    if (!existing) {
+    const isMissing = !existing;
+    const isOutdated = !isMissing && existing.hmacSecret !== hmacSecret;
+
+    if (isMissing) {
       summary.missing.push(appId);
-      if (!dryRun) {
-        await appRepo.upsert({ appId, hmacSecret });
-        summary.applied.push(appId);
-      }
-      continue;
-    }
-
-    if (existing.hmacSecret !== hmacSecret) {
+    } else if (isOutdated) {
       summary.updates.push(appId);
-      if (!dryRun) {
-        await appRepo.upsert({ appId, hmacSecret });
-        summary.applied.push(appId);
-      }
+    } else {
+      summary.unchanged.push(appId);
       continue;
     }
 
-    summary.unchanged.push(appId);
+    if (!dryRun) {
+      await appRepo.upsert({ appId, hmacSecret });
+      summary.applied.push(appId);
+    }
   }
 
   console.log(JSON.stringify(summary, null, 2));
