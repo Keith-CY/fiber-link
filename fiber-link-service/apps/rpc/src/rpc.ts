@@ -88,8 +88,9 @@ export function registerRpc(app: FastifyInstance, options: { appRepo?: AppRepo }
       const rpc = parsedRequest.data;
 
       const appRepo = options.appRepo ?? getDefaultAppRepo();
-      const secret = appRepo
-        ? await resolveSecretForApp(appId, {
+      let secret = "";
+      if (appRepo) {
+        secret = await resolveSecretForApp(appId, {
             appRepo,
             envSecretMap: secretMap,
             envFallbackSecret: getFallbackSecret(),
@@ -98,8 +99,15 @@ export function registerRpc(app: FastifyInstance, options: { appRepo?: AppRepo }
                 req.log.info({ appId, source }, "RPC secret resolved by fallback source");
               }
             },
-          })
-        : secretMap?.[appId] ?? getFallbackSecret();
+          });
+      } else {
+        const fromMap = secretMap?.[appId];
+        const fallback = getFallbackSecret();
+        secret = fromMap ?? fallback;
+
+        const source = fromMap ? "env_map" : fallback ? "env_fallback" : "missing";
+        req.log.info({ appId, source }, "RPC secret resolved by fallback source");
+      }
 
       if (!appId || !ts || !nonce || !signature || !secret) {
         return reply.send({
