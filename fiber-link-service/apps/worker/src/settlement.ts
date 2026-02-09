@@ -1,7 +1,44 @@
-import { tipIntentRepo } from "../../rpc/src/repositories/tip-intent-repo";
-import { ledgerRepo } from "./repositories/ledger-repo";
+import {
+  createDbClient,
+  createDbLedgerRepo,
+  createDbTipIntentRepo,
+  type DbClient,
+  type LedgerRepo,
+  type TipIntentRepo,
+} from "@fiber-link/db";
 
-export async function markSettled({ invoice }: { invoice: string }) {
+let defaultDb: DbClient | null = null;
+let defaultTipIntentRepo: TipIntentRepo | null = null;
+let defaultLedgerRepo: LedgerRepo | null = null;
+
+function getDefaultDb(): DbClient {
+  if (!defaultDb) {
+    defaultDb = createDbClient();
+  }
+  return defaultDb;
+}
+
+function getDefaultTipIntentRepo(): TipIntentRepo {
+  if (!defaultTipIntentRepo) {
+    defaultTipIntentRepo = createDbTipIntentRepo(getDefaultDb());
+  }
+  return defaultTipIntentRepo;
+}
+
+function getDefaultLedgerRepo(): LedgerRepo {
+  if (!defaultLedgerRepo) {
+    defaultLedgerRepo = createDbLedgerRepo(getDefaultDb());
+  }
+  return defaultLedgerRepo;
+}
+
+export async function markSettled(
+  { invoice }: { invoice: string },
+  options: { tipIntentRepo?: TipIntentRepo; ledgerRepo?: LedgerRepo } = {},
+) {
+  const tipIntentRepo = options.tipIntentRepo ?? getDefaultTipIntentRepo();
+  const ledgerRepo = options.ledgerRepo ?? getDefaultLedgerRepo();
+
   const tipIntent = await tipIntentRepo.findByInvoiceOrThrow(invoice);
   const idempotencyKey = `settlement:tip_intent:${tipIntent.id}`;
 
