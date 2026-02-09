@@ -51,6 +51,7 @@ KPI computation must depend only on stored snapshots, not historical price backf
 
 - 10 monthly active communities
 - operating model: hosted multi-tenant by default
+- initial target segment: Nervos/CKB ecosystem communities
 
 ## Year-by-Year Strategy
 
@@ -90,6 +91,48 @@ Leading indicators to track weekly:
 - manual intervention count (should trend down)
 - settlement credit latency p95
 - withdrawal completion latency p95
+
+## Appendix: Year 1 Go-To-Market (First 10 Communities)
+
+This plan assumes we target Nervos/CKB ecosystem communities first to reduce adoption friction and to accelerate feedback loops.
+
+### Target Profile
+
+Prefer communities that:
+- run Discourse (or are willing to) and have active posting behavior
+- have an existing "support the creator" culture (even off-chain today)
+- can identify 1-3 creators/moderators who will test payouts end-to-end
+- will commit to a weekly feedback loop for the first month
+
+### Rollout Model
+
+- 2-3 design partners:
+  - high-touch onboarding and co-debugging
+  - optimize the money loop and operability until withdrawals are boring
+- 7-8 fast followers:
+  - reuse the hardened onboarding/runbook from design partners
+  - measure how repeatable the install and activation process is
+
+### Success Funnel (Per Community)
+
+Track these milestones per `appId`:
+- app created
+- first tip intent created
+- first settlement credited
+- first withdrawal requested
+- first withdrawal completed (>= $5 USD-equivalent)
+
+Core time metric:
+- time-to-first-completed-withdrawal
+
+### Support Expectations (Year 1)
+
+To reach 10 active communities without stalling on ops, we should time-box support:
+- onboarding window (for example: 30-60 minutes per community)
+- a standard "verification gate" and a standard rollback procedure
+- a defined incident response path for payout-impacting failures
+
+The goal is to reduce manual intervention per community over time, not to scale support linearly.
 
 ### Year 2 (2027-2028): Self-Serve Payouts + Widget/SDK ("Make It Repeatable")
 
