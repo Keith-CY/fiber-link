@@ -2,7 +2,7 @@
 
 module ::FiberLink
   class RpcController < ::ApplicationController
-    requires_plugin ::FiberLink
+    requires_plugin "fiber-link"
     before_action :ensure_logged_in
 
     def proxy
