@@ -13,9 +13,6 @@ RSpec.describe "Fiber Link Tip", type: :system do
     sign_in(user)
 
     stub_request(:post, "https://fiber-link.example/rpc")
-      .with do |request|
-        JSON.parse(request.body).fetch("method") == "tip.create"
-      end
       .to_return(
         status: 200,
         body: {
@@ -49,6 +46,14 @@ RSpec.describe "Fiber Link Tip", type: :system do
     click_button "Generate Invoice"
     expect(page).to have_content("inv-tip-1")
     expect(page).to have_content("Pending")
+
+    expect(WebMock).to have_requested(:post, "https://fiber-link.example/rpc").with { |request|
+      body = JSON.parse(request.body)
+      body.fetch("method") == "tip.create" &&
+        body.dig("params", "postId") == topic.first_post.id &&
+        body.dig("params", "fromUserId") == user.id &&
+        body.dig("params", "toUserId") == topic.first_post.user_id
+    }
 
     click_button "Check status"
     expect(page).to have_content("Pending")

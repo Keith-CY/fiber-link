@@ -15,8 +15,11 @@ export default class FiberLinkTipEntry extends Component {
   }
 
   @action
-  openTipModal() {
-    this.modal.show(FiberLinkTipModal, { model: {} });
+  async openTipModal() {
+    const topic = this.args?.topic;
+    const firstPost = topic ? await topic.firstPost() : null;
+    const postId = firstPost?.id;
+    this.modal.show(FiberLinkTipModal, { model: { postId } });
   }
 
   <template>
@@ -27,4 +30,3 @@ export default class FiberLinkTipEntry extends Component {
     {{/if}}
   </template>
 }
-

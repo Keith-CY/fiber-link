@@ -1,6 +1,7 @@
 import Component from "@glimmer/component";
 import { tracked } from "@glimmer/tracking";
 import { action } from "@ember/object";
+import { on } from "@ember/modifier";
 import { service } from "@ember/service";
 import DButton from "discourse/components/d-button";
 import DModal from "discourse/components/d-modal";
@@ -13,8 +14,7 @@ function mapTipStateToLabel(state) {
 }
 
 export default class FiberLinkTipModal extends Component {
-  @service currentUser;
-
+  @tracked amount = "1";
   @tracked invoice;
   @tracked statusLabel;
   @tracked isGenerating = false;
@@ -30,6 +30,11 @@ export default class FiberLinkTipModal extends Component {
   }
 
   @action
+  onAmountInput(event) {
+    this.amount = event?.target?.value ?? "";
+  }
+
+  @action
   async generateInvoice() {
     if (this.isGenerating) {
       return;
@@ -39,12 +44,15 @@ export default class FiberLinkTipModal extends Component {
     this.isGenerating = true;
 
     try {
+      const postId = this.args?.model?.postId;
+      if (!postId) {
+        throw new Error("Missing post context");
+      }
+
       const result = await createTip({
-        amount: "1",
+        amount: this.amount,
         asset: "CKB",
-        postId: 1,
-        fromUserId: this.currentUser?.id,
-        toUserId: 1,
+        postId,
       });
 
       this.invoice = result?.invoice;
@@ -82,6 +90,18 @@ export default class FiberLinkTipModal extends Component {
         {{#if this.errorMessage}}
           <p class="fiber-link-tip-error">{{this.errorMessage}}</p>
         {{/if}}
+
+        <div class="fiber-link-tip-form">
+          <label class="fiber-link-tip-field">
+            <span class="fiber-link-tip-label">Amount (CKB)</span>
+            <input
+              class="fiber-link-tip-input"
+              inputmode="decimal"
+              value={{this.amount}}
+              {{on "input" this.onAmountInput}}
+            />
+          </label>
+        </div>
 
         {{#if this.invoice}}
           <p class="fiber-link-tip-invoice">{{this.invoice}}</p>

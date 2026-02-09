@@ -7,7 +7,7 @@ function buildRequestId() {
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-export async function createTip({ amount, asset, postId, fromUserId, toUserId }) {
+export async function createTip({ amount, asset, postId }) {
   const data = await ajax("/fiber-link/rpc", {
     type: "POST",
     contentType: "application/json",
@@ -16,7 +16,7 @@ export async function createTip({ amount, asset, postId, fromUserId, toUserId })
       jsonrpc: "2.0",
       id: buildRequestId(),
       method: "tip.create",
-      params: { amount, asset, postId, fromUserId, toUserId },
+      params: { amount, asset, postId },
     }),
   });
   if (data?.error) throw data.error;
