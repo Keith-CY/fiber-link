@@ -5,12 +5,8 @@
 enabled_site_setting :fiber_link_enabled
 
 after_initialize do
-  module ::FiberLink
-    class Engine < ::Rails::Engine
-      engine_name "fiber_link"
-      isolate_namespace FiberLink
-    end
-  end
+  require_relative "lib/fiber_link/engine"
+  require_dependency File.expand_path("app/controllers/fiber_link/rpc_controller.rb", __dir__)
 
   FiberLink::Engine.routes.draw do
     post "/rpc" => "rpc#proxy"
