@@ -38,6 +38,8 @@ Custody boundary (3-year plan):
   - the completed withdrawal has verifiable execution evidence (for example `txHash`)
   - a corresponding ledger debit exists and is linked to the withdrawal (to prevent "write-only" completion)
 
+Note: this KPI intentionally uses a single-withdrawal threshold (not a monthly sum) to prove each community can complete a meaningful payout and to avoid counting micro/test traffic. We can still track monthly USD volume and withdrawal counts as secondary metrics.
+
 ### USD Equivalent Policy
 
 USD conversion is computed at `withdrawal.completedAt` and recorded as an audit snapshot at completion time:

@@ -1,6 +1,6 @@
 # Decision: Custody Ops Controls (Hosted Hub)
 
-Date: 2026-02-10
+Date: 2026-02-10 (scheduled)
 Owner: Fiber Link
 Status: OPEN
 Related: `docs/plans/2026-02-09-3-year-strategy-design.md`
@@ -90,4 +90,3 @@ Outputs:
 - Add a control checklist section to the production hardening docs/runbook
 - Encode limits in configuration defaults (per-app)
 - Add monitoring and alert thresholds aligned to the chosen controls
-

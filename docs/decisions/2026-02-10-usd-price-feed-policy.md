@@ -1,6 +1,6 @@
 # Decision: USD Price Feed Policy (Snapshots at Withdrawal Completion)
 
-Date: 2026-02-10
+Date: 2026-02-10 (scheduled)
 Owner: Fiber Link
 Status: OPEN
 Related: `docs/plans/2026-02-09-3-year-strategy-design.md`
@@ -67,6 +67,10 @@ Key policy decisions:
 - If price is unavailable:
   - record USD fields as null and queue a backfill job
   - KPI computation should treat missing snapshots as not-counting until backfilled
+- Backfill must not change history:
+  - backfill only writes snapshots when USD fields are null (never overwrite an existing snapshot)
+  - `usd_rate_quote_at` remains the intended quote time (`withdrawal.completedAt`), while `usd_rate_fetched_at` records when the rate was actually fetched
+  - if the chosen provider does not support historical quotes at a timestamp, backfill uses the best available spot price at backfill time and records that fact via `usd_rate_source`
 
 ## Required Data Fields
 

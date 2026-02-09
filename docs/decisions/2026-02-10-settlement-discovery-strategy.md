@@ -1,6 +1,6 @@
 # Decision: Settlement Discovery Strategy (Poll vs Subscribe vs Hybrid)
 
-Date: 2026-02-10
+Date: 2026-02-10 (scheduled)
 Owner: Fiber Link
 Status: OPEN
 Related: `docs/plans/2026-02-09-3-year-strategy-design.md`
@@ -76,7 +76,7 @@ Adopt Option C (hybrid) as the canonical strategy, implemented in phases:
 
 These are required for scaling correctness:
 - invoice -> tip_intent mapping is 1:1:
-  - enforce `tip_intents.invoice` uniqueness (unique index/constraint)
+  - require `tip_intents.invoice` uniqueness (already declared in schema; verify DB migrations enforce it)
 - crediting is idempotent:
   - settlement credit is uniquely keyed to the durable intent identity (for example `tip_intent.id`)
   - store the settlement evidence (for example `txHash`) with the credited record
@@ -117,7 +117,7 @@ Outputs:
 
 ## Follow-Ups (After Decision)
 
-- Add the unique constraint/index to the schema and migration plan.
+- Verify the unique constraint/index for `tip_intents.invoice` is enforced in the DB (migrations applied); add a migration if missing.
 - Add monitoring:
   - settlement detection latency p95
   - backlog size of pending invoices
