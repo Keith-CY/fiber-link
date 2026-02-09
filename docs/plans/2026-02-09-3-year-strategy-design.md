@@ -188,7 +188,9 @@ Must-win themes:
 
 ## Open Questions That Block Scaling
 
-- Required operational controls for hub liquidity and keys (custodial model is assumed)
-- Admin model and membership management UX (BetterAuth identity -> app admin membership)
-- The canonical settlement discovery strategy (polling vs subscription vs hybrid) and its failure model
-- Price feed provider choice, caching, and fallback policy for USD snapshots
+This section is tracked as 4 short decision records (1 page each):
+
+- Custody ops controls (hosted hub): `docs/decisions/2026-02-10-custody-ops-controls.md`
+- Admin membership model (BetterAuth identity -> app_admins): `docs/decisions/2026-02-10-admin-membership-model.md`
+- Settlement discovery strategy (poll vs subscribe vs hybrid): `docs/decisions/2026-02-10-settlement-discovery-strategy.md`
+- USD price feed policy (provider, caching, fallback): `docs/decisions/2026-02-10-usd-price-feed-policy.md`
