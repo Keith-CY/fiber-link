@@ -8,6 +8,21 @@
 
 **Tech Stack:** Bun workspaces, Fastify, tRPC, Drizzle ORM, Redis, Discourse plugin (Ruby + Ember), Vitest, GitHub Actions.
 
+## Status
+
+Status: COMPLETED (merged to `main`).
+
+Merged PRs:
+- PR #3: Phase2 Task 1 to Task 2
+- PR #4: Phase2 Task 3 to Task 5
+- PR #5: Phase2 Task 6
+- PR #6: Phase2 Task 7
+- PR #7: Phase2 Task 8
+- PR #8: Phase2 Task 10
+- PR #9: Phase2 Task 9
+
+Progress summary and post-Phase 2 roadmap: `docs/06-development-progress.md`
+
 ---
 
 ### Task 1: Lock Product and Protocol Decisions Before More Code
