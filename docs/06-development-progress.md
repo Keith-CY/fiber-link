@@ -106,7 +106,7 @@ Open question:
 
 Current state:
 - CI runs plugin request specs via `plugins/fiber-link/spec/requests` (directory).
-- Runbook `docs/runbooks/phase2-verification.md` still calls the single-file smoke spec (`spec/requests/fiber_link_spec.rb`).
+- Runbook `docs/runbooks/phase2-verification.md` still calls the single-file smoke spec (`plugins/fiber-link/spec/requests/fiber_link_spec.rb`).
 
 Next work:
 - Align the runbook with CI (run full requests folder).
