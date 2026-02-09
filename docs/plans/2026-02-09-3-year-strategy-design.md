@@ -23,6 +23,10 @@ We will not try to build a generalized payment processor. We will specialize in:
 - Reliable money movement state machines
 - Operational tooling that makes money flows debuggable and correct
 
+Custody boundary (3-year plan):
+- Hosted custodial hub remains the default model.
+- The plan assumes we invest in operational security (keys, liquidity, limits, monitoring, incident response) rather than pivoting to non-custodial within the 3-year horizon.
+
 ## North Star KPI
 
 ### Definitions
@@ -134,13 +138,13 @@ Must-win themes:
 ## Non-Goals (To Protect Focus)
 
 - Becoming a generalized fiat payment processor
+- A non-custodial pivot within the 3-year horizon (the focus is custodial operations done safely)
 - Complex multi-chain asset routing in Year 1
 - Heavy rule engines before the core state machine is stable
 
 ## Open Questions That Block Scaling
 
-- Custody boundary and required operational controls for hub liquidity and keys
+- Required operational controls for hub liquidity and keys (custodial model is assumed)
 - Admin model and membership management UX (BetterAuth identity -> app admin membership)
 - The canonical settlement discovery strategy (polling vs subscription vs hybrid) and its failure model
 - Price feed provider choice, caching, and fallback policy for USD snapshots
-
