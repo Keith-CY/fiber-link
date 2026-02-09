@@ -41,7 +41,7 @@ Verification:
 - CI runs bun workspace tests + a Discourse plugin smoke job
 - Runbook: `docs/runbooks/phase2-verification.md`
 
-## What’s Not Done Yet (Post-Phase 2 Roadmap)
+## What's Not Done Yet (Post-Phase 2 Roadmap)
 
 Phase 2 intentionally shipped scaffolding + durable state machines + safety rails, but several production-critical behaviors are still placeholders or policy decisions.
 
@@ -93,12 +93,14 @@ Next work:
 ### E) Admin Data Scoping (Needs Product Confirmation)
 
 Current state:
-- Admin routers allow `COMMUNITY_ADMIN` and return unfiltered rows.
+- Admin routers allow `SUPER_ADMIN` and `COMMUNITY_ADMIN`.
+- `SUPER_ADMIN` can list all apps and withdrawals.
+- `COMMUNITY_ADMIN` is scoped by app membership via `app_admins` (requires `adminUserId` in admin tRPC context).
 
 Open question:
-- Should `COMMUNITY_ADMIN` be scoped by app/community?
-  - If yes, enforce `WHERE` constraints (likely via `app_admins` mapping).
-  - If no, document that community admins are global in the MVP.
+- What is the intended admin model for MVP (app-scoped vs community-scoped vs global)?
+  - If app-scoped: define how `app_admins` memberships are managed and mapped to BetterAuth identity.
+  - If community-scoped/global: update schema and queries accordingly.
 
 ### F) CI/Runbook Alignment and Coverage
 
@@ -112,10 +114,9 @@ Next work:
 
 ## Suggested Next Milestone (Phase 3)
 
-Deliver a production-aligned “end-to-end money movement” milestone:
+Deliver a production-aligned end-to-end money movement milestone:
 
 - Close open decisions (asset set, custody/risk controls, timeouts)
 - Add settlement detection + reconciliation loop
 - Implement withdrawal execution + balance debits + insufficient-funds rejections
 - Tighten admin scoping if required
-
