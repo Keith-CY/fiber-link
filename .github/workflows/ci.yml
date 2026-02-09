@@ -91,7 +91,7 @@ jobs:
 
       - name: Plugin smoke spec (requests)
         working-directory: discourse-dev
-        run: docker exec -u discourse:discourse -w /src -e RAILS_ENV=test -e LOAD_PLUGINS=1 discourse_dev bin/rspec plugins/fiber-link/spec/requests/fiber_link_spec.rb
+        run: docker exec -u discourse:discourse -w /src -e RAILS_ENV=test -e LOAD_PLUGINS=1 discourse_dev bin/rspec plugins/fiber-link/spec/requests
 
       - name: Shutdown Discourse dev container
         if: always()

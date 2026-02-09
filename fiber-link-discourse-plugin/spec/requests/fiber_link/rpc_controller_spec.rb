@@ -69,5 +69,32 @@ RSpec.describe ::FiberLink::RpcController, type: :request do
 
       expect(WebMock).not_to have_requested(:post, "https://fiber-link.example/rpc")
     end
+
+    it "returns a JSON-RPC error envelope for invalid postId" do
+      sign_in(user)
+
+      stub_request(:post, "https://fiber-link.example/rpc").to_return(status: 200, body: "{}")
+
+      post "/fiber-link/rpc",
+           params: {
+             jsonrpc: "2.0",
+             id: "bad-post",
+             method: "tip.create",
+             params: {
+               amount: "1",
+               asset: "CKB",
+               postId: 999_999_999,
+             },
+           },
+           as: :json
+
+      expect(response).to have_http_status(:bad_request)
+      body = JSON.parse(response.body)
+      expect(body.fetch("jsonrpc")).to eq("2.0")
+      expect(body.fetch("id")).to eq("bad-post")
+      expect(body.dig("error", "code")).to eq(-32602)
+
+      expect(WebMock).not_to have_requested(:post, "https://fiber-link.example/rpc")
+    end
   end
 end

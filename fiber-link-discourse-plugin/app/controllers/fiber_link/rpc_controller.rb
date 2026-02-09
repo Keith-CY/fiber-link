@@ -41,7 +41,15 @@ module ::FiberLink
             nil
           end
           post = post_id && Post.find_by(id: post_id)
-          raise Discourse::InvalidParameters.new(:postId) if post.blank?
+          if post.blank?
+            render json: {
+                     jsonrpc: "2.0",
+                     id: request_id,
+                     error: { code: -32602, message: "Invalid params" },
+                   },
+                   status: :bad_request
+            return
+          end
 
           {
             amount: params["amount"],
