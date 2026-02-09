@@ -52,6 +52,7 @@ KPI computation must depend only on stored snapshots, not historical price backf
 - 10 monthly active communities
 - operating model: hosted multi-tenant by default
 - initial target segment: Nervos/CKB ecosystem communities
+- pipeline tracker: `docs/plans/2026-02-10-year1-community-pipeline.md`
 
 ## Year-by-Year Strategy
 
