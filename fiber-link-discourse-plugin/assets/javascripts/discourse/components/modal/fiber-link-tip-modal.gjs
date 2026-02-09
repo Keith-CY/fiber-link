@@ -25,10 +25,6 @@ export default class FiberLinkTipModal extends Component {
     return !this.invoice || this.isChecking;
   }
 
-  get canCheckStatus() {
-    return !!this.invoice && !this.isChecking;
-  }
-
   @action
   onAmountInput(event) {
     this.amount = event?.target?.value ?? "";
