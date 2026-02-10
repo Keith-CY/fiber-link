@@ -1,12 +1,14 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { tipIntentRepo } from "../../rpc/src/repositories/tip-intent-repo";
-import { ledgerRepo } from "./repositories/ledger-repo";
+import { createInMemoryLedgerRepo, createInMemoryTipIntentRepo } from "@fiber-link/db";
 import { markSettled } from "./settlement";
 
 describe("settlement worker", () => {
+  const tipIntentRepo = createInMemoryTipIntentRepo();
+  const ledgerRepo = createInMemoryLedgerRepo();
+
   beforeEach(() => {
-    tipIntentRepo.__resetForTests();
-    ledgerRepo.__resetForTests();
+    tipIntentRepo.__resetForTests?.();
+    ledgerRepo.__resetForTests?.();
   });
 
   it("credits recipient once using tip_intent idempotency source", async () => {
@@ -20,7 +22,7 @@ describe("settlement worker", () => {
       invoice: "inv-1",
     });
 
-    const res = await markSettled({ invoice: "inv-1" });
+    const res = await markSettled({ invoice: "inv-1" }, { tipIntentRepo, ledgerRepo });
     expect(res.credited).toBe(true);
 
     const ledgerEntries = ledgerRepo.__listForTests();
@@ -39,16 +41,16 @@ describe("settlement worker", () => {
       invoice: "inv-2",
     });
 
-    const first = await markSettled({ invoice: "inv-2" });
-    const second = await markSettled({ invoice: "inv-2" });
+    const first = await markSettled({ invoice: "inv-2" }, { tipIntentRepo, ledgerRepo });
+    const second = await markSettled({ invoice: "inv-2" }, { tipIntentRepo, ledgerRepo });
     expect(first.credited).toBe(true);
     expect(second.credited).toBe(false);
     expect(ledgerRepo.__listForTests()).toHaveLength(1);
   });
 
   it("fails settlement when invoice does not resolve to exactly one tip_intent", async () => {
-    await expect(markSettled({ invoice: "missing-invoice" })).rejects.toThrow(
-      "invoice does not resolve to exactly one tip intent",
+    await expect(markSettled({ invoice: "missing-invoice" }, { tipIntentRepo, ledgerRepo })).rejects.toThrow(
+      "tip intent not found",
     );
   });
 });

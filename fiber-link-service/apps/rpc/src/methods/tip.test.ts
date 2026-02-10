@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { handleTipCreate } from "./tip";
-import { tipIntentRepo } from "../repositories/tip-intent-repo";
+import { createInMemoryTipIntentRepo } from "@fiber-link/db";
 
 vi.mock("@fiber-link/fiber-adapter", () => {
   return {
@@ -14,9 +14,11 @@ vi.mock("@fiber-link/fiber-adapter", () => {
   };
 });
 
+const tipIntentRepo = createInMemoryTipIntentRepo();
+
 beforeEach(() => {
   process.env.FIBER_RPC_URL = "http://localhost:8119";
-  tipIntentRepo.__resetForTests();
+  tipIntentRepo.__resetForTests?.();
 });
 
 it("creates a tip intent with invoice", async () => {
@@ -27,7 +29,7 @@ it("creates a tip intent with invoice", async () => {
     toUserId: "u2",
     asset: "USDI",
     amount: "10",
-  });
+  }, { tipIntentRepo });
 
   expect(res.invoice).toBe("inv-tip-1");
   const saved = await tipIntentRepo.findByInvoiceOrThrow("inv-tip-1");
