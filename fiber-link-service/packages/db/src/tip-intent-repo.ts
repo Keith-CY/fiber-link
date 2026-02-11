@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { and, eq, gte, lte, sql } from "drizzle-orm";
+import { and, asc, eq, gte, lte, sql } from "drizzle-orm";
 import type { DbClient } from "./client";
 import { tipIntents } from "./schema";
 
@@ -132,7 +132,7 @@ export function createDbTipIntentRepo(db: DbClient): TipIntentRepo {
         filters.push(lte(tipIntents.createdAt, options.createdAtTo));
       }
 
-      let query = db.select().from(tipIntents).where(and(...filters));
+      let query = db.select().from(tipIntents).where(and(...filters)).orderBy(asc(tipIntents.createdAt));
       if (options.limit && options.limit > 0) {
         query = query.limit(options.limit);
       }
@@ -207,6 +207,7 @@ export function createInMemoryTipIntentRepo(): TipIntentRepo {
       if (options.createdAtTo) {
         items = items.filter((item) => item.createdAt <= options.createdAtTo!);
       }
+      items = items.sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime());
       if (options.limit && options.limit > 0) {
         items = items.slice(0, options.limit);
       }

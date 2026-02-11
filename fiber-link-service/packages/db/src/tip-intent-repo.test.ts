@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createInMemoryTipIntentRepo } from "./tip-intent-repo";
 
 describe("tipIntentRepo (in-memory)", () => {
@@ -119,5 +119,38 @@ describe("tipIntentRepo (in-memory)", () => {
     expect(listed).toHaveLength(1);
     expect(listed[0]?.appId).toBe("app-a");
     expect(listed[0]?.invoiceState).toBe("UNPAID");
+  });
+
+  it("returns UNPAID intents ordered by createdAt asc before limit", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-02-11T10:00:10.000Z"));
+      await repo.create({
+        appId: "app-a",
+        postId: "p1",
+        fromUserId: "u1",
+        toUserId: "u2",
+        asset: "USDI",
+        amount: "10",
+        invoice: "inv-order-late",
+      });
+
+      vi.setSystemTime(new Date("2026-02-11T10:00:00.000Z"));
+      await repo.create({
+        appId: "app-a",
+        postId: "p2",
+        fromUserId: "u3",
+        toUserId: "u4",
+        asset: "USDI",
+        amount: "20",
+        invoice: "inv-order-early",
+      });
+
+      const listed = await repo.listByInvoiceState("UNPAID", { appId: "app-a", limit: 1 });
+      expect(listed).toHaveLength(1);
+      expect(listed[0]?.invoice).toBe("inv-order-early");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

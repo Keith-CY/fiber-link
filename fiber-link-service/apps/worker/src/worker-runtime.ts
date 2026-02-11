@@ -85,7 +85,7 @@ export function createWorkerRuntime(options: CreateWorkerRuntimeOptions): Worker
       return;
     }
     if (inFlightBatch) {
-      logger.warn("[worker] previous withdrawal batch still running; skipping tick", {
+      logger.warn("[worker] previous worker cycle still running; skipping tick", {
         intervalMs: options.intervalMs,
       });
       return;

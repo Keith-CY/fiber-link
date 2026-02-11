@@ -133,4 +133,47 @@ describe("createWorkerRuntime", () => {
     await Promise.resolve();
     expect(pollCalls).toEqual([25, 25]);
   });
+
+  it("logs cycle overlap warning with cycle-scoped wording", async () => {
+    const ticks: Array<() => void> = [];
+    const warnings: string[] = [];
+    const deferred = createDeferred<void>();
+    let calls = 0;
+
+    const runtime = createWorkerRuntime({
+      intervalMs: 1000,
+      maxRetries: 3,
+      retryDelayMs: 60_000,
+      shutdownTimeoutMs: 100,
+      runWithdrawalBatch: async () => {
+        calls += 1;
+        if (calls === 2) {
+          await deferred.promise;
+        }
+      },
+      setIntervalFn: (tick) => {
+        ticks.push(tick);
+        return 1 as unknown as ReturnType<typeof setInterval>;
+      },
+      clearIntervalFn: () => {},
+      exitFn: () => {},
+      logger: {
+        info: () => {},
+        warn: (message) => {
+          warnings.push(message);
+        },
+        error: () => {},
+      },
+    });
+
+    await runtime.start();
+    ticks[0]?.();
+    ticks[0]?.();
+    await Promise.resolve();
+
+    expect(warnings).toContain("[worker] previous worker cycle still running; skipping tick");
+
+    deferred.resolve();
+    await runtime.shutdown("manual");
+  });
 });
