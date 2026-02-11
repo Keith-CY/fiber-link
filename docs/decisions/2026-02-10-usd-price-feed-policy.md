@@ -1,9 +1,11 @@
 # Decision: USD Price Feed Policy (Snapshots at Withdrawal Completion)
 
-Date: 2026-02-10 (scheduled)
+Date: 2026-02-10
 Owner: Fiber Link
-Status: OPEN
+Status: ACCEPTED (2026-02-11)
 Related: `docs/plans/2026-02-09-3-year-strategy-design.md`
+
+Decision outcome: Option B (primary + secondary + bounded cached fallback + null-snapshot backfill) is accepted for Year 1.
 
 ## Decision
 

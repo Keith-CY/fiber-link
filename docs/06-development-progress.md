@@ -1,6 +1,6 @@
 # Fiber Link Development Progress
 
-Last updated: 2026-02-09
+Last updated: 2026-02-11
 
 This document summarizes what has shipped so far (Phase 2) and what remains (post-Phase 2 roadmap).
 
@@ -17,6 +17,7 @@ All Phase 2 tasks (Task 1 to Task 10) are now merged into `main` via PRs:
 - PR #7: Admin tRPC wired to DB + role gating (Phase2 Task 8)
 - PR #8: Verification gate (CI + runbook) (Phase2 Task 10)
 - PR #9: Discourse tip UI + hardened RPC proxy + request/system specs (Phase2 Task 9)
+- PR #13: Service + FNN Docker Compose reference deployment baseline
 
 ### Phase 2 Delivered Capabilities
 
@@ -45,17 +46,16 @@ Verification:
 
 Phase 2 intentionally shipped scaffolding + durable state machines + safety rails, but several production-critical behaviors are still placeholders or policy decisions.
 
-### A) Close Open Decisions (Product + Protocol)
+### A) Product/Protocol Baseline Decisions (Locked)
 
-See: `docs/decisions/2026-02-07-phase2-decisions.md`
+Decisions are now explicitly captured and accepted:
+- `docs/decisions/2026-02-10-settlement-discovery-strategy.md` (Option C: Year 1 = polling + backfill baseline)
+- `docs/decisions/2026-02-10-custody-ops-controls.md` (Option A baseline controls + conservative retained balances)
+- `docs/decisions/2026-02-10-usd-price-feed-policy.md` (Option B: primary + secondary + bounded fallback)
+- `docs/decisions/2026-02-10-admin-membership-model.md` (Option A: app-scoped COMMUNITY_ADMIN via `app_admins`)
 
-Open items include:
-- Asset set (CKB + which stablecoin UDT)
-- Custody boundary and required risk controls
-- Invoice timeout/retry contract
-- Withdrawal batching cadence/targets
-
-These decisions should be closed before implementing withdrawal execution and settlement detection, otherwise the code will bake in the wrong contract.
+Remaining policy item to finalize in implementation tickets:
+- concrete MVP asset tuple (CKB + selected stablecoin UDT symbol/id in code/config)
 
 ### B) Settlement Detection Worker (Not Yet Implemented)
 
@@ -90,17 +90,15 @@ Next work:
   - withdrawal request validation (reject insufficient funds)
   - debit idempotency and coupling to withdrawal completion
 
-### E) Admin Data Scoping (Needs Product Confirmation)
+### E) Admin Data Scoping (Policy Chosen, Ops Path Still Needed)
 
 Current state:
 - Admin routers allow `SUPER_ADMIN` and `COMMUNITY_ADMIN`.
 - `SUPER_ADMIN` can list all apps and withdrawals.
 - `COMMUNITY_ADMIN` is scoped by app membership via `app_admins` (requires `adminUserId` in admin tRPC context).
 
-Open question:
-- What is the intended admin model for MVP (app-scoped vs community-scoped vs global)?
-  - If app-scoped: define how `app_admins` memberships are managed and mapped to BetterAuth identity.
-  - If community-scoped/global: update schema and queries accordingly.
+Open implementation question:
+- How are `app_admins` memberships managed operationally in Year 1 (seed script vs SUPER_ADMIN endpoint) and audited?
 
 ### F) CI/Runbook Alignment and Coverage
 
@@ -114,9 +112,10 @@ Next work:
 
 ## Suggested Next Milestone (Phase 3)
 
-Deliver a production-aligned end-to-end money movement milestone:
+Phase 3 should start with a narrow Sprint 1 focused on settlement discovery reliability, then expand to execution/debit flows.
 
-- Close open decisions (asset set, custody/risk controls, timeouts)
-- Add settlement detection + reconciliation loop
-- Implement withdrawal execution + balance debits + insufficient-funds rejections
-- Tighten admin scoping if required
+- Sprint 1 (next): settlement polling + reconciliation/backfill loop, with operational metrics/runbook.
+- Sprint 2: real withdrawal execution + failure classification + tx evidence persistence.
+- Sprint 3: balance/debit invariants and insufficient-funds gate.
+
+Detailed next plan: `docs/plans/2026-02-11-phase3-sprint1-settlement-v1-plan.md`
