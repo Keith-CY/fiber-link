@@ -5,6 +5,7 @@ import {
   createDbTipIntentRepo,
   type DbClient,
   type LedgerRepo,
+  type TipIntentListCursor,
   type TipIntentRepo,
 } from "@fiber-link/db";
 import { markSettled } from "./settlement";
@@ -23,6 +24,7 @@ export type SettlementDiscoveryOptions = {
   appId?: string;
   createdAtFrom?: Date;
   createdAtTo?: Date;
+  cursor?: TipIntentListCursor;
   adapter?: SettlementAdapter;
   tipIntentRepo?: TipIntentRepo;
   ledgerRepo?: LedgerRepo;
@@ -36,6 +38,7 @@ export type SettlementDiscoverySummary = {
   failed: number;
   stillUnpaid: number;
   errors: number;
+  nextCursor: TipIntentListCursor | null;
 };
 
 const defaultLogger: SettlementLogger = {
@@ -90,12 +93,20 @@ export async function runSettlementDiscovery(options: SettlementDiscoveryOptions
   const adapter = options.adapter ?? getDefaultAdapter();
   const logger = options.logger ?? defaultLogger;
 
-  const intents = await tipIntentRepo.listByInvoiceState("UNPAID", {
+  const baseQueryOptions = {
     appId: options.appId,
     createdAtFrom: options.createdAtFrom,
     createdAtTo: options.createdAtTo,
     limit: options.limit,
+  };
+
+  let intents = await tipIntentRepo.listByInvoiceState("UNPAID", {
+    ...baseQueryOptions,
+    after: options.cursor,
   });
+  if (options.cursor && intents.length === 0) {
+    intents = await tipIntentRepo.listByInvoiceState("UNPAID", baseQueryOptions);
+  }
 
   const summary: SettlementDiscoverySummary = {
     scanned: intents.length,
@@ -104,6 +115,7 @@ export async function runSettlementDiscovery(options: SettlementDiscoveryOptions
     failed: 0,
     stillUnpaid: 0,
     errors: 0,
+    nextCursor: null,
   };
 
   for (const intent of intents) {
@@ -139,6 +151,14 @@ export async function runSettlementDiscovery(options: SettlementDiscoveryOptions
         error: error instanceof Error ? error.message : String(error),
       });
     }
+  }
+
+  if (intents.length > 0) {
+    const last = intents[intents.length - 1];
+    summary.nextCursor = {
+      createdAt: last.createdAt,
+      id: last.id,
+    };
   }
 
   logger.info("[worker] settlement discovery summary", summary);

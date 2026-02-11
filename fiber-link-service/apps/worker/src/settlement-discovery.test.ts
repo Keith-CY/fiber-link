@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createInMemoryLedgerRepo, createInMemoryTipIntentRepo } from "@fiber-link/db";
 import { runSettlementDiscovery } from "./settlement-discovery";
 
@@ -137,5 +137,69 @@ describe("runSettlementDiscovery", () => {
 
     expect(summary.scanned).toBe(1);
     expect(summary.stillUnpaid).toBe(1);
+  });
+
+  it("supports cursor pagination and wraps to avoid fixed-limit starvation", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-02-11T12:00:00.000Z"));
+      await tipIntentRepo.create({
+        appId: "app-a",
+        postId: "p1",
+        fromUserId: "u1",
+        toUserId: "u2",
+        asset: "USDI",
+        amount: "10",
+        invoice: "inv-cursor-1",
+      });
+      vi.setSystemTime(new Date("2026-02-11T12:00:01.000Z"));
+      await tipIntentRepo.create({
+        appId: "app-a",
+        postId: "p2",
+        fromUserId: "u3",
+        toUserId: "u4",
+        asset: "USDI",
+        amount: "20",
+        invoice: "inv-cursor-2",
+      });
+      vi.setSystemTime(new Date("2026-02-11T12:00:02.000Z"));
+      await tipIntentRepo.create({
+        appId: "app-a",
+        postId: "p3",
+        fromUserId: "u5",
+        toUserId: "u6",
+        asset: "USDI",
+        amount: "30",
+        invoice: "inv-cursor-3",
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+
+    const seenInvoices: string[] = [];
+    let cursor:
+      | {
+          createdAt: Date;
+          id: string;
+        }
+      | undefined;
+
+    for (let i = 0; i < 4; i += 1) {
+      const summary = await runSettlementDiscovery({
+        limit: 1,
+        cursor,
+        tipIntentRepo,
+        ledgerRepo,
+        adapter: {
+          async getInvoiceStatus({ invoice }) {
+            seenInvoices.push(invoice);
+            return { state: "UNPAID" as const };
+          },
+        },
+      });
+      cursor = summary.nextCursor ?? undefined;
+    }
+
+    expect(seenInvoices).toEqual(["inv-cursor-1", "inv-cursor-2", "inv-cursor-3", "inv-cursor-1"]);
   });
 });

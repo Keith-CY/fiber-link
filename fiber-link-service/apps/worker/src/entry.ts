@@ -1,4 +1,5 @@
 import { createAdapter } from "@fiber-link/fiber-adapter";
+import type { TipIntentListCursor } from "@fiber-link/db";
 import { runSettlementDiscovery } from "./settlement-discovery";
 import { createWorkerRuntime } from "./worker-runtime";
 
@@ -33,6 +34,7 @@ if (!fiberRpcUrl) {
 }
 
 const fiberAdapter = createAdapter({ endpoint: fiberRpcUrl });
+let settlementCursor: TipIntentListCursor | undefined;
 
 const runtime = createWorkerRuntime({
   intervalMs: Math.min(withdrawalIntervalMs, settlementIntervalMs),
@@ -42,11 +44,15 @@ const runtime = createWorkerRuntime({
   shutdownTimeoutMs,
   settlementIntervalMs,
   settlementBatchSize,
-  pollSettlements: ({ limit }) =>
-    runSettlementDiscovery({
+  pollSettlements: async ({ limit }) => {
+    const summary = await runSettlementDiscovery({
       limit,
+      cursor: settlementCursor,
       adapter: fiberAdapter,
-    }),
+    });
+    settlementCursor = summary.nextCursor ?? undefined;
+    return summary;
+  },
 });
 
 process.once("SIGINT", () => {

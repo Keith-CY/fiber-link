@@ -153,4 +153,68 @@ describe("tipIntentRepo (in-memory)", () => {
       vi.useRealTimers();
     }
   });
+
+  it("supports cursor-style pagination with createdAt+id watermark", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-02-11T11:00:00.000Z"));
+      const first = await repo.create({
+        appId: "app-a",
+        postId: "p1",
+        fromUserId: "u1",
+        toUserId: "u2",
+        asset: "USDI",
+        amount: "10",
+        invoice: "inv-page-1",
+      });
+      vi.setSystemTime(new Date("2026-02-11T11:00:01.000Z"));
+      const second = await repo.create({
+        appId: "app-a",
+        postId: "p2",
+        fromUserId: "u3",
+        toUserId: "u4",
+        asset: "USDI",
+        amount: "20",
+        invoice: "inv-page-2",
+      });
+      vi.setSystemTime(new Date("2026-02-11T11:00:02.000Z"));
+      await repo.create({
+        appId: "app-a",
+        postId: "p3",
+        fromUserId: "u5",
+        toUserId: "u6",
+        asset: "USDI",
+        amount: "30",
+        invoice: "inv-page-3",
+      });
+
+      const page1 = await repo.listByInvoiceState("UNPAID", {
+        appId: "app-a",
+        limit: 2,
+      });
+      expect(page1.map((item) => item.invoice)).toEqual(["inv-page-1", "inv-page-2"]);
+
+      const page2 = await repo.listByInvoiceState("UNPAID", {
+        appId: "app-a",
+        limit: 2,
+        after: {
+          createdAt: second.createdAt,
+          id: second.id,
+        },
+      });
+      expect(page2.map((item) => item.invoice)).toEqual(["inv-page-3"]);
+
+      const page3 = await repo.listByInvoiceState("UNPAID", {
+        appId: "app-a",
+        limit: 2,
+        after: {
+          createdAt: first.createdAt,
+          id: first.id,
+        },
+      });
+      expect(page3.map((item) => item.invoice)).toEqual(["inv-page-2", "inv-page-3"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
