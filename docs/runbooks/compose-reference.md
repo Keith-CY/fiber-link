@@ -25,8 +25,10 @@ cp .env.example .env
 ```
 
 Edit `.env` minimally:
+- Set `POSTGRES_PASSWORD` to a strong value.
 - Set `FIBER_SECRET_KEY_PASSWORD` to a strong value.
-- Change `FIBER_LINK_HMAC_SECRET` from default.
+- Set `FIBER_LINK_HMAC_SECRET` to a strong value.
+- Set `FNN_ASSET_SHA256` to the SHA256 digest for `${FNN_ASSET}` from the corresponding Fiber release page.
 
 Start:
 
@@ -78,7 +80,6 @@ You can customize by editing `deploy/compose/fnn/config/testnet.yml` before buil
 - This setup does not include production controls (TLS, secrets manager, backup, network isolation, observability stack).
 
 ## Productionization Checklist (Next)
-- Pin and verify FNN release checksums in Docker build.
 - Replace default generated dev wallet key flow with managed key import workflow.
 - Add migration pipeline (`drizzle-kit`) instead of SQL bootstrap for schema evolution.
 - Add service health endpoints and compose health checks for `rpc`/`worker`/`fnn`.

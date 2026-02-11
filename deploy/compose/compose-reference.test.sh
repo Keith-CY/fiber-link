@@ -33,8 +33,33 @@ for service in rpc worker postgres redis fnn; do
   fi
 done
 
-if ! grep -q "FIBER_RPC_URL=http://fnn:8227" "${ENV_FILE}"; then
+if ! grep -q "^FIBER_RPC_URL=http://fnn:8227$" "${ENV_FILE}"; then
   echo ".env.example missing FIBER_RPC_URL default to fnn service" >&2
+  exit 1
+fi
+
+if ! grep -q "^FNN_ASSET_SHA256=" "${ENV_FILE}"; then
+  echo ".env.example missing FNN_ASSET_SHA256 placeholder" >&2
+  exit 1
+fi
+
+if ! grep -q "POSTGRES_PASSWORD: \${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}" "${COMPOSE_FILE}"; then
+  echo "docker-compose missing required POSTGRES_PASSWORD guard" >&2
+  exit 1
+fi
+
+if ! grep -q "FIBER_LINK_HMAC_SECRET: \${FIBER_LINK_HMAC_SECRET:?Set FIBER_LINK_HMAC_SECRET in .env}" "${COMPOSE_FILE}"; then
+  echo "docker-compose missing required FIBER_LINK_HMAC_SECRET guard" >&2
+  exit 1
+fi
+
+if ! grep -q "^ARG FNN_ASSET_SHA256=" "${FNN_DOCKERFILE}"; then
+  echo "fnn Dockerfile missing FNN_ASSET_SHA256 build arg" >&2
+  exit 1
+fi
+
+if ! grep -q "sha256sum --check" "${FNN_DOCKERFILE}"; then
+  echo "fnn Dockerfile missing SHA256 verification step" >&2
   exit 1
 fi
 

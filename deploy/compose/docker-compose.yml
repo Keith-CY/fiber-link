@@ -6,7 +6,7 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-fiber_link}
       POSTGRES_USER: ${POSTGRES_USER:-fiber}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fiber}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
@@ -38,6 +38,7 @@ services:
       args:
         FNN_VERSION: ${FNN_VERSION:-v0.6.1}
         FNN_ASSET: ${FNN_ASSET:-fnn_v0.6.1-x86_64-linux-portable.tar.gz}
+        FNN_ASSET_SHA256: ${FNN_ASSET_SHA256:?Set FNN_ASSET_SHA256 in .env}
     restart: unless-stopped
     environment:
       FIBER_SECRET_KEY_PASSWORD: ${FIBER_SECRET_KEY_PASSWORD:?Set FIBER_SECRET_KEY_PASSWORD in .env}
@@ -61,9 +62,9 @@ services:
       fnn:
         condition: service_started
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-fiber}:${POSTGRES_PASSWORD:-fiber}@postgres:5432/${POSTGRES_DB:-fiber_link}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-fiber}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-fiber_link}
       FIBER_LINK_NONCE_REDIS_URL: redis://redis:6379/0
-      FIBER_LINK_HMAC_SECRET: ${FIBER_LINK_HMAC_SECRET:-dev-only-change-me}
+      FIBER_LINK_HMAC_SECRET: ${FIBER_LINK_HMAC_SECRET:?Set FIBER_LINK_HMAC_SECRET in .env}
       FIBER_RPC_URL: ${FIBER_RPC_URL:-http://fnn:8227}
       RPC_HOST: 0.0.0.0
       RPC_PORT: 3000
@@ -82,7 +83,7 @@ services:
       rpc:
         condition: service_started
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-fiber}:${POSTGRES_PASSWORD:-fiber}@postgres:5432/${POSTGRES_DB:-fiber_link}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-fiber}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-fiber_link}
       WORKER_WITHDRAWAL_INTERVAL_MS: ${WORKER_WITHDRAWAL_INTERVAL_MS:-30000}
       WORKER_MAX_RETRIES: ${WORKER_MAX_RETRIES:-3}
       WORKER_RETRY_DELAY_MS: ${WORKER_RETRY_DELAY_MS:-60000}
