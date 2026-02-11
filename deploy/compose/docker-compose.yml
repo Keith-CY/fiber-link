@@ -1,0 +1,94 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: fiber-link-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-fiber_link}
+      POSTGRES_USER: ${POSTGRES_USER:-fiber}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-fiber} -d ${POSTGRES_DB:-fiber_link}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: fiber-link-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  fnn:
+    container_name: fiber-link-fnn
+    build:
+      context: ../..
+      dockerfile: deploy/compose/fnn/Dockerfile
+      args:
+        FNN_VERSION: ${FNN_VERSION:-v0.6.1}
+        FNN_ASSET: ${FNN_ASSET:-fnn_v0.6.1-x86_64-linux-portable.tar.gz}
+        FNN_ASSET_SHA256: ${FNN_ASSET_SHA256:?Set FNN_ASSET_SHA256 in .env}
+    restart: unless-stopped
+    environment:
+      FIBER_SECRET_KEY_PASSWORD: ${FIBER_SECRET_KEY_PASSWORD:?Set FIBER_SECRET_KEY_PASSWORD in .env}
+    ports:
+      - "${FNN_RPC_PORT:-8227}:8227"
+      - "${FNN_P2P_PORT:-8228}:8228"
+    volumes:
+      - fnn-data:/data
+
+  rpc:
+    container_name: fiber-link-rpc
+    build:
+      context: ../..
+      dockerfile: deploy/compose/service-rpc.Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      fnn:
+        condition: service_started
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-fiber}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-fiber_link}
+      FIBER_LINK_NONCE_REDIS_URL: redis://redis:6379/0
+      FIBER_LINK_HMAC_SECRET: ${FIBER_LINK_HMAC_SECRET:?Set FIBER_LINK_HMAC_SECRET in .env}
+      FIBER_RPC_URL: ${FIBER_RPC_URL:-http://fnn:8227}
+      RPC_HOST: 0.0.0.0
+      RPC_PORT: 3000
+    ports:
+      - "${RPC_PORT:-3000}:3000"
+
+  worker:
+    container_name: fiber-link-worker
+    build:
+      context: ../..
+      dockerfile: deploy/compose/service-worker.Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rpc:
+        condition: service_started
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-fiber}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-fiber_link}
+      WORKER_WITHDRAWAL_INTERVAL_MS: ${WORKER_WITHDRAWAL_INTERVAL_MS:-30000}
+      WORKER_MAX_RETRIES: ${WORKER_MAX_RETRIES:-3}
+      WORKER_RETRY_DELAY_MS: ${WORKER_RETRY_DELAY_MS:-60000}
+      WORKER_SHUTDOWN_TIMEOUT_MS: ${WORKER_SHUTDOWN_TIMEOUT_MS:-15000}
+
+volumes:
+  postgres-data:
+  fnn-data:
