@@ -78,8 +78,11 @@ You can customize by editing `deploy/compose/fnn/config/testnet.yml` before buil
 - Settlement subscription loop is not yet wired in `worker` runtime entry; this compose currently runs withdrawal batch processing loop.
 - Admin panel server is not included in this compose reference.
 - This setup does not include production controls (TLS, secrets manager, backup, network isolation, observability stack).
+- `worker` depends on `rpc` with `service_started`; no explicit RPC readiness probe is wired yet.
 
 ## Productionization Checklist (Next)
 - Replace default generated dev wallet key flow with managed key import workflow.
 - Add migration pipeline (`drizzle-kit`) instead of SQL bootstrap for schema evolution.
 - Add service health endpoints and compose health checks for `rpc`/`worker`/`fnn`.
+- Pin base images by digest (`postgres`, `redis`, `oven/bun`, `debian`) for deterministic rebuilds.
+- Move `worker` dependency to RPC readiness (`service_healthy`) plus startup/backoff runbook notes.
