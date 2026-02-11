@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { eq, sql } from "drizzle-orm";
+import { and, asc, eq, gt, gte, lte, or, sql } from "drizzle-orm";
 import type { DbClient } from "./client";
 import { tipIntents } from "./schema";
 
@@ -23,6 +23,19 @@ export type TipIntentRecord = CreateTipIntentInput & {
   settledAt: Date | null;
 };
 
+export type TipIntentListCursor = {
+  createdAt: Date;
+  id: string;
+};
+
+export type TipIntentListOptions = {
+  appId?: string;
+  createdAtFrom?: Date;
+  createdAtTo?: Date;
+  limit?: number;
+  after?: TipIntentListCursor;
+};
+
 export class TipIntentNotFoundError extends Error {
   constructor(public readonly invoice: string) {
     super("tip intent not found");
@@ -34,6 +47,7 @@ export type TipIntentRepo = {
   create(input: CreateTipIntentInput): Promise<TipIntentRecord>;
   findByInvoiceOrThrow(invoice: string): Promise<TipIntentRecord>;
   updateInvoiceState(invoice: string, state: InvoiceState): Promise<TipIntentRecord>;
+  listByInvoiceState(state: InvoiceState, options?: TipIntentListOptions): Promise<TipIntentRecord[]>;
   __resetForTests?: () => void;
 };
 
@@ -115,6 +129,38 @@ export function createDbTipIntentRepo(db: DbClient): TipIntentRepo {
       }
       return toRecord(row);
     },
+
+    async listByInvoiceState(state, options = {}) {
+      const filters = [eq(tipIntents.invoiceState, state)];
+      if (options.appId) {
+        filters.push(eq(tipIntents.appId, options.appId));
+      }
+      if (options.createdAtFrom) {
+        filters.push(gte(tipIntents.createdAt, options.createdAtFrom));
+      }
+      if (options.createdAtTo) {
+        filters.push(lte(tipIntents.createdAt, options.createdAtTo));
+      }
+      if (options.after) {
+        filters.push(
+          or(
+            gt(tipIntents.createdAt, options.after.createdAt),
+            and(eq(tipIntents.createdAt, options.after.createdAt), gt(tipIntents.id, options.after.id)),
+          )!,
+        );
+      }
+
+      let query = db
+        .select()
+        .from(tipIntents)
+        .where(and(...filters))
+        .orderBy(asc(tipIntents.createdAt), asc(tipIntents.id));
+      if (options.limit && options.limit > 0) {
+        query = query.limit(options.limit);
+      }
+      const rows = await query;
+      return rows.map(toRecord);
+    },
   };
 }
 
@@ -172,9 +218,39 @@ export function createInMemoryTipIntentRepo(): TipIntentRepo {
       return clone(record);
     },
 
+    async listByInvoiceState(state, options = {}) {
+      let items = records.filter((item) => item.invoiceState === state);
+      if (options.appId) {
+        items = items.filter((item) => item.appId === options.appId);
+      }
+      if (options.createdAtFrom) {
+        items = items.filter((item) => item.createdAt >= options.createdAtFrom!);
+      }
+      if (options.createdAtTo) {
+        items = items.filter((item) => item.createdAt <= options.createdAtTo!);
+      }
+      if (options.after) {
+        const cursorTime = options.after.createdAt.getTime();
+        items = items.filter((item) => {
+          const itemTime = item.createdAt.getTime();
+          return itemTime > cursorTime || (itemTime === cursorTime && item.id > options.after!.id);
+        });
+      }
+      items = items.sort((left, right) => {
+        const createdAtDiff = left.createdAt.getTime() - right.createdAt.getTime();
+        if (createdAtDiff !== 0) {
+          return createdAtDiff;
+        }
+        return left.id.localeCompare(right.id);
+      });
+      if (options.limit && options.limit > 0) {
+        items = items.slice(0, options.limit);
+      }
+      return items.map(clone);
+    },
+
     __resetForTests() {
       records.length = 0;
     },
   };
 }
-

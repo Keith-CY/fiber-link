@@ -18,6 +18,7 @@ Primary reference thread:
 - `docs/06-development-progress.md` — development progress + post-Phase 2 roadmap
 - `docs/runbooks/phase2-verification.md` — Phase 2 verification gate (happy path + failure path)
 - `docs/runbooks/compose-reference.md` — Docker Compose reference (service + FNN)
+- `docs/runbooks/settlement-recovery.md` — settlement replay/backfill recovery operations
 - `docs/plans/2026-02-11-phase3-sprint1-settlement-v1-plan.md` — next implementation plan (Phase 3 Sprint 1)
 
 ## Configuration (service)

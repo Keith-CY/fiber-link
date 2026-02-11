@@ -1,9 +1,13 @@
 {
   "name": "@fiber-link/worker",
   "private": true,
-  "scripts": { "test": "vitest" },
+  "scripts": {
+    "test": "vitest",
+    "backfill:settlements": "bun run src/scripts/backfill-settlements.ts"
+  },
   "dependencies": {
-    "@fiber-link/db": "workspace:*"
+    "@fiber-link/db": "workspace:*",
+    "@fiber-link/fiber-adapter": "workspace:*"
   },
   "devDependencies": {
     "vitest": "^1.6.0",
