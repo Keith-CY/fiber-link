@@ -10,6 +10,7 @@ ENV_FILE="${ROOT_DIR}/deploy/compose/.env.example"
 RPC_DOCKERFILE="${ROOT_DIR}/deploy/compose/service-rpc.Dockerfile"
 WORKER_DOCKERFILE="${ROOT_DIR}/deploy/compose/service-worker.Dockerfile"
 DB_INIT_SQL="${ROOT_DIR}/deploy/compose/postgres/init/001_schema.sql"
+GITIGNORE_FILE="${ROOT_DIR}/.gitignore"
 
 for required in \
   "${COMPOSE_FILE}" \
@@ -19,7 +20,8 @@ for required in \
   "${ENV_FILE}" \
   "${RPC_DOCKERFILE}" \
   "${WORKER_DOCKERFILE}" \
-  "${DB_INIT_SQL}"; do
+  "${DB_INIT_SQL}" \
+  "${GITIGNORE_FILE}"; do
   if [[ ! -f "${required}" ]]; then
     echo "missing required file: ${required}" >&2
     exit 1
@@ -40,6 +42,16 @@ fi
 
 if ! grep -q "^FNN_ASSET_SHA256=" "${ENV_FILE}"; then
   echo ".env.example missing FNN_ASSET_SHA256 placeholder" >&2
+  exit 1
+fi
+
+if ! grep -q "^WORKER_SHUTDOWN_TIMEOUT_MS=" "${ENV_FILE}"; then
+  echo ".env.example missing WORKER_SHUTDOWN_TIMEOUT_MS default" >&2
+  exit 1
+fi
+
+if ! grep -q "^deploy/compose/.env$" "${GITIGNORE_FILE}"; then
+  echo ".gitignore missing deploy/compose/.env ignore rule" >&2
   exit 1
 fi
 

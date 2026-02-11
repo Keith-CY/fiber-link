@@ -24,11 +24,14 @@ cd deploy/compose
 cp .env.example .env
 ```
 
+`deploy/compose/.env` is gitignored in this repository; keep secrets only in that local file (or your secret manager in non-local environments).
+
 Edit `.env` minimally:
 - Set `POSTGRES_PASSWORD` to a strong value.
 - Set `FIBER_SECRET_KEY_PASSWORD` to a strong value.
 - Set `FIBER_LINK_HMAC_SECRET` to a strong value.
 - Set `FNN_ASSET_SHA256` to the SHA256 digest for `${FNN_ASSET}` from the corresponding Fiber release page.
+- Optional: tune `WORKER_SHUTDOWN_TIMEOUT_MS` (graceful drain timeout for in-flight withdrawal batch).
 
 Start:
 
