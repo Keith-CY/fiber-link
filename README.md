@@ -17,6 +17,7 @@ Primary reference thread:
 - `docs/05-threat-model.md` — threat model + risk controls (MVP)
 - `docs/06-development-progress.md` — development progress + post-Phase 2 roadmap
 - `docs/runbooks/phase2-verification.md` — Phase 2 verification gate (happy path + failure path)
+- `docs/runbooks/compose-reference.md` — Docker Compose reference (service + FNN)
 
 ## Configuration (service)
 Environment variables used by the Fiber Link service:
