@@ -1,9 +1,11 @@
 # Decision: Custody Ops Controls (Hosted Hub)
 
-Date: 2026-02-10 (scheduled)
+Date: 2026-02-10
 Owner: Fiber Link
-Status: OPEN
+Status: ACCEPTED (2026-02-11)
 Related: `docs/plans/2026-02-09-3-year-strategy-design.md`
+
+Decision outcome: Option A is accepted as Year 1 baseline controls, with one Option C bias (conservative retained balances and smaller, more frequent withdrawals).
 
 ## Decision
 

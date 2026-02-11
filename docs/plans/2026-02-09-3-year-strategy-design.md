@@ -188,9 +188,9 @@ Must-win themes:
 - Complex multi-chain asset routing in Year 1
 - Heavy rule engines before the core state machine is stable
 
-## Open Questions That Block Scaling
+## Scaling Decisions (Locked)
 
-This section is tracked as 4 short decision records (1 page each):
+This section is tracked as 4 short decision records (1 page each), now accepted for Year 1 baseline:
 
 - Custody ops controls (hosted hub): `docs/decisions/2026-02-10-custody-ops-controls.md`
 - Admin membership model (BetterAuth identity -> app_admins): `docs/decisions/2026-02-10-admin-membership-model.md`

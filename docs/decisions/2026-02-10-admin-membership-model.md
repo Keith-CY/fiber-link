@@ -1,9 +1,11 @@
 # Decision: Admin Membership Model (BetterAuth -> app_admins)
 
-Date: 2026-02-10 (scheduled)
+Date: 2026-02-10
 Owner: Fiber Link
-Status: OPEN
+Status: ACCEPTED (2026-02-11)
 Related: `docs/plans/2026-02-09-3-year-strategy-design.md`
+
+Decision outcome: Option A is accepted (`SUPER_ADMIN` global + `COMMUNITY_ADMIN` scoped by `app_admins` via BetterAuth identity), with Year 1 manual-auditable membership management.
 
 ## Decision
 

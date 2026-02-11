@@ -1,49 +1,64 @@
 # Research & Planning Checklist
 
-Reference plan: `docs/plans/2026-02-07-phase2-delivery-plan.md`
+Last updated: 2026-02-11
 
-## Phase 0: Confirm product boundaries
-- [ ] Confirm MVP assets: CKB + which stablecoin UDT (USDI?) (Owner: @Keith-CY, Target: 2026-02-10, Linked Task: Phase2 Task 1)
-- [ ] Confirm custody model for MVP (hosted hub) and risk controls (Owner: @Keith-CY, Target: 2026-02-10, Linked Task: Phase2 Task 1)
-- [ ] Confirm target Discourse version and plugin distribution approach (Owner: @Keith-CY, Target: 2026-02-11, Linked Task: Phase2 Task 9)
+This checklist is now a live TODO board after Phase 2 completion.
 
-## Phase 1: Fiber technical research
-- [ ] Identify Fiber node RPC/API surface for invoice lifecycle (Owner: @Keith-CY, Target: 2026-02-11, Linked Task: Phase2 Task 3)
-- [ ] Determine best settlement detection method (subscribe vs poll) (Owner: @Keith-CY, Target: 2026-02-11, Linked Task: Phase2 Task 5)
-- [ ] Document required operational actions: liquidity management, node monitoring, failure/restart recovery (Owner: @Keith-CY, Target: 2026-02-12, Linked Task: Phase2 Task 10)
+References:
+- Phase 2 status: `docs/06-development-progress.md`
+- Phase 3 Sprint 1 plan: `docs/plans/2026-02-11-phase3-sprint1-settlement-v1-plan.md`
+- 3-year strategy: `docs/plans/2026-02-09-3-year-strategy-design.md`
 
-## Phase 2: Service design
-- [ ] API spec (`tip.create`, `tip.status`, `withdrawal.request`, admin endpoints) (Owner: @Keith-CY, Target: 2026-02-12, Linked Task: Phase2 Task 1)
-- [ ] DB schema + invariants (Owner: @Keith-CY, Target: 2026-02-12, Linked Task: Phase2 Task 2)
-- [ ] Idempotency + reconciliation plan (Owner: @Keith-CY, Target: 2026-02-12, Linked Task: Phase2 Task 5)
-- [ ] Security plan (keys, secrets, rate limiting, auth between plugin and service) (Owner: @Keith-CY, Target: 2026-02-12, Linked Task: Phase2 Task 7)
+## Completed Baseline (Done)
 
-## Phase 3: Discourse plugin design
-- [ ] UI/UX mock flow (tip modal, status, dashboard) (Owner: @Keith-CY, Target: 2026-02-13, Linked Task: Phase2 Task 9)
-- [ ] Auth model: plugin-to-service credentialing (Owner: @Keith-CY, Target: 2026-02-12, Linked Task: Phase2 Task 7)
-- [ ] Deployment steps for a demo Discourse instance (Owner: @Keith-CY, Target: 2026-02-13, Linked Task: Phase2 Task 9)
+- [x] Architecture + threat model baseline (`docs/02-architecture.md`, `docs/05-threat-model.md`)
+- [x] Phase 2 implementation (Task 1 to Task 10) merged to `main`
+- [x] Admin role gating in service (`SUPER_ADMIN` + app-scoped `COMMUNITY_ADMIN`)
+- [x] Discourse tip UI + hardened RPC proxy
+- [x] CI verification gate and runbook baseline
+- [x] Service + FNN Docker Compose reference baseline (`docs/runbooks/compose-reference.md`)
+- [x] Scaling decision set locked:
+  - settlement discovery strategy
+  - custody ops controls
+  - USD price feed policy
+  - admin membership model
 
-## Phase 4: Delivery plan (8 weeks per proposal)
-### Milestone 1 (Weeks 1-2): Design + Fiber prototype
-- [x] Architecture + threat model (Completed: 2026-02-03, Evidence: `docs/02-architecture.md`, `docs/05-threat-model.md`)
-- [ ] Hub node on testnet (Owner: @Keith-CY, Target: 2026-02-14, Linked Task: Phase2 Task 3)
-- [x] Backend skeleton + DB schema baseline (Completed: 2026-02-07, Evidence: PR #1)
-- [ ] Demo: invoice -> payment -> ledger credit (Owner: @Keith-CY, Target: 2026-02-16, Linked Task: Phase2 Task 5)
+## Active TODO (Phase 3)
 
-### Milestone 2 (Weeks 3-5): Discourse plugin + end-to-end tipping
-- [ ] Tip UI + modal (Owner: @Keith-CY, Target: 2026-02-18, Linked Task: Phase2 Task 9)
-- [ ] Endpoints for plugin integration (Owner: @Keith-CY, Target: 2026-02-17, Linked Task: Phase2 Task 3)
-- [ ] Payment state updates (Owner: @Keith-CY, Target: 2026-02-18, Linked Task: Phase2 Task 5)
-- [ ] Creator dashboard (Owner: @Keith-CY, Target: 2026-02-19, Linked Task: Phase2 Task 9)
+### Priority 1: Settlement Discovery + Reconciliation (Sprint 1)
 
-### Milestone 3 (Weeks 6-8): Withdrawals + mainnet readiness
-- [ ] Withdrawal flow + admin controls (Owner: @Keith-CY, Target: 2026-02-21, Linked Task: Phase2 Task 6)
-- [ ] Production hardening checklist (Owner: @Keith-CY, Target: 2026-02-22, Linked Task: Phase2 Task 10)
-- [ ] Full docs + demo (Owner: @Keith-CY, Target: 2026-02-23, Linked Task: Phase2 Task 10)
+Owner: `@Keith-CY`  
+Target: 2026-02-18
 
-## Outputs (what we will produce)
-- [x] Architecture diagram(s) (Completed: 2026-02-03, Evidence: `docs/02-architecture.md`)
-- [ ] API spec draft (Owner: @Keith-CY, Target: 2026-02-12, Linked Task: Phase2 Task 1)
-- [x] DB schema draft (Completed: 2026-02-07, Evidence: `fiber-link-service/packages/db/src/schema.ts`)
-- [ ] Risk register + mitigations (Owner: @Keith-CY, Target: 2026-02-12, Linked Task: Phase2 Task 1)
-- [x] Repo structure proposal (Completed: 2026-02-03, Evidence: `docs/02-architecture.md`)
+- [ ] Implement polling-based settlement discovery worker loop
+- [ ] Add reconciliation/backfill command (idempotent replay by app/time window)
+- [ ] Add settlement observability metrics (pending backlog, detection latency, replay count)
+- [ ] Add incident/repair runbook for missed settlement events
+- [ ] Add tests for crash-recovery, duplicate observations, and missed-event backfill
+
+### Priority 2: Withdrawal Execution (Sprint 2)
+
+Owner: `@Keith-CY`  
+Target: 2026-02-25
+
+- [ ] Replace withdrawal executor stub with real node action
+- [ ] Persist execution evidence (for example tx hash) and structured error details
+- [ ] Confirm transient/permanent failure classification with retry contract
+
+### Priority 3: Balance + Debit Invariants (Sprint 3)
+
+Owner: `@Keith-CY`  
+Target: 2026-03-03
+
+- [ ] Implement balance read model: credits - debits by user/app/asset
+- [ ] Enforce insufficient-funds rejection on withdrawal request
+- [ ] Couple debit idempotency to successful withdrawal completion
+
+### Cross-Cutting Ops/Docs
+
+Owner: `@Keith-CY`  
+Target: 2026-02-20
+
+- [ ] Align `docs/runbooks/phase2-verification.md` with CI request-spec scope (`plugins/fiber-link/spec/requests`)
+- [ ] Decide whether plugin system specs are part of CI default gate
+- [ ] Document Year 1 admin membership SOP (`app_admins` grant/revoke + audit trail)

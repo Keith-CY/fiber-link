@@ -1,9 +1,11 @@
 # Decision: Settlement Discovery Strategy (Poll vs Subscribe vs Hybrid)
 
-Date: 2026-02-10 (scheduled)
+Date: 2026-02-10
 Owner: Fiber Link
-Status: OPEN
+Status: ACCEPTED (2026-02-11)
 Related: `docs/plans/2026-02-09-3-year-strategy-design.md`
+
+Decision outcome: Option C (hybrid) is accepted; Year 1 implementation baseline is polling + periodic backfill, with subscription as an optional latency optimization after stability validation.
 
 ## Decision
 

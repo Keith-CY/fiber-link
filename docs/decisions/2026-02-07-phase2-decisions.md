@@ -4,6 +4,13 @@ Date: 2026-02-07
 Owner: @Keith-CY
 Reference plan: `docs/plans/2026-02-07-phase2-delivery-plan.md`
 
+Note (2026-02-11): this file is a historical Phase 2 draft register.  
+Current decision source-of-truth is the accepted one-page records:
+- `docs/decisions/2026-02-10-settlement-discovery-strategy.md`
+- `docs/decisions/2026-02-10-custody-ops-controls.md`
+- `docs/decisions/2026-02-10-usd-price-feed-policy.md`
+- `docs/decisions/2026-02-10-admin-membership-model.md`
+
 ## Decision register
 
 ### Asset set

@@ -18,13 +18,14 @@ Primary reference thread:
 - `docs/06-development-progress.md` — development progress + post-Phase 2 roadmap
 - `docs/runbooks/phase2-verification.md` — Phase 2 verification gate (happy path + failure path)
 - `docs/runbooks/compose-reference.md` — Docker Compose reference (service + FNN)
+- `docs/plans/2026-02-11-phase3-sprint1-settlement-v1-plan.md` — next implementation plan (Phase 3 Sprint 1)
 
 ## Configuration (service)
 Environment variables used by the Fiber Link service:
 - `FIBER_LINK_NONCE_REDIS_URL` — Redis URL for shared nonce replay cache. If unset, the RPC service falls back to an in-memory cache (single-instance only).
 
 ## Next steps
-1) Close open Phase 2 decisions (asset set, custody boundary, timeouts).
-2) Implement settlement detection and reconciliation loop (worker).
-3) Implement withdrawal execution + insufficient-funds rejection.
-4) Tighten admin scoping (if required) and expand verification coverage.
+1) Phase 3 Sprint 1: implement settlement detection + reconciliation/backfill loop (worker).
+2) Implement withdrawal execution with real node actions + tx evidence persistence.
+3) Implement balance/debit invariants + insufficient-funds gate.
+4) Align CI and runbooks (plugin requests scope + optional system-spec coverage).
