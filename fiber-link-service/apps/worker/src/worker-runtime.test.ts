@@ -89,4 +89,48 @@ describe("createWorkerRuntime", () => {
     await runtime.shutdown("SIGTERM");
     expect(exitCodes).toEqual([1]);
   });
+
+  it("runs settlement polling on its own interval with configured batch size", async () => {
+    const ticks: Array<() => void> = [];
+    const pollCalls: number[] = [];
+    let now = 0;
+
+    const runtime = createWorkerRuntime({
+      intervalMs: 1000,
+      maxRetries: 3,
+      retryDelayMs: 60_000,
+      shutdownTimeoutMs: 100,
+      settlementIntervalMs: 2000,
+      settlementBatchSize: 25,
+      nowMsFn: () => now,
+      runWithdrawalBatch: async () => {},
+      pollSettlements: async ({ limit }) => {
+        pollCalls.push(limit);
+      },
+      setIntervalFn: (tick) => {
+        ticks.push(tick);
+        return 1 as unknown as ReturnType<typeof setInterval>;
+      },
+      clearIntervalFn: () => {},
+      exitFn: () => {},
+      logger: {
+        info: () => {},
+        warn: () => {},
+        error: () => {},
+      },
+    });
+
+    await runtime.start();
+    expect(pollCalls).toEqual([25]);
+
+    now += 1000;
+    ticks[0]?.();
+    await Promise.resolve();
+    expect(pollCalls).toEqual([25]);
+
+    now += 1000;
+    ticks[0]?.();
+    await Promise.resolve();
+    expect(pollCalls).toEqual([25, 25]);
+  });
 });

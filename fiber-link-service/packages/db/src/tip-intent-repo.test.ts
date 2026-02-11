@@ -75,5 +75,49 @@ describe("tipIntentRepo (in-memory)", () => {
     expect(third.invoiceState).toBe("FAILED");
     expect(third.settledAt).toBeNull();
   });
-});
 
+  it("lists UNPAID intents with app/time filters and limit", async () => {
+    const first = await repo.create({
+      appId: "app-a",
+      postId: "p1",
+      fromUserId: "u1",
+      toUserId: "u2",
+      asset: "USDI",
+      amount: "10",
+      invoice: "inv-list-1",
+    });
+    const second = await repo.create({
+      appId: "app-a",
+      postId: "p2",
+      fromUserId: "u1",
+      toUserId: "u3",
+      asset: "USDI",
+      amount: "20",
+      invoice: "inv-list-2",
+    });
+    await repo.create({
+      appId: "app-b",
+      postId: "p3",
+      fromUserId: "u4",
+      toUserId: "u5",
+      asset: "USDI",
+      amount: "30",
+      invoice: "inv-list-3",
+    });
+
+    await repo.updateInvoiceState("inv-list-2", "SETTLED");
+
+    const from = new Date(first.createdAt.getTime() - 1);
+    const to = new Date(second.createdAt.getTime() + 1);
+    const listed = await repo.listByInvoiceState("UNPAID", {
+      appId: "app-a",
+      createdAtFrom: from,
+      createdAtTo: to,
+      limit: 1,
+    });
+
+    expect(listed).toHaveLength(1);
+    expect(listed[0]?.appId).toBe("app-a");
+    expect(listed[0]?.invoiceState).toBe("UNPAID");
+  });
+});

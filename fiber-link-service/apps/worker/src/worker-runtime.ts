@@ -7,16 +7,22 @@ type WorkerLogger = {
 };
 
 type RunWithdrawalBatchFn = (options: { maxRetries: number; retryDelayMs: number }) => Promise<unknown>;
+type PollSettlementsFn = (options: { limit: number }) => Promise<unknown>;
 
 export type CreateWorkerRuntimeOptions = {
   intervalMs: number;
+  withdrawalIntervalMs?: number;
   maxRetries: number;
   retryDelayMs: number;
   shutdownTimeoutMs: number;
+  settlementIntervalMs?: number;
+  settlementBatchSize?: number;
   runWithdrawalBatch?: RunWithdrawalBatchFn;
+  pollSettlements?: PollSettlementsFn;
   setIntervalFn?: typeof setInterval;
   clearIntervalFn?: typeof clearInterval;
   exitFn?: (code: number) => void;
+  nowMsFn?: () => number;
   logger?: WorkerLogger;
 };
 
@@ -56,17 +62,25 @@ async function waitForDrain(batchPromise: Promise<void>, timeoutMs: number): Pro
 
 export function createWorkerRuntime(options: CreateWorkerRuntimeOptions): WorkerRuntime {
   const runWithdrawalBatch = options.runWithdrawalBatch ?? runWithdrawalBatchDefault;
+  const pollSettlements = options.pollSettlements;
+  const hasExplicitWithdrawalInterval = options.withdrawalIntervalMs !== undefined;
+  const withdrawalIntervalMs = options.withdrawalIntervalMs ?? options.intervalMs;
+  const settlementIntervalMs = options.settlementIntervalMs ?? options.intervalMs;
+  const settlementBatchSize = options.settlementBatchSize ?? 200;
   const setIntervalFn = options.setIntervalFn ?? setInterval;
   const clearIntervalFn = options.clearIntervalFn ?? clearInterval;
   const exitFn = options.exitFn ?? process.exit;
+  const nowMsFn = options.nowMsFn ?? Date.now;
   const logger = options.logger ?? defaultLogger;
 
   let timer: ReturnType<typeof setInterval> | null = null;
   let inFlightBatch: Promise<void> | null = null;
   let shuttingDown = false;
   let shutdownPromise: Promise<void> | null = null;
+  let lastWithdrawalRunAtMs: number | null = null;
+  let lastSettlementRunAtMs: number | null = null;
 
-  async function processWithdrawals() {
+  async function processCycle() {
     if (shuttingDown) {
       return;
     }
@@ -77,17 +91,48 @@ export function createWorkerRuntime(options: CreateWorkerRuntimeOptions): Worker
       return;
     }
 
+    const nowMs = nowMsFn();
+    const shouldRunWithdrawal =
+      !hasExplicitWithdrawalInterval ||
+      lastWithdrawalRunAtMs === null ||
+      nowMs - lastWithdrawalRunAtMs >= withdrawalIntervalMs;
+    const shouldRunSettlements =
+      Boolean(pollSettlements) &&
+      (lastSettlementRunAtMs === null || nowMs - lastSettlementRunAtMs >= settlementIntervalMs);
+
+    if (!shouldRunWithdrawal && !shouldRunSettlements) {
+      return;
+    }
+
     inFlightBatch = (async () => {
       try {
-        const result = await runWithdrawalBatch({
-          maxRetries: options.maxRetries,
-          retryDelayMs: options.retryDelayMs,
-        });
-        logger.info("[worker] withdrawal batch", {
-          result,
-        });
-      } catch (error) {
-        logger.error("[worker] withdrawal batch failed", error);
+        if (shouldRunWithdrawal) {
+          try {
+            const result = await runWithdrawalBatch({
+              maxRetries: options.maxRetries,
+              retryDelayMs: options.retryDelayMs,
+            });
+            lastWithdrawalRunAtMs = nowMs;
+            logger.info("[worker] withdrawal batch", {
+              result,
+            });
+          } catch (error) {
+            logger.error("[worker] withdrawal batch failed", error);
+          }
+        }
+
+        if (shouldRunSettlements && pollSettlements) {
+          try {
+            const result = await pollSettlements({ limit: settlementBatchSize });
+            lastSettlementRunAtMs = nowMs;
+            logger.info("[worker] settlement polling batch", {
+              result,
+              limit: settlementBatchSize,
+            });
+          } catch (error) {
+            logger.error("[worker] settlement polling batch failed", error);
+          }
+        }
       } finally {
         inFlightBatch = null;
       }
@@ -97,17 +142,20 @@ export function createWorkerRuntime(options: CreateWorkerRuntimeOptions): Worker
   }
 
   async function start() {
-    await processWithdrawals();
+    await processCycle();
     if (shuttingDown) {
       return;
     }
     timer = setIntervalFn(() => {
-      void processWithdrawals();
+      void processCycle();
     }, options.intervalMs);
     logger.info("[worker] started", {
-      withdrawalIntervalMs: options.intervalMs,
+      tickIntervalMs: options.intervalMs,
+      withdrawalIntervalMs,
       maxRetries: options.maxRetries,
       retryDelayMs: options.retryDelayMs,
+      settlementIntervalMs: pollSettlements ? settlementIntervalMs : null,
+      settlementBatchSize: pollSettlements ? settlementBatchSize : null,
       shutdownTimeoutMs: options.shutdownTimeoutMs,
     });
   }

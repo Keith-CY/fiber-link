@@ -48,6 +48,34 @@ describe("settlement worker", () => {
     expect(ledgerRepo.__listForTests()).toHaveLength(1);
   });
 
+  it("marks invoice SETTLED even when credit already exists from previous attempt", async () => {
+    const intent = await tipIntentRepo.create({
+      appId: "app1",
+      postId: "p1",
+      fromUserId: "u1",
+      toUserId: "u2",
+      asset: "USDI",
+      amount: "10",
+      invoice: "inv-recover-1",
+    });
+
+    await ledgerRepo.creditOnce({
+      appId: intent.appId,
+      userId: intent.toUserId,
+      asset: intent.asset,
+      amount: intent.amount,
+      refId: intent.id,
+      idempotencyKey: `settlement:tip_intent:${intent.id}`,
+    });
+
+    const result = await markSettled({ invoice: intent.invoice }, { tipIntentRepo, ledgerRepo });
+    expect(result.credited).toBe(false);
+
+    const saved = await tipIntentRepo.findByInvoiceOrThrow(intent.invoice);
+    expect(saved.invoiceState).toBe("SETTLED");
+    expect(saved.settledAt).not.toBeNull();
+  });
+
   it("fails settlement when invoice does not resolve to exactly one tip_intent", async () => {
     await expect(markSettled({ invoice: "missing-invoice" }, { tipIntentRepo, ledgerRepo })).rejects.toThrow(
       "tip intent not found",

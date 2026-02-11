@@ -51,7 +51,8 @@ export async function markSettled(
     idempotencyKey,
   });
 
-  if (credited.applied) {
+  // Keep invoice state convergent even if credit was already written earlier.
+  if (tipIntent.invoiceState !== "SETTLED") {
     await tipIntentRepo.updateInvoiceState(invoice, "SETTLED");
   }
 

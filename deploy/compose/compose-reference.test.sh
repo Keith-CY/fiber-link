@@ -50,6 +50,16 @@ if ! grep -q "^WORKER_SHUTDOWN_TIMEOUT_MS=" "${ENV_FILE}"; then
   exit 1
 fi
 
+if ! grep -q "^WORKER_SETTLEMENT_INTERVAL_MS=" "${ENV_FILE}"; then
+  echo ".env.example missing WORKER_SETTLEMENT_INTERVAL_MS default" >&2
+  exit 1
+fi
+
+if ! grep -q "^WORKER_SETTLEMENT_BATCH_SIZE=" "${ENV_FILE}"; then
+  echo ".env.example missing WORKER_SETTLEMENT_BATCH_SIZE default" >&2
+  exit 1
+fi
+
 if ! grep -q "^deploy/compose/.env$" "${GITIGNORE_FILE}"; then
   echo ".gitignore missing deploy/compose/.env ignore rule" >&2
   exit 1

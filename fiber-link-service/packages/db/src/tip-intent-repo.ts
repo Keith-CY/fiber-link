@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, gte, lte, sql } from "drizzle-orm";
 import type { DbClient } from "./client";
 import { tipIntents } from "./schema";
 
@@ -34,6 +34,10 @@ export type TipIntentRepo = {
   create(input: CreateTipIntentInput): Promise<TipIntentRecord>;
   findByInvoiceOrThrow(invoice: string): Promise<TipIntentRecord>;
   updateInvoiceState(invoice: string, state: InvoiceState): Promise<TipIntentRecord>;
+  listByInvoiceState(
+    state: InvoiceState,
+    options?: { appId?: string; createdAtFrom?: Date; createdAtTo?: Date; limit?: number },
+  ): Promise<TipIntentRecord[]>;
   __resetForTests?: () => void;
 };
 
@@ -115,6 +119,26 @@ export function createDbTipIntentRepo(db: DbClient): TipIntentRepo {
       }
       return toRecord(row);
     },
+
+    async listByInvoiceState(state, options = {}) {
+      const filters = [eq(tipIntents.invoiceState, state)];
+      if (options.appId) {
+        filters.push(eq(tipIntents.appId, options.appId));
+      }
+      if (options.createdAtFrom) {
+        filters.push(gte(tipIntents.createdAt, options.createdAtFrom));
+      }
+      if (options.createdAtTo) {
+        filters.push(lte(tipIntents.createdAt, options.createdAtTo));
+      }
+
+      let query = db.select().from(tipIntents).where(and(...filters));
+      if (options.limit && options.limit > 0) {
+        query = query.limit(options.limit);
+      }
+      const rows = await query;
+      return rows.map(toRecord);
+    },
   };
 }
 
@@ -172,9 +196,25 @@ export function createInMemoryTipIntentRepo(): TipIntentRepo {
       return clone(record);
     },
 
+    async listByInvoiceState(state, options = {}) {
+      let items = records.filter((item) => item.invoiceState === state);
+      if (options.appId) {
+        items = items.filter((item) => item.appId === options.appId);
+      }
+      if (options.createdAtFrom) {
+        items = items.filter((item) => item.createdAt >= options.createdAtFrom!);
+      }
+      if (options.createdAtTo) {
+        items = items.filter((item) => item.createdAt <= options.createdAtTo!);
+      }
+      if (options.limit && options.limit > 0) {
+        items = items.slice(0, options.limit);
+      }
+      return items.map(clone);
+    },
+
     __resetForTests() {
       records.length = 0;
     },
   };
 }
-
