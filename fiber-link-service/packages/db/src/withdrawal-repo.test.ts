@@ -28,6 +28,7 @@ function mockRow(overrides: Record<string, unknown> = {}) {
     createdAt: new Date("2026-02-07T00:00:00.000Z"),
     updatedAt: new Date("2026-02-07T00:00:00.000Z"),
     completedAt: null,
+    txHash: null,
     ...overrides,
   };
 }
@@ -91,5 +92,24 @@ describe("createDbWithdrawalRepo", () => {
     const setArg = mock.updateSet.mock.calls[0][0] as Record<string, unknown>;
     expect(setArg.retryCount).not.toBe(2);
     expect(setArg.state).toBe("RETRY_PENDING");
+  });
+
+  it("persists txHash when marking withdrawal completed", async () => {
+    const mock = createDbMock();
+    const repo = createDbWithdrawalRepo(mock.db);
+    const now = new Date("2026-02-07T00:02:00.000Z");
+
+    mock.updateReturning.mockResolvedValueOnce([
+      mockRow({ state: "COMPLETED", completedAt: now, updatedAt: now, txHash: "0xabc123" }),
+    ]);
+
+    const saved = await repo.markCompleted("w1", {
+      now,
+      txHash: "0xabc123",
+    });
+
+    expect(saved.txHash).toBe("0xabc123");
+    const setArg = mock.updateSet.mock.calls[0][0] as Record<string, unknown>;
+    expect(setArg.txHash).toBe("0xabc123");
   });
 });

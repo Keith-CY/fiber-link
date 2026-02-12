@@ -41,9 +41,9 @@ Target: 2026-02-18
 Owner: `@Keith-CY`  
 Target: 2026-02-25
 
-- [ ] Replace withdrawal executor stub with real node action
-- [ ] Persist execution evidence (for example tx hash) and structured error details
-- [ ] Confirm transient/permanent failure classification with retry contract
+- [x] Replace withdrawal executor stub with real node action
+- [x] Persist execution evidence (for example tx hash) and structured error details
+- [x] Confirm transient/permanent failure classification with retry contract
 
 ### Priority 3: Balance + Debit Invariants (Sprint 3)
 

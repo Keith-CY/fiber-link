@@ -71,4 +71,45 @@ describe("fiber adapter", () => {
       "get_invoice response is missing 'state' string",
     );
   });
+
+  it("executeWithdrawal calls send_payment and returns txHash evidence", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({ jsonrpc: "2.0", id: 1, result: { payment_hash: "0xabc123" } }),
+    } as Response);
+
+    const adapter = createAdapter({ endpoint: "http://localhost:8119" });
+    const result = await adapter.executeWithdrawal({
+      amount: "10",
+      asset: "USDI",
+      toAddress: "fiber:invoice:example",
+      requestId: "w-1",
+    });
+
+    expect(result.txHash).toBe("0xabc123");
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "http://localhost:8119",
+      expect.objectContaining({
+        method: "POST",
+        body: expect.stringContaining("\"method\":\"send_payment\""),
+      }),
+    );
+  });
+
+  it("executeWithdrawal throws when rpc result has no transaction evidence", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({ jsonrpc: "2.0", id: 1, result: {} }),
+    } as Response);
+
+    const adapter = createAdapter({ endpoint: "http://localhost:8119" });
+    await expect(
+      adapter.executeWithdrawal({
+        amount: "10",
+        asset: "USDI",
+        toAddress: "fiber:invoice:example",
+        requestId: "w-1",
+      }),
+    ).rejects.toThrow("send_payment response is missing transaction evidence");
+  });
 });

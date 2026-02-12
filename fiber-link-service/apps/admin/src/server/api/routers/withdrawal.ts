@@ -23,6 +23,7 @@ export const withdrawalRouter = t.router({
       createdAt: true,
       updatedAt: true,
       completedAt: true,
+      txHash: true,
     } as const;
 
     if (ctx.role === "SUPER_ADMIN") {

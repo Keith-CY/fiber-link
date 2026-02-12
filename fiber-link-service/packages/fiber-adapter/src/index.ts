@@ -1,12 +1,29 @@
 import { rpcCall } from "./fiber-client";
+export { FiberRpcError } from "./fiber-client";
 
 export type CreateInvoiceArgs = { amount: string; asset: "CKB" | "USDI" };
 export type InvoiceState = "UNPAID" | "SETTLED" | "FAILED";
+export type ExecuteWithdrawalArgs = {
+  amount: string;
+  asset: "CKB" | "USDI";
+  toAddress: string;
+  requestId: string;
+};
 
 function mapInvoiceState(value: string): InvoiceState {
   if (value === "settled") return "SETTLED";
   if (value === "failed") return "FAILED";
   return "UNPAID";
+}
+
+function pickTxEvidence(result: Record<string, unknown> | undefined): string | null {
+  const candidates = [result?.tx_hash, result?.txHash, result?.payment_hash, result?.paymentHash, result?.hash];
+  for (const value of candidates) {
+    if (typeof value === "string" && value) {
+      return value;
+    }
+  }
+  return null;
 }
 
 export function createAdapter({ endpoint }: { endpoint: string }) {
@@ -27,6 +44,20 @@ export function createAdapter({ endpoint }: { endpoint: string }) {
     },
     async subscribeSettlements(_: { onSettled: (invoice: string) => void }) {
       return { close: () => undefined };
+    },
+    async executeWithdrawal({ amount, asset, toAddress, requestId }: ExecuteWithdrawalArgs) {
+      // Current executor uses Fiber payment RPC; toAddress is treated as a payment request string.
+      const result = (await rpcCall(endpoint, "send_payment", {
+        invoice: toAddress,
+        amount,
+        asset,
+        request_id: requestId,
+      })) as Record<string, unknown> | undefined;
+      const txHash = pickTxEvidence(result);
+      if (!txHash) {
+        throw new Error("send_payment response is missing transaction evidence");
+      }
+      return { txHash };
     },
   };
 }

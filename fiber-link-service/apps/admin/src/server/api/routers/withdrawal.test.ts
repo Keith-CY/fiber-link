@@ -21,6 +21,7 @@ function createDbMock({
     createdAt: Date;
     updatedAt: Date;
     completedAt: Date | null;
+    txHash: string | null;
   }>;
   appAdminsRows: Array<{ appId: string; adminUserId: string }>;
 }): DbClient {
@@ -77,6 +78,7 @@ describe("withdrawal router", () => {
         createdAt: now,
         updatedAt: now,
         completedAt: null,
+        txHash: null,
       },
     ];
     const db = createDbMock({ withdrawalsRows: rows, appAdminsRows: [] });
@@ -105,6 +107,7 @@ describe("withdrawal router", () => {
         createdAt: now,
         updatedAt: now,
         completedAt: null,
+        txHash: null,
       },
       {
         id: "w2",
@@ -120,6 +123,7 @@ describe("withdrawal router", () => {
         createdAt: now,
         updatedAt: now,
         completedAt: null,
+        txHash: null,
       },
     ];
     const db = createDbMock({

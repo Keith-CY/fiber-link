@@ -6,9 +6,10 @@ import {
   type WithdrawalRecord,
   type WithdrawalRepo,
 } from "@fiber-link/db";
+import { FiberRpcError, createAdapter } from "@fiber-link/fiber-adapter";
 
 export type WithdrawalExecutionResult =
-  | { ok: true }
+  | { ok: true; txHash: string }
   | { ok: false; kind: "transient" | "permanent"; reason: string };
 
 export type RunWithdrawalBatchOptions = {
@@ -19,17 +20,64 @@ export type RunWithdrawalBatchOptions = {
   repo?: WithdrawalRepo;
 };
 
-async function defaultExecuteWithdrawal(_: WithdrawalRecord): Promise<WithdrawalExecutionResult> {
-  return { ok: true };
+async function defaultExecuteWithdrawal(withdrawal: WithdrawalRecord): Promise<WithdrawalExecutionResult> {
+  const endpoint = process.env.FIBER_RPC_URL;
+  if (!endpoint) {
+    throw new Error("FIBER_RPC_URL is required for withdrawal execution");
+  }
+  const adapter = getDefaultFiberAdapter(endpoint);
+  return {
+    ok: true,
+    txHash: (
+      await adapter.executeWithdrawal({
+        amount: withdrawal.amount,
+        asset: withdrawal.asset,
+        toAddress: withdrawal.toAddress,
+        requestId: withdrawal.id,
+      })
+    ).txHash,
+  };
 }
 
 let defaultRepo: WithdrawalRepo | null = null;
+let defaultFiberAdapter:
+  | ReturnType<typeof createAdapter>
+  | null = null;
 
 function getDefaultRepo(): WithdrawalRepo {
   if (!defaultRepo) {
     defaultRepo = createDbWithdrawalRepo(createDbClient());
   }
   return defaultRepo;
+}
+
+function getDefaultFiberAdapter(endpoint: string) {
+  if (!defaultFiberAdapter) {
+    defaultFiberAdapter = createAdapter({ endpoint });
+  }
+  return defaultFiberAdapter;
+}
+
+function classifyExecutionError(error: unknown): { kind: "transient" | "permanent"; reason: string } {
+  const message = error instanceof Error ? error.message : String(error);
+  const transientPattern = /(timeout|temporar|busy|unavailable|connect|network|throttle|rate limit|econn)/i;
+  if (error instanceof FiberRpcError) {
+    const code = error.code;
+    if (code === -32600 || code === -32601 || code === -32602) {
+      return { kind: "permanent", reason: message };
+    }
+    if (code === -32603 || (typeof code === "number" && code <= -32000 && code >= -32099)) {
+      return { kind: "transient", reason: message };
+    }
+    if (transientPattern.test(message)) {
+      return { kind: "transient", reason: message };
+    }
+    return { kind: "permanent", reason: message };
+  }
+  if (transientPattern.test(message)) {
+    return { kind: "transient", reason: message };
+  }
+  return { kind: "permanent", reason: message };
 }
 
 export async function runWithdrawalBatch(options: RunWithdrawalBatchOptions = {}) {
@@ -64,16 +112,13 @@ export async function runWithdrawalBatch(options: RunWithdrawalBatchOptions = {}
     try {
       result = await executeWithdrawal(current);
     } catch (error) {
-      result = {
-        ok: false,
-        kind: "permanent",
-        reason: error instanceof Error ? error.message : "withdrawal execution failed",
-      };
+      const classified = classifyExecutionError(error);
+      result = { ok: false, ...classified };
     }
 
     processed += 1;
     if (result.ok) {
-      await repo.markCompleted(item.id, now);
+      await repo.markCompleted(item.id, { now, txHash: result.txHash });
       completed += 1;
       continue;
     }

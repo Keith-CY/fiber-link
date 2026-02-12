@@ -72,15 +72,17 @@ Delivered:
 Remaining optimization (non-blocking):
 - Event-subscription path for lower latency once upstream interface stability is proven.
 
-### C) Withdrawal Execution (Still Stubbed)
+### C) Withdrawal Execution (Implemented Baseline in Sprint 2)
 
-Current state:
-- Withdrawals are persisted and the batch runner can claim and transition records with retry metadata.
-- The actual execution function defaults to `ok: true` and must be replaced with real on-chain/Hub actions.
+Delivered:
+- Worker default executor now invokes Fiber node RPC via adapter (`send_payment`) instead of returning `ok: true` stub (`fiber-link-service/apps/worker/src/withdrawal-batch.ts`, `fiber-link-service/packages/fiber-adapter/src/index.ts`).
+- Completed withdrawals persist execution evidence via `tx_hash` / `txHash` (`fiber-link-service/packages/db/src/schema.ts`, `fiber-link-service/packages/db/src/withdrawal-repo.ts`).
+- Retry classification now distinguishes transient vs permanent execution failures using RPC code/message heuristics (`fiber-link-service/apps/worker/src/withdrawal-batch.ts`).
+- Admin withdrawal listing includes `txHash` for operational traceability (`fiber-link-service/apps/admin/src/server/api/routers/withdrawal.ts`).
 
-Next work:
-- Implement execution via the Fiber adapter / node RPC.
-- Capture permanent vs transient failures correctly and record tx hash / error details.
+Remaining follow-up:
+- Replace heuristic classification with explicit Fiber error contract mapping once upstream error taxonomy is stabilized.
+- Confirm long-term destination semantics (`toAddress` vs payment request) before plugin withdrawal UI rollout.
 
 ### D) Balance + Insufficient Funds Gate (Not Yet Implemented)
 
@@ -116,9 +118,8 @@ Next work:
 
 ## Suggested Next Milestone (Phase 3)
 
-Phase 3 Sprint 1 is complete (settlement polling/replay/observability baseline). Next work should move to execution/debit flows.
+Phase 3 Sprint 1 and Sprint 2 baselines are complete. Next work should move to debit invariants and request-time balance controls.
 
-- Sprint 2 (next): real withdrawal execution + failure classification + tx evidence persistence.
-- Sprint 3: balance/debit invariants and insufficient-funds gate.
+- Sprint 3 (next): balance/debit invariants and insufficient-funds gate.
 
 Detailed next plan: `docs/plans/2026-02-11-phase3-sprint1-settlement-v1-plan.md`
