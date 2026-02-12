@@ -1,6 +1,6 @@
 # Research & Planning Checklist
 
-Last updated: 2026-02-11
+Last updated: 2026-02-12
 
 This checklist is now a live TODO board after Phase 2 completion.
 
@@ -30,11 +30,11 @@ References:
 Owner: `@Keith-CY`  
 Target: 2026-02-18
 
-- [ ] Implement polling-based settlement discovery worker loop
-- [ ] Add reconciliation/backfill command (idempotent replay by app/time window)
-- [ ] Add settlement observability metrics (pending backlog, detection latency, replay count)
-- [ ] Add incident/repair runbook for missed settlement events
-- [ ] Add tests for crash-recovery, duplicate observations, and missed-event backfill
+- [x] Implement polling-based settlement discovery worker loop
+- [x] Add reconciliation/backfill command (idempotent replay by app/time window)
+- [x] Add settlement observability metrics (pending backlog, detection latency, replay count)
+- [x] Add incident/repair runbook for missed settlement events
+- [x] Add tests for crash-recovery, duplicate observations, and missed-event backfill
 
 ### Priority 2: Withdrawal Execution (Sprint 2)
 
