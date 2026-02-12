@@ -26,7 +26,7 @@ Environment variables used by the Fiber Link service:
 - `FIBER_LINK_NONCE_REDIS_URL` — Redis URL for shared nonce replay cache. If unset, the RPC service falls back to an in-memory cache (single-instance only).
 
 ## Next steps
-1) Phase 3 Sprint 1: implement settlement detection + reconciliation/backfill loop (worker).
-2) Implement withdrawal execution with real node actions + tx evidence persistence.
-3) Implement balance/debit invariants + insufficient-funds gate.
-4) Align CI and runbooks (plugin requests scope + optional system-spec coverage).
+1) Phase 3 Sprint 3: implement balance/debit invariants + insufficient-funds gate.
+2) Align CI and runbooks (plugin requests scope + optional system-spec coverage).
+3) Define Year 1 admin membership SOP (`app_admins` grant/revoke + audit trail).
+4) Confirm MVP asset tuple in code/config (CKB + selected stablecoin UDT).

@@ -19,6 +19,11 @@ All Phase 2 tasks (Task 1 to Task 10) are now merged into `main` via PRs:
 - PR #9: Discourse tip UI + hardened RPC proxy + request/system specs (Phase2 Task 9)
 - PR #13: Service + FNN Docker Compose reference deployment baseline
 
+Recent Phase 3 baseline deliveries:
+- PR #15: Sprint 1 settlement polling + replay backfill baseline
+- PR #16: Settlement observability metrics and runbook sync
+- PR #17: Sprint 2 withdrawal execution via Fiber RPC + tx evidence
+
 ### Phase 2 Delivered Capabilities
 
 Service:
