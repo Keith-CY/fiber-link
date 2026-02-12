@@ -1,6 +1,6 @@
 # Fiber Link Development Progress
 
-Last updated: 2026-02-11
+Last updated: 2026-02-12
 
 This document summarizes what has shipped so far (Phase 2) and what remains (post-Phase 2 roadmap).
 
@@ -57,16 +57,20 @@ Decisions are now explicitly captured and accepted:
 Remaining policy item to finalize in implementation tickets:
 - concrete MVP asset tuple (CKB + selected stablecoin UDT symbol/id in code/config)
 
-### B) Settlement Detection Worker (Not Yet Implemented)
+### B) Settlement Detection Worker (Implemented in Sprint 1)
 
-Current state:
-- The worker has a settlement entrypoint (`fiber-link-service/apps/worker/src/settlement.ts`) that can credit once given `{ invoice }`.
+Delivered:
+- Polling-based settlement discovery loop in worker runtime (`fiber-link-service/apps/worker/src/worker-runtime.ts`, `fiber-link-service/apps/worker/src/settlement-discovery.ts`).
+- Reconciliation/backfill command with app/time window filters (`fiber-link-service/apps/worker/src/scripts/backfill-settlements.ts`).
+- Idempotent replay behavior preserved through settlement credit invariants (`fiber-link-service/apps/worker/src/settlement.ts`).
+- Cursor-based scan progression to avoid fixed-limit starvation of newer unpaid invoices (`fiber-link-service/apps/worker/src/entry.ts`, `fiber-link-service/packages/db/src/tip-intent-repo.ts`).
+- Settlement observability fields in discovery summaries:
+  - pending backlog before/after scan
+  - detection latency (p50/p95/max)
+  - replay/scan counts
 
-Missing:
-- A durable mechanism to discover invoice settlement events:
-  - polling Fiber node invoice status
-  - subscription/event stream (if available)
-  - reconciliation/backfill loop for missed events
+Remaining optimization (non-blocking):
+- Event-subscription path for lower latency once upstream interface stability is proven.
 
 ### C) Withdrawal Execution (Still Stubbed)
 
@@ -112,10 +116,9 @@ Next work:
 
 ## Suggested Next Milestone (Phase 3)
 
-Phase 3 should start with a narrow Sprint 1 focused on settlement discovery reliability, then expand to execution/debit flows.
+Phase 3 Sprint 1 is complete (settlement polling/replay/observability baseline). Next work should move to execution/debit flows.
 
-- Sprint 1 (next): settlement polling + reconciliation/backfill loop, with operational metrics/runbook.
-- Sprint 2: real withdrawal execution + failure classification + tx evidence persistence.
+- Sprint 2 (next): real withdrawal execution + failure classification + tx evidence persistence.
 - Sprint 3: balance/debit invariants and insufficient-funds gate.
 
 Detailed next plan: `docs/plans/2026-02-11-phase3-sprint1-settlement-v1-plan.md`

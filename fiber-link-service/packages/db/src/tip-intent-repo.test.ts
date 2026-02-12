@@ -217,4 +217,54 @@ describe("tipIntentRepo (in-memory)", () => {
       vi.useRealTimers();
     }
   });
+
+  it("counts invoice-state backlog with app/time filters", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-02-11T12:00:00.000Z"));
+      await repo.create({
+        appId: "app-a",
+        postId: "p1",
+        fromUserId: "u1",
+        toUserId: "u2",
+        asset: "USDI",
+        amount: "10",
+        invoice: "inv-count-1",
+      });
+      vi.setSystemTime(new Date("2026-02-11T12:00:01.000Z"));
+      await repo.create({
+        appId: "app-a",
+        postId: "p2",
+        fromUserId: "u3",
+        toUserId: "u4",
+        asset: "USDI",
+        amount: "20",
+        invoice: "inv-count-2",
+      });
+      vi.setSystemTime(new Date("2026-02-11T12:00:02.000Z"));
+      await repo.create({
+        appId: "app-b",
+        postId: "p3",
+        fromUserId: "u5",
+        toUserId: "u6",
+        asset: "USDI",
+        amount: "30",
+        invoice: "inv-count-3",
+      });
+      await repo.updateInvoiceState("inv-count-2", "SETTLED");
+    } finally {
+      vi.useRealTimers();
+    }
+
+    const totalUnpaid = await repo.countByInvoiceState("UNPAID");
+    expect(totalUnpaid).toBe(2);
+
+    const appAUnpaid = await repo.countByInvoiceState("UNPAID", { appId: "app-a" });
+    expect(appAUnpaid).toBe(1);
+
+    const windowUnpaid = await repo.countByInvoiceState("UNPAID", {
+      createdAtFrom: new Date("2026-02-11T12:00:01.500Z"),
+    });
+    expect(windowUnpaid).toBe(1);
+  });
 });

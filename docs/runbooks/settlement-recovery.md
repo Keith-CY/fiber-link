@@ -42,13 +42,23 @@ Expected output shape:
     "settledDuplicates": 1,
     "failed": 2,
     "stillUnpaid": 36,
-    "errors": 0
+    "errors": 0,
+    "backlogUnpaidBeforeScan": 42,
+    "backlogUnpaidAfterScan": 38,
+    "detectionLatencyMs": {
+      "count": 4,
+      "p50": 84500,
+      "p95": 126000,
+      "max": 126000
+    }
   }
 }
 ```
 
 Notes:
 - `settledDuplicates > 0` is expected during replays; this indicates idempotent no-op credits.
+- `backlogUnpaidBeforeScan - backlogUnpaidAfterScan` shows how much backlog was cleared in the run.
+- `detectionLatencyMs` is computed from tip-intent creation time to discovery time for settled invoices in this run.
 - Command is safe to re-run for the same window.
 
 ## 2) Verify repaired state

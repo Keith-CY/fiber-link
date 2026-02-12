@@ -19,6 +19,13 @@ type SettlementLogger = {
   error: (message: string, error?: unknown) => void;
 };
 
+type LatencySummary = {
+  count: number;
+  p50: number | null;
+  p95: number | null;
+  max: number | null;
+};
+
 export type SettlementDiscoveryOptions = {
   limit: number;
   appId?: string;
@@ -28,6 +35,7 @@ export type SettlementDiscoveryOptions = {
   adapter?: SettlementAdapter;
   tipIntentRepo?: TipIntentRepo;
   ledgerRepo?: LedgerRepo;
+  nowMsFn?: () => number;
   logger?: SettlementLogger;
 };
 
@@ -39,6 +47,9 @@ export type SettlementDiscoverySummary = {
   stillUnpaid: number;
   errors: number;
   nextCursor: TipIntentListCursor | null;
+  backlogUnpaidBeforeScan: number;
+  backlogUnpaidAfterScan: number;
+  detectionLatencyMs: LatencySummary;
 };
 
 const defaultLogger: SettlementLogger = {
@@ -87,10 +98,35 @@ function getDefaultAdapter(): SettlementAdapter {
   return defaultAdapter;
 }
 
+function summarizeLatency(values: number[]): LatencySummary {
+  if (values.length === 0) {
+    return {
+      count: 0,
+      p50: null,
+      p95: null,
+      max: null,
+    };
+  }
+
+  const sorted = [...values].sort((a, b) => a - b);
+  const percentile = (p: number) => {
+    const index = Math.ceil(p * sorted.length) - 1;
+    return sorted[Math.max(0, Math.min(index, sorted.length - 1))];
+  };
+
+  return {
+    count: sorted.length,
+    p50: percentile(0.5),
+    p95: percentile(0.95),
+    max: sorted[sorted.length - 1] ?? null,
+  };
+}
+
 export async function runSettlementDiscovery(options: SettlementDiscoveryOptions): Promise<SettlementDiscoverySummary> {
   const tipIntentRepo = options.tipIntentRepo ?? getDefaultTipIntentRepo();
   const ledgerRepo = options.ledgerRepo ?? getDefaultLedgerRepo();
   const adapter = options.adapter ?? getDefaultAdapter();
+  const nowMsFn = options.nowMsFn ?? Date.now;
   const logger = options.logger ?? defaultLogger;
 
   const baseQueryOptions = {
@@ -99,6 +135,8 @@ export async function runSettlementDiscovery(options: SettlementDiscoveryOptions
     createdAtTo: options.createdAtTo,
     limit: options.limit,
   };
+
+  const backlogUnpaidBeforeScan = await tipIntentRepo.countByInvoiceState("UNPAID", baseQueryOptions);
 
   let intents = await tipIntentRepo.listByInvoiceState("UNPAID", {
     ...baseQueryOptions,
@@ -116,7 +154,16 @@ export async function runSettlementDiscovery(options: SettlementDiscoveryOptions
     stillUnpaid: 0,
     errors: 0,
     nextCursor: null,
+    backlogUnpaidBeforeScan,
+    backlogUnpaidAfterScan: backlogUnpaidBeforeScan,
+    detectionLatencyMs: {
+      count: 0,
+      p50: null,
+      p95: null,
+      max: null,
+    },
   };
+  const settledLatenciesMs: number[] = [];
 
   for (const intent of intents) {
     try {
@@ -134,6 +181,7 @@ export async function runSettlementDiscovery(options: SettlementDiscoveryOptions
         } else {
           summary.settledDuplicates += 1;
         }
+        settledLatenciesMs.push(Math.max(0, nowMsFn() - intent.createdAt.getTime()));
         continue;
       }
 
@@ -160,6 +208,9 @@ export async function runSettlementDiscovery(options: SettlementDiscoveryOptions
       id: last.id,
     };
   }
+
+  summary.backlogUnpaidAfterScan = await tipIntentRepo.countByInvoiceState("UNPAID", baseQueryOptions);
+  summary.detectionLatencyMs = summarizeLatency(settledLatenciesMs);
 
   logger.info("[worker] settlement discovery summary", summary);
   return summary;

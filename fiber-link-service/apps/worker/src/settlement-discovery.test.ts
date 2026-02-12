@@ -202,4 +202,54 @@ describe("runSettlementDiscovery", () => {
 
     expect(seenInvoices).toEqual(["inv-cursor-1", "inv-cursor-2", "inv-cursor-3", "inv-cursor-1"]);
   });
+
+  it("emits backlog and detection latency metrics in summary", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-02-11T13:00:00.000Z"));
+      await tipIntentRepo.create({
+        appId: "app-a",
+        postId: "p1",
+        fromUserId: "u1",
+        toUserId: "u2",
+        asset: "USDI",
+        amount: "10",
+        invoice: "inv-metric-old",
+      });
+      vi.setSystemTime(new Date("2026-02-11T13:00:05.000Z"));
+      await tipIntentRepo.create({
+        appId: "app-a",
+        postId: "p2",
+        fromUserId: "u3",
+        toUserId: "u4",
+        asset: "USDI",
+        amount: "20",
+        invoice: "inv-metric-new",
+      });
+      vi.setSystemTime(new Date("2026-02-11T13:00:20.000Z"));
+    } finally {
+      vi.useRealTimers();
+    }
+
+    const summary = await runSettlementDiscovery({
+      limit: 100,
+      tipIntentRepo,
+      ledgerRepo,
+      adapter: {
+        async getInvoiceStatus({ invoice }) {
+          if (invoice === "inv-metric-old") {
+            return { state: "SETTLED" as const };
+          }
+          return { state: "UNPAID" as const };
+        },
+      },
+      nowMsFn: () => new Date("2026-02-11T13:00:20.000Z").getTime(),
+    });
+
+    expect(summary.backlogUnpaidBeforeScan).toBe(2);
+    expect(summary.backlogUnpaidAfterScan).toBe(1);
+    expect(summary.detectionLatencyMs.count).toBe(1);
+    expect(summary.detectionLatencyMs.p50).toBe(20_000);
+    expect(summary.detectionLatencyMs.p95).toBe(20_000);
+  });
 });

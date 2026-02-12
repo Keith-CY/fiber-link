@@ -36,6 +36,8 @@ export type TipIntentListOptions = {
   after?: TipIntentListCursor;
 };
 
+export type TipIntentCountOptions = Omit<TipIntentListOptions, "limit" | "after">;
+
 export class TipIntentNotFoundError extends Error {
   constructor(public readonly invoice: string) {
     super("tip intent not found");
@@ -48,6 +50,7 @@ export type TipIntentRepo = {
   findByInvoiceOrThrow(invoice: string): Promise<TipIntentRecord>;
   updateInvoiceState(invoice: string, state: InvoiceState): Promise<TipIntentRecord>;
   listByInvoiceState(state: InvoiceState, options?: TipIntentListOptions): Promise<TipIntentRecord[]>;
+  countByInvoiceState(state: InvoiceState, options?: TipIntentCountOptions): Promise<number>;
   __resetForTests?: () => void;
 };
 
@@ -80,6 +83,28 @@ function isUniqueViolation(err: unknown): boolean {
 }
 
 export function createDbTipIntentRepo(db: DbClient): TipIntentRepo {
+  function buildStateFilters(state: InvoiceState, options: TipIntentListOptions | TipIntentCountOptions = {}) {
+    const filters = [eq(tipIntents.invoiceState, state)];
+    if (options.appId) {
+      filters.push(eq(tipIntents.appId, options.appId));
+    }
+    if (options.createdAtFrom) {
+      filters.push(gte(tipIntents.createdAt, options.createdAtFrom));
+    }
+    if (options.createdAtTo) {
+      filters.push(lte(tipIntents.createdAt, options.createdAtTo));
+    }
+    if ("after" in options && options.after) {
+      filters.push(
+        or(
+          gt(tipIntents.createdAt, options.after.createdAt),
+          and(eq(tipIntents.createdAt, options.after.createdAt), gt(tipIntents.id, options.after.id)),
+        )!,
+      );
+    }
+    return filters;
+  }
+
   return {
     async create(input) {
       const now = new Date();
@@ -131,24 +156,7 @@ export function createDbTipIntentRepo(db: DbClient): TipIntentRepo {
     },
 
     async listByInvoiceState(state, options = {}) {
-      const filters = [eq(tipIntents.invoiceState, state)];
-      if (options.appId) {
-        filters.push(eq(tipIntents.appId, options.appId));
-      }
-      if (options.createdAtFrom) {
-        filters.push(gte(tipIntents.createdAt, options.createdAtFrom));
-      }
-      if (options.createdAtTo) {
-        filters.push(lte(tipIntents.createdAt, options.createdAtTo));
-      }
-      if (options.after) {
-        filters.push(
-          or(
-            gt(tipIntents.createdAt, options.after.createdAt),
-            and(eq(tipIntents.createdAt, options.after.createdAt), gt(tipIntents.id, options.after.id)),
-          )!,
-        );
-      }
+      const filters = buildStateFilters(state, options);
 
       let query = db
         .select()
@@ -160,6 +168,12 @@ export function createDbTipIntentRepo(db: DbClient): TipIntentRepo {
       }
       const rows = await query;
       return rows.map(toRecord);
+    },
+
+    async countByInvoiceState(state, options = {}) {
+      const filters = buildStateFilters(state, options);
+      const [row] = await db.select({ count: sql<number>`count(*)` }).from(tipIntents).where(and(...filters));
+      return Number(row?.count ?? 0);
     },
   };
 }
@@ -247,6 +261,20 @@ export function createInMemoryTipIntentRepo(): TipIntentRepo {
         items = items.slice(0, options.limit);
       }
       return items.map(clone);
+    },
+
+    async countByInvoiceState(state, options = {}) {
+      let items = records.filter((item) => item.invoiceState === state);
+      if (options.appId) {
+        items = items.filter((item) => item.appId === options.appId);
+      }
+      if (options.createdAtFrom) {
+        items = items.filter((item) => item.createdAt >= options.createdAtFrom!);
+      }
+      if (options.createdAtTo) {
+        items = items.filter((item) => item.createdAt <= options.createdAtTo!);
+      }
+      return items.length;
     },
 
     __resetForTests() {
