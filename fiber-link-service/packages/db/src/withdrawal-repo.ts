@@ -23,6 +23,7 @@ export type WithdrawalRecord = CreateWithdrawalInput & {
   createdAt: Date;
   updatedAt: Date;
   completedAt: Date | null;
+  txHash: string | null;
 };
 
 export class WithdrawalNotFoundError extends Error {
@@ -48,7 +49,7 @@ export type WithdrawalRepo = {
   findByIdOrThrow(id: string): Promise<WithdrawalRecord>;
   listReadyForProcessing(now: Date): Promise<WithdrawalRecord[]>;
   markProcessing(id: string, now: Date): Promise<WithdrawalRecord>;
-  markCompleted(id: string, now: Date): Promise<WithdrawalRecord>;
+  markCompleted(id: string, params: { now: Date; txHash: string }): Promise<WithdrawalRecord>;
   markRetryPending(id: string, params: { now: Date; nextRetryAt: Date; error: string }): Promise<WithdrawalRecord>;
   markFailed(id: string, params: { now: Date; error: string; incrementRetryCount?: boolean }): Promise<WithdrawalRecord>;
   __resetForTests?: () => void;
@@ -71,6 +72,7 @@ function toRecord(row: WithdrawalRow): WithdrawalRecord {
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     completedAt: row.completedAt,
+    txHash: row.txHash,
   };
 }
 
@@ -101,6 +103,7 @@ export function createDbWithdrawalRepo(db: DbClient): WithdrawalRepo {
           createdAt: now,
           updatedAt: now,
           completedAt: null,
+          txHash: null,
         })
         .returning();
       return toRecord(row);
@@ -144,15 +147,16 @@ export function createDbWithdrawalRepo(db: DbClient): WithdrawalRepo {
       return toRecord(row);
     },
 
-    async markCompleted(id, now) {
+    async markCompleted(id, params) {
       const [row] = await db
         .update(withdrawals)
         .set({
           state: "COMPLETED",
           nextRetryAt: null,
           lastError: null,
-          updatedAt: now,
-          completedAt: now,
+          updatedAt: params.now,
+          completedAt: params.now,
+          txHash: params.txHash,
         })
         .where(and(eq(withdrawals.id, id), eq(withdrawals.state, "PROCESSING")))
         .returning();
@@ -229,6 +233,7 @@ export function createInMemoryWithdrawalRepo(): WithdrawalRepo {
         createdAt: now,
         updatedAt: now,
         completedAt: null,
+        txHash: null,
       };
       records.push(record);
       return clone(record);
@@ -265,7 +270,7 @@ export function createInMemoryWithdrawalRepo(): WithdrawalRepo {
       return clone(record);
     },
 
-    async markCompleted(id, now) {
+    async markCompleted(id, params) {
       const record = records.find((item) => item.id === id);
       if (!record) {
         throw new WithdrawalNotFoundError(id);
@@ -276,8 +281,9 @@ export function createInMemoryWithdrawalRepo(): WithdrawalRepo {
       record.state = "COMPLETED";
       record.nextRetryAt = null;
       record.lastError = null;
-      record.updatedAt = now;
-      record.completedAt = now;
+      record.updatedAt = params.now;
+      record.completedAt = params.now;
+      record.txHash = params.txHash;
       return clone(record);
     },
 

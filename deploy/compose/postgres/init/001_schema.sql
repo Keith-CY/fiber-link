@@ -81,7 +81,8 @@ CREATE TABLE IF NOT EXISTS withdrawals (
   last_error TEXT,
   created_at TIMESTAMP NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
-  completed_at TIMESTAMP
+  completed_at TIMESTAMP,
+  tx_hash TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_tip_intents_invoice_state ON tip_intents(invoice_state);

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { WithdrawalTransitionConflictError, createInMemoryWithdrawalRepo } from "@fiber-link/db";
+import { FiberRpcError } from "@fiber-link/fiber-adapter";
 import { runWithdrawalBatch } from "./withdrawal-batch";
 
 describe("runWithdrawalBatch", () => {
@@ -133,7 +134,7 @@ describe("runWithdrawalBatch", () => {
 
     const res = await runWithdrawalBatch({
       now: new Date("2026-02-07T11:00:00.000Z"),
-      executeWithdrawal: async () => ({ ok: true }),
+      executeWithdrawal: async () => ({ ok: true, txHash: "0xrace-ok" }),
       repo: contentionRepo,
     });
 
@@ -143,5 +144,73 @@ describe("runWithdrawalBatch", () => {
     const secondSaved = await repo.findByIdOrThrow(second.id);
     expect(firstSaved.state).toBe("PENDING");
     expect(secondSaved.state).toBe("COMPLETED");
+  });
+
+  it("persists txHash evidence when withdrawal execution succeeds", async () => {
+    const created = await repo.create({
+      appId: "app1",
+      userId: "u1",
+      asset: "USDI",
+      amount: "10",
+      toAddress: "fiber:invoice:ok",
+    });
+
+    const res = await runWithdrawalBatch({
+      now: new Date("2026-02-07T12:00:00.000Z"),
+      executeWithdrawal: async () => ({ ok: true, txHash: "0xabc123" }),
+      repo,
+    });
+
+    expect(res.completed).toBe(1);
+    const saved = await repo.findByIdOrThrow(created.id);
+    expect(saved.state).toBe("COMPLETED");
+    expect(saved.txHash).toBe("0xabc123");
+  });
+
+  it("treats Fiber internal rpc error as transient and schedules retry", async () => {
+    const created = await repo.create({
+      appId: "app1",
+      userId: "u1",
+      asset: "USDI",
+      amount: "10",
+      toAddress: "fiber:invoice:retry",
+    });
+
+    const res = await runWithdrawalBatch({
+      now: new Date("2026-02-07T12:30:00.000Z"),
+      retryDelayMs: 60_000,
+      executeWithdrawal: async () => {
+        throw new FiberRpcError("internal error", -32603);
+      },
+      repo,
+    });
+
+    expect(res.retryPending).toBe(1);
+    const saved = await repo.findByIdOrThrow(created.id);
+    expect(saved.state).toBe("RETRY_PENDING");
+    expect(saved.lastError).toContain("internal error");
+  });
+
+  it("treats Fiber invalid params rpc error as permanent failure", async () => {
+    const created = await repo.create({
+      appId: "app1",
+      userId: "u1",
+      asset: "USDI",
+      amount: "10",
+      toAddress: "fiber:invoice:bad",
+    });
+
+    const res = await runWithdrawalBatch({
+      now: new Date("2026-02-07T12:40:00.000Z"),
+      executeWithdrawal: async () => {
+        throw new FiberRpcError("invalid params", -32602);
+      },
+      repo,
+    });
+
+    expect(res.failed).toBe(1);
+    const saved = await repo.findByIdOrThrow(created.id);
+    expect(saved.state).toBe("FAILED");
+    expect(saved.lastError).toContain("invalid params");
   });
 });
