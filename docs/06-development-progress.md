@@ -127,4 +127,6 @@ Phase 3 Sprint 1 and Sprint 2 baselines are complete. Next work should move to d
 
 - Sprint 3 (next): balance/debit invariants and insufficient-funds gate.
 
-Detailed next plan: `docs/plans/2026-02-11-phase3-sprint1-settlement-v1-plan.md`
+Historical reference (Sprint 1 plan): `docs/plans/2026-02-11-phase3-sprint1-settlement-v1-plan.md`
+
+Next plan for Sprint 3 balance/debit invariants is TBD and should be added as a dedicated Sprint 3 plan doc.
