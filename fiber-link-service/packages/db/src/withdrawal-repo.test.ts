@@ -1,9 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import type { DbClient } from "./client";
+import { createInMemoryLedgerRepo } from "./ledger-repo";
 import {
+  InsufficientFundsError,
   WithdrawalNotFoundError,
   WithdrawalTransitionConflictError,
   createDbWithdrawalRepo,
+  createInMemoryWithdrawalRepo,
 } from "./withdrawal-repo";
 
 type DbMock = {
@@ -111,5 +114,75 @@ describe("createDbWithdrawalRepo", () => {
     expect(saved.txHash).toBe("0xabc123");
     const setArg = mock.updateSet.mock.calls[0][0] as Record<string, unknown>;
     expect(setArg.txHash).toBe("0xabc123");
+  });
+});
+
+describe("createInMemoryWithdrawalRepo balance gating", () => {
+  it("rejects when pending withdrawals exceed available balance", async () => {
+    const ledger = createInMemoryLedgerRepo();
+    const repo = createInMemoryWithdrawalRepo();
+
+    await ledger.creditOnce({
+      appId: "app1",
+      userId: "u1",
+      asset: "USDI",
+      amount: "10",
+      refId: "t1",
+      idempotencyKey: "credit:t1",
+    });
+    await repo.create({
+      appId: "app1",
+      userId: "u1",
+      asset: "USDI",
+      amount: "8",
+      toAddress: "addr",
+    });
+
+    await expect(
+      repo.createWithBalanceCheck(
+        {
+          appId: "app1",
+          userId: "u1",
+          asset: "USDI",
+          amount: "5",
+          toAddress: "addr2",
+        },
+        { ledgerRepo: ledger },
+      ),
+    ).rejects.toBeInstanceOf(InsufficientFundsError);
+  });
+
+  it("accepts when available balance covers request", async () => {
+    const ledger = createInMemoryLedgerRepo();
+    const repo = createInMemoryWithdrawalRepo();
+
+    await ledger.creditOnce({
+      appId: "app1",
+      userId: "u1",
+      asset: "USDI",
+      amount: "10",
+      refId: "t1",
+      idempotencyKey: "credit:t1",
+    });
+    await repo.create({
+      appId: "app1",
+      userId: "u1",
+      asset: "USDI",
+      amount: "8",
+      toAddress: "addr",
+    });
+
+    const created = await repo.createWithBalanceCheck(
+      {
+        appId: "app1",
+        userId: "u1",
+        asset: "USDI",
+        amount: "2",
+        toAddress: "addr2",
+      },
+      { ledgerRepo: ledger },
+    );
+
+    expect(created.state).toBe("PENDING");
   });
 });

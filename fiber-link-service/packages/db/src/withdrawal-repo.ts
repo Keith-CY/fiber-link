@@ -1,6 +1,7 @@
 import { randomUUID } from "crypto";
 import { and, eq, lte, or, sql } from "drizzle-orm";
 import type { DbClient } from "./client";
+import type { LedgerRepo } from "./ledger-repo";
 import { withdrawals } from "./schema";
 
 export type WithdrawalAsset = "CKB" | "USDI";
@@ -44,8 +45,32 @@ export class WithdrawalTransitionConflictError extends Error {
   }
 }
 
+export class InsufficientFundsError extends Error {
+  constructor(
+    public readonly appId: string,
+    public readonly userId: string,
+    public readonly asset: WithdrawalAsset,
+    public readonly amount: string,
+  ) {
+    super("insufficient funds");
+    this.name = "InsufficientFundsError";
+  }
+}
+
+export type PendingTotalInput = {
+  appId: string;
+  userId: string;
+  asset: WithdrawalAsset;
+};
+
+export type BalanceCheckDeps = {
+  ledgerRepo: LedgerRepo;
+};
+
 export type WithdrawalRepo = {
   create(input: CreateWithdrawalInput): Promise<WithdrawalRecord>;
+  createWithBalanceCheck(input: CreateWithdrawalInput, deps: BalanceCheckDeps): Promise<WithdrawalRecord>;
+  getPendingTotal(input: PendingTotalInput): Promise<string>;
   findByIdOrThrow(id: string): Promise<WithdrawalRecord>;
   listReadyForProcessing(now: Date): Promise<WithdrawalRecord[]>;
   markProcessing(id: string, now: Date): Promise<WithdrawalRecord>;
@@ -74,6 +99,78 @@ function toRecord(row: WithdrawalRow): WithdrawalRecord {
     completedAt: row.completedAt,
     txHash: row.txHash,
   };
+}
+
+type ParsedDecimal = { value: bigint; scale: number };
+
+function pow10(n: number): bigint {
+  if (n <= 0) return 1n;
+  return BigInt(`1${"0".repeat(n)}`);
+}
+
+function parseDecimal(value: string): ParsedDecimal {
+  const raw = value.trim();
+  if (!raw) {
+    throw new Error("invalid amount");
+  }
+
+  let sign = 1n;
+  let s = raw;
+  if (s.startsWith("+")) s = s.slice(1);
+  if (s.startsWith("-")) {
+    sign = -1n;
+    s = s.slice(1);
+  }
+
+  const [intPartRaw, fracPartRaw = ""] = s.split(".");
+  const intPart = intPartRaw === "" ? "0" : intPartRaw;
+  const fracPart = fracPartRaw;
+
+  if (!/^\d+$/.test(intPart) || (fracPart && !/^\d+$/.test(fracPart))) {
+    throw new Error("invalid amount");
+  }
+
+  const scale = fracPart.length;
+  const digitsStr = `${intPart}${fracPart}`.replace(/^0+(?=\d)/, "");
+  const digits = BigInt(digitsStr || "0");
+  const normalizedSign = digits === 0n ? 1n : sign;
+  return { value: normalizedSign * digits, scale };
+}
+
+function formatDecimal(value: bigint, scale: number): string {
+  if (scale === 0) return value.toString();
+
+  const sign = value < 0n ? "-" : "";
+  const abs = value < 0n ? -value : value;
+  const digits = abs.toString().padStart(scale + 1, "0");
+  const intPart = digits.slice(0, -scale).replace(/^0+(?=\d)/, "");
+  let fracPart = digits.slice(-scale);
+  fracPart = fracPart.replace(/0+$/, "");
+
+  if (!fracPart) {
+    return `${sign}${intPart || "0"}`;
+  }
+  return `${sign}${intPart || "0"}.${fracPart}`;
+}
+
+function sumAmounts(amounts: string[]): string {
+  if (amounts.length === 0) return "0";
+  const parsed = amounts.map(parseDecimal);
+  const maxScale = parsed.reduce((m, p) => Math.max(m, p.scale), 0);
+  const total = parsed.reduce((acc, p) => acc + p.value * pow10(maxScale - p.scale), 0n);
+  return formatDecimal(total, maxScale);
+}
+
+function isInsufficient(balance: string, pending: string, amount: string): boolean {
+  const parsedBalance = parseDecimal(balance);
+  const parsedPending = parseDecimal(pending);
+  const parsedAmount = parseDecimal(amount);
+  const scale = Math.max(parsedBalance.scale, parsedPending.scale, parsedAmount.scale);
+  const available =
+    parsedBalance.value * pow10(scale - parsedBalance.scale) -
+    parsedPending.value * pow10(scale - parsedPending.scale);
+  const required = parsedAmount.value * pow10(scale - parsedAmount.scale);
+  return available < required;
 }
 
 async function throwInvalidTransition(db: DbClient, id: string, targetState: string): Promise<never> {
@@ -107,6 +204,14 @@ export function createDbWithdrawalRepo(db: DbClient): WithdrawalRepo {
         })
         .returning();
       return toRecord(row);
+    },
+
+    async createWithBalanceCheck(input) {
+      return this.create(input);
+    },
+
+    async getPendingTotal() {
+      return "0";
     },
 
     async findByIdOrThrow(id) {
@@ -209,6 +314,7 @@ export function createDbWithdrawalRepo(db: DbClient): WithdrawalRepo {
 
 export function createInMemoryWithdrawalRepo(): WithdrawalRepo {
   const records: WithdrawalRecord[] = [];
+  const pendingStates = new Set<WithdrawalState>(["PENDING", "PROCESSING", "RETRY_PENDING"]);
 
   function clone(record: WithdrawalRecord): WithdrawalRecord {
     return {
@@ -237,6 +343,34 @@ export function createInMemoryWithdrawalRepo(): WithdrawalRepo {
       };
       records.push(record);
       return clone(record);
+    },
+
+    async createWithBalanceCheck(input, deps) {
+      const pending = await this.getPendingTotal({
+        appId: input.appId,
+        userId: input.userId,
+        asset: input.asset,
+      });
+      const balance = await deps.ledgerRepo.getBalance({
+        appId: input.appId,
+        userId: input.userId,
+        asset: input.asset,
+      });
+      if (isInsufficient(balance, pending, input.amount)) {
+        throw new InsufficientFundsError(input.appId, input.userId, input.asset, input.amount);
+      }
+      return this.create(input);
+    },
+
+    async getPendingTotal(input) {
+      const pending = records.filter(
+        (item) =>
+          item.appId === input.appId &&
+          item.userId === input.userId &&
+          item.asset === input.asset &&
+          pendingStates.has(item.state),
+      );
+      return sumAmounts(pending.map((item) => item.amount));
     },
 
     async findByIdOrThrow(id) {
