@@ -2,7 +2,9 @@ import {
   WithdrawalNotFoundError,
   WithdrawalTransitionConflictError,
   createDbClient,
+  createDbLedgerRepo,
   createDbWithdrawalRepo,
+  type LedgerRepo,
   type WithdrawalRecord,
   type WithdrawalRepo,
 } from "@fiber-link/db";
@@ -17,6 +19,7 @@ export type RunWithdrawalBatchOptions = {
   maxRetries?: number;
   retryDelayMs?: number;
   executeWithdrawal?: (withdrawal: WithdrawalRecord) => Promise<WithdrawalExecutionResult>;
+  ledgerRepo?: LedgerRepo;
   repo?: WithdrawalRepo;
 };
 
@@ -40,6 +43,7 @@ async function defaultExecuteWithdrawal(withdrawal: WithdrawalRecord): Promise<W
 }
 
 let defaultRepo: WithdrawalRepo | null = null;
+let defaultLedgerRepo: LedgerRepo | null = null;
 let defaultFiberAdapter:
   | ReturnType<typeof createAdapter>
   | null = null;
@@ -49,6 +53,13 @@ function getDefaultRepo(): WithdrawalRepo {
     defaultRepo = createDbWithdrawalRepo(createDbClient());
   }
   return defaultRepo;
+}
+
+function getDefaultLedgerRepo(): LedgerRepo {
+  if (!defaultLedgerRepo) {
+    defaultLedgerRepo = createDbLedgerRepo(createDbClient());
+  }
+  return defaultLedgerRepo;
 }
 
 function getDefaultFiberAdapter(endpoint: string) {
@@ -118,7 +129,8 @@ export async function runWithdrawalBatch(options: RunWithdrawalBatchOptions = {}
 
     processed += 1;
     if (result.ok) {
-      await repo.markCompleted(item.id, { now, txHash: result.txHash });
+      const ledgerRepo = options.ledgerRepo ?? getDefaultLedgerRepo();
+      await repo.markCompletedWithDebit(item.id, { now, txHash: result.txHash }, { ledgerRepo });
       completed += 1;
       continue;
     }

@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import { and, eq, lte, or, sql } from "drizzle-orm";
 import type { DbClient } from "./client";
-import type { LedgerRepo } from "./ledger-repo";
+import { createDbLedgerRepo, type LedgerRepo } from "./ledger-repo";
 import { withdrawals } from "./schema";
 
 export type WithdrawalAsset = "CKB" | "USDI";
@@ -67,6 +67,10 @@ export type BalanceCheckDeps = {
   ledgerRepo: LedgerRepo;
 };
 
+export type CompletionDeps = {
+  ledgerRepo: LedgerRepo;
+};
+
 export type WithdrawalRepo = {
   create(input: CreateWithdrawalInput): Promise<WithdrawalRecord>;
   createWithBalanceCheck(input: CreateWithdrawalInput, deps: BalanceCheckDeps): Promise<WithdrawalRecord>;
@@ -75,6 +79,7 @@ export type WithdrawalRepo = {
   listReadyForProcessing(now: Date): Promise<WithdrawalRecord[]>;
   markProcessing(id: string, now: Date): Promise<WithdrawalRecord>;
   markCompleted(id: string, params: { now: Date; txHash: string }): Promise<WithdrawalRecord>;
+  markCompletedWithDebit(id: string, params: { now: Date; txHash: string }, deps: CompletionDeps): Promise<WithdrawalRecord>;
   markRetryPending(id: string, params: { now: Date; nextRetryAt: Date; error: string }): Promise<WithdrawalRecord>;
   markFailed(id: string, params: { now: Date; error: string; incrementRetryCount?: boolean }): Promise<WithdrawalRecord>;
   __resetForTests?: () => void;
@@ -271,6 +276,39 @@ export function createDbWithdrawalRepo(db: DbClient): WithdrawalRepo {
       return toRecord(row);
     },
 
+    async markCompletedWithDebit(id, params) {
+      return db.transaction(async (tx) => {
+        const [row] = await tx
+          .update(withdrawals)
+          .set({
+            state: "COMPLETED",
+            nextRetryAt: null,
+            lastError: null,
+            updatedAt: params.now,
+            completedAt: params.now,
+            txHash: params.txHash,
+          })
+          .where(and(eq(withdrawals.id, id), eq(withdrawals.state, "PROCESSING")))
+          .returning();
+
+        if (!row) {
+          await throwInvalidTransition(tx, id, "COMPLETED");
+        }
+
+        const ledgerRepo = createDbLedgerRepo(tx);
+        await ledgerRepo.debitOnce({
+          appId: row.appId,
+          userId: row.userId,
+          asset: row.asset as WithdrawalAsset,
+          amount: typeof row.amount === "string" ? row.amount : String(row.amount),
+          refId: row.id,
+          idempotencyKey: `withdrawal:debit:${row.id}`,
+        });
+
+        return toRecord(row);
+      });
+    },
+
     async markRetryPending(id, params) {
       const [row] = await db
         .update(withdrawals)
@@ -419,6 +457,19 @@ export function createInMemoryWithdrawalRepo(): WithdrawalRepo {
       record.completedAt = params.now;
       record.txHash = params.txHash;
       return clone(record);
+    },
+
+    async markCompletedWithDebit(id, params, deps) {
+      const record = await this.markCompleted(id, params);
+      await deps.ledgerRepo.debitOnce({
+        appId: record.appId,
+        userId: record.userId,
+        asset: record.asset,
+        amount: record.amount,
+        refId: record.id,
+        idempotencyKey: `withdrawal:debit:${record.id}`,
+      });
+      return record;
     },
 
     async markRetryPending(id, params) {

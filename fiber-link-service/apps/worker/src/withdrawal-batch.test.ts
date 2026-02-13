@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { WithdrawalTransitionConflictError, createInMemoryWithdrawalRepo } from "@fiber-link/db";
+import {
+  WithdrawalTransitionConflictError,
+  createInMemoryLedgerRepo,
+  createInMemoryWithdrawalRepo,
+} from "@fiber-link/db";
 import { FiberRpcError } from "@fiber-link/fiber-adapter";
 import { runWithdrawalBatch } from "./withdrawal-batch";
 
@@ -107,6 +111,7 @@ describe("runWithdrawalBatch", () => {
   });
 
   it("continues processing other items when markProcessing loses race", async () => {
+    const ledger = createInMemoryLedgerRepo();
     const first = await repo.create({
       appId: "app1",
       userId: "u1",
@@ -136,6 +141,7 @@ describe("runWithdrawalBatch", () => {
       now: new Date("2026-02-07T11:00:00.000Z"),
       executeWithdrawal: async () => ({ ok: true, txHash: "0xrace-ok" }),
       repo: contentionRepo,
+      ledgerRepo: ledger,
     });
 
     expect(res.processed).toBe(1);
@@ -147,6 +153,7 @@ describe("runWithdrawalBatch", () => {
   });
 
   it("persists txHash evidence when withdrawal execution succeeds", async () => {
+    const ledger = createInMemoryLedgerRepo();
     const created = await repo.create({
       appId: "app1",
       userId: "u1",
@@ -159,12 +166,36 @@ describe("runWithdrawalBatch", () => {
       now: new Date("2026-02-07T12:00:00.000Z"),
       executeWithdrawal: async () => ({ ok: true, txHash: "0xabc123" }),
       repo,
+      ledgerRepo: ledger,
     });
 
     expect(res.completed).toBe(1);
     const saved = await repo.findByIdOrThrow(created.id);
     expect(saved.state).toBe("COMPLETED");
     expect(saved.txHash).toBe("0xabc123");
+  });
+
+  it("writes a ledger debit when withdrawal completes", async () => {
+    const ledger = createInMemoryLedgerRepo();
+    const created = await repo.create({
+      appId: "app1",
+      userId: "u1",
+      asset: "USDI",
+      amount: "10",
+      toAddress: "fiber:invoice:ok",
+    });
+
+    await runWithdrawalBatch({
+      now: new Date("2026-02-07T12:10:00.000Z"),
+      executeWithdrawal: async () => ({ ok: true, txHash: "0xabc123" }),
+      repo,
+      ledgerRepo: ledger,
+    });
+
+    const entries = ledger.__listForTests?.() ?? [];
+    expect(entries).toHaveLength(1);
+    expect(entries[0].type).toBe("debit");
+    expect(entries[0].idempotencyKey).toBe(`withdrawal:debit:${created.id}`);
   });
 
   it("treats Fiber internal rpc error as transient and schedules retry", async () => {
