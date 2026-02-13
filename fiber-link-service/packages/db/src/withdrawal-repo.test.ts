@@ -115,6 +115,32 @@ describe("createDbWithdrawalRepo", () => {
     const setArg = mock.updateSet.mock.calls[0][0] as Record<string, unknown>;
     expect(setArg.txHash).toBe("0xabc123");
   });
+
+  it("acquires advisory lock and rejects when balance is insufficient", async () => {
+    const selectWhere = vi.fn()
+      .mockResolvedValueOnce([{ balance: "1" }])
+      .mockResolvedValueOnce([{ total: "0" }]);
+    const selectFrom = vi.fn(() => ({ where: selectWhere }));
+    const select = vi.fn(() => ({ from: selectFrom }));
+    const tx = {
+      execute: vi.fn(),
+      select,
+    } as unknown as DbClient;
+    const db = {
+      transaction: vi.fn(async (fn: (client: DbClient) => Promise<unknown>) => fn(tx)),
+    } as unknown as DbClient;
+    const repo = createDbWithdrawalRepo(db);
+
+    await expect(
+      repo.createWithBalanceCheck(
+        { appId: "app1", userId: "u1", asset: "USDI", amount: "2", toAddress: "ckt1q..." },
+        { ledgerRepo: createInMemoryLedgerRepo() },
+      ),
+    ).rejects.toBeInstanceOf(InsufficientFundsError);
+
+    expect((db as { transaction: ReturnType<typeof vi.fn> }).transaction).toHaveBeenCalledTimes(1);
+    expect((tx as { execute: ReturnType<typeof vi.fn> }).execute).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("createInMemoryWithdrawalRepo balance gating", () => {

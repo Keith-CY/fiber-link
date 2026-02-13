@@ -178,6 +178,28 @@ function isInsufficient(balance: string, pending: string, amount: string): boole
   return available < required;
 }
 
+async function getPendingTotalWithClient(client: DbClient, input: PendingTotalInput): Promise<string> {
+  const [row] = await client
+    .select({
+      total: sql<string>`COALESCE(SUM(${withdrawals.amount}), 0)`,
+    })
+    .from(withdrawals)
+    .where(
+      and(
+        eq(withdrawals.appId, input.appId),
+        eq(withdrawals.userId, input.userId),
+        eq(withdrawals.asset, input.asset),
+        or(
+          eq(withdrawals.state, "PENDING"),
+          eq(withdrawals.state, "PROCESSING"),
+          eq(withdrawals.state, "RETRY_PENDING"),
+        ),
+      ),
+    );
+
+  return row ? String(row.total) : "0";
+}
+
 async function throwInvalidTransition(db: DbClient, id: string, targetState: string): Promise<never> {
   const [existing] = await db.select().from(withdrawals).where(eq(withdrawals.id, id)).limit(1);
   if (!existing) {
@@ -212,11 +234,51 @@ export function createDbWithdrawalRepo(db: DbClient): WithdrawalRepo {
     },
 
     async createWithBalanceCheck(input) {
-      return this.create(input);
+      return db.transaction(async (tx) => {
+        const lockKey = `${input.appId}:${input.userId}:${input.asset}`;
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${lockKey}))`);
+
+        const ledgerRepo = createDbLedgerRepo(tx);
+        const balance = await ledgerRepo.getBalance({
+          appId: input.appId,
+          userId: input.userId,
+          asset: input.asset,
+        });
+        const pending = await getPendingTotalWithClient(tx, {
+          appId: input.appId,
+          userId: input.userId,
+          asset: input.asset,
+        });
+        if (isInsufficient(balance, pending, input.amount)) {
+          throw new InsufficientFundsError(input.appId, input.userId, input.asset, input.amount);
+        }
+
+        const now = new Date();
+        const [row] = await tx
+          .insert(withdrawals)
+          .values({
+            appId: input.appId,
+            userId: input.userId,
+            asset: input.asset,
+            amount: input.amount,
+            toAddress: input.toAddress,
+            state: "PENDING",
+            retryCount: 0,
+            nextRetryAt: null,
+            lastError: null,
+            createdAt: now,
+            updatedAt: now,
+            completedAt: null,
+            txHash: null,
+          })
+          .returning();
+
+        return toRecord(row);
+      });
     },
 
-    async getPendingTotal() {
-      return "0";
+    async getPendingTotal(input) {
+      return getPendingTotalWithClient(db, input);
     },
 
     async findByIdOrThrow(id) {
