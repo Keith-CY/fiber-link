@@ -23,6 +23,11 @@ if [[ ! -d "$DISCOURSE_ROOT/.git" ]]; then
   git clone https://github.com/discourse/discourse.git "$DISCOURSE_ROOT"
 fi
 
+if [[ ! -d "$PLUGIN_DIR" ]]; then
+  echo "Error: plugin directory not found: $PLUGIN_DIR"
+  exit 1
+fi
+
 git -C "$DISCOURSE_ROOT" fetch --depth=1 origin "$DISCOURSE_REF"
 git -C "$DISCOURSE_ROOT" checkout "$DISCOURSE_REF"
 
