@@ -37,6 +37,9 @@ jobs:
       # Pin Discourse ref to reduce upstream-induced CI breakage. Update as needed.
       DISCOURSE_REF: 26f3e2aa87a3abb35849183e0740fe7ab84cec67
       DISCOURSE_DEV_IMAGE: discourse/discourse_dev:release
+      # Keep request spec scope explicit in CI; add more paths via PLUGIN_SMOKE_EXTRA_SPECS as needed.
+      PLUGIN_SMOKE_REQUEST_SPECS: "plugins/fiber-link/spec/requests/fiber_link_spec.rb plugins/fiber-link/spec/requests/fiber_link/rpc_controller_spec.rb"
+      PLUGIN_SMOKE_EXTRA_SPECS: ""
     steps:
       - uses: actions/checkout@v4
 
@@ -89,9 +92,22 @@ jobs:
         working-directory: discourse-dev
         run: docker exec -u discourse:discourse -w /src -e RAILS_ENV=test -e LOAD_PLUGINS=1 discourse_dev bin/rake db:create db:migrate
 
-      - name: Plugin smoke spec (requests)
+      - name: Plugin smoke spec (requests + optional extras)
         working-directory: discourse-dev
-        run: docker exec -u discourse:discourse -w /src -e RAILS_ENV=test -e LOAD_PLUGINS=1 discourse_dev bin/rspec plugins/fiber-link/spec/requests
+        run: |
+          docker exec -u discourse:discourse -w /src \
+            -e RAILS_ENV=test -e LOAD_PLUGINS=1 \
+            -e PLUGIN_SMOKE_REQUEST_SPECS -e PLUGIN_SMOKE_EXTRA_SPECS \
+            discourse_dev bash -lc '
+              set -euo pipefail
+
+              specs=($PLUGIN_SMOKE_REQUEST_SPECS)
+              if [ -n "${PLUGIN_SMOKE_EXTRA_SPECS:-}" ]; then
+                specs+=($PLUGIN_SMOKE_EXTRA_SPECS)
+              fi
+
+              bundle exec rspec "${specs[@]}"
+            '
 
       - name: Shutdown Discourse dev container
         if: always()
