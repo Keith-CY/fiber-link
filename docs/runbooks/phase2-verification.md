@@ -20,36 +20,50 @@ bun install --frozen-lockfile
 
 Prereqs:
 - Docker daemon running (the Discourse dev harness uses Docker).
+- Ruby/Gem environment **is optional** (script runs through the Discourse container, so no local `bundle exec` required).
 
-Bootstrap a local Discourse dev checkout and link the plugin (idempotent):
+Use the repo helper script for a single local entrypoint:
 
 ```bash
-export FIBER_LINK_ROOT="${FIBER_LINK_ROOT:-$(pwd)}"
+./scripts/plugin-smoke.sh
+```
+
+Default scope (request specs):
+```bash
+plugins/fiber-link/spec/requests/fiber_link_spec.rb
+plugins/fiber-link/spec/requests/fiber_link/rpc_controller_spec.rb
+```
+
+Run only additional scopes by extending the env var (example for system spec):
+
+```bash
+PLUGIN_SMOKE_EXTRA_SPECS="plugins/fiber-link/spec/system/fiber_link_tip_spec.rb plugins/fiber-link/spec/system/fiber_link_feed_spec.rb" \
+  ./scripts/plugin-smoke.sh
+```
+
+Override the default Discourse checkout location/ref if needed:
+
+```bash
+export DISCOURSE_DEV_ROOT=/tmp/discourse-dev
+export DISCOURSE_REF=26f3e2aa87a3abb35849183e0740fe7ab84cec67
+./scripts/plugin-smoke.sh
+```
+
+Legacy fallback (for environments without the helper script):
+
+```bash
 export DISCOURSE_DEV_ROOT="${DISCOURSE_DEV_ROOT:-/tmp/discourse-dev}"
-
-[ -d "$DISCOURSE_DEV_ROOT/.git" ] || git clone https://github.com/discourse/discourse.git "$DISCOURSE_DEV_ROOT"
-
-mkdir -p "$DISCOURSE_DEV_ROOT/plugins"
-rm -rf "$DISCOURSE_DEV_ROOT/plugins/fiber-link"
-ln -sfn "$FIBER_LINK_ROOT/fiber-link-discourse-plugin" "$DISCOURSE_DEV_ROOT/plugins/fiber-link"
-
 cd "$DISCOURSE_DEV_ROOT"
 ./bin/docker/boot_dev
 LOAD_PLUGINS=1 RAILS_ENV=test ./bin/docker/rake db:create db:migrate
-```
-
-Run plugin specs:
-
-```bash
-export DISCOURSE_DEV_ROOT="${DISCOURSE_DEV_ROOT:-/tmp/discourse-dev}"
-cd "$DISCOURSE_DEV_ROOT"
-
-# Smoke
 LOAD_PLUGINS=1 RAILS_ENV=test ./bin/docker/rspec plugins/fiber-link/spec/requests/fiber_link_spec.rb
-
-# System (tip lifecycle)
-LOAD_PLUGINS=1 RAILS_ENV=test ./bin/docker/rspec plugins/fiber-link/spec/system/fiber_link_tip_spec.rb
 ```
+
+If specs fail:
+- Ensure the plugin path is `plugins/fiber-link`.
+- Confirm Discourse boot is healthy (`docker ps`, `docker logs` on the latest booted container).
+- For verbose output, run the rspec target directly inside the same Discourse checkout:
+  `LOAD_PLUGINS=1 RAILS_ENV=test ./bin/docker/rspec --format documentation plugins/fiber-link/spec/requests/fiber_link_spec.rb`.
 
 ## Security/Failure Gates (Must Verify)
 
