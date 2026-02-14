@@ -233,7 +233,7 @@ export function createDbWithdrawalRepo(db: DbClient): WithdrawalRepo {
       return toRecord(row);
     },
 
-    async createWithBalanceCheck(input) {
+    async createWithBalanceCheck(input, _deps) {
       return db.transaction(async (tx) => {
         const lockKey = `${input.appId}:${input.userId}:${input.asset}`;
         await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${lockKey}))`);
@@ -338,7 +338,7 @@ export function createDbWithdrawalRepo(db: DbClient): WithdrawalRepo {
       return toRecord(row);
     },
 
-    async markCompletedWithDebit(id, params) {
+    async markCompletedWithDebit(id, params, _deps) {
       return db.transaction(async (tx) => {
         const [row] = await tx
           .update(withdrawals)
