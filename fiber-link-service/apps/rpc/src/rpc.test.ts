@@ -1,10 +1,33 @@
 import { describe, it, expect, beforeEach } from "vitest";
+import Fastify from "fastify";
 import { buildServer } from "./server";
 import { verifyHmac } from "./auth/hmac";
+import { createInMemoryAppRepo } from "./repositories/app-repo";
+import { registerRpc } from "./rpc";
 
 beforeEach(() => {
   process.env.FIBER_LINK_HMAC_SECRET = "replace-with-lookup";
 });
+
+function buildServerWithAppRepo() {
+  const app = Fastify({ logger: false });
+  app.decorateRequest("rawBody", "");
+
+  app.addContentTypeParser("application/json", { parseAs: "string" }, (req, body, done) => {
+    const rawBody = body as string;
+    req.rawBody = rawBody;
+    try {
+      done(null, JSON.parse(rawBody));
+    } catch (error) {
+      (error as Error & { statusCode?: number }).statusCode = 400;
+      done(error as Error, undefined);
+    }
+  });
+
+  const appRepo = createInMemoryAppRepo([{ appId: "app1", hmacSecret: "db-secret" }]);
+  registerRpc(app, { appRepo });
+  return app;
+}
 
 describe("json-rpc", () => {
   it("health.ping returns ok", async () => {
@@ -243,6 +266,65 @@ describe("json-rpc", () => {
     expect(res.json()).toEqual({
       jsonrpc: "2.0",
       id: 2,
+      error: { code: -32001, message: "Unauthorized" },
+    });
+  });
+
+  it("prefers db secret over env fallback for HMAC verification", async () => {
+    const app = buildServerWithAppRepo();
+    const rawPayload = JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "health.ping",
+      params: {},
+    });
+    const ts = String(Math.floor(Date.now() / 1000));
+
+    const dbSignature = verifyHmac.sign({
+      secret: "db-secret",
+      payload: rawPayload,
+      ts,
+      nonce: "n-db-priority-1",
+    });
+    const envFallbackSignature = verifyHmac.sign({
+      secret: "replace-with-lookup",
+      payload: rawPayload,
+      ts,
+      nonce: "n-db-priority-2",
+    });
+
+    const resDb = await app.inject({
+      method: "POST",
+      url: "/rpc",
+      payload: rawPayload,
+      headers: {
+        "content-type": "application/json",
+        "x-app-id": "app1",
+        "x-ts": ts,
+        "x-nonce": "n-db-priority-1",
+        "x-signature": dbSignature,
+      },
+    });
+
+    const resEnvFallback = await app.inject({
+      method: "POST",
+      url: "/rpc",
+      payload: rawPayload,
+      headers: {
+        "content-type": "application/json",
+        "x-app-id": "app1",
+        "x-ts": ts,
+        "x-nonce": "n-db-priority-2",
+        "x-signature": envFallbackSignature,
+      },
+    });
+
+    expect(resDb.statusCode).toBe(200);
+    expect(resDb.json()).toEqual({ jsonrpc: "2.0", id: 1, result: { status: "ok" } });
+    expect(resEnvFallback.statusCode).toBe(200);
+    expect(resEnvFallback.json()).toEqual({
+      jsonrpc: "2.0",
+      id: 1,
       error: { code: -32001, message: "Unauthorized" },
     });
   });

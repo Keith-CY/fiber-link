@@ -125,7 +125,7 @@ export function registerRpc(app: FastifyInstance, options: { appRepo?: AppRepo }
         });
       }
 
-      // TODO: replace env map with per-app DB lookup
+      // HMAC is always verified after resolving the secret with DB precedence over env secrets.
       if (!verifyHmac.check({ secret, payload, ts, nonce, signature })) {
         return reply.send({
           jsonrpc: "2.0",
