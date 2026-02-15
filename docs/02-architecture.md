@@ -81,9 +81,15 @@ Responsibilities:
 - withdrawals
   - id, user_id, amount, asset, to_address, tx_hash, state
 
+## Threat-control checkpoints in architecture
+- Discourse Plugin auth: API boundary is HMAC-protected and timestamp/nonce replay-protected (`apps/rpc`), which should be treated as the primary trust gate for all `tip.create` requests.
+- Settlement correctness: `worker` and `rpc` share `tip_intents`/`ledger_entries` state transitions so settlement and crediting cannot diverge.
+- Withdrawal safety: worker executes withdrawal from `PENDING` queue state and records `tx_hash` only after durable execution evidence is available.
+- Reconciliation: periodic backfill command and mismatch report must be run after incidents before restarting high-volume tip acceptance.
+
 ## Runtime trust boundaries
 - Browser ↔ Discourse plugin: client-side risks (`XSS`, CSRF, session theft)
-- Discourse plugin server ↔ Fiber Link Service API: signed/secret request boundary and rate limiting
+- Discourse plugin server ↔ Fiber Link Service API: signed/secret request boundary with replay protection
 - Fiber Link Service ↔ FNN: authenticated RPC + settlement verification
 - Fiber Link Service ↔ Worker ↔ Database: single transaction boundary for idempotent updates
 
