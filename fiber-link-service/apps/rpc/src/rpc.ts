@@ -265,7 +265,7 @@ export function registerRpc(
           return reply.send(rpcErrorResponse(rpc.id, RpcErrorCode.INTERNAL_ERROR, "Internal error"));
         }
       }
-      if (rpc.method === "tip.status") {
+      if (rpc.method === "tip.status" || rpc.method === "tip.get") {
         const parsed = TipStatusParamsSchema.safeParse(rpc.params);
         if (!parsed.success) {
           return reply.send(
@@ -276,7 +276,7 @@ export function registerRpc(
           const result = await handleTipStatus({ ...parsed.data });
           const validated = TipStatusResultSchema.safeParse(result);
           if (!validated.success) {
-            req.log.error(validated.error, "tip.status produced invalid response payload");
+            req.log.error(validated.error, "tip.status/tip.get produced invalid response payload");
             return reply.send(rpcErrorResponse(rpc.id, RpcErrorCode.INTERNAL_ERROR, "Internal error"));
           }
           return reply.send(rpcResultResponse(rpc.id, validated.data));

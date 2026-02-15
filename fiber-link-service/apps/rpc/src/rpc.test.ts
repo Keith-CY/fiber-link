@@ -350,6 +350,41 @@ describe("json-rpc", () => {
     }
   });
 
+  it("returns tip.get result from handler", async () => {
+    const app = buildServer();
+    const tipStatusSpy = vi.spyOn(tipMethods, "handleTipStatus").mockResolvedValue({ state: "UNPAID" });
+    try {
+      const payload = { jsonrpc: "2.0", id: "g1", method: "tip.get", params: { invoice: "inv-1" } };
+      const ts = String(Math.floor(Date.now() / 1000));
+      const nonce = "get-ok";
+      const signature = verifyHmac.sign({
+        secret: "replace-with-lookup",
+        payload: JSON.stringify(payload),
+        ts,
+        nonce,
+      });
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/rpc",
+        payload,
+        headers: {
+          "content-type": "application/json",
+          "x-app-id": "app1",
+          "x-ts": ts,
+          "x-nonce": nonce,
+          "x-signature": signature,
+        },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({ jsonrpc: "2.0", id: "g1", result: { state: "UNPAID" } });
+      expect(tipStatusSpy).toHaveBeenCalledWith({ invoice: "inv-1" });
+    } finally {
+      tipStatusSpy.mockRestore();
+    }
+  });
+
   it("returns JSON-RPC error on invalid tip.status params", async () => {
     const app = buildServer();
     const payload = { jsonrpc: "2.0", id: "s2", method: "tip.status", params: {} };
@@ -379,6 +414,39 @@ describe("json-rpc", () => {
     expect(res.json()).toMatchObject({
       jsonrpc: "2.0",
       id: "s2",
+      error: { code: -32602, message: "Invalid params" },
+    });
+  });
+
+  it("returns JSON-RPC error on invalid tip.get params", async () => {
+    const app = buildServer();
+    const payload = { jsonrpc: "2.0", id: "g2", method: "tip.get", params: {} };
+    const ts = String(Math.floor(Date.now() / 1000));
+    const nonce = "get-bad";
+    const signature = verifyHmac.sign({
+      secret: "replace-with-lookup",
+      payload: JSON.stringify(payload),
+      ts,
+      nonce,
+    });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/rpc",
+      payload,
+      headers: {
+        "content-type": "application/json",
+        "x-app-id": "app1",
+        "x-ts": ts,
+        "x-nonce": nonce,
+        "x-signature": signature,
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({
+      jsonrpc: "2.0",
+      id: "g2",
       error: { code: -32602, message: "Invalid params" },
     });
   });
@@ -419,6 +487,97 @@ describe("json-rpc", () => {
         error: { code: -32004, message: "Tip not found" },
       });
     } finally {
+      tipStatusSpy.mockRestore();
+    }
+  });
+
+  it("supports tip.create -> tip.get happy path with deterministic invoice", async () => {
+    const app = buildServer();
+    const tipCreateSpy = vi.spyOn(tipMethods, "handleTipCreate").mockResolvedValue({ invoice: "inv-happy-1" });
+    const tipStatusSpy = vi.spyOn(tipMethods, "handleTipStatus").mockImplementation(async ({ invoice }) => ({
+      state: invoice === "inv-happy-1" ? "UNPAID" : "FAILED",
+    }));
+    try {
+      const createPayload = {
+        jsonrpc: "2.0",
+        id: "create-1",
+        method: "tip.create",
+        params: { amount: "1", asset: "CKB", postId: "p1", fromUserId: "u1", toUserId: "u2" },
+      };
+      const createTs = String(Math.floor(Date.now() / 1000));
+      const createNonce = "create-ok";
+      const createSignature = verifyHmac.sign({
+        secret: "replace-with-lookup",
+        payload: JSON.stringify(createPayload),
+        ts: createTs,
+        nonce: createNonce,
+      });
+
+      const createRes = await app.inject({
+        method: "POST",
+        url: "/rpc",
+        payload: createPayload,
+        headers: {
+          "content-type": "application/json",
+          "x-app-id": "app1",
+          "x-ts": createTs,
+          "x-nonce": createNonce,
+          "x-signature": createSignature,
+        },
+      });
+
+      expect(createRes.statusCode).toBe(200);
+      expect(createRes.json()).toEqual({
+        jsonrpc: "2.0",
+        id: "create-1",
+        result: { invoice: "inv-happy-1" },
+      });
+      expect(tipCreateSpy).toHaveBeenCalledWith({
+        amount: "1",
+        appId: "app1",
+        asset: "CKB",
+        fromUserId: "u1",
+        postId: "p1",
+        toUserId: "u2",
+      });
+
+      const getPayload = {
+        jsonrpc: "2.0",
+        id: "get-1",
+        method: "tip.get",
+        params: { invoice: createRes.json().result.invoice },
+      };
+      const getTs = String(Math.floor(Date.now() / 1000));
+      const getNonce = "get-after-create";
+      const getSignature = verifyHmac.sign({
+        secret: "replace-with-lookup",
+        payload: JSON.stringify(getPayload),
+        ts: getTs,
+        nonce: getNonce,
+      });
+
+      const getRes = await app.inject({
+        method: "POST",
+        url: "/rpc",
+        payload: getPayload,
+        headers: {
+          "content-type": "application/json",
+          "x-app-id": "app1",
+          "x-ts": getTs,
+          "x-nonce": getNonce,
+          "x-signature": getSignature,
+        },
+      });
+
+      expect(getRes.statusCode).toBe(200);
+      expect(getRes.json()).toEqual({
+        jsonrpc: "2.0",
+        id: "get-1",
+        result: { state: "UNPAID" },
+      });
+      expect(tipStatusSpy).toHaveBeenCalledWith({ invoice: "inv-happy-1" });
+    } finally {
+      tipCreateSpy.mockRestore();
       tipStatusSpy.mockRestore();
     }
   });
