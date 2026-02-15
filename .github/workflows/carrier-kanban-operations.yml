@@ -37,8 +37,7 @@ jobs:
             const owner = context.repo.owner;
             const repo = context.repo.repo;
             const dryRunInput = String((context.payload.inputs?.dry_run || process.env.DRY_RUN || 'false')).toLowerCase() === 'true';
-            const token = process.env.FIBER_LINK_PROJECTS_TOKEN || process.env.GITHUB_TOKEN;
-            const ghClient = token ? github.getOctokit(token) : github;
+            const ghClient = github;
 
             const repoMeta = await ghClient.graphql(`
               query($owner: String!, $repo: String!) {

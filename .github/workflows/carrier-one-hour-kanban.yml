@@ -34,8 +34,7 @@ jobs:
             const owner = context.repo.owner;
             const repo = context.repo.repo;
             const dryRun = String(context.payload.inputs?.dry_run || process.env.DRY_RUN || 'false').toLowerCase() === 'true';
-            const token = process.env.FIBER_LINK_PROJECTS_TOKEN || process.env.GITHUB_TOKEN;
-            const gh = token ? github.getOctokit(token) : github;
+            const gh = github;
 
             const targetIssueRaw = process.env.FIBER_LINK_1H_ISSUE_NUMBER;
             const targetIssueNumber = targetIssueRaw ? Number.parseInt(targetIssueRaw, 10) : NaN;
@@ -286,21 +285,57 @@ jobs:
               }
             }
 
-            if (!Number.isInteger(targetIssueNumber) || targetIssueNumber <= 0) {
-              core.warning(`No discussions or failed, and no valid FIBER_LINK_1H_ISSUE_NUMBER provided: ${targetIssueRaw}`);
-              return;
+            let resolvedIssue = null;
+            let fallbackIssueNumber = targetIssueNumber;
+
+            if (Number.isInteger(fallbackIssueNumber) && fallbackIssueNumber > 0) {
+              try {
+                const issueResp = await github.rest.issues.get({
+                  owner,
+                  repo,
+                  issue_number: fallbackIssueNumber,
+                });
+                resolvedIssue = issueResp.data;
+              } catch (error) {
+                core.warning(`Configured issue #${fallbackIssueNumber} is unavailable: ${(error && error.message) ? error.message : error}`);
+                fallbackIssueNumber = NaN;
+              }
             }
 
-            const issue = await github.rest.issues.get({
-              owner,
-              repo,
-              issue_number: targetIssueNumber,
-            });
+            if (!resolvedIssue) {
+              const existingIssueCandidates = await github.paginate(
+                github.rest.issues.listForRepo,
+                {
+                  owner,
+                  repo,
+                  state: 'open',
+                  per_page: 100,
+                },
+                (response) => response.data,
+              );
+              const match = existingIssueCandidates.find((issueItem) => issueItem.title === discussionTitle);
+              if (match) {
+                resolvedIssue = match;
+                fallbackIssueNumber = match.number;
+              }
+            }
+
+            if (!resolvedIssue) {
+              core.info('No discussions or failed, and no valid fallback issue found. Creating one now.');
+              const createResp = await github.rest.issues.create({
+                owner,
+                repo,
+                title: discussionTitle,
+                body: '# 1h Kanban Board (Pinned)\n\nThis issue is auto-created for hourly Kanban snapshots.',
+              });
+              resolvedIssue = createResp.data;
+              fallbackIssueNumber = createResp.data.number;
+            }
 
             await github.rest.issues.update({
               owner,
               repo,
-              issue_number: targetIssueNumber,
+              issue_number: fallbackIssueNumber,
               body,
             });
-            core.info(`Updated issue #${targetIssueNumber}: ${issue.data.html_url}`);
+            core.info(`Updated issue #${fallbackIssueNumber}: ${resolvedIssue.html_url}`);

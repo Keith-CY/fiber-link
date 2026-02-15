@@ -38,8 +38,7 @@ jobs:
               core.warning('FIBER_LINK_PROJECT_ID is not set; skipping Kanban sync for this run.');
               return;
             }
-            const token = process.env.FIBER_LINK_PROJECTS_TOKEN || process.env.GITHUB_TOKEN;
-            const ghClient = token ? github.getOctokit(token) : github;
+            const ghClient = github;
 
             const getStatusCandidates = (item, labels) => {
               const hasLabel = (target) => labels.includes(target.toLowerCase());
