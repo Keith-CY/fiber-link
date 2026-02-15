@@ -1,10 +1,9 @@
 import { randomUUID } from "crypto";
 import { and, asc, eq, gt, gte, lte, or, sql } from "drizzle-orm";
 import type { DbClient } from "./client";
-import { tipIntents } from "./schema";
+import { tipIntents, type Asset, type InvoiceState } from "./schema";
 
-export type TipAsset = "CKB" | "USDI";
-export type InvoiceState = "UNPAID" | "SETTLED" | "FAILED";
+export type TipAsset = Asset;
 
 export type CreateTipIntentInput = {
   appId: string;
