@@ -1,9 +1,9 @@
 import { randomUUID } from "crypto";
 import { and, eq, sql } from "drizzle-orm";
 import type { DbClient } from "./client";
-import { ledgerEntries } from "./schema";
+import { ledgerEntries, type Asset } from "./schema";
 
-export type LedgerAsset = "CKB" | "USDI";
+export type LedgerAsset = Asset;
 
 export type LedgerWriteInput = {
   appId: string;
@@ -232,4 +232,3 @@ export function createInMemoryLedgerRepo(): LedgerRepo {
     },
   };
 }
-
