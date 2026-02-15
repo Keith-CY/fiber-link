@@ -3,9 +3,6 @@ name: Fiber Link Kanban Operations
 on:
   workflow_dispatch:
     inputs:
-      project_id:
-        description: 'GitHub ProjectV2 node ID (defaults to config file or current value).'
-        required: false
       dry_run:
         description: 'Report only, do not post to Discussions.'
         required: false
@@ -30,7 +27,10 @@ jobs:
 
       - name: Publish Kanban field/view status to Discussion
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b
+        env:
+          FIBER_LINK_CANONICAL_PROJECT_ID: ${{ vars.FIBER_LINK_CANONICAL_PROJECT_ID }}
         with:
+          github-token: ${{ secrets.FIBER_LINK_PROJECTS_TOKEN || secrets.GITHUB_TOKEN }}
           script: |
             const fs = require('fs');
 
@@ -38,6 +38,73 @@ jobs:
             const repo = context.repo.repo;
             const dryRunInput = String((context.payload.inputs?.dry_run || process.env.DRY_RUN || 'false')).toLowerCase() === 'true';
             const ghClient = github;
+            const defaultProjectId = 'PVT_kwHOAG7zoc4BPPlp';
+            const sanitizeProjectIdValue = (value) => String(value || '').trim().replace(/^["']|["']$/g, '');
+
+            const resolveProjectId = async (candidate) => {
+              const raw = sanitizeProjectIdValue(candidate);
+              if (!raw) {
+                return '';
+              }
+              if (/^PVT_[A-Za-z0-9_]+$/.test(raw) || /^PD_[A-Za-z0-9_]+$/.test(raw)) {
+                return raw;
+              }
+
+              const userOrOrgProject = raw.match(/^https?:\/\/github\.com\/(users|orgs)\/([^/]+)\/projects\/(\d+)(?:[/?#].*)?$/i);
+              if (userOrOrgProject) {
+                const [, scope, login, number] = userOrOrgProject;
+                const num = Number.parseInt(number, 10);
+                if (!Number.isFinite(num)) {
+                  return raw;
+                }
+
+                try {
+                  const query = scope === 'users'
+                    ? `query($login: String!, $number: Int!) { user(login: $login) { projectV2(number: $number) { id } } }`
+                    : `query($login: String!, $number: Int!) { organization(login: $login) { projectV2(number: $number) { id } } }`;
+                  const response = await ghClient.graphql(query, { login, number: num });
+                  const node = scope === 'users' ? response?.user?.projectV2 : response?.organization?.projectV2;
+                  if (node?.id) {
+                    return node.id;
+                  }
+                } catch (error) {
+                  core.info(`Could not resolve project URL "${raw}" via GraphQL: ${error?.message || error}`);
+                }
+
+                return '';
+              }
+
+              const repoProject = raw.match(/^https?:\/\/github\.com\/([^/]+)\/([^/]+)\/projects\/(\d+)(?:[/?#].*)?$/i);
+              if (repoProject) {
+                const [, ownerName, repoName, number] = repoProject;
+                const num = Number.parseInt(number, 10);
+                if (!Number.isFinite(num)) {
+                  return raw;
+                }
+
+                try {
+                  const response = await ghClient.graphql(
+                    `query($owner: String!, $repo: String!, $number: Int!) {
+                      repository(owner: $owner, name: $repo) {
+                        projectV2(number: $number) {
+                          id
+                        }
+                      }
+                    }`,
+                    { owner: ownerName, repo: repoName, number: num }
+                  );
+                  if (response?.repository?.projectV2?.id) {
+                    return response.repository.projectV2.id;
+                  }
+                } catch (error) {
+                  core.info(`Could not resolve repo project URL "${raw}" via GraphQL: ${error?.message || error}`);
+                }
+
+                return '';
+              }
+
+              return raw;
+            };
 
             let repoMeta = null;
             try {
@@ -66,44 +133,64 @@ jobs:
             }
 
             const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-            const projectId = process.env.FIBER_LINK_PROJECT_ID || (context.payload.inputs && context.payload.inputs.project_id) || config.projectId;
+            const projectCandidates = [
+              process.env.FIBER_LINK_PROJECT_ID,
+              process.env.FIBER_LINK_CANONICAL_PROJECT_ID,
+              config.projectId,
+              defaultProjectId,
+            ];
+            let projectId = '';
+            for (const candidate of projectCandidates) {
+              const resolved = await resolveProjectId(candidate);
+              if (resolved) {
+                projectId = resolved;
+                break;
+              }
+            }
+
             if (!projectId) {
-              core.setFailed('Missing projectId. Set FIBER_LINK_PROJECT_ID secret or pass workflow input project_id.');
+              core.setFailed('Missing projectId. Set vars.FIBER_LINK_CANONICAL_PROJECT_ID, FIBER_LINK_PROJECT_ID secret, or ensure .github/kanban-config.json contains projectId.');
               return;
             }
 
-            const preflight = await ghClient.graphql(`
-              query($projectId: ID!) {
-                node(id: $projectId) {
-                  ... on ProjectV2 {
-                    id
-                    title
-                    fields(first: 200) {
-                      nodes {
-                        ... on ProjectV2Field {
-                          id
-                          name
-                          dataType
-                        }
-                        ... on ProjectV2SingleSelectField {
-                          options {
+            let preflight = null;
+            let projectLookupError = null;
+            try {
+              preflight = await ghClient.graphql(`
+                query($projectId: ID!) {
+                  node(id: $projectId) {
+                    ... on ProjectV2 {
+                      id
+                      title
+                      fields(first: 200) {
+                        nodes {
+                          ... on ProjectV2Field {
                             id
                             name
+                            dataType
+                          }
+                          ... on ProjectV2SingleSelectField {
+                            options {
+                              id
+                              name
+                            }
                           }
                         }
                       }
                     }
                   }
                 }
-              }
-            `, { projectId });
-
-            if (!preflight?.node) {
-              core.setFailed(`Cannot read ProjectV2 ${projectId}.`);
-              return;
+              `, { projectId });
+            } catch (error) {
+              projectLookupError = error && (error.message || String(error));
+              core.warning(`Unable to read ProjectV2 ${projectId} in this run: ${projectLookupError}`);
             }
 
-            const existingFields = preflight.node.fields?.nodes || [];
+            if (!preflight?.node) {
+              core.info(`Project validation skipped. ProjectV2 ${projectId} is not directly accessible to this token.`);
+            }
+
+            const existingFields = preflight?.node?.fields?.nodes || [];
             const fieldByName = new Map(existingFields.map((f) => [String(f.name || '').toLowerCase(), f]));
 
             const normalize = (text) => String(text || '').trim().toLowerCase();
@@ -297,11 +384,17 @@ jobs:
               desc: `${view.groupBy}; fields: ${(view.fields || []).join(', ')}; filter: ${view.filters || 'none'}; sort: ${view.sort || 'none'}`,
             }));
 
+            const summaryProjectTitle = preflight?.node?.title || config.projectName || projectId;
+            const summaryProjectLookupStatus = projectLookupError
+              ? `Project lookup warning: ${String(projectLookupError).split('\n')[0]}`
+              : 'Project lookup OK';
+
             const summaryBody = [
               `# Fiber Link Kanban Field/View Report (${isoDate})`,
               '',
-              `Project: **${preflight.node.title || projectId}**`,
+              `Project: **${summaryProjectTitle}**`,
               `Project ID: '${projectId}'`,
+              `Project status: **${summaryProjectLookupStatus}**`,
               `Trigger: ${context.eventName === 'workflow_dispatch' ? 'manual' : 'weekly schedule'}`,
               '',
               '## Field Config Check',
