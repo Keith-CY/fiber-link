@@ -135,12 +135,12 @@ jobs:
               {
                 owner,
                 repo,
-                state: "open",
+                state: 'open',
                 per_page: 100,
               },
               (response) => response.data
             );
-            const existingTitles = new Set((existingIssueCandidates || []).map((issue) => String(issue.title || "").toLowerCase()));
+            const existingTitles = new Set((existingIssueCandidates || []).map((issue) => String(issue.title || '').toLowerCase()));
 
             for (const { suggestion, sources } of bySuggestion.values()) {
               const marker = `<!-- nbs:pr-${prNumber}:${Buffer.from(suggestion).toString("base64").slice(0, 20)} -->`;
