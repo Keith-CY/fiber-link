@@ -26,7 +26,9 @@ type LatencySummary = {
   max: number | null;
 };
 
-type SettlementState = "UNPAID" | "SETTLED" | "FAILED";
+const SETTLEMENT_STATES = ["UNPAID", "SETTLED", "FAILED"] as const;
+type SettlementState = (typeof SETTLEMENT_STATES)[number];
+const SETTLEMENT_STATE_SET: ReadonlySet<string> = new Set(SETTLEMENT_STATES);
 
 export class SettlementStatusContractError extends Error {
   constructor(
@@ -135,8 +137,8 @@ function summarizeLatency(values: number[]): LatencySummary {
 }
 
 function parseSettlementState(invoice: string, state: unknown): SettlementState {
-  if (state === "UNPAID" || state === "SETTLED" || state === "FAILED") {
-    return state;
+  if (typeof state === "string" && SETTLEMENT_STATE_SET.has(state)) {
+    return state as SettlementState;
   }
   throw new SettlementStatusContractError(invoice, state);
 }
