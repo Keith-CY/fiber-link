@@ -204,7 +204,9 @@ export function createDbTipIntentRepo(db: DbClient): TipIntentRepo {
       const stateFilter =
         state === "SETTLED"
           ? or(eq(tipIntents.invoiceState, "UNPAID"), eq(tipIntents.invoiceState, "SETTLED"))
-          : or(eq(tipIntents.invoiceState, "UNPAID"), eq(tipIntents.invoiceState, "FAILED"));
+          : state === "FAILED"
+            ? or(eq(tipIntents.invoiceState, "UNPAID"), eq(tipIntents.invoiceState, "FAILED"))
+            : eq(tipIntents.invoiceState, "UNPAID");
       const [row] = await db
         .update(tipIntents)
         .set({
@@ -216,7 +218,7 @@ export function createDbTipIntentRepo(db: DbClient): TipIntentRepo {
           settlementLastError: clearFailure ? null : tipIntents.settlementLastError,
           settlementFailureReason: clearFailure ? null : tipIntents.settlementFailureReason,
         })
-        .where(and(eq(tipIntents.invoice, invoice), stateFilter!))
+        .where(and(eq(tipIntents.invoice, invoice), stateFilter))
         .returning();
       if (row) {
         return toRecord(row);

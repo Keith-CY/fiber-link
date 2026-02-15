@@ -923,6 +923,25 @@ async function main() {
     verified: finalBalanceVerified,
   });
 
+  const verificationErrors: string[] = [];
+  if (!settlementCreditVerified) {
+    verificationErrors.push(
+      `post-settlement balance mismatch (expected ${expectedPostSettlementBalance}, got ${postSettlementBalance})`,
+    );
+  }
+  if (withdrawalFinal.state !== "COMPLETED") {
+    verificationErrors.push(`withdrawal is not COMPLETED (state: ${withdrawalFinal.state})`);
+  }
+  if (!withdrawalFinal.txHash) {
+    verificationErrors.push("withdrawal txHash is missing");
+  }
+  if (!finalBalanceVerified) {
+    verificationErrors.push(`final balance mismatch (expected ${expectedFinalBalance}, got ${finalBalance})`);
+  }
+  if (verificationErrors.length > 0) {
+    throw new Error(`accounting verification failed: ${verificationErrors.join("; ")}`);
+  }
+
   const finishedAtMs = Date.now();
   const finishedAt = new Date(finishedAtMs).toISOString();
   const summary: DemoSummary = {

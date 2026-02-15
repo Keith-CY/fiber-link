@@ -1,5 +1,84 @@
-import { beforeEach, describe, expect, it } from "vitest";
-import { InvoiceStateTransitionError, createInMemoryTipIntentRepo } from "./tip-intent-repo";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { DbClient } from "./client";
+import { InvoiceStateTransitionError, createDbTipIntentRepo, createInMemoryTipIntentRepo } from "./tip-intent-repo";
+
+function createDbRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "tip-1",
+    appId: "app1",
+    postId: "p1",
+    fromUserId: "u1",
+    toUserId: "u2",
+    asset: "USDI",
+    amount: "10",
+    invoice: "inv-1",
+    invoiceState: "UNPAID",
+    settlementRetryCount: 0,
+    settlementNextRetryAt: null,
+    settlementLastError: null,
+    settlementFailureReason: null,
+    settlementLastCheckedAt: new Date("2026-02-15T00:00:00.000Z"),
+    createdAt: new Date("2026-02-15T00:00:00.000Z"),
+    settledAt: null,
+    ...overrides,
+  };
+}
+
+function hasParamValue(node: unknown, needle: string, seen = new Set<unknown>()): boolean {
+  if (!node || typeof node !== "object") {
+    return false;
+  }
+  if (seen.has(node)) {
+    return false;
+  }
+  seen.add(node);
+
+  if ((node as { constructor?: { name?: string } }).constructor?.name === "Param") {
+    return (node as { value?: unknown }).value === needle;
+  }
+
+  if (Array.isArray(node)) {
+    return node.some((item) => hasParamValue(item, needle, seen));
+  }
+
+  for (const value of Object.values(node as Record<string, unknown>)) {
+    if (hasParamValue(value, needle, seen)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+describe("tipIntentRepo (db transition guards)", () => {
+  it("rejects FAILED -> UNPAID transition instead of reopening terminal state", async () => {
+    let lastWhereArg: unknown;
+    const updateReturning = vi.fn(async () => {
+      // If FAILED leaks into the WHERE clause, the simulated DB update succeeds and hides the transition bug.
+      if (hasParamValue(lastWhereArg, "FAILED")) {
+        return [createDbRow({ invoice: "inv-db-failed", invoiceState: "UNPAID" })];
+      }
+      return [];
+    });
+    const updateWhere = vi.fn((whereArg: unknown) => {
+      lastWhereArg = whereArg;
+      return { returning: updateReturning };
+    });
+    const updateSet = vi.fn(() => ({ where: updateWhere }));
+    const update = vi.fn(() => ({ set: updateSet }));
+
+    const selectLimit = vi.fn(async () => [createDbRow({ invoice: "inv-db-failed", invoiceState: "FAILED" })]);
+    const selectWhere = vi.fn(() => ({ limit: selectLimit }));
+    const selectFrom = vi.fn(() => ({ where: selectWhere }));
+    const select = vi.fn(() => ({ from: selectFrom }));
+
+    const db = { update, select } as unknown as DbClient;
+    const repo = createDbTipIntentRepo(db);
+
+    await expect(repo.updateInvoiceState("inv-db-failed", "UNPAID")).rejects.toBeInstanceOf(
+      InvoiceStateTransitionError,
+    );
+  });
+});
 
 describe("tipIntentRepo (in-memory)", () => {
   const repo = createInMemoryTipIntentRepo();
