@@ -30,6 +30,75 @@ function buildServerWithAppRepo() {
 }
 
 describe("json-rpc", () => {
+  it("healthz live returns alive", async () => {
+    const app = buildServer();
+    const res = await app.inject({
+      method: "GET",
+      url: "/healthz/live",
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ status: "alive" });
+  });
+
+  it("healthz ready returns ready when readiness probe passes", async () => {
+    const app = Fastify({ logger: false });
+    registerRpc(app, {
+      readinessProbe: async () => ({
+        ready: true,
+        checks: {
+          database: { status: "ok" },
+          redis: { status: "ok" },
+          coreService: { status: "ok" },
+        },
+      }),
+    });
+
+    const res = await app.inject({
+      method: "GET",
+      url: "/healthz/ready",
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({
+      status: "ready",
+      checks: {
+        database: { status: "ok" },
+        redis: { status: "ok" },
+        coreService: { status: "ok" },
+      },
+    });
+  });
+
+  it("healthz ready returns 503 when readiness probe fails", async () => {
+    const app = Fastify({ logger: false });
+    registerRpc(app, {
+      readinessProbe: async () => ({
+        ready: false,
+        checks: {
+          database: { status: "ok" },
+          redis: { status: "error", message: "redis unavailable" },
+          coreService: { status: "ok" },
+        },
+      }),
+    });
+
+    const res = await app.inject({
+      method: "GET",
+      url: "/healthz/ready",
+    });
+
+    expect(res.statusCode).toBe(503);
+    expect(res.json()).toEqual({
+      status: "not_ready",
+      checks: {
+        database: { status: "ok" },
+        redis: { status: "error", message: "redis unavailable" },
+        coreService: { status: "ok" },
+      },
+    });
+  });
+
   it("health.ping returns ok", async () => {
     const app = buildServer();
     const payload = { jsonrpc: "2.0", id: 1, method: "health.ping", params: {} };

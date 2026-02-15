@@ -41,6 +41,9 @@ Edit `.env` minimally:
 - Optional: tune settlement polling knobs:
   - `WORKER_SETTLEMENT_INTERVAL_MS`
   - `WORKER_SETTLEMENT_BATCH_SIZE`
+- Optional: tune readiness probe timeouts:
+  - `RPC_HEALTHCHECK_TIMEOUT_MS`
+  - `WORKER_READINESS_TIMEOUT_MS`
 
 ## Config and Override Semantics
 - Internal ports are fixed by service config:
@@ -102,6 +105,26 @@ This captures compose logs, node metadata, invoice/settlement IDs, status snapsh
 See detailed policy/checklist in:
 - `docs/runbooks/deployment-evidence.md`
 
+## Service Health and Readiness Semantics
+
+Compose startup is gated by readiness outcomes (`depends_on.condition: service_healthy`) for dependency-critical services.
+
+| Service | Check type | Check command/endpoint | Expected success response | Failure semantics |
+| --- | --- | --- | --- | --- |
+| `postgres` | readiness | `pg_isready -U <user> -d <db>` | command exit `0` | `rpc` / `worker` are not started |
+| `redis` | readiness | `redis-cli ping` | output `PONG`, exit `0` | `rpc` / `worker` are not started |
+| `fnn` | liveness/readiness | `curl -sS --max-time 3 http://127.0.0.1:8227` | HTTP connection succeeds | `rpc` is not started |
+| `rpc` | liveness | `GET /healthz/live` | HTTP `200` + `{\"status\":\"alive\"}` | indicates process-level failure |
+| `rpc` | readiness | `GET /healthz/ready` | HTTP `200` + `{\"status\":\"ready\"}` with dependency checks | returns HTTP `503` when DB/Redis/core service checks fail; `worker` is not started |
+| `worker` | readiness | `bun run apps/worker/src/scripts/healthcheck.ts` | exit `0` + JSON `{\"status\":\"ready\"...}` | container marked unhealthy, actionable JSON printed in healthcheck logs |
+
+Inspect health status and recent failures:
+
+```bash
+docker compose ps
+docker inspect --format '{{json .State.Health}}' fiber-link-rpc | jq .
+docker inspect --format '{{json .State.Health}}' fiber-link-worker | jq .
+```
 ## RPC Smoke Check
 From host:
 
@@ -131,11 +154,8 @@ You can customize by editing `deploy/compose/fnn/config/testnet.yml` before buil
 - Settlement detection currently uses polling + replay, not event subscription.
 - Admin panel server is not included in this compose reference.
 - This setup does not include production controls (TLS, secrets manager, backup, network isolation, observability stack).
-- `worker` depends on `rpc` with `service_started`; no explicit RPC readiness probe is wired yet.
 
 ## Productionization Checklist (Next)
 - Replace default generated dev wallet key flow with managed key import workflow.
 - Add migration pipeline (`drizzle-kit`) instead of SQL bootstrap for schema evolution.
-- Add service health endpoints and compose health checks for `rpc`/`worker`/`fnn`.
 - Pin base images by digest (`postgres`, `redis`, `oven/bun`, `debian`) for deterministic rebuilds.
-- Move `worker` dependency to RPC readiness (`service_healthy`) plus startup/backoff runbook notes.

@@ -12,6 +12,8 @@ EVIDENCE_SCRIPT="${ROOT_DIR}/scripts/capture-deployment-evidence.sh"
 ENV_FILE="${ROOT_DIR}/deploy/compose/.env.example"
 RPC_DOCKERFILE="${ROOT_DIR}/deploy/compose/service-rpc.Dockerfile"
 WORKER_DOCKERFILE="${ROOT_DIR}/deploy/compose/service-worker.Dockerfile"
+RPC_HEALTHCHECK_SCRIPT="${ROOT_DIR}/fiber-link-service/apps/rpc/src/scripts/healthcheck-ready.ts"
+WORKER_HEALTHCHECK_SCRIPT="${ROOT_DIR}/fiber-link-service/apps/worker/src/scripts/healthcheck.ts"
 DB_INIT_SQL="${ROOT_DIR}/deploy/compose/postgres/init/001_schema.sql"
 GITIGNORE_FILE="${ROOT_DIR}/.gitignore"
 TESTNET_CONFIG_FILE="${ROOT_DIR}/deploy/compose/fnn/config/testnet.yml"
@@ -26,6 +28,8 @@ for required in \
   "${ENV_FILE}" \
   "${RPC_DOCKERFILE}" \
   "${WORKER_DOCKERFILE}" \
+  "${RPC_HEALTHCHECK_SCRIPT}" \
+  "${WORKER_HEALTHCHECK_SCRIPT}" \
   "${DB_INIT_SQL}" \
   "${GITIGNORE_FILE}" \
   "${TESTNET_CONFIG_FILE}"; do
@@ -100,6 +104,16 @@ if ! grep -q "^WORKER_SETTLEMENT_BATCH_SIZE=" "${ENV_FILE}"; then
   exit 1
 fi
 
+if ! grep -q "^RPC_HEALTHCHECK_TIMEOUT_MS=" "${ENV_FILE}"; then
+  echo ".env.example missing RPC_HEALTHCHECK_TIMEOUT_MS default" >&2
+  exit 1
+fi
+
+if ! grep -q "^WORKER_READINESS_TIMEOUT_MS=" "${ENV_FILE}"; then
+  echo ".env.example missing WORKER_READINESS_TIMEOUT_MS default" >&2
+  exit 1
+fi
+
 if ! grep -q "^deploy/compose/.env$" "${GITIGNORE_FILE}"; then
   echo ".gitignore missing deploy/compose/.env ignore rule" >&2
   exit 1
@@ -137,6 +151,31 @@ fi
 
 if ! grep -Fq '${FNN_P2P_PORT:-8228}:8228' "${COMPOSE_FILE}"; then
   echo "docker-compose missing consistent FNN P2P port mapping" >&2
+  exit 1
+fi
+
+if ! grep -q "apps/rpc/src/scripts/healthcheck-ready.ts" "${COMPOSE_FILE}"; then
+  echo "docker-compose missing RPC readiness healthcheck script command" >&2
+  exit 1
+fi
+
+if ! grep -q "apps/worker/src/scripts/healthcheck.ts" "${COMPOSE_FILE}"; then
+  echo "docker-compose missing worker readiness healthcheck script command" >&2
+  exit 1
+fi
+
+if ! grep -q "curl -sS --max-time 3 http://127.0.0.1:8227" "${COMPOSE_FILE}"; then
+  echo "docker-compose missing fnn liveness/readiness probe" >&2
+  exit 1
+fi
+
+if ! grep -q "condition: service_healthy" "${COMPOSE_FILE}"; then
+  echo "docker-compose should use service_healthy readiness gating" >&2
+  exit 1
+fi
+
+if grep -q "service_started" "${COMPOSE_FILE}"; then
+  echo "docker-compose still references service_started dependency condition" >&2
   exit 1
 fi
 

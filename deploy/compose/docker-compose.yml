@@ -47,6 +47,12 @@ services:
       - "${FNN_P2P_PORT:-8228}:8228"
     volumes:
       - fnn-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sS --max-time 3 http://127.0.0.1:8227 >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
 
   rpc:
     container_name: fiber-link-rpc
@@ -60,7 +66,7 @@ services:
       redis:
         condition: service_healthy
       fnn:
-        condition: service_started
+        condition: service_healthy
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-fiber}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-fiber_link}
       FIBER_LINK_NONCE_REDIS_URL: redis://redis:6379/0
@@ -68,8 +74,15 @@ services:
       FIBER_RPC_URL: ${FIBER_RPC_URL:-http://fnn:8227}
       RPC_HOST: 0.0.0.0
       RPC_PORT: 3000
+      RPC_HEALTHCHECK_TIMEOUT_MS: ${RPC_HEALTHCHECK_TIMEOUT_MS:-3000}
     ports:
       - "${RPC_PORT:-3000}:3000"
+    healthcheck:
+      test: ["CMD", "bun", "run", "apps/rpc/src/scripts/healthcheck-ready.ts"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
 
   worker:
     container_name: fiber-link-worker
@@ -81,7 +94,7 @@ services:
       postgres:
         condition: service_healthy
       rpc:
-        condition: service_started
+        condition: service_healthy
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-fiber}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-fiber_link}
       FIBER_RPC_URL: ${FIBER_RPC_URL:-http://fnn:8227}
@@ -91,6 +104,13 @@ services:
       WORKER_MAX_RETRIES: ${WORKER_MAX_RETRIES:-3}
       WORKER_RETRY_DELAY_MS: ${WORKER_RETRY_DELAY_MS:-60000}
       WORKER_SHUTDOWN_TIMEOUT_MS: ${WORKER_SHUTDOWN_TIMEOUT_MS:-15000}
+      WORKER_READINESS_TIMEOUT_MS: ${WORKER_READINESS_TIMEOUT_MS:-5000}
+    healthcheck:
+      test: ["CMD", "bun", "run", "apps/worker/src/scripts/healthcheck.ts"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 25s
 
 volumes:
   postgres-data:
