@@ -9,6 +9,11 @@
 
 - `docs/runbooks/testnet-bootstrap.md` — deterministic precheck -> spin-up -> RPC validation -> invoice smoke -> cleanup flow.
 
+## Testnet smoke
+
+- `docs/runbooks/compose-reference.md` — compose reference and deterministic smoke usage.
+- `scripts/testnet-smoke.sh` — one-command local testnet sanity check with machine-readable PASS/FAIL output.
+
 ### Request-spec coverage tracked in CI
 
 The CI `plugin-smoke` job runs:
