@@ -22,7 +22,14 @@ jobs:
     steps:
       - name: Update 1h Kanban snapshot
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b
+        env:
+          FIBER_LINK_PROJECTS_TOKEN: ${{ secrets.FIBER_LINK_PROJECTS_TOKEN || secrets.GITHUB_TOKEN }}
+          FIBER_LINK_1H_ISSUE_NUMBER: ${{ vars.FIBER_LINK_1H_ISSUE_NUMBER }}
+          FIBER_LINK_1H_DISCUSSION_TITLE: ${{ vars.FIBER_LINK_1H_DISCUSSION_TITLE }}
+          FIBER_LINK_1H_DISCUSSION_CATEGORY: ${{ vars.FIBER_LINK_1H_DISCUSSION_CATEGORY }}
+          FIBER_LINK_1H_TIMEZONE: ${{ vars.FIBER_LINK_1H_TIMEZONE }}
         with:
+          github-token: ${{ secrets.FIBER_LINK_PROJECTS_TOKEN || secrets.GITHUB_TOKEN }}
           script: |
             const owner = context.repo.owner;
             const repo = context.repo.repo;
