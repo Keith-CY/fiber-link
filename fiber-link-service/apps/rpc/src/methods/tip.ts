@@ -1,7 +1,9 @@
 import { createAdapter } from "@fiber-link/fiber-adapter";
 import { createDbClient, createDbTipIntentRepo, type TipIntentRepo } from "@fiber-link/db";
+import type { InvoiceState } from "@fiber-link/fiber-adapter";
 
 let defaultTipIntentRepo: TipIntentRepo | null | undefined;
+let defaultAdapter: ReturnType<typeof createAdapter> | null | undefined;
 
 function getDefaultTipIntentRepo(): TipIntentRepo {
   if (defaultTipIntentRepo !== undefined) {
@@ -22,6 +24,23 @@ function getDefaultTipIntentRepo(): TipIntentRepo {
   return defaultTipIntentRepo;
 }
 
+function getDefaultAdapter() {
+  if (defaultAdapter !== undefined) {
+    if (!defaultAdapter) {
+      throw new Error("Fiber adapter is not available (FIBER_RPC_URL missing).");
+    }
+    return defaultAdapter;
+  }
+
+  const fiberRpcUrl = process.env.FIBER_RPC_URL;
+  if (!fiberRpcUrl) {
+    defaultAdapter = null;
+    throw new Error("FIBER_RPC_URL environment variable is not set.");
+  }
+  defaultAdapter = createAdapter({ endpoint: fiberRpcUrl });
+  return defaultAdapter;
+}
+
 export type HandleTipCreateInput = {
   appId: string;
   postId: string;
@@ -29,6 +48,17 @@ export type HandleTipCreateInput = {
   toUserId: string;
   asset: "CKB" | "USDI";
   amount: string;
+};
+
+export type HandleTipStatusInput = {
+  invoice: string;
+};
+
+type HandleTipStatusOptions = {
+  tipIntentRepo?: TipIntentRepo;
+  adapter?: {
+    getInvoiceStatus: (input: { invoice: string }) => Promise<{ state: InvoiceState }>;
+  };
 };
 
 export async function handleTipCreate(
@@ -52,4 +82,30 @@ export async function handleTipCreate(
     invoice: invoice.invoice,
   });
   return { invoice: invoice.invoice };
+}
+
+export async function handleTipStatus(
+  input: HandleTipStatusInput,
+  options: HandleTipStatusOptions = {},
+) {
+  const tipIntentRepo = options.tipIntentRepo ?? getDefaultTipIntentRepo();
+  const adapter = options.adapter ?? getDefaultAdapter();
+  const tipIntent = await tipIntentRepo.findByInvoiceOrThrow(input.invoice);
+
+  if (tipIntent.invoiceState !== "UNPAID") {
+    return { state: tipIntent.invoiceState };
+  }
+
+  const invoiceStatus = await adapter.getInvoiceStatus({ invoice: input.invoice });
+  if (invoiceStatus.state === "SETTLED") {
+    const settled = await tipIntentRepo.updateInvoiceState(input.invoice, "SETTLED");
+    return { state: settled.invoiceState };
+  }
+
+  if (invoiceStatus.state === "FAILED") {
+    const failed = await tipIntentRepo.updateInvoiceState(input.invoice, "FAILED");
+    return { state: failed.invoiceState };
+  }
+
+  return { state: tipIntent.invoiceState };
 }

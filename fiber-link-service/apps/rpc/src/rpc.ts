@@ -1,8 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { createDbClient } from "@fiber-link/db";
+import { TipIntentNotFoundError, createDbClient } from "@fiber-link/db";
 import { verifyHmac } from "./auth/hmac";
-import { handleTipCreate } from "./methods/tip";
+import { handleTipCreate, handleTipStatus } from "./methods/tip";
 import { createNonceStore } from "./nonce-store";
 import { type AppRepo, createDbAppRepo } from "./repositories/app-repo";
 import { loadSecretMap, resolveSecretForApp } from "./secret-map";
@@ -27,6 +27,10 @@ const TipCreateSchema = z.object({
   toUserId: z.string().min(1),
   asset: z.enum(["CKB", "USDI"]),
   amount: z.string().min(1),
+});
+
+const TipStatusSchema = z.object({
+  invoice: z.string().min(1),
 });
 
 const NONCE_TTL_MS = 5 * 60 * 1000;
@@ -278,6 +282,34 @@ export function registerRpc(
           const result = await handleTipCreate({ ...parsed.data, appId });
           return reply.send({ jsonrpc: "2.0", id: rpc.id, result });
         } catch (error) {
+          req.log.error(error);
+          return reply.send({
+            jsonrpc: "2.0",
+            id: rpc.id,
+            error: { code: -32603, message: "Internal error" },
+          });
+        }
+      }
+      if (rpc.method === "tip.status") {
+        const parsed = TipStatusSchema.safeParse(rpc.params);
+        if (!parsed.success) {
+          return reply.send({
+            jsonrpc: "2.0",
+            id: rpc.id,
+            error: { code: -32602, message: "Invalid params", data: parsed.error.issues },
+          });
+        }
+        try {
+          const result = await handleTipStatus({ ...parsed.data });
+          return reply.send({ jsonrpc: "2.0", id: rpc.id, result });
+        } catch (error) {
+          if (error instanceof TipIntentNotFoundError) {
+            return reply.send({
+              jsonrpc: "2.0",
+              id: rpc.id,
+              error: { code: -32004, message: "Tip not found" },
+            });
+          }
           req.log.error(error);
           return reply.send({
             jsonrpc: "2.0",
