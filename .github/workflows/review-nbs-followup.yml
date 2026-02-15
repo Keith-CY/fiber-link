@@ -101,7 +101,6 @@ jobs:
                 owner,
                 repo,
                 state: 'open',
-                labels: 'review-followup',
                 per_page: 100,
               },
               (response) => response.data
