@@ -1,106 +1,118 @@
-# Proposed Architecture
+# Architecture Boundaries and Lifecycle Map
+
+This document reflects the current code layout and runtime boundaries for the invoice -> payment -> settlement pipeline.
 
 ## Scope and assumptions
 
-- MVP is **hosted custodial**: Fiber Link service and worker are trusted within the same security domain.
-- The Discourse plugin owns the user interaction surface and server-side mediation to the Fiber Link service.
-- Durable state lives in Postgres with transactional updates for ledger and withdrawal progression.
-- Settlement detection and withdrawal execution are asynchronous background jobs.
+- MVP is hosted custodial: `apps/rpc` and `apps/worker` run in one trusted backend domain.
+- Durable state is Postgres (tip intents, ledger, withdrawals, app credentials).
+- Redis is used for nonce replay protection in the RPC auth boundary.
+- Fiber Node (FNN) is an external dependency reached via JSON-RPC through `packages/fiber-adapter`.
 
-## Components
-### 1) Discourse Plugin
-Responsibilities:
-- UI: Tip button + modal + creator dashboard
-- Calls Fiber Link Service to create tip intents and fetch status
-- Displays invoice (string + QR)
+## Module map (code-auditable)
 
-Key integration points:
-- Map Discourse user IDs to Fiber Link user accounts
-- Secure server-to-server auth between Discourse and Fiber Link Service (API key or signed requests)
-
-### 2) Fiber Link Service (Backend + Ledger)
-Responsibilities:
-- Create tip intents (`POST /tips`) and request invoices from the hub node
-- Track invoice state and credit recipients when settled
-- Maintain internal ledger with strong invariants
-- Enforce request integrity and authorization at API boundaries
-- Handle withdrawals to on-chain addresses
-
-Recommended properties:
-- Idempotent operations
-- Durable state machine for tip intents
-- Audit log for all balance-affecting events
-
-### 3) Fiber Link Hub Node (FNN)
-Responsibilities:
-- Provide invoice creation
-- Receive payments over Fiber
-- Provide settlement events / query capabilities
-
-### 4) Fiber Link Worker (Settlement + Withdrawal runtime)
-Responsibilities:
-- Poll pending invoices and reconcile against FNN settlement state
-- Reconcile past windows for missed settlement events
-- Execute withdrawals with bounded retries and persistence of execution evidence
-- Emit settlement/queue health metrics
-
-### 5) Storage & infra
-- Postgres stores intents, ledger entries, withdrawals, and app-level settings.
-- Drizzle migrations own schema evolution for all stateful components.
-
-
-## Flow model
-
-## High-level flow (Tip)
-1. User clicks **Tip** on a post.
-2. Plugin calls service: `POST /tips (app_id, post_id, recipient_id, asset, amount)`.
-3. Service asks hub node to create an invoice.
-4. Plugin displays invoice (string + QR).
-5. User pays invoice.
-6. Service detects invoice settlement and credits the recipient’s internal balance.
-
-### Tip state lifecycle (MVP)
-- `UNPAID` / `PENDING` / `SETTLED` / `FAILED` / `EXPIRED`
-- Ledger credit is written only on the `UNPAID -> SETTLED` transition with a single write path.
-
-## Withdrawal (MVP)
-- Recipient initiates withdrawal after passing a threshold.
-- Service persists a withdrawal request and worker process submits the transfer.
-- Withdrawal state transitions to `COMPLETED` only after a durable tx evidence write.
-- Service tracks tx hash and structured error details for each completed or failed attempt.
-
-## Data model (initial sketch)
-- users (mapped from Discourse)
-- posts (optional reference)
-- tip_intents
-  - id, community/app_id, post_id, from_user, to_user, asset, amount
-  - invoice, invoice_state, created_at, settled_at
-- ledger_entries
-  - id, user_id, type (credit/debit), amount, asset, reference (tip_intent_id / withdrawal_id)
-  - idempotency_key
-- withdrawals
-  - id, user_id, amount, asset, to_address, tx_hash, state
-
-## Threat-control checkpoints in architecture
-- Discourse Plugin auth: API boundary is HMAC-protected and timestamp/nonce replay-protected (`apps/rpc`), which should be treated as the primary trust gate for all `tip.create` requests.
-- Settlement correctness: `worker` and `rpc` share `tip_intents`/`ledger_entries` state transitions so settlement and crediting cannot diverge.
-- Withdrawal safety: worker executes withdrawal from `PENDING` queue state and records `tx_hash` only after durable execution evidence is available.
-- Reconciliation: periodic backfill command and mismatch report must be run after incidents before restarting high-volume tip acceptance.
+| Boundary | Primary paths | Responsibilities | Key read/write side effects |
+| --- | --- | --- | --- |
+| Discourse integration boundary (external to this repo) | `plugins/fiber-link/*` (Discourse plugin repo) | Collect tip input, call backend RPC, show invoice and status to users | Calls `/rpc` in `apps/rpc` with signed headers |
+| API boundary (`apps/rpc`) | `fiber-link-service/apps/rpc/src/rpc.ts` `fiber-link-service/apps/rpc/src/methods/tip.ts` | Verify HMAC + timestamp + nonce replay, validate JSON-RPC payloads, dispatch `tip.create` and `tip.status` | Creates tip intents, reads/updates invoice state, returns stable JSON-RPC errors |
+| Worker boundary (`apps/worker`) | `fiber-link-service/apps/worker/src/entry.ts` `fiber-link-service/apps/worker/src/settlement-discovery.ts` `fiber-link-service/apps/worker/src/withdrawal-batch.ts` | Poll unpaid invoices, reconcile settlement state, execute withdrawal queue with retry policy | Writes tip settlement state, ledger credits/debits, withdrawal lifecycle transitions |
+| Fiber RPC adapter (`packages/fiber-adapter`) | `fiber-link-service/packages/fiber-adapter/src/index.ts` | Canonical wrapper over Fiber JSON-RPC methods (`create_invoice`, `get_invoice`, `send_payment`) | Converts upstream response shapes to internal contracts (`InvoiceState`, `txHash`) |
+| Persistence boundary (`packages/db`) | `fiber-link-service/packages/db/src/schema.ts` `fiber-link-service/packages/db/src/*-repo.ts` | Define schema + repos + transition guards for tip intents, ledger, withdrawals, app secrets | Enforces uniqueness (`invoice`, `idempotencyKey`) and transition checks |
+| Deployment boundary (`deploy/compose`) | `deploy/compose/docker-compose.yml` `deploy/compose/.env.example` | Compose topology for postgres/redis/fnn/rpc/worker and runtime env wiring | Defines readiness/liveness probes and service dependency graph |
 
 ## Runtime trust boundaries
-- Browser ↔ Discourse plugin: client-side risks (`XSS`, CSRF, session theft)
-- Discourse plugin server ↔ Fiber Link Service API: signed/secret request boundary with replay protection
-- Fiber Link Service ↔ FNN: authenticated RPC + settlement verification
-- Fiber Link Service ↔ Worker ↔ Database: single transaction boundary for idempotent updates
 
-## Trust boundaries & keys
-- Hub node keys (funds) MUST be protected (HSM if possible; at minimum strong operational controls).
-- Service credentials to hub node.
-- Plugin <-> Service auth and rate limiting.
+- Browser/client -> Discourse plugin UI:
+  untrusted client boundary (XSS/CSRF/session risks).
+- Discourse plugin -> `apps/rpc`:
+  authenticated API boundary using `x-app-id`, `x-ts`, `x-nonce`, `x-signature`.
+- `apps/rpc` + `apps/worker` -> FNN:
+  external RPC boundary through `packages/fiber-adapter`.
+- `apps/rpc` + `apps/worker` -> Postgres:
+  durable state boundary for all financial side effects.
+- `apps/rpc` -> Redis:
+  anti-replay boundary for nonce uniqueness window.
 
-## Sync with issue #25 (architecture/threat-model alignment)
-- Keep `docs/05-threat-model.md` aligned with:
-  - trust boundaries in this architecture doc
-  - replay-protected HMAC auth contract (`x-app-id`, `x-ts`, `x-nonce`, `x-signature`)
-  - settlement/ledger state transition flow
-  - withdrawal evidence and execution sequencing
+## Lifecycle trace: invoice creation -> payment -> settlement
+
+### A) Invoice creation path
+
+```mermaid
+flowchart LR
+  A["Discourse plugin"] --> B["apps/rpc /rpc tip.create"]
+  B --> C["methods/tip.ts handleTipCreate"]
+  C --> D["packages/fiber-adapter createInvoice()"]
+  D --> E["Fiber Node create_invoice"]
+  C --> F["packages/db TipIntentRepo.create()"]
+  F --> G["Postgres tip_intents (invoice_state=UNPAID)"]
+  B --> A
+```
+
+Traceable code path:
+
+1. `apps/rpc/src/rpc.ts`: validates auth and params for `tip.create`.
+2. `apps/rpc/src/methods/tip.ts#handleTipCreate`: calls `createAdapter().createInvoice`.
+3. `packages/fiber-adapter/src/index.ts#createInvoice`: sends `create_invoice`.
+4. `packages/db/src/tip-intent-repo.ts#create`: persists `tip_intents` row (`invoice_state = UNPAID`).
+
+### B) Invoice status and settlement reconciliation
+
+```mermaid
+flowchart LR
+  A["apps/rpc tip.status"] --> B["TipIntentRepo.findByInvoiceOrThrow"]
+  B --> C["If already terminal: return state"]
+  B --> D["If UNPAID: adapter getInvoiceStatus()"]
+  D --> E["SETTLED/FAILED mapped to db update"]
+  E --> F["tip_intents invoice_state updated"]
+```
+
+```mermaid
+flowchart LR
+  A["apps/worker runSettlementDiscovery"] --> B["listByInvoiceState(UNPAID)"]
+  B --> C["adapter getInvoiceStatus()"]
+  C --> D["markSettled() when SETTLED"]
+  D --> E["LedgerRepo.creditOnce(idempotency key)"]
+  D --> F["TipIntentRepo.updateInvoiceState(SETTLED)"]
+```
+
+Traceable code path:
+
+1. `apps/rpc/src/methods/tip.ts#handleTipStatus` handles synchronous status checks.
+2. `apps/worker/src/settlement-discovery.ts#runSettlementDiscovery` handles async reconciliation/backfill.
+3. `apps/worker/src/settlement.ts#markSettled` enforces one credit per tip intent via `settlement:tip_intent:<id>`.
+4. `packages/db/src/ledger-repo.ts#creditOnce` uses uniqueness on `ledger_entries.idempotency_key`.
+
+### C) Withdrawal lifecycle path
+
+```mermaid
+flowchart LR
+  A["withdrawals state=PENDING/RETRY_PENDING"] --> B["runWithdrawalBatch()"]
+  B --> C["markProcessing()"]
+  C --> D["executeWithdrawal() via adapter send_payment"]
+  D --> E["ok: markCompletedWithDebit(txHash)"]
+  D --> F["transient: markRetryPending(nextRetryAt)"]
+  D --> G["permanent: markFailed()"]
+  E --> H["ledger debit write-once"]
+```
+
+Traceable code path:
+
+1. `apps/worker/src/withdrawal-batch.ts#runWithdrawalBatch` orchestrates transitions and retry matrix.
+2. `packages/db/src/withdrawal-repo.ts` enforces state transitions (`PENDING -> PROCESSING -> COMPLETED/RETRY_PENDING/FAILED`).
+3. `packages/db/src/ledger-repo.ts#debitOnce` ensures debit idempotency with `withdrawal:debit:<withdrawalId>`.
+
+## State and integrity invariants
+
+- `tip_intents.invoice` is unique and serves as lookup key for status reconciliation.
+- `ledger_entries.idempotency_key` is unique and blocks duplicate balance mutations.
+- Withdrawal transitions are guarded by state-aware `WHERE` clauses; invalid transitions raise explicit conflict errors.
+- Terminal withdrawal evidence includes `tx_hash` and `completed_at`.
+
+## Deployment topology mapping
+
+- `deploy/compose/docker-compose.yml` wires `postgres`, `redis`, `fnn`, `rpc`, `worker`.
+- `rpc` depends on `postgres`, `redis`, `fnn`; `worker` depends on `postgres`, `rpc`.
+- Health probes are codified:
+  - RPC readiness: `apps/rpc/src/scripts/healthcheck-ready.ts`
+  - Worker readiness: `apps/worker/src/scripts/healthcheck.ts`
+- Runtime env contract is documented in `deploy/compose/.env.example`.
