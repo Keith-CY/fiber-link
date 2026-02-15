@@ -59,7 +59,126 @@ function getFallbackSecret() {
   return process.env.FIBER_LINK_HMAC_SECRET ?? "";
 }
 
-export function registerRpc(app: FastifyInstance, options: { appRepo?: AppRepo } = {}) {
+type HealthProbeStatus = {
+  status: "ok" | "error";
+  message?: string;
+};
+
+type ReadinessChecks = {
+  database: HealthProbeStatus;
+  redis: HealthProbeStatus;
+  coreService: HealthProbeStatus;
+};
+
+type ReadinessProbeResult = {
+  ready: boolean;
+  checks: ReadinessChecks;
+};
+
+type ReadinessProbeFn = () => Promise<ReadinessProbeResult>;
+
+function getHealthcheckTimeoutMs() {
+  const parsed = Number(process.env.RPC_HEALTHCHECK_TIMEOUT_MS ?? "3000");
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return 3000;
+  }
+  return Math.floor(parsed);
+}
+
+async function runDefaultReadinessProbe(appRepo: AppRepo | null): Promise<ReadinessProbeResult> {
+  const checks: ReadinessChecks = {
+    database: { status: "error", message: "not checked" },
+    redis: { status: "error", message: "not checked" },
+    coreService: { status: "error", message: "not checked" },
+  };
+
+  try {
+    if (!appRepo) {
+      throw new Error("AppRepo unavailable (DATABASE_URL missing or initialization failed)");
+    }
+    await appRepo.findByAppId("__healthz_probe__");
+    checks.database = { status: "ok" };
+  } catch (error) {
+    checks.database = {
+      status: "error",
+      message: error instanceof Error ? error.message : String(error),
+    };
+  }
+
+  try {
+    const nonce = `healthz-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    await nonceStore.isReplay("__healthz_probe__", nonce, 1000);
+    checks.redis = { status: "ok" };
+  } catch (error) {
+    checks.redis = {
+      status: "error",
+      message: error instanceof Error ? error.message : String(error),
+    };
+  }
+
+  try {
+    const endpoint = process.env.FIBER_RPC_URL;
+    if (!endpoint) {
+      throw new Error("FIBER_RPC_URL is not configured");
+    }
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), getHealthcheckTimeoutMs());
+    try {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: '{"id":"healthz","jsonrpc":"2.0","method":"ping","params":[]}',
+        signal: controller.signal,
+      });
+      if (response.status >= 500) {
+        throw new Error(`core service returned HTTP ${response.status}`);
+      }
+      checks.coreService = { status: "ok" };
+    } finally {
+      clearTimeout(timeout);
+    }
+  } catch (error) {
+    checks.coreService = {
+      status: "error",
+      message: error instanceof Error ? error.message : String(error),
+    };
+  }
+
+  const ready = Object.values(checks).every((entry) => entry.status === "ok");
+  return { ready, checks };
+}
+
+export function registerRpc(
+  app: FastifyInstance,
+  options: { appRepo?: AppRepo; readinessProbe?: ReadinessProbeFn } = {},
+) {
+  app.get("/healthz/live", async () => {
+    return { status: "alive" as const };
+  });
+
+  app.get("/healthz/ready", async (req, reply) => {
+    try {
+      const result = options.readinessProbe
+        ? await options.readinessProbe()
+        : await runDefaultReadinessProbe(options.appRepo ?? getDefaultAppRepo());
+
+      if (!result.ready) {
+        return reply.status(503).send({ status: "not_ready", checks: result.checks });
+      }
+      return reply.send({ status: "ready", checks: result.checks });
+    } catch (error) {
+      req.log.error(error, "readiness probe failed unexpectedly");
+      return reply.status(503).send({
+        status: "not_ready",
+        checks: {
+          database: { status: "error", message: "probe failure" },
+          redis: { status: "error", message: "probe failure" },
+          coreService: { status: "error", message: "probe failure" },
+        },
+      });
+    }
+  });
+
   app.post("/rpc", async (req, reply) => {
     try {
       const body = req.body as unknown;
