@@ -1,2 +1,58 @@
-<h2>Balance</h2>
-<p>{{this.model.balance}}</p>
+<h2>Fiber Link Lifecycle Demo</h2>
+<p>
+  Uses the real status endpoint path:
+  <code>/fiber-link/rpc</code> with method <code>tip.status</code>.
+</p>
+
+{{#if this.model.isEmptyState}}
+  <p class="fiber-link-dashboard-empty">
+    No invoice selected. Open this page with <code>?invoice=inv-tip-1</code> to load lifecycle
+    data.
+  </p>
+{{else}}
+  {{#if this.model.isLoading}}
+    <p class="fiber-link-dashboard-loading">Loading lifecycle status...</p>
+  {{/if}}
+
+  {{#if this.model.isErrorState}}
+    <p class="fiber-link-dashboard-error">Failed to load status: {{this.model.errorMessage}}</p>
+  {{/if}}
+
+  <p><strong>Invoice:</strong> {{this.model.invoice}}</p>
+  <p><strong>Backend state:</strong> {{this.model.backendLabel}}</p>
+  <p>{{this.model.lifecycleSummary}}</p>
+
+  {{#if this.model.lastCheckedAt}}
+    <p><strong>Last checked:</strong> {{this.model.lastCheckedAt}}</p>
+  {{/if}}
+
+  <ol class="fiber-link-dashboard-lifecycle">
+    {{#each this.model.lifecycleSteps as |step|}}
+      <li class={{step.stateClass}}>
+        <strong>{{step.label}}</strong>
+        <span>({{step.stateLabel}})</span>
+        <p>{{step.description}}</p>
+      </li>
+    {{/each}}
+  </ol>
+{{/if}}
+
+<h3>State Mapping</h3>
+<table class="fiber-link-dashboard-mapping">
+  <thead>
+    <tr>
+      <th>UI label</th>
+      <th>Backend state</th>
+      <th>Notes</th>
+    </tr>
+  </thead>
+  <tbody>
+    {{#each this.model.mappingRows as |row|}}
+      <tr>
+        <td>{{row.uiState}}</td>
+        <td>{{row.backendState}}</td>
+        <td>{{row.copy}}</td>
+      </tr>
+    {{/each}}
+  </tbody>
+</table>
