@@ -13,7 +13,12 @@
 
 - `docs/runbooks/compose-reference.md` — compose reference and deterministic smoke usage.
 - `scripts/testnet-smoke.sh` — one-command local testnet sanity check with machine-readable PASS/FAIL output.
-- 
+
+## Deployment evidence
+
+- `docs/runbooks/deployment-evidence.md` — deployment evidence artifacts, checklist, and retention policy.
+- `scripts/capture-deployment-evidence.sh` — one-command evidence and log capture bundle.
+
 ## Kanban operations
 
 - `docs/runbooks/kanban-project-id.md` — project ID resolution order, fallback ID ownership, and rotation procedure.

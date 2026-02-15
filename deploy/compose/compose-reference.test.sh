@@ -6,6 +6,9 @@ COMPOSE_FILE="${ROOT_DIR}/deploy/compose/docker-compose.yml"
 FNN_DOCKERFILE="${ROOT_DIR}/deploy/compose/fnn/Dockerfile"
 FNN_ENTRYPOINT="${ROOT_DIR}/deploy/compose/fnn/entrypoint.sh"
 RUNBOOK_FILE="${ROOT_DIR}/docs/runbooks/compose-reference.md"
+EVIDENCE_RUNBOOK_FILE="${ROOT_DIR}/docs/runbooks/deployment-evidence.md"
+EVIDENCE_TEMPLATE_DIR="${ROOT_DIR}/docs/runbooks/evidence-template/deployment"
+EVIDENCE_SCRIPT="${ROOT_DIR}/scripts/capture-deployment-evidence.sh"
 ENV_FILE="${ROOT_DIR}/deploy/compose/.env.example"
 RPC_DOCKERFILE="${ROOT_DIR}/deploy/compose/service-rpc.Dockerfile"
 WORKER_DOCKERFILE="${ROOT_DIR}/deploy/compose/service-worker.Dockerfile"
@@ -17,6 +20,8 @@ for required in \
   "${FNN_DOCKERFILE}" \
   "${FNN_ENTRYPOINT}" \
   "${RUNBOOK_FILE}" \
+  "${EVIDENCE_RUNBOOK_FILE}" \
+  "${EVIDENCE_SCRIPT}" \
   "${ENV_FILE}" \
   "${RPC_DOCKERFILE}" \
   "${WORKER_DOCKERFILE}" \
@@ -27,6 +32,32 @@ for required in \
     exit 1
   fi
 done
+
+for template_file in \
+  "${EVIDENCE_TEMPLATE_DIR}/README.md" \
+  "${EVIDENCE_TEMPLATE_DIR}/checklist.md" \
+  "${EVIDENCE_TEMPLATE_DIR}/retention-policy.md" \
+  "${EVIDENCE_TEMPLATE_DIR}/manifest.template.json"; do
+  if [[ ! -f "${template_file}" ]]; then
+    echo "missing evidence template file: ${template_file}" >&2
+    exit 1
+  fi
+done
+
+if [[ ! -x "${EVIDENCE_SCRIPT}" ]]; then
+  echo "deployment evidence script is not executable: ${EVIDENCE_SCRIPT}" >&2
+  exit 1
+fi
+
+if ! grep -q "capture-deployment-evidence.sh" "${RUNBOOK_FILE}"; then
+  echo "compose runbook missing deployment evidence script reference" >&2
+  exit 1
+fi
+
+if ! grep -q "retention" "${EVIDENCE_RUNBOOK_FILE}"; then
+  echo "deployment evidence runbook missing retention policy section" >&2
+  exit 1
+fi
 
 for service in rpc worker postgres redis fnn; do
   if ! grep -Eq "^[[:space:]]{2}${service}:" "${COMPOSE_FILE}"; then

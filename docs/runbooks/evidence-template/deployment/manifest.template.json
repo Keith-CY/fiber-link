@@ -1,0 +1,18 @@
+{
+  "generatedAtUtc": "<YYYYMMDDTHHMMSSZ>",
+  "retentionDays": 30,
+  "invoiceId": "<invoice-id-or-UNSET>",
+  "settlementId": "<settlement-id-or-UNSET>",
+  "overallStatus": "<PASS|FAIL>",
+  "files": {
+    "commands": "commands/command-index.log",
+    "stepResults": "status/step-results.tsv",
+    "acceptanceMapping": "status/acceptance-mapping.md",
+    "composeLogs": "logs/compose-services.log",
+    "fnnMetadata": "node/fnn-container-inspect.json",
+    "rpcMetadata": "node/rpc-container-inspect.json",
+    "workerMetadata": "node/worker-container-inspect.json",
+    "composeStatusSnapshot": "snapshots/compose-ps.txt",
+    "composeConfigSnapshot": "snapshots/compose-config.txt"
+  }
+}

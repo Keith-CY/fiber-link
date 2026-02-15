@@ -77,6 +77,20 @@ The script prints machine-readable status lines:
 - success: `RESULT=PASS CODE=0 ...`
 - failure: `RESULT=FAIL CODE=<non-zero> ...`
 
+## One-command deployment evidence bundle
+
+From repo root:
+
+```bash
+scripts/capture-deployment-evidence.sh \
+  --invoice-id <invoice_id> \
+  --settlement-id <settlement_id_or_tx_hash>
+```
+
+This captures compose logs, node metadata, invoice/settlement IDs, status snapshots, and acceptance mapping.
+See detailed policy/checklist in:
+- `docs/runbooks/deployment-evidence.md`
+
 ## RPC Smoke Check
 From host:
 
