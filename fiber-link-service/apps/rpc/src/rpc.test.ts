@@ -1,9 +1,11 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import Fastify from "fastify";
+import { TipIntentNotFoundError } from "@fiber-link/db";
 import { buildServer } from "./server";
 import { verifyHmac } from "./auth/hmac";
 import { createInMemoryAppRepo } from "./repositories/app-repo";
 import { registerRpc } from "./rpc";
+import * as tipMethods from "./methods/tip";
 
 beforeEach(() => {
   process.env.FIBER_LINK_HMAC_SECRET = "replace-with-lookup";
@@ -242,6 +244,114 @@ describe("json-rpc", () => {
       id: 1,
       error: { code: -32603, message: "Internal error" },
     });
+  });
+
+  it("returns tip.status result from handler", async () => {
+    const app = buildServer();
+    const tipStatusSpy = vi.spyOn(tipMethods, "handleTipStatus").mockResolvedValue({ state: "UNPAID" });
+    try {
+      const payload = { jsonrpc: "2.0", id: "s1", method: "tip.status", params: { invoice: "inv-1" } };
+      const ts = String(Math.floor(Date.now() / 1000));
+      const nonce = "status-ok";
+      const signature = verifyHmac.sign({
+        secret: "replace-with-lookup",
+        payload: JSON.stringify(payload),
+        ts,
+        nonce,
+      });
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/rpc",
+        payload,
+        headers: {
+          "content-type": "application/json",
+          "x-app-id": "app1",
+          "x-ts": ts,
+          "x-nonce": nonce,
+          "x-signature": signature,
+        },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({ jsonrpc: "2.0", id: "s1", result: { state: "UNPAID" } });
+      expect(tipStatusSpy).toHaveBeenCalledWith({ invoice: "inv-1" });
+    } finally {
+      tipStatusSpy.mockRestore();
+    }
+  });
+
+  it("returns JSON-RPC error on invalid tip.status params", async () => {
+    const app = buildServer();
+    const payload = { jsonrpc: "2.0", id: "s2", method: "tip.status", params: {} };
+    const ts = String(Math.floor(Date.now() / 1000));
+    const nonce = "status-bad";
+    const signature = verifyHmac.sign({
+      secret: "replace-with-lookup",
+      payload: JSON.stringify(payload),
+      ts,
+      nonce,
+    });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/rpc",
+      payload,
+      headers: {
+        "content-type": "application/json",
+        "x-app-id": "app1",
+        "x-ts": ts,
+        "x-nonce": nonce,
+        "x-signature": signature,
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({
+      jsonrpc: "2.0",
+      id: "s2",
+      error: { code: -32602, message: "Invalid params" },
+    });
+  });
+
+  it("returns standardized tip.status not-found error", async () => {
+    const app = buildServer();
+    const tipStatusSpy = vi
+      .spyOn(tipMethods, "handleTipStatus")
+      .mockRejectedValue(new TipIntentNotFoundError("missing-invoice"));
+    try {
+      const payload = { jsonrpc: "2.0", id: "s3", method: "tip.status", params: { invoice: "missing-invoice" } };
+      const ts = String(Math.floor(Date.now() / 1000));
+      const nonce = "status-not-found";
+      const signature = verifyHmac.sign({
+        secret: "replace-with-lookup",
+        payload: JSON.stringify(payload),
+        ts,
+        nonce,
+      });
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/rpc",
+        payload,
+        headers: {
+          "content-type": "application/json",
+          "x-app-id": "app1",
+          "x-ts": ts,
+          "x-nonce": nonce,
+          "x-signature": signature,
+        },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({
+        jsonrpc: "2.0",
+        id: "s3",
+        error: { code: -32004, message: "Tip not found" },
+      });
+    } finally {
+      tipStatusSpy.mockRestore();
+    }
   });
 
   it("returns JSON-RPC unauthorized when auth headers are missing", async () => {
