@@ -165,14 +165,22 @@ Below is a practical MVP-focused threat list. “Severity” is relative (H/M/L)
 
 
 ## 5) Recommended MVP controls (concrete)
+## 0.1 Current implementation posture
+
+- `POST /rpc` uses HMAC auth with headers `x-app-id`, `x-ts`, `x-nonce`, and `x-signature`.
+- Replay defense uses both bounded timestamp validation and nonce tracking (5-minute TTL).
+- `x-nonce` replay storage is in-memory by default and can use Redis when `FIBER_LINK_NONCE_REDIS_URL` is set.
+- Secret resolution is DB-first for app-level secrets with env fallback.
+
 ### 5.1 Auth between Discourse and Fiber Link Service
-Pick one of:
-- **HMAC signed requests** (recommended):
-  - headers: `x-app-id`, `x-ts`, `x-signature` (HMAC over method+path+body)
-  - replay protection: reject if ts outside window; store nonce/idempotency key
-- **Static API key** with:
-  - IP allowlist (if Discourse has stable egress IP)
-  - strict rate limits
+- **HMAC signed requests** (implemented):
+  - headers: `x-app-id`, `x-ts`, `x-nonce`, `x-signature` over the raw request payload and timestamp/nonce
+  - replay protection:
+    - reject stale/invalid timestamps (5-minute window),
+    - reject duplicate nonce within TTL per `app_id`
+  - secret resolution:
+    - DB-stored app secret first, then env fallback map, then env fallback single secret
+- **Static API key only** is a fallback risk posture only if HMAC is not used for an endpoint, and requires strict IP scope.
 
 ### 5.2 Ledger invariants
 - A settled invoice can produce **at most one** credit entry.
