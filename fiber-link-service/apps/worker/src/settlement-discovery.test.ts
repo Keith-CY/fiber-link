@@ -59,6 +59,12 @@ describe("runSettlementDiscovery", () => {
     expect(summary.failed).toBe(1);
     expect(summary.stillUnpaid).toBe(1);
     expect(summary.errors).toBe(0);
+    expect(summary.events).toHaveLength(3);
+    expect(summary.events.map((event) => event.outcome).sort()).toEqual([
+      "FAILED_MARKED",
+      "NO_CHANGE",
+      "SETTLED_CREDIT_APPLIED",
+    ]);
   });
 
   it("is idempotent for replays and marks settled when credit already exists", async () => {
@@ -96,12 +102,22 @@ describe("runSettlementDiscovery", () => {
     expect(summary.settledCredits).toBe(0);
     expect(summary.settledDuplicates).toBe(1);
     expect(summary.errors).toBe(0);
+    expect(summary.events).toHaveLength(1);
+    expect(summary.events[0]).toMatchObject({
+      type: "settlement.update",
+      invoice: "inv-replay",
+      previousState: "UNPAID",
+      observedState: "SETTLED",
+      nextState: "SETTLED",
+      outcome: "SETTLED_DUPLICATE",
+      ledgerCreditApplied: false,
+    });
 
     const saved = await tipIntentRepo.findByInvoiceOrThrow(intent.invoice);
     expect(saved.invoiceState).toBe("SETTLED");
   });
 
-  it("rejects invalid settlement-state payloads without partial writes", async () => {
+  it("treats invalid adapter contract state as error without DB mutation", async () => {
     const intent = await tipIntentRepo.create({
       appId: "app-a",
       postId: "p-invalid",
@@ -109,7 +125,7 @@ describe("runSettlementDiscovery", () => {
       toUserId: "u2",
       asset: "USDI",
       amount: "10",
-      invoice: "inv-invalid-state",
+      invoice: "inv-invalid",
     });
 
     const summary = await runSettlementDiscovery({
@@ -118,19 +134,20 @@ describe("runSettlementDiscovery", () => {
       ledgerRepo,
       adapter: {
         async getInvoiceStatus() {
-          return { state: "UNKNOWN_STATE_FROM_NODE" };
+          return { state: "UNKNOWN_STATE" };
         },
       },
     });
 
-    expect(summary.scanned).toBe(1);
     expect(summary.errors).toBe(1);
     expect(summary.settledCredits).toBe(0);
     expect(summary.failed).toBe(0);
+    expect(summary.events).toHaveLength(0);
 
     const saved = await tipIntentRepo.findByInvoiceOrThrow(intent.invoice);
     expect(saved.invoiceState).toBe("UNPAID");
     expect(saved.settledAt).toBeNull();
+    expect(summary.scanned).toBe(1);
     expect(ledgerRepo.__listForTests?.()).toHaveLength(0);
   });
 

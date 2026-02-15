@@ -1,37 +1,21 @@
 import type { FastifyInstance } from "fastify";
-import { z } from "zod";
 import { TipIntentNotFoundError, createDbClient } from "@fiber-link/db";
 import { verifyHmac } from "./auth/hmac";
+import {
+  RpcErrorCode,
+  RpcIdSchema,
+  RpcRequestSchema,
+  TipCreateParamsSchema,
+  TipCreateResultSchema,
+  TipStatusParamsSchema,
+  TipStatusResultSchema,
+  type RpcId,
+} from "./contracts";
 import { handleTipCreate, handleTipStatus } from "./methods/tip";
 import { createNonceStore } from "./nonce-store";
 import { type AppRepo, createDbAppRepo } from "./repositories/app-repo";
+import { rpcErrorResponse, rpcResultResponse } from "./rpc-error";
 import { loadSecretMap, resolveSecretForApp } from "./secret-map";
-
-type RpcRequest = {
-  jsonrpc: "2.0";
-  id: string | number | null;
-  method: string;
-  params?: unknown;
-};
-
-const RpcRequestSchema = z.object({
-  jsonrpc: z.literal("2.0"),
-  id: z.union([z.string(), z.number(), z.null()]),
-  method: z.string().min(1),
-  params: z.unknown().optional(),
-});
-
-const TipCreateSchema = z.object({
-  postId: z.string().min(1),
-  fromUserId: z.string().min(1),
-  toUserId: z.string().min(1),
-  asset: z.enum(["CKB", "USDI"]),
-  amount: z.string().min(1),
-});
-
-const TipStatusSchema = z.object({
-  invoice: z.string().min(1),
-});
 
 const NONCE_TTL_MS = 5 * 60 * 1000;
 const nonceStore = createNonceStore();
@@ -61,6 +45,14 @@ function isTimestampFresh(ts: string) {
 
 function getFallbackSecret() {
   return process.env.FIBER_LINK_HMAC_SECRET ?? "";
+}
+
+function extractRpcId(body: unknown): RpcId {
+  if (!body || typeof body !== "object" || !("id" in body)) {
+    return null;
+  }
+  const parsed = RpcIdSchema.safeParse((body as { id?: unknown }).id);
+  return parsed.success ? parsed.data : null;
 }
 
 type HealthProbeStatus = {
@@ -188,11 +180,15 @@ export function registerRpc(
       const body = req.body as unknown;
       const rawBody = req.rawBody;
       if (!rawBody) {
-        return reply.status(500).send({
-          jsonrpc: "2.0",
-          id: (body as RpcRequest | undefined)?.id ?? null,
-          error: { code: -32603, message: "Internal error: could not read raw request body." },
-        });
+        return reply
+          .status(500)
+          .send(
+            rpcErrorResponse(
+              extractRpcId(body),
+              RpcErrorCode.INTERNAL_ERROR,
+              "Internal error: could not read raw request body.",
+            ),
+          );
       }
       const payload = rawBody;
       const appId = String(req.headers["x-app-id"] ?? "");
@@ -202,11 +198,7 @@ export function registerRpc(
 
       const parsedRequest = RpcRequestSchema.safeParse(body);
       if (!parsedRequest.success) {
-        return reply.send({
-          jsonrpc: "2.0",
-          id: null,
-          error: { code: -32600, message: "Invalid Request" },
-        });
+        return reply.send(rpcErrorResponse(null, RpcErrorCode.INVALID_REQUEST, "Invalid Request"));
       }
       const rpc = parsedRequest.data;
 
@@ -233,104 +225,80 @@ export function registerRpc(
       }
 
       if (!appId || !ts || !nonce || !signature || !secret) {
-        return reply.send({
-          jsonrpc: "2.0",
-          id: rpc.id,
-          error: { code: -32001, message: "Unauthorized" },
-        });
+        return reply.send(rpcErrorResponse(rpc.id, RpcErrorCode.UNAUTHORIZED, "Unauthorized"));
       }
 
       if (!isTimestampFresh(ts)) {
-        return reply.send({
-          jsonrpc: "2.0",
-          id: rpc.id,
-          error: { code: -32001, message: "Unauthorized" },
-        });
+        return reply.send(rpcErrorResponse(rpc.id, RpcErrorCode.UNAUTHORIZED, "Unauthorized"));
       }
 
       // HMAC is always verified after resolving the secret with DB precedence over env secrets.
       if (!verifyHmac.check({ secret, payload, ts, nonce, signature })) {
-        return reply.send({
-          jsonrpc: "2.0",
-          id: rpc.id,
-          error: { code: -32001, message: "Unauthorized" },
-        });
+        return reply.send(rpcErrorResponse(rpc.id, RpcErrorCode.UNAUTHORIZED, "Unauthorized"));
       }
 
       const isReplay = await nonceStore.isReplay(appId, nonce, NONCE_TTL_MS);
       if (isReplay) {
-        return reply.send({
-          jsonrpc: "2.0",
-          id: rpc.id,
-          error: { code: -32001, message: "Unauthorized" },
-        });
+        return reply.send(rpcErrorResponse(rpc.id, RpcErrorCode.UNAUTHORIZED, "Unauthorized"));
       }
 
       if (rpc.method === "health.ping") {
-        return reply.send({ jsonrpc: "2.0", id: rpc.id, result: { status: "ok" } });
+        return reply.send(rpcResultResponse(rpc.id, { status: "ok" as const }));
       }
       if (rpc.method === "tip.create") {
-        const parsed = TipCreateSchema.safeParse(rpc.params);
+        const parsed = TipCreateParamsSchema.safeParse(rpc.params);
         if (!parsed.success) {
-          return reply.send({
-            jsonrpc: "2.0",
-            id: rpc.id,
-            error: { code: -32602, message: "Invalid params", data: parsed.error.issues },
-          });
+          return reply.send(
+            rpcErrorResponse(rpc.id, RpcErrorCode.INVALID_PARAMS, "Invalid params", parsed.error.issues),
+          );
         }
         try {
           const result = await handleTipCreate({ ...parsed.data, appId });
-          return reply.send({ jsonrpc: "2.0", id: rpc.id, result });
+          const validated = TipCreateResultSchema.safeParse(result);
+          if (!validated.success) {
+            req.log.error(validated.error, "tip.create produced invalid response payload");
+            return reply.send(rpcErrorResponse(rpc.id, RpcErrorCode.INTERNAL_ERROR, "Internal error"));
+          }
+          return reply.send(rpcResultResponse(rpc.id, validated.data));
         } catch (error) {
           req.log.error(error);
-          return reply.send({
-            jsonrpc: "2.0",
-            id: rpc.id,
-            error: { code: -32603, message: "Internal error" },
-          });
+          return reply.send(rpcErrorResponse(rpc.id, RpcErrorCode.INTERNAL_ERROR, "Internal error"));
         }
       }
       if (rpc.method === "tip.status") {
-        const parsed = TipStatusSchema.safeParse(rpc.params);
+        const parsed = TipStatusParamsSchema.safeParse(rpc.params);
         if (!parsed.success) {
-          return reply.send({
-            jsonrpc: "2.0",
-            id: rpc.id,
-            error: { code: -32602, message: "Invalid params", data: parsed.error.issues },
-          });
+          return reply.send(
+            rpcErrorResponse(rpc.id, RpcErrorCode.INVALID_PARAMS, "Invalid params", parsed.error.issues),
+          );
         }
         try {
           const result = await handleTipStatus({ ...parsed.data });
-          return reply.send({ jsonrpc: "2.0", id: rpc.id, result });
+          const validated = TipStatusResultSchema.safeParse(result);
+          if (!validated.success) {
+            req.log.error(validated.error, "tip.status produced invalid response payload");
+            return reply.send(rpcErrorResponse(rpc.id, RpcErrorCode.INTERNAL_ERROR, "Internal error"));
+          }
+          return reply.send(rpcResultResponse(rpc.id, validated.data));
         } catch (error) {
           if (error instanceof TipIntentNotFoundError) {
-            return reply.send({
-              jsonrpc: "2.0",
-              id: rpc.id,
-              error: { code: -32004, message: "Tip not found" },
-            });
+            return reply.send(rpcErrorResponse(rpc.id, RpcErrorCode.TIP_NOT_FOUND, "Tip not found"));
           }
           req.log.error(error);
-          return reply.send({
-            jsonrpc: "2.0",
-            id: rpc.id,
-            error: { code: -32603, message: "Internal error" },
-          });
+          return reply.send(rpcErrorResponse(rpc.id, RpcErrorCode.INTERNAL_ERROR, "Internal error"));
         }
       }
 
-      return reply.send({
-        jsonrpc: "2.0",
-        id: rpc.id,
-        error: { code: -32601, message: "Method not found" },
-      });
+      return reply.send(rpcErrorResponse(rpc.id, RpcErrorCode.METHOD_NOT_FOUND, "Method not found"));
     } catch (error) {
       req.log.error(error);
-      return reply.send({
-        jsonrpc: "2.0",
-        id: (req.body as RpcRequest | null | undefined)?.id ?? null,
-        error: { code: -32603, message: "Internal error" },
-      });
+      return reply.send(
+        rpcErrorResponse(
+          extractRpcId(req.body as unknown),
+          RpcErrorCode.INTERNAL_ERROR,
+          "Internal error",
+        ),
+      );
     }
   });
 }

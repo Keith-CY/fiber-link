@@ -8,6 +8,7 @@ import {
   type TipIntentListCursor,
   type TipIntentRepo,
 } from "@fiber-link/db";
+import { createSettlementUpdateEvent, type SettlementState, type SettlementUpdateEvent } from "./contracts";
 import { markSettled } from "./settlement";
 
 type SettlementAdapter = {
@@ -60,6 +61,7 @@ export type SettlementDiscoverySummary = {
   failed: number;
   stillUnpaid: number;
   errors: number;
+  events: SettlementUpdateEvent[];
   nextCursor: TipIntentListCursor | null;
   backlogUnpaidBeforeScan: number;
   backlogUnpaidAfterScan: number;
@@ -174,6 +176,7 @@ export async function runSettlementDiscovery(options: SettlementDiscoveryOptions
     failed: 0,
     stillUnpaid: 0,
     errors: 0,
+    events: [],
     nextCursor: null,
     backlogUnpaidBeforeScan,
     backlogUnpaidAfterScan: backlogUnpaidBeforeScan,
@@ -187,11 +190,12 @@ export async function runSettlementDiscovery(options: SettlementDiscoveryOptions
   const settledLatenciesMs: number[] = [];
 
   for (const intent of intents) {
+    const previousState = intent.invoiceState as SettlementState;
     try {
       const status = await adapter.getInvoiceStatus({ invoice: intent.invoice });
-      const state = parseSettlementState(intent.invoice, status?.state);
+      const observedState = parseSettlementState(intent.invoice, status?.state);
 
-      if (state === "SETTLED") {
+      if (observedState === "SETTLED") {
         const result = await markSettled(
           { invoice: intent.invoice },
           {
@@ -204,17 +208,47 @@ export async function runSettlementDiscovery(options: SettlementDiscoveryOptions
         } else {
           summary.settledDuplicates += 1;
         }
+        summary.events.push(
+          createSettlementUpdateEvent({
+            invoice: intent.invoice,
+            previousState,
+            observedState,
+            nextState: "SETTLED",
+            outcome: result.credited ? "SETTLED_CREDIT_APPLIED" : "SETTLED_DUPLICATE",
+            ledgerCreditApplied: result.credited,
+          }),
+        );
         settledLatenciesMs.push(Math.max(0, nowMsFn() - intent.createdAt.getTime()));
         continue;
       }
 
-      if (state === "FAILED") {
+      if (observedState === "FAILED") {
         await tipIntentRepo.updateInvoiceState(intent.invoice, "FAILED");
         summary.failed += 1;
+        summary.events.push(
+          createSettlementUpdateEvent({
+            invoice: intent.invoice,
+            previousState,
+            observedState,
+            nextState: "FAILED",
+            outcome: "FAILED_MARKED",
+            ledgerCreditApplied: false,
+          }),
+        );
         continue;
       }
 
       summary.stillUnpaid += 1;
+      summary.events.push(
+        createSettlementUpdateEvent({
+          invoice: intent.invoice,
+          previousState,
+          observedState,
+          nextState: "UNPAID",
+          outcome: "NO_CHANGE",
+          ledgerCreditApplied: false,
+        }),
+      );
     } catch (error) {
       summary.errors += 1;
       logger.error("[worker] settlement discovery item failed", {
