@@ -25,6 +25,20 @@
 - Privacy: user payment history
 - Availability: ability to tip + withdraw
 
+## 0.1 Current implementation posture
+
+- `POST /rpc` uses HMAC auth with headers `x-app-id`, `x-ts`, `x-nonce`, and `x-signature`.
+- Replay defense uses both bounded timestamp validation and nonce tracking (5-minute TTL).
+- `x-nonce` replay storage is in-memory by default and can use Redis when `FIBER_LINK_NONCE_REDIS_URL` is set.
+- Secret resolution is DB-first for app-level secrets with env fallback.
+
+## 0.2 Sync with issue #25
+- Verify this threat model stays aligned with `docs/02-architecture.md`:
+  - boundary updates
+  - auth contract and replay protection
+  - settlement and withdrawal execution flow
+  - reconciliation and evidence requirements
+
 
 ## 1) Trust boundaries
 ### TB1: User browser ↔ Discourse
@@ -177,12 +191,6 @@ Below is a practical MVP-focused threat list. “Severity” is relative (H/M/L)
 
 
 ## 5) Recommended MVP controls (concrete)
-## 0.1 Current implementation posture
-
-- `POST /rpc` uses HMAC auth with headers `x-app-id`, `x-ts`, `x-nonce`, and `x-signature`.
-- Replay defense uses both bounded timestamp validation and nonce tracking (5-minute TTL).
-- `x-nonce` replay storage is in-memory by default and can use Redis when `FIBER_LINK_NONCE_REDIS_URL` is set.
-- Secret resolution is DB-first for app-level secrets with env fallback.
 
 ### 5.1 Auth between Discourse and Fiber Link Service
 - **HMAC signed requests** (implemented):

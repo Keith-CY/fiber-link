@@ -97,3 +97,10 @@ Responsibilities:
 - Hub node keys (funds) MUST be protected (HSM if possible; at minimum strong operational controls).
 - Service credentials to hub node.
 - Plugin <-> Service auth and rate limiting.
+
+## Sync with issue #25 (architecture/threat-model alignment)
+- Keep `docs/05-threat-model.md` aligned with:
+  - trust boundaries in this architecture doc
+  - replay-protected HMAC auth contract (`x-app-id`, `x-ts`, `x-nonce`, `x-signature`)
+  - settlement/ledger state transition flow
+  - withdrawal evidence and execution sequencing
