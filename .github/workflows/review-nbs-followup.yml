@@ -19,23 +19,23 @@ jobs:
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b
         with:
           script: |
-          const owner = context.repo.owner;
-          const repo = context.repo.repo;
-          const nbsLabels = ["nbs", "review-followup"];
-          const pr = context.payload.pull_request;
-          const prNumber = pr.number;
-          const prUrl = pr.html_url;
-          const prTitle = pr.title;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const nbsLabels = ["nbs", "review-followup"];
+            const pr = context.payload.pull_request;
+            const prNumber = pr.number;
+            const prUrl = pr.html_url;
+            const prTitle = pr.title;
 
             const nbsRegex = /^\s*[-*]?\s*NBS:\s*(.+)\s*$/gmi;
 
             function extractNbsLines(text, source) {
               if (!text) return [];
-            const out = [];
-            let match;
-            while ((match = nbsRegex.exec(text)) !== null) {
-              const suggestion = (match[1] || "").trim();
-              if (!suggestion) continue;
+              const out = [];
+              let match;
+              while ((match = nbsRegex.exec(text)) !== null) {
+                const suggestion = (match[1] || "").trim();
+                if (!suggestion) continue;
                 out.push({ suggestion, source });
               }
               return out;
@@ -135,12 +135,12 @@ jobs:
               {
                 owner,
                 repo,
-                state: 'open',
+                state: "open",
                 per_page: 100,
               },
               (response) => response.data
             );
-            const existingTitles = new Set((existingIssueCandidates || []).map((issue) => String(issue.title || '').toLowerCase()));
+            const existingTitles = new Set((existingIssueCandidates || []).map((issue) => String(issue.title || "").toLowerCase()));
 
             for (const { suggestion, sources } of bySuggestion.values()) {
               const marker = `<!-- nbs:pr-${prNumber}:${Buffer.from(suggestion).toString("base64").slice(0, 20)} -->`;
