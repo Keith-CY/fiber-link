@@ -11,6 +11,7 @@ RPC_DOCKERFILE="${ROOT_DIR}/deploy/compose/service-rpc.Dockerfile"
 WORKER_DOCKERFILE="${ROOT_DIR}/deploy/compose/service-worker.Dockerfile"
 DB_INIT_SQL="${ROOT_DIR}/deploy/compose/postgres/init/001_schema.sql"
 GITIGNORE_FILE="${ROOT_DIR}/.gitignore"
+TESTNET_CONFIG_FILE="${ROOT_DIR}/deploy/compose/fnn/config/testnet.yml"
 
 for required in \
   "${COMPOSE_FILE}" \
@@ -21,7 +22,8 @@ for required in \
   "${RPC_DOCKERFILE}" \
   "${WORKER_DOCKERFILE}" \
   "${DB_INIT_SQL}" \
-  "${GITIGNORE_FILE}"; do
+  "${GITIGNORE_FILE}" \
+  "${TESTNET_CONFIG_FILE}"; do
   if [[ ! -f "${required}" ]]; then
     echo "missing required file: ${required}" >&2
     exit 1
@@ -44,6 +46,13 @@ if ! grep -q "^FNN_ASSET_SHA256=" "${ENV_FILE}"; then
   echo ".env.example missing FNN_ASSET_SHA256 placeholder" >&2
   exit 1
 fi
+
+for required_var in POSTGRES_PASSWORD FNN_ASSET_SHA256 FIBER_SECRET_KEY_PASSWORD FIBER_LINK_HMAC_SECRET; do
+  if ! grep -Eq "^${required_var}=.+" "${ENV_FILE}"; then
+    echo ".env.example missing non-empty default/placeholder for ${required_var}" >&2
+    exit 1
+  fi
+done
 
 if ! grep -q "^WORKER_SHUTDOWN_TIMEOUT_MS=" "${ENV_FILE}"; then
   echo ".env.example missing WORKER_SHUTDOWN_TIMEOUT_MS default" >&2
@@ -72,6 +81,31 @@ fi
 
 if ! grep -q "FIBER_LINK_HMAC_SECRET: \${FIBER_LINK_HMAC_SECRET:?Set FIBER_LINK_HMAC_SECRET in .env}" "${COMPOSE_FILE}"; then
   echo "docker-compose missing required FIBER_LINK_HMAC_SECRET guard" >&2
+  exit 1
+fi
+
+if ! grep -q '^  listening_addr: "/ip4/0.0.0.0/tcp/8228"$' "${TESTNET_CONFIG_FILE}"; then
+  echo "testnet config missing canonical FNN p2p listen port 8228" >&2
+  exit 1
+fi
+
+if ! grep -q '^  listening_addr: "0.0.0.0:8227"$' "${TESTNET_CONFIG_FILE}"; then
+  echo "testnet config missing canonical FNN rpc listen port 8227" >&2
+  exit 1
+fi
+
+if ! grep -q '^  rpc_url: "https://testnet.ckbapp.dev/"$' "${TESTNET_CONFIG_FILE}"; then
+  echo "testnet config missing CKB testnet RPC dependency" >&2
+  exit 1
+fi
+
+if ! grep -Fq '${FNN_RPC_PORT:-8227}:8227' "${COMPOSE_FILE}"; then
+  echo "docker-compose missing consistent FNN RPC port mapping" >&2
+  exit 1
+fi
+
+if ! grep -Fq '${FNN_P2P_PORT:-8228}:8228' "${COMPOSE_FILE}"; then
+  echo "docker-compose missing consistent FNN P2P port mapping" >&2
   exit 1
 fi
 
