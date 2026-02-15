@@ -25,6 +25,20 @@
 - Privacy: user payment history
 - Availability: ability to tip + withdraw
 
+## 0.1 Current implementation posture
+
+- `POST /rpc` uses HMAC auth with headers `x-app-id`, `x-ts`, `x-nonce`, and `x-signature`.
+- Replay defense uses both bounded timestamp validation and nonce tracking (5-minute TTL).
+- `x-nonce` replay storage is in-memory by default and can use Redis when `FIBER_LINK_NONCE_REDIS_URL` is set.
+- Secret resolution is DB-first for app-level secrets with env fallback.
+
+## 0.2 Sync with issue #25
+- Verify this threat model stays aligned with `docs/02-architecture.md`:
+  - boundary updates
+  - auth contract and replay protection
+  - settlement and withdrawal execution flow
+  - reconciliation and evidence requirements
+
 
 ## 1) Trust boundaries
 ### TB1: User browser ↔ Discourse
@@ -46,6 +60,10 @@
 ### TB5: Withdrawal signing environment ↔ Internet
 - Threats: key exfiltration, unauthorized withdrawals
 - Controls: isolate signing key, strict access, allowlist rules, monitoring
+
+### TB6: Worker queue ↔ Execution state
+- Threats: replayed or stalled withdrawal jobs, inconsistent completion state
+- Controls: idempotent claiming, state-machine transitions in DB transactions, bounded retry rules
 
 
 ## 2) STRIDE threat analysis
@@ -145,6 +163,13 @@ Below is a practical MVP-focused threat list. “Severity” is relative (H/M/L)
      - Withdrawal execution requires separate service account + isolated runtime
      - Strict policy checks (limits, allowlists) before signing/broadcasting
 
+16. **Withdrawal execution replay** (H)
+   - Attack: crash/retry behavior causes duplicate execution attempts and stale completions.
+   - Controls:
+     - Idempotent completion writes and status transitions (`PENDING` → `PROCESSING` → `COMPLETED`/`FAILED`)
+     - Worker claims that serialize per withdrawal
+     - Persist completion evidence with unique references for reconciliation
+
 
 ## 3) Highest-risk items (what to get right first)
 1. **Key security (withdrawal + hub node keys)**
@@ -159,20 +184,23 @@ Below is a practical MVP-focused threat list. “Severity” is relative (H/M/L)
 | Hub keys compromised | H | isolate keys; least access; rotation; cold storage for excess | abnormal withdrawal alerts | halt withdrawals; rotate keys; incident response |
 | Duplicate credits | H | idempotency + unique constraints + transactional state machine | reconciliation job | correct ledger; postmortem |
 | Forged service calls | H | signed requests or API key + IP allowlist | request anomaly monitoring | revoke key; block IP |
+| Duplicate execution attempts | H | idempotent state transitions + tx evidence idempotency | worker retry telemetry | stop worker; reconcile by tx hash + manual review |
 | User address hijack | H | address-change cooldown; confirmation; limits | alerts on address change + withdrawals | freeze account; manual review |
 | Liquidity exhaustion | M/H | caps; monitoring; operational playbook | channel capacity metrics | pause tips; rebalance channels |
 | PII leakage | M | access control; redaction; least privilege | audit logs | rotate secrets; notify |
 
 
 ## 5) Recommended MVP controls (concrete)
+
 ### 5.1 Auth between Discourse and Fiber Link Service
-Pick one of:
-- **HMAC signed requests** (recommended):
-  - headers: `x-app-id`, `x-ts`, `x-signature` (HMAC over method+path+body)
-  - replay protection: reject if ts outside window; store nonce/idempotency key
-- **Static API key** with:
-  - IP allowlist (if Discourse has stable egress IP)
-  - strict rate limits
+- **HMAC signed requests** (implemented):
+  - headers: `x-app-id`, `x-ts`, `x-nonce`, `x-signature` over the raw request payload and timestamp/nonce
+  - replay protection:
+    - reject stale/invalid timestamps (5-minute window),
+    - reject duplicate nonce within TTL per `app_id`
+  - secret resolution:
+    - DB-stored app secret first, then env fallback map, then env fallback single secret
+- **Static API key only** is a fallback risk posture only if HMAC is not used for an endpoint, and requires strict IP scope.
 
 ### 5.2 Ledger invariants
 - A settled invoice can produce **at most one** credit entry.
