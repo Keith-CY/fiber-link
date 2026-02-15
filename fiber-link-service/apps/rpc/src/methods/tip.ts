@@ -3,7 +3,6 @@ import {
   createDbClient,
   createDbLedgerRepo,
   createDbTipIntentRepo,
-  InvoiceStateTransitionError,
   type LedgerRepo,
   type TipIntentRepo,
 } from "@fiber-link/db";
@@ -12,6 +11,23 @@ import type { InvoiceState } from "@fiber-link/fiber-adapter";
 let defaultTipIntentRepo: TipIntentRepo | null | undefined;
 let defaultLedgerRepo: LedgerRepo | null | undefined;
 let defaultAdapter: ReturnType<typeof createAdapter> | null | undefined;
+
+function isInvoiceStateConflictError(error: unknown): boolean {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+
+  const maybeError = error as { name?: unknown; message?: unknown };
+  if (maybeError.name === "InvoiceStateTransitionError") {
+    return true;
+  }
+
+  if (typeof maybeError.message === "string") {
+    return maybeError.message.includes("invalid invoice state transition");
+  }
+
+  return false;
+}
 
 function getDefaultTipIntentRepo(): TipIntentRepo {
   if (defaultTipIntentRepo !== undefined) {
@@ -134,7 +150,7 @@ export async function handleTipStatus(
       const settled = await tipIntentRepo.updateInvoiceState(input.invoice, "SETTLED");
       return { state: settled.invoiceState };
     } catch (error) {
-      if (error instanceof InvoiceStateTransitionError) {
+      if (isInvoiceStateConflictError(error)) {
         const current = await tipIntentRepo.findByInvoiceOrThrow(input.invoice);
         return { state: current.invoiceState };
       }
@@ -147,7 +163,7 @@ export async function handleTipStatus(
       const failed = await tipIntentRepo.updateInvoiceState(input.invoice, "FAILED");
       return { state: failed.invoiceState };
     } catch (error) {
-      if (error instanceof InvoiceStateTransitionError) {
+      if (isInvoiceStateConflictError(error)) {
         const current = await tipIntentRepo.findByInvoiceOrThrow(input.invoice);
         return { state: current.invoiceState };
       }

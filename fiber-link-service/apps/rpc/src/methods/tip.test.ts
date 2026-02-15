@@ -1,7 +1,6 @@
 import { beforeEach, expect, it } from "vitest";
 import { handleTipCreate, handleTipStatus } from "./tip";
 import {
-  InvoiceStateTransitionError,
   createInMemoryLedgerRepo,
   createInMemoryTipIntentRepo,
   type LedgerWriteInput,
@@ -193,7 +192,9 @@ it("returns latest intent state when upstream transition becomes invalid after s
     async updateInvoiceState(invoice: string, state: "UNPAID" | "SETTLED" | "FAILED") {
       const current = await repository.findByInvoiceOrThrow(invoice);
       await repository.updateInvoiceState(invoice, "FAILED");
-      throw new InvoiceStateTransitionError(invoice, current.invoiceState, state);
+      const conflict = new Error(`invalid invoice state transition: ${current.invoiceState} -> ${state}`);
+      conflict.name = "InvoiceStateTransitionError";
+      throw conflict;
     },
   };
 
