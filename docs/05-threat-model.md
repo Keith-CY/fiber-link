@@ -42,6 +42,8 @@
 ## 0.3 Security assumptions and limits register
 - Canonical operational assumptions and explicit limits are tracked in:
   - `docs/runbooks/security-assumptions.md` (versioned matrix + owner contacts + verification mapping)
+- Threat-control acceptance evidence for W1 is tracked in:
+  - `docs/runbooks/threat-model-evidence-checklist.md` (status + command + logs/tests + retention/sign-off)
 
 
 ## 1) Trust boundaries

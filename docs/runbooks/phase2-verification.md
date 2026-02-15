@@ -98,10 +98,12 @@ These scenarios must be verified before merge/deploy. Some are covered by unit t
 
 Before merge/deploy, verify the current assumptions register in:
 - `docs/runbooks/security-assumptions.md`
+- `docs/runbooks/threat-model-evidence-checklist.md`
 
 Minimum checks:
 - Assumption version/date is current for this release.
 - Owners/contacts are still valid.
+- W1 checklist items used in this release have attached command/test evidence.
 - Operational boundaries still match code/config defaults:
   - `rg -n "NONCE_TTL_MS" fiber-link-service/apps/rpc/src/rpc.ts`
   - `rg -n "WORKER_MAX_RETRIES|WORKER_RETRY_DELAY_MS|WORKER_SETTLEMENT_INTERVAL_MS|WORKER_SETTLEMENT_BATCH_SIZE" fiber-link-service/apps/worker/src/entry.ts`
