@@ -33,78 +33,12 @@ jobs:
           github-token: ${{ secrets.FIBER_LINK_PROJECTS_TOKEN || secrets.GITHUB_TOKEN }}
           script: |
             const fs = require('fs');
+            const { DEFAULT_PROJECT_ID, resolveProjectIdFromCandidates } = require('./.github/scripts/kanban-project-id');
 
             const owner = context.repo.owner;
             const repo = context.repo.repo;
             const dryRunInput = String((context.payload.inputs?.dry_run || process.env.DRY_RUN || 'false')).toLowerCase() === 'true';
             const ghClient = github;
-            const defaultProjectId = 'PVT_kwHOAG7zoc4BPPlp';
-            const sanitizeProjectIdValue = (value) => String(value || '').trim().replace(/^["']|["']$/g, '');
-
-            const resolveProjectId = async (candidate) => {
-              const raw = sanitizeProjectIdValue(candidate);
-              if (!raw) {
-                return '';
-              }
-              if (/^PVT_[A-Za-z0-9_]+$/.test(raw) || /^PD_[A-Za-z0-9_]+$/.test(raw)) {
-                return raw;
-              }
-
-              const userOrOrgProject = raw.match(/^https?:\/\/github\.com\/(users|orgs)\/([^/]+)\/projects\/(\d+)(?:[/?#].*)?$/i);
-              if (userOrOrgProject) {
-                const [, scope, login, number] = userOrOrgProject;
-                const num = Number.parseInt(number, 10);
-                if (!Number.isFinite(num)) {
-                  return raw;
-                }
-
-                try {
-                  const query = scope === 'users'
-                    ? `query($login: String!, $number: Int!) { user(login: $login) { projectV2(number: $number) { id } } }`
-                    : `query($login: String!, $number: Int!) { organization(login: $login) { projectV2(number: $number) { id } } }`;
-                  const response = await ghClient.graphql(query, { login, number: num });
-                  const node = scope === 'users' ? response?.user?.projectV2 : response?.organization?.projectV2;
-                  if (node?.id) {
-                    return node.id;
-                  }
-                } catch (error) {
-                  core.info(`Could not resolve project URL "${raw}" via GraphQL: ${error?.message || error}`);
-                }
-
-                return '';
-              }
-
-              const repoProject = raw.match(/^https?:\/\/github\.com\/([^/]+)\/([^/]+)\/projects\/(\d+)(?:[/?#].*)?$/i);
-              if (repoProject) {
-                const [, ownerName, repoName, number] = repoProject;
-                const num = Number.parseInt(number, 10);
-                if (!Number.isFinite(num)) {
-                  return raw;
-                }
-
-                try {
-                  const response = await ghClient.graphql(
-                    `query($owner: String!, $repo: String!, $number: Int!) {
-                      repository(owner: $owner, name: $repo) {
-                        projectV2(number: $number) {
-                          id
-                        }
-                      }
-                    }`,
-                    { owner: ownerName, repo: repoName, number: num }
-                  );
-                  if (response?.repository?.projectV2?.id) {
-                    return response.repository.projectV2.id;
-                  }
-                } catch (error) {
-                  core.info(`Could not resolve repo project URL "${raw}" via GraphQL: ${error?.message || error}`);
-                }
-
-                return '';
-              }
-
-              return raw;
-            };
 
             let repoMeta = null;
             try {
@@ -137,16 +71,12 @@ jobs:
               process.env.FIBER_LINK_PROJECT_ID,
               process.env.FIBER_LINK_CANONICAL_PROJECT_ID,
               config.projectId,
-              defaultProjectId,
+              DEFAULT_PROJECT_ID,
             ];
-            let projectId = '';
-            for (const candidate of projectCandidates) {
-              const resolved = await resolveProjectId(candidate);
-              if (resolved) {
-                projectId = resolved;
-                break;
-              }
-            }
+            const projectId = await resolveProjectIdFromCandidates(projectCandidates, {
+              graphql: ghClient.graphql,
+              log: (message) => core.info(message),
+            });
 
             if (!projectId) {
               core.setFailed('Missing projectId. Set vars.FIBER_LINK_CANONICAL_PROJECT_ID, FIBER_LINK_PROJECT_ID secret, or ensure .github/kanban-config.json contains projectId.');
