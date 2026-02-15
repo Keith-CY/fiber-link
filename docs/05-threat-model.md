@@ -39,6 +39,10 @@
   - settlement and withdrawal execution flow
   - reconciliation and evidence requirements
 
+## 0.3 Security assumptions and limits register
+- Canonical operational assumptions and explicit limits are tracked in:
+  - `docs/runbooks/security-assumptions.md` (versioned matrix + owner contacts + verification mapping)
+
 
 ## 1) Trust boundaries
 ### TB1: User browser ↔ Discourse
