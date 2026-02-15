@@ -2,6 +2,18 @@
 
 This runbook is the required verification gate for Phase 2 changes (happy path plus failure path).
 
+## Deployment Evidence Capture
+
+For standardized deployment evidence (artifacts, checklist, and retention policy), run:
+
+```bash
+scripts/capture-deployment-evidence.sh --invoice-id <invoice_id> --settlement-id <settlement_id_or_tx_hash>
+```
+
+Reference:
+
+- `docs/runbooks/deployment-evidence.md`
+
 ## Service (Bun) Tests
 
 Run all service tests:

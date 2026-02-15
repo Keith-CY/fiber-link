@@ -2,3 +2,4 @@
 node_modules
 /tmp/
 deploy/compose/.env
+deploy/compose/evidence/
