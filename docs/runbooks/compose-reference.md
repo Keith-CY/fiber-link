@@ -10,6 +10,9 @@ This reference deployment starts:
 
 It is intended for local/staging bring-up, not production hardening.
 
+For a strict deterministic execution sequence (precheck -> spin-up -> signed RPC checks -> cleanup), use:
+- `docs/runbooks/testnet-bootstrap.md`
+
 ## Prerequisites
 - Docker and Docker Compose v2
 - Outbound network access to:
