@@ -34,7 +34,8 @@ jobs:
             const owner = context.repo.owner;
             const repo = context.repo.repo;
             const dryRun = String(context.payload.inputs?.dry_run || process.env.DRY_RUN || 'false').toLowerCase() === 'true';
-            const gh = github;
+            const token = process.env.FIBER_LINK_PROJECTS_TOKEN || process.env.GITHUB_TOKEN;
+            const gh = token && typeof github.getOctokit === 'function' ? github.getOctokit(token) : github;
 
             const targetIssueRaw = process.env.FIBER_LINK_1H_ISSUE_NUMBER;
             const targetIssueNumber = targetIssueRaw ? Number.parseInt(targetIssueRaw, 10) : NaN;
