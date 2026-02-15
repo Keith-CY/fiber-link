@@ -19,25 +19,58 @@ jobs:
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b
         with:
           script: |
-            const owner = context.repo.owner;
-            const repo = context.repo.repo;
-            const pr = context.payload.pull_request;
-            const prNumber = pr.number;
-            const prUrl = pr.html_url;
-            const prTitle = pr.title;
+          const owner = context.repo.owner;
+          const repo = context.repo.repo;
+          const nbsLabels = ["nbs", "review-followup"];
+          const pr = context.payload.pull_request;
+          const prNumber = pr.number;
+          const prUrl = pr.html_url;
+          const prTitle = pr.title;
 
             const nbsRegex = /^\s*[-*]?\s*NBS:\s*(.+)\s*$/gmi;
 
             function extractNbsLines(text, source) {
               if (!text) return [];
-              const out = [];
-              let match;
-              while ((match = nbsRegex.exec(text)) !== null) {
-                const suggestion = (match[1] || "").trim();
-                if (!suggestion) continue;
+            const out = [];
+            let match;
+            while ((match = nbsRegex.exec(text)) !== null) {
+              const suggestion = (match[1] || "").trim();
+              if (!suggestion) continue;
                 out.push({ suggestion, source });
               }
               return out;
+            }
+
+            async function ensureNbsLabels() {
+              const labels = await github.paginate(
+                github.rest.issues.listLabelsForRepo,
+                { owner, repo, per_page: 100 },
+                (response) => response.data.map((label) => String(label.name || "").toLowerCase())
+              );
+              const existing = new Set(labels.filter((name) => name));
+              for (const label of nbsLabels) {
+                const normalized = String(label || "").toLowerCase().trim();
+                if (!normalized) continue;
+                if (existing.has(normalized)) continue;
+                try {
+                  await github.rest.issues.createLabel({
+                    owner,
+                    repo,
+                    name: label,
+                    description: "Auto-created by review follow-up workflow",
+                    color: "0E8A16",
+                  });
+                  existing.add(normalized);
+                  core.info(`Created label: ${label}`);
+                } catch (error) {
+                  if (error.status === 422 || String(error.message || "").includes("already exists")) {
+                    core.info(`Label already exists: ${label}`);
+                    existing.add(normalized);
+                  } else {
+                    throw error;
+                  }
+                }
+              }
             }
 
             async function paginate(method, params) {
@@ -75,6 +108,8 @@ jobs:
               core.info("No NBS lines found; nothing to create.");
               return;
             }
+
+            await ensureNbsLabels();
 
             const bySuggestion = new Map();
             for (const item of extracted) {
@@ -129,6 +164,6 @@ jobs:
                 ...Array.from(sources).map((s) => `- ${s}`),
               ].join("\n");
 
-              await github.rest.issues.create({ owner, repo, title, body });
+              await github.rest.issues.create({ owner, repo, title, body, labels: nbsLabels });
               core.info(`Created follow-up issue: ${title}`);
             }
