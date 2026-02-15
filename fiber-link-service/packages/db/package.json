@@ -2,7 +2,14 @@
   "name": "@fiber-link/db",
   "private": true,
   "main": "src/index.ts",
-  "scripts": { "test": "vitest" },
+  "scripts": {
+    "test": "vitest",
+    "db:generate": "bunx drizzle-kit generate --config=drizzle.config.ts",
+    "db:migrate": "bunx drizzle-kit migrate --config=drizzle.config.ts",
+    "db:migrate:local": "bash ./scripts/migrate-local-idempotent.sh",
+    "db:drift:check": "bunx drizzle-kit check --dialect=postgresql --out=drizzle",
+    "db:validate": "bun run db:drift:check"
+  },
   "dependencies": {
     "drizzle-orm": "^0.32.0",
     "pg": "^8.12.0"

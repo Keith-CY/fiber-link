@@ -17,6 +17,9 @@ jobs:
       - name: Install dependencies
         working-directory: fiber-link-service
         run: bun install --frozen-lockfile
+      - name: Check db migration drift
+        working-directory: fiber-link-service/packages/db
+        run: bun run db:validate
       - name: Test rpc
         working-directory: fiber-link-service/apps/rpc
         run: bun run test -- --run --silent
