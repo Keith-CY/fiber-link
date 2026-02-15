@@ -54,8 +54,8 @@ The following actor set is mandatory for payment-path threat coverage:
 - External API client
 - Discourse admin/operator
 - Network attacker
-- Compromised worker process
-- Stale/inconsistent Fiber node
+- Compromised worker runtime
+- Stale or byzantine FNN node view
 - Malicious end user
 - Internal operator with excessive privilege
 
@@ -102,7 +102,7 @@ The following actor set is mandatory for payment-path threat coverage:
 |---|---|---|---|---|---|---|
 | T1 | Forged `tip.create` or `tip.status` RPC request | Plugin ↔ RPC | RPC service owner | Unauthorized invoice creation or status probing | HMAC signature, app-scoped secret resolution, strict param validation | Secret compromise still enables abuse until rotation |
 | T2 | Replay of previously valid signed RPC request | Plugin ↔ RPC, RPC ↔ Redis | RPC service owner | Duplicate operations and noisy side effects | Timestamp freshness window + per-app nonce replay cache | Redis outage can degrade replay guarantees if fallback is in-memory only |
-| T3 | Duplicate settlement notification creates multiple credits | Worker ↔ DB | Worker + DB owner | Ledger inflation and balance corruption | `ledger_entries.idempotency_key` uniqueness + `creditOnce` write-once semantics | Manual reconciliation still required after major incidents |
+| T3 | Duplicate settlement notification creates multiple credits | Worker ↔ DB | DB + backend owner | Ledger inflation and balance corruption | `ledger_entries.idempotency_key` uniqueness + `creditOnce` write-once semantics | Manual reconciliation still required after major incidents |
 | T4 | Withdrawal completion recorded without durable tx evidence | Worker ↔ DB, Worker ↔ FNN | Worker owner | False completion, user balance drift | `markCompletedWithDebit` requires tx hash + transactional debit/write coupling | Upstream may provide malformed evidence fields requiring defensive parsing updates |
 | T5 | Transient FNN errors misclassified as terminal failures | Worker ↔ FNN | Worker owner | Premature failed withdrawals and stuck funds UX | Error classification matrix + bounded retries + retry delay | Unknown vendor error strings can still be misclassified until observed and patched |
 | T6 | Stale/inconsistent FNN state prevents deterministic settlement | Worker ↔ FNN | Integration owner | Settlement lag, reconciliation mismatches | Polling with backfill cursor, repeated verification, mismatch reporting runbook | Eventual consistency can still delay balance updates |
