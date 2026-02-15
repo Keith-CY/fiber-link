@@ -18,6 +18,7 @@ export const withdrawalStateEnum = pgEnum("withdrawal_state", [
   "COMPLETED",
   "FAILED",
 ]);
+export type WithdrawalState = (typeof withdrawalStateEnum.enumValues)[number];
 
 export const apps = pgTable(
   "apps",

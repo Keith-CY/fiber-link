@@ -2,10 +2,9 @@ import { randomUUID } from "crypto";
 import { and, eq, lte, or, sql } from "drizzle-orm";
 import type { DbClient } from "./client";
 import { createDbLedgerRepo, type LedgerRepo } from "./ledger-repo";
-import { withdrawals, type Asset } from "./schema";
+import { withdrawals, type Asset, type WithdrawalState } from "./schema";
 
 export type WithdrawalAsset = Asset;
-export type WithdrawalState = "PENDING" | "PROCESSING" | "RETRY_PENDING" | "COMPLETED" | "FAILED";
 
 export type CreateWithdrawalInput = {
   appId: string;
