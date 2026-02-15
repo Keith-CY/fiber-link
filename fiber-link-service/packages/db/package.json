@@ -7,7 +7,7 @@
     "db:generate": "bunx drizzle-kit generate --config=drizzle.config.ts",
     "db:migrate": "bunx drizzle-kit migrate --config=drizzle.config.ts",
     "db:migrate:local": "bash ./scripts/migrate-local-idempotent.sh",
-    "db:drift:check": "bunx drizzle-kit check --dialect=postgresql --out=drizzle",
+    "db:drift:check": "bunx drizzle-kit check --config=drizzle.config.ts",
     "db:validate": "bun run db:drift:check"
   },
   "dependencies": {

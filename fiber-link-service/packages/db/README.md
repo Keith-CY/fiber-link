@@ -5,7 +5,7 @@ This package owns Drizzle schema definitions and persistence repos.
 ## Schema workflow
 
 - `src/schema.ts` is the source of truth for DB tables and enum types.
-- `tipIntents.invoice_state` is constrained by `tipInvoiceStateEnum` (`UNPAID`, `SETTLED`, `FAILED`).
+- `tipIntents.invoice_state` is currently a text column in schema (`invoiceState: text("invoice_state")`).
 
 ## Migration workflow
 
