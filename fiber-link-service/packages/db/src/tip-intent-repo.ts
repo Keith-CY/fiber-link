@@ -56,6 +56,27 @@ export class TipIntentNotFoundError extends Error {
   }
 }
 
+const ALLOWED_INVOICE_STATE_TRANSITIONS: Record<InvoiceState, ReadonlySet<InvoiceState>> = {
+  UNPAID: new Set<InvoiceState>(["UNPAID", "SETTLED", "FAILED"]),
+  SETTLED: new Set<InvoiceState>(["SETTLED"]),
+  FAILED: new Set<InvoiceState>(["FAILED"]),
+};
+
+function isAllowedInvoiceStateTransition(from: InvoiceState, to: InvoiceState): boolean {
+  return ALLOWED_INVOICE_STATE_TRANSITIONS[from].has(to);
+}
+
+export class InvoiceStateTransitionError extends Error {
+  constructor(
+    public readonly invoice: string,
+    public readonly from: InvoiceState,
+    public readonly to: InvoiceState,
+  ) {
+    super(`invalid invoice state transition: ${from} -> ${to}`);
+    this.name = "InvoiceStateTransitionError";
+  }
+}
+
 export type TipIntentRepo = {
   create(input: CreateTipIntentInput): Promise<TipIntentRecord>;
   findByInvoiceOrThrow(invoice: string): Promise<TipIntentRecord>;
@@ -180,6 +201,10 @@ export function createDbTipIntentRepo(db: DbClient): TipIntentRepo {
       const now = new Date();
       const nextSettledAt = state === "SETTLED" ? sql`COALESCE(${tipIntents.settledAt}, ${now})` : null;
       const clearFailure = state === "SETTLED";
+      const stateFilter =
+        state === "SETTLED"
+          ? or(eq(tipIntents.invoiceState, "UNPAID"), eq(tipIntents.invoiceState, "SETTLED"))
+          : or(eq(tipIntents.invoiceState, "UNPAID"), eq(tipIntents.invoiceState, "FAILED"));
       const [row] = await db
         .update(tipIntents)
         .set({
@@ -191,12 +216,18 @@ export function createDbTipIntentRepo(db: DbClient): TipIntentRepo {
           settlementLastError: clearFailure ? null : tipIntents.settlementLastError,
           settlementFailureReason: clearFailure ? null : tipIntents.settlementFailureReason,
         })
-        .where(eq(tipIntents.invoice, invoice))
+        .where(and(eq(tipIntents.invoice, invoice), stateFilter!))
         .returning();
-      if (!row) {
-        throw new TipIntentNotFoundError(invoice);
+      if (row) {
+        return toRecord(row);
       }
-      return toRecord(row);
+
+      const current = await findRowOrThrow(invoice);
+      const currentState = current.invoiceState as InvoiceState;
+      if (!isAllowedInvoiceStateTransition(currentState, state)) {
+        throw new InvoiceStateTransitionError(invoice, currentState, state);
+      }
+      return toRecord(current);
     },
 
     async markSettlementRetryPending(invoice, params) {
@@ -332,6 +363,9 @@ export function createInMemoryTipIntentRepo(): TipIntentRepo {
       }
       if (record.invoiceState === state) {
         return clone(record);
+      }
+      if (!isAllowedInvoiceStateTransition(record.invoiceState, state)) {
+        throw new InvoiceStateTransitionError(invoice, record.invoiceState, state);
       }
 
       record.invoiceState = state;
