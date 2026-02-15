@@ -301,7 +301,8 @@ export function registerRpc(app: FastifyInstance) {
     const nonce = String(req.headers["x-nonce"] ?? "");
     const signature = String(req.headers["x-signature"] ?? "");
 
-    // TODO: lookup secret by app_id
+    // NOTE: per-app secret lookup is implemented now (DB app secret + env fallback), see
+    // PR #20/21 and the final implementation in the service.
     const secret = "replace-with-lookup";
 
     if (!verifyHmac.check({ secret, payload, ts, nonce, signature })) {
