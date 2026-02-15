@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { createInMemoryLedgerRepo, createInMemoryTipIntentRepo } from "@fiber-link/db";
+import {
+  createInMemoryLedgerRepo,
+  createInMemoryTipIntentRepo,
+  settlementCreditIdempotencyKey,
+} from "@fiber-link/db";
 import { markSettled } from "./settlement";
 
 describe("settlement worker", () => {
@@ -27,7 +31,29 @@ describe("settlement worker", () => {
 
     const ledgerEntries = ledgerRepo.__listForTests();
     expect(ledgerEntries).toHaveLength(1);
-    expect(ledgerEntries[0].idempotencyKey).toBe(`settlement:tip_intent:${intent.id}`);
+    expect(ledgerEntries[0].idempotencyKey).toBe(settlementCreditIdempotencyKey(intent.id));
+  });
+
+  it("keeps one credit when concurrent workers process the same invoice", async () => {
+    const intent = await tipIntentRepo.create({
+      appId: "app1",
+      postId: "p-concurrent",
+      fromUserId: "u1",
+      toUserId: "u2",
+      asset: "USDI",
+      amount: "10",
+      invoice: "inv-concurrent-1",
+    });
+
+    const [first, second] = await Promise.all([
+      markSettled({ invoice: intent.invoice }, { tipIntentRepo, ledgerRepo }),
+      markSettled({ invoice: intent.invoice }, { tipIntentRepo, ledgerRepo }),
+    ]);
+
+    expect([first.credited, second.credited].filter(Boolean)).toHaveLength(1);
+    const entries = ledgerRepo.__listForTests?.() ?? [];
+    expect(entries).toHaveLength(1);
+    expect(entries[0].idempotencyKey).toBe(settlementCreditIdempotencyKey(intent.id));
   });
 
   it("ignores duplicate settlement events for same tip_intent", async () => {
@@ -65,7 +91,7 @@ describe("settlement worker", () => {
       asset: intent.asset,
       amount: intent.amount,
       refId: intent.id,
-      idempotencyKey: `settlement:tip_intent:${intent.id}`,
+      idempotencyKey: settlementCreditIdempotencyKey(intent.id),
     });
 
     const result = await markSettled({ invoice: intent.invoice }, { tipIntentRepo, ledgerRepo });

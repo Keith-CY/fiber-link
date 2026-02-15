@@ -2,6 +2,7 @@ import {
   createDbClient,
   createDbLedgerRepo,
   createDbTipIntentRepo,
+  settlementCreditIdempotencyKey,
   type DbClient,
   type LedgerRepo,
   type TipIntentRepo,
@@ -40,7 +41,7 @@ export async function markSettled(
   const ledgerRepo = options.ledgerRepo ?? getDefaultLedgerRepo();
 
   const tipIntent = await tipIntentRepo.findByInvoiceOrThrow(invoice);
-  const idempotencyKey = `settlement:tip_intent:${tipIntent.id}`;
+  const idempotencyKey = settlementCreditIdempotencyKey(tipIntent.id);
 
   const credited = await ledgerRepo.creditOnce({
     appId: tipIntent.appId,
