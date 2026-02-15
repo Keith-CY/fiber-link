@@ -68,14 +68,34 @@ export DISCOURSE_DEV_ROOT="${DISCOURSE_DEV_ROOT:-/tmp/discourse-dev}"
 cd "$DISCOURSE_DEV_ROOT"
 ./bin/docker/boot_dev
 LOAD_PLUGINS=1 RAILS_ENV=test ./bin/docker/rake db:create db:migrate
-LOAD_PLUGINS=1 RAILS_ENV=test ./bin/docker/rspec plugins/fiber-link/spec/requests/fiber_link_spec.rb
+LOAD_PLUGINS=1 RAILS_ENV=test ./bin/docker/rspec \
+  plugins/fiber-link/spec/requests/fiber_link_spec.rb \
+  plugins/fiber-link/spec/requests/fiber_link/rpc_controller_spec.rb
 ```
 
 If specs fail:
 - Ensure the plugin path is `plugins/fiber-link`.
 - Confirm Discourse boot is healthy (`docker ps`, `docker logs` on the latest booted container).
 - For verbose output, run the rspec target directly inside the same Discourse checkout:
-  `LOAD_PLUGINS=1 RAILS_ENV=test ./bin/docker/rspec --format documentation plugins/fiber-link/spec/requests/fiber_link_spec.rb`.
+  `LOAD_PLUGINS=1 RAILS_ENV=test ./bin/docker/rspec --format documentation plugins/fiber-link/spec/requests/fiber_link_spec.rb plugins/fiber-link/spec/requests/fiber_link/rpc_controller_spec.rb`.
+
+## Compose Deployment Readiness (W2)
+
+Before final signoff, run the compose readiness check from the root repo:
+
+```bash
+cd deploy/compose
+./compose-readiness.sh
+```
+
+This command performs:
+- reference checks (`compose-reference.test.sh`)
+- one-command startup + readiness polling
+- optional smoke probes
+- evidence capture under `deploy/compose/evidence/<timestamp>/`
+- deterministic shutdown and cleanup
+
+Use `--skip-smoke` when smoke traffic should be deferred and `--dry-run` for safe CI plan validation.
 
 ## Security/Failure Gates (Must Verify)
 

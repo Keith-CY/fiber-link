@@ -1,6 +1,6 @@
 # Fiber Link Development Progress
 
-Last updated: 2026-02-12
+Last updated: 2026-02-15
 
 This document summarizes what has shipped so far (Phase 2) and what remains (post-Phase 2 roadmap).
 
@@ -49,7 +49,7 @@ Verification:
 
 ## What's Not Done Yet (Post-Phase 2 Roadmap)
 
-Phase 2 intentionally shipped scaffolding + durable state machines + safety rails, but several production-critical behaviors are still placeholders or policy decisions.
+Phase 2 intentionally shipped scaffolding + durable state machines + safety rails. Post-Phase 2 work is now mostly hardening, policy closure, and operationalization.
 
 ### A) Product/Protocol Baseline Decisions (Locked)
 
@@ -89,17 +89,16 @@ Remaining follow-up:
 - Replace heuristic classification with explicit Fiber error contract mapping once upstream error taxonomy is stabilized.
 - Confirm long-term destination semantics (`toAddress` vs payment request) before plugin withdrawal UI rollout.
 
-### D) Balance + Insufficient Funds Gate (Not Yet Implemented)
+### D) Balance + Insufficient Funds Gate (Implemented Baseline)
 
-Current state:
-- Ledger entries exist, and settlement credits can be applied idempotently.
-- Withdrawal request does not validate balances yet (no debit path enforced).
+Delivered:
+- Withdrawal request path enforces insufficient-funds checks via `createWithBalanceCheck` (`fiber-link-service/apps/rpc/src/methods/withdrawal.ts`, `fiber-link-service/packages/db/src/withdrawal-repo.ts`).
+- Available balance computation accounts for current pending withdrawals before allowing new requests (`fiber-link-service/packages/db/src/withdrawal-repo.ts`).
+- Withdrawal completion writes a durable ledger debit with idempotency key `withdrawal:debit:<withdrawal_id>` (`fiber-link-service/packages/db/src/withdrawal-repo.ts`, `fiber-link-service/apps/worker/src/withdrawal-batch.ts`).
 
-Next work:
-- Define balance invariants and implement:
-  - balance read model (sum credits minus debits per user/app/asset)
-  - withdrawal request validation (reject insufficient funds)
-  - debit idempotency and coupling to withdrawal completion
+Remaining hardening:
+- Add explicit per-app/per-user withdrawal policy limits (caps, cooldown rules) above the invariant baseline.
+- Add operator-facing reconciliation/reporting focused on debit/txHash parity and exception handling playbooks.
 
 ### E) Admin Data Scoping (Policy Chosen, Ops Path Still Needed)
 
@@ -114,19 +113,21 @@ Open implementation question:
 ### F) CI/Runbook Alignment and Coverage
 
 Current state:
-- CI runs plugin request specs via `plugins/fiber-link/spec/requests` (directory).
-- Runbook `docs/runbooks/phase2-verification.md` still calls the single-file smoke spec (`plugins/fiber-link/spec/requests/fiber_link_spec.rb`).
+- CI `plugin-smoke` runs an explicit request-spec set:
+  - `plugins/fiber-link/spec/requests/fiber_link_spec.rb`
+  - `plugins/fiber-link/spec/requests/fiber_link/rpc_controller_spec.rb`
+- Runbook `docs/runbooks/phase2-verification.md` default scope matches the same two request specs through `scripts/plugin-smoke.sh`.
 
 Next work:
-- Align the runbook with CI (run full requests folder).
 - Decide whether to add plugin system specs to CI (trade-off: runtime vs coverage).
+- Keep `PLUGIN_SMOKE_EXTRA_SPECS` as the opt-in path for broader local/CI smoke coverage when needed.
 
 ## Suggested Next Milestone (Phase 3)
 
-Phase 3 Sprint 1 and Sprint 2 baselines are complete. Next work should move to debit invariants and request-time balance controls.
+Phase 3 Sprint 1 and Sprint 2 baselines are complete. Balance/debit invariants are now implemented at baseline, so next work should focus on policy and operational hardening.
 
-- Sprint 3 (next): balance/debit invariants and insufficient-funds gate.
+- Sprint 3 (next): policy limits, dispute handling, and operations-grade reconciliation/reporting.
 
 Historical reference (Sprint 1 plan): `docs/plans/2026-02-11-phase3-sprint1-settlement-v1-plan.md`
 
-Next plan for Sprint 3 balance/debit invariants is TBD and should be added as a dedicated Sprint 3 plan doc.
+Next plan should be captured as a dedicated Sprint 3 plan doc before implementation starts.
