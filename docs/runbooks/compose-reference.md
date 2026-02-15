@@ -58,6 +58,25 @@ Stop:
 docker compose down
 ```
 
+## One-command deterministic smoke check
+
+From repo root:
+
+```bash
+scripts/testnet-smoke.sh
+```
+
+Optional flags:
+
+- `--dry-run` (precheck only, no container changes)
+- `--skip-smoke` (skip `tip.create`, keep signed health check)
+- `--verbose` (more logs during execution)
+
+The script prints machine-readable status lines:
+
+- success: `RESULT=PASS CODE=0 ...`
+- failure: `RESULT=FAIL CODE=<non-zero> ...`
+
 ## RPC Smoke Check
 From host:
 
