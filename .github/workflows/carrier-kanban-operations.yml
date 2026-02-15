@@ -39,20 +39,25 @@ jobs:
             const dryRunInput = String((context.payload.inputs?.dry_run || process.env.DRY_RUN || 'false')).toLowerCase() === 'true';
             const ghClient = github;
 
-            const repoMeta = await ghClient.graphql(`
-              query($owner: String!, $repo: String!) {
-                repository(owner: $owner, name: $repo) {
-                  id
-                  discussionCategories(first: 20) {
-                    nodes {
-                      id
-                      name
-                      slug
+            let repoMeta = null;
+            try {
+              repoMeta = await ghClient.graphql(`
+                query($owner: String!, $repo: String!) {
+                  repository(owner: $owner, name: $repo) {
+                    id
+                    discussionCategories(first: 20) {
+                      nodes {
+                        id
+                        name
+                        slug
+                      }
                     }
                   }
                 }
-              }
-            `, { owner, repo });
+              `, { owner, repo });
+            } catch (error) {
+              core.warning(`Discussion metadata is not accessible in this workflow run: ${(error && error.message) ? error.message : error}`);
+            }
 
             const configPath = '.github/kanban-config.json';
             if (!fs.existsSync(configPath)) {
@@ -329,6 +334,12 @@ jobs:
               return;
             }
 
+            if (!repoMeta?.repository?.id) {
+              core.warning('No repository discussion metadata found; skip publishing field/view report to discussion.');
+              core.info(summaryBody);
+              return;
+            }
+
             const categoryName = process.env.FIBER_LINK_DISCUSSION_CATEGORY || config.discussionCategory || 'General';
             const categories = repoMeta.repository?.discussionCategories?.nodes || [];
             const category =
@@ -337,7 +348,8 @@ jobs:
               categories[0];
 
             if (!category) {
-              core.setFailed('Unable to determine discussion category. Configure FIBER_LINK_DISCUSSION_CATEGORY.');
+              core.warning('Unable to determine discussion category, skip publishing field/view report to discussion.');
+              core.info(summaryBody);
               return;
             }
 
@@ -359,11 +371,17 @@ jobs:
 
             const title = `Fiber Link Kanban: field/view and workload report (${isoDate})`;
 
-            const resp = await ghClient.graphql(createDiscussionMutation, {
-              repositoryId: repoMeta.repository.id,
-              categoryId: category.id,
-              title,
-              body: summaryBody,
-            });
+            try {
+              const resp = await ghClient.graphql(createDiscussionMutation, {
+                repositoryId: repoMeta.repository.id,
+                categoryId: category.id,
+                title,
+                body: summaryBody,
+              });
 
-            core.info(`Discussion created: ${resp.createDiscussion.discussion.url}`);
+              core.info(`Discussion created: ${resp.createDiscussion.discussion.url}`);
+            } catch (error) {
+              core.warning(`Failed to publish discussion: ${(error && error.message) ? error.message : error}`);
+              core.info(summaryBody);
+              core.info('skip createDiscussion failure fallback: keep summary in logs for now.');
+            }
