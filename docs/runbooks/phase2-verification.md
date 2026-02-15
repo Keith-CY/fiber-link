@@ -93,3 +93,15 @@ These scenarios must be verified before merge/deploy. Some are covered by unit t
   - Covered by: `fiber-link-service/apps/worker/src/settlement.test.ts` ("ignores duplicate settlement events for same tip_intent")
 - transient withdrawal failure retries then recovers
   - Covered by: `fiber-link-service/apps/worker/src/withdrawal-batch.test.ts` ("moves transient failure to RETRY_PENDING with nextRetryAt")
+
+## Security Assumptions Gate
+
+Before merge/deploy, verify the current assumptions register in:
+- `docs/runbooks/security-assumptions.md`
+
+Minimum checks:
+- Assumption version/date is current for this release.
+- Owners/contacts are still valid.
+- Operational boundaries still match code/config defaults:
+  - `rg -n "NONCE_TTL_MS" fiber-link-service/apps/rpc/src/rpc.ts`
+  - `rg -n "WORKER_MAX_RETRIES|WORKER_RETRY_DELAY_MS|WORKER_SETTLEMENT_INTERVAL_MS|WORKER_SETTLEMENT_BATCH_SIZE" fiber-link-service/apps/worker/src/entry.ts`

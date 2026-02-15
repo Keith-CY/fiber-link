@@ -19,6 +19,10 @@
 - `docs/runbooks/deployment-evidence.md` — deployment evidence artifacts, checklist, and retention policy.
 - `scripts/capture-deployment-evidence.sh` — one-command evidence and log capture bundle.
 
+## Security assumptions
+
+- `docs/runbooks/security-assumptions.md` — versioned trust assumptions, operational limits, fallback boundaries, and ownership contacts.
+
 ## Kanban operations
 
 - `docs/runbooks/kanban-project-id.md` — project ID resolution order, fallback ID ownership, and rotation procedure.
