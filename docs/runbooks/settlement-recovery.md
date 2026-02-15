@@ -41,6 +41,9 @@ Expected output shape:
     "settledCredits": 3,
     "settledDuplicates": 1,
     "failed": 2,
+    "retryScheduled": 5,
+    "terminalFailures": 2,
+    "skippedRetryPending": 9,
     "stillUnpaid": 36,
     "errors": 0,
     "backlogUnpaidBeforeScan": 42,
@@ -57,6 +60,9 @@ Expected output shape:
 
 Notes:
 - `settledDuplicates > 0` is expected during replays; this indicates idempotent no-op credits.
+- `retryScheduled` means transient errors were classified and delayed retries were persisted.
+- `terminalFailures` means unrecoverable paths were persisted to `FAILED` and will not loop.
+- `skippedRetryPending` means items were intentionally deferred because `settlement_next_retry_at` has not arrived.
 - `backlogUnpaidBeforeScan - backlogUnpaidAfterScan` shows how much backlog was cleared in the run.
 - `detectionLatencyMs` is computed from tip-intent creation time to discovery time for settled invoices in this run.
 - Command is safe to re-run for the same window.

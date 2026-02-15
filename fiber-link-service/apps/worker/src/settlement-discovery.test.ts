@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createInMemoryLedgerRepo, createInMemoryTipIntentRepo } from "@fiber-link/db";
+import { FiberRpcError } from "@fiber-link/fiber-adapter";
 import { runSettlementDiscovery } from "./settlement-discovery";
 
 describe("runSettlementDiscovery", () => {
@@ -61,7 +62,7 @@ describe("runSettlementDiscovery", () => {
     expect(summary.errors).toBe(0);
     expect(summary.events).toHaveLength(3);
     expect(summary.events.map((event) => event.outcome).sort()).toEqual([
-      "FAILED_MARKED",
+      "FAILED_UPSTREAM_REPORTED",
       "NO_CHANGE",
       "SETTLED_CREDIT_APPLIED",
     ]);
@@ -117,8 +118,8 @@ describe("runSettlementDiscovery", () => {
     expect(saved.invoiceState).toBe("SETTLED");
   });
 
-  it("treats invalid adapter contract state as error without DB mutation", async () => {
-    const intent = await tipIntentRepo.create({
+  it("marks invalid adapter contract state as terminal mismatch and persists failure evidence", async () => {
+    await tipIntentRepo.create({
       appId: "app-a",
       postId: "p-invalid",
       fromUserId: "u1",
@@ -128,10 +129,19 @@ describe("runSettlementDiscovery", () => {
       invoice: "inv-invalid",
     });
 
+    const auditContexts: Record<string, unknown>[] = [];
     const summary = await runSettlementDiscovery({
       limit: 100,
       tipIntentRepo,
       ledgerRepo,
+      logger: {
+        info(_message, context) {
+          if (context?.invoice === "inv-invalid") {
+            auditContexts.push(context);
+          }
+        },
+        error() {},
+      },
       adapter: {
         async getInvoiceStatus() {
           return { state: "UNKNOWN_STATE" };
@@ -139,16 +149,202 @@ describe("runSettlementDiscovery", () => {
       },
     });
 
-    expect(summary.errors).toBe(1);
-    expect(summary.settledCredits).toBe(0);
-    expect(summary.failed).toBe(0);
-    expect(summary.events).toHaveLength(0);
+    expect(summary.errors).toBe(0);
+    expect(summary.failed).toBe(1);
+    expect(summary.terminalFailures).toBe(1);
+    expect(summary.events).toHaveLength(1);
+    expect(summary.events[0]).toMatchObject({
+      invoice: "inv-invalid",
+      outcome: "FAILED_CONTRACT_MISMATCH",
+      nextState: "FAILED",
+      failureClass: "TERMINAL",
+    });
 
-    const saved = await tipIntentRepo.findByInvoiceOrThrow(intent.invoice);
-    expect(saved.invoiceState).toBe("UNPAID");
+    const saved = await tipIntentRepo.findByInvoiceOrThrow("inv-invalid");
+    expect(saved.invoiceState).toBe("FAILED");
     expect(saved.settledAt).toBeNull();
+    expect(saved.settlementFailureReason).toBe("FAILED_CONTRACT_MISMATCH");
+    expect(saved.settlementLastError).toContain("UNKNOWN_STATE");
+    expect(saved.settlementRetryCount).toBe(0);
+    expect(saved.settlementNextRetryAt).toBeNull();
     expect(summary.scanned).toBe(1);
     expect(ledgerRepo.__listForTests?.()).toHaveLength(0);
+    expect(auditContexts).toEqual(
+      expect.arrayContaining([expect.objectContaining({ invoice: "inv-invalid", failureClass: "TERMINAL" })]),
+    );
+  });
+
+  it("schedules transient settlement errors and eventually marks terminal after retry budget exhaustion", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-02-11T14:00:00.000Z"));
+      await tipIntentRepo.create({
+        appId: "app-a",
+        postId: "p-retry-budget",
+        fromUserId: "u1",
+        toUserId: "u2",
+        asset: "USDI",
+        amount: "10",
+        invoice: "inv-retry-budget",
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+
+    const adapter = {
+      getInvoiceStatus: vi.fn(async () => {
+        throw new FiberRpcError("internal error", -32603);
+      }),
+    };
+
+    const now = new Date("2026-02-11T14:05:00.000Z").getTime();
+    const first = await runSettlementDiscovery({
+      limit: 100,
+      tipIntentRepo,
+      ledgerRepo,
+      adapter,
+      maxRetries: 1,
+      retryDelayMs: 60_000,
+      pendingTimeoutMs: 30 * 60_000,
+      nowMsFn: () => now,
+    });
+    expect(first.retryScheduled).toBe(1);
+    expect(first.terminalFailures).toBe(0);
+    expect(adapter.getInvoiceStatus).toHaveBeenCalledTimes(1);
+
+    const afterFirst = await tipIntentRepo.findByInvoiceOrThrow("inv-retry-budget");
+    expect(afterFirst.invoiceState).toBe("UNPAID");
+    expect(afterFirst.settlementRetryCount).toBe(1);
+    expect(afterFirst.settlementNextRetryAt?.toISOString()).toBe("2026-02-11T14:06:00.000Z");
+    expect(afterFirst.settlementLastError).toContain("internal error");
+
+    const second = await runSettlementDiscovery({
+      limit: 100,
+      tipIntentRepo,
+      ledgerRepo,
+      adapter,
+      maxRetries: 1,
+      retryDelayMs: 60_000,
+      pendingTimeoutMs: 30 * 60_000,
+      nowMsFn: () => new Date("2026-02-11T14:06:01.000Z").getTime(),
+    });
+    expect(second.retryScheduled).toBe(0);
+    expect(second.terminalFailures).toBe(1);
+    expect(second.failed).toBe(1);
+    expect(second.events).toEqual(
+      expect.arrayContaining([expect.objectContaining({ outcome: "FAILED_RETRY_EXHAUSTED", invoice: "inv-retry-budget" })]),
+    );
+
+    const afterSecond = await tipIntentRepo.findByInvoiceOrThrow("inv-retry-budget");
+    expect(afterSecond.invoiceState).toBe("FAILED");
+    expect(afterSecond.settlementFailureReason).toBe("FAILED_RETRY_EXHAUSTED");
+    expect(afterSecond.settlementNextRetryAt).toBeNull();
+  });
+
+  it("recovers transient settlement errors within retry policy once upstream responds", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-02-11T15:00:00.000Z"));
+      await tipIntentRepo.create({
+        appId: "app-a",
+        postId: "p-retry-recover",
+        fromUserId: "u1",
+        toUserId: "u2",
+        asset: "USDI",
+        amount: "10",
+        invoice: "inv-retry-recover",
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+
+    let attempts = 0;
+    const adapter = {
+      async getInvoiceStatus() {
+        attempts += 1;
+        if (attempts === 1) {
+          throw new FiberRpcError("internal error", -32603);
+        }
+        return { state: "SETTLED" as const };
+      },
+    };
+
+    const first = await runSettlementDiscovery({
+      limit: 100,
+      tipIntentRepo,
+      ledgerRepo,
+      adapter,
+      maxRetries: 3,
+      retryDelayMs: 60_000,
+      pendingTimeoutMs: 30 * 60_000,
+      nowMsFn: () => new Date("2026-02-11T15:05:00.000Z").getTime(),
+    });
+    expect(first.retryScheduled).toBe(1);
+
+    const second = await runSettlementDiscovery({
+      limit: 100,
+      tipIntentRepo,
+      ledgerRepo,
+      adapter,
+      maxRetries: 3,
+      retryDelayMs: 60_000,
+      pendingTimeoutMs: 30 * 60_000,
+      nowMsFn: () => new Date("2026-02-11T15:06:00.000Z").getTime(),
+    });
+    expect(second.settledCredits).toBe(1);
+    expect(second.retryScheduled).toBe(0);
+    expect(second.events).toEqual(
+      expect.arrayContaining([expect.objectContaining({ outcome: "SETTLED_CREDIT_APPLIED", invoice: "inv-retry-recover" })]),
+    );
+
+    const saved = await tipIntentRepo.findByInvoiceOrThrow("inv-retry-recover");
+    expect(saved.invoiceState).toBe("SETTLED");
+    expect(saved.settlementRetryCount).toBe(0);
+    expect(saved.settlementNextRetryAt).toBeNull();
+    expect(saved.settlementLastError).toBeNull();
+    expect(saved.settlementFailureReason).toBeNull();
+  });
+
+  it("marks long-pending unpaid settlements as terminal timeout failures", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-02-11T16:00:00.000Z"));
+      await tipIntentRepo.create({
+        appId: "app-a",
+        postId: "p-timeout",
+        fromUserId: "u1",
+        toUserId: "u2",
+        asset: "USDI",
+        amount: "10",
+        invoice: "inv-timeout",
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+
+    const summary = await runSettlementDiscovery({
+      limit: 100,
+      tipIntentRepo,
+      ledgerRepo,
+      pendingTimeoutMs: 5 * 60_000,
+      nowMsFn: () => new Date("2026-02-11T16:10:00.000Z").getTime(),
+      adapter: {
+        async getInvoiceStatus() {
+          return { state: "UNPAID" as const };
+        },
+      },
+    });
+
+    expect(summary.failed).toBe(1);
+    expect(summary.terminalFailures).toBe(1);
+    expect(summary.stillUnpaid).toBe(0);
+    expect(summary.events).toEqual(
+      expect.arrayContaining([expect.objectContaining({ outcome: "FAILED_PENDING_TIMEOUT", invoice: "inv-timeout" })]),
+    );
+
+    const saved = await tipIntentRepo.findByInvoiceOrThrow("inv-timeout");
+    expect(saved.invoiceState).toBe("FAILED");
+    expect(saved.settlementFailureReason).toBe("FAILED_PENDING_TIMEOUT");
   });
 
   it("supports app and time-window filters for backfill", async () => {
@@ -238,6 +434,8 @@ describe("runSettlementDiscovery", () => {
       const summary = await runSettlementDiscovery({
         limit: 1,
         cursor,
+        pendingTimeoutMs: 24 * 60 * 60_000,
+        nowMsFn: () => new Date("2026-02-11T12:00:03.000Z").getTime(),
         tipIntentRepo,
         ledgerRepo,
         adapter: {
