@@ -9,6 +9,10 @@
 
 - `docs/runbooks/testnet-bootstrap.md` — deterministic precheck -> spin-up -> RPC validation -> invoice smoke -> cleanup flow.
 
+## Kanban operations
+
+- `docs/runbooks/kanban-project-id.md` — project ID resolution order, fallback ID ownership, and rotation procedure.
+
 ### Request-spec coverage tracked in CI
 
 The CI `plugin-smoke` job runs:
