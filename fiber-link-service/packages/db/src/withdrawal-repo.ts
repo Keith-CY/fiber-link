@@ -1,6 +1,7 @@
 import { randomUUID } from "crypto";
 import { and, eq, lte, or, sql } from "drizzle-orm";
 import type { DbClient } from "./client";
+import { withdrawalDebitIdempotencyKey } from "./idempotency";
 import { createDbLedgerRepo, type LedgerRepo } from "./ledger-repo";
 import { withdrawals } from "./schema";
 
@@ -364,7 +365,7 @@ export function createDbWithdrawalRepo(db: DbClient): WithdrawalRepo {
           asset: row.asset as WithdrawalAsset,
           amount: typeof row.amount === "string" ? row.amount : String(row.amount),
           refId: row.id,
-          idempotencyKey: `withdrawal:debit:${row.id}`,
+          idempotencyKey: withdrawalDebitIdempotencyKey(row.id),
         });
 
         return toRecord(row);
@@ -529,7 +530,7 @@ export function createInMemoryWithdrawalRepo(): WithdrawalRepo {
         asset: record.asset,
         amount: record.amount,
         refId: record.id,
-        idempotencyKey: `withdrawal:debit:${record.id}`,
+        idempotencyKey: withdrawalDebitIdempotencyKey(record.id),
       });
       return record;
     },

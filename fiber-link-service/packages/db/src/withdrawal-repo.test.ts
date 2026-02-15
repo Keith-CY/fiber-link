@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { DbClient } from "./client";
+import { withdrawalDebitIdempotencyKey } from "./idempotency";
 import { createInMemoryLedgerRepo } from "./ledger-repo";
 import {
   InsufficientFundsError,
@@ -210,5 +211,36 @@ describe("createInMemoryWithdrawalRepo balance gating", () => {
     );
 
     expect(created.state).toBe("PENDING");
+  });
+
+  it("guards duplicate completion retries from producing extra debit entries", async () => {
+    const ledger = createInMemoryLedgerRepo();
+    const repo = createInMemoryWithdrawalRepo();
+    const request = await repo.create({
+      appId: "app1",
+      userId: "u1",
+      asset: "USDI",
+      amount: "4",
+      toAddress: "fiber:invoice:wd-idem",
+    });
+
+    await repo.markProcessing(request.id, new Date("2026-02-12T00:00:00.000Z"));
+    await repo.markCompletedWithDebit(
+      request.id,
+      { now: new Date("2026-02-12T00:00:05.000Z"), txHash: "0xidem" },
+      { ledgerRepo: ledger },
+    );
+
+    await expect(
+      repo.markCompletedWithDebit(
+        request.id,
+        { now: new Date("2026-02-12T00:00:06.000Z"), txHash: "0xidem-retry" },
+        { ledgerRepo: ledger },
+      ),
+    ).rejects.toBeInstanceOf(WithdrawalTransitionConflictError);
+
+    const entries = ledger.__listForTests?.() ?? [];
+    const debitEntries = entries.filter((entry) => entry.idempotencyKey === withdrawalDebitIdempotencyKey(request.id));
+    expect(debitEntries).toHaveLength(1);
   });
 });
