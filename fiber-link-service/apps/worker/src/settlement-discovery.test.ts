@@ -1,7 +1,11 @@
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createInMemoryLedgerRepo, createInMemoryTipIntentRepo } from "@fiber-link/db";
 import { FiberRpcError } from "@fiber-link/fiber-adapter";
 import { runSettlementDiscovery } from "./settlement-discovery";
+import { createFileSettlementCursorStore } from "./settlement-cursor-store";
 
 describe("runSettlementDiscovery", () => {
   const tipIntentRepo = createInMemoryTipIntentRepo();
@@ -449,6 +453,74 @@ describe("runSettlementDiscovery", () => {
     }
 
     expect(seenInvoices).toEqual(["inv-cursor-1", "inv-cursor-2", "inv-cursor-3", "inv-cursor-1"]);
+  });
+
+  it("persists cursor across restarts and resumes without skipping invoices", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-02-11T12:30:00.000Z"));
+      await tipIntentRepo.create({
+        appId: "app-a",
+        postId: "p1",
+        fromUserId: "u1",
+        toUserId: "u2",
+        asset: "USDI",
+        amount: "10",
+        invoice: "inv-restart-1",
+      });
+      vi.setSystemTime(new Date("2026-02-11T12:30:01.000Z"));
+      await tipIntentRepo.create({
+        appId: "app-a",
+        postId: "p2",
+        fromUserId: "u3",
+        toUserId: "u4",
+        asset: "USDI",
+        amount: "20",
+        invoice: "inv-restart-2",
+      });
+      vi.setSystemTime(new Date("2026-02-11T12:30:02.000Z"));
+      await tipIntentRepo.create({
+        appId: "app-a",
+        postId: "p3",
+        fromUserId: "u5",
+        toUserId: "u6",
+        asset: "USDI",
+        amount: "30",
+        invoice: "inv-restart-3",
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+
+    const root = await mkdtemp(join(tmpdir(), "fiber-link-settlement-restart-"));
+    const cursorFilePath = join(root, "cursor.json");
+    let cursorStore = createFileSettlementCursorStore(cursorFilePath);
+
+    const seenInvoices: string[] = [];
+    for (let i = 0; i < 3; i += 1) {
+      const cursor = await cursorStore.load();
+      const summary = await runSettlementDiscovery({
+        limit: 1,
+        cursor,
+        pendingTimeoutMs: 24 * 60 * 60_000,
+        nowMsFn: () => new Date("2026-02-11T12:30:03.000Z").getTime(),
+        tipIntentRepo,
+        ledgerRepo,
+        adapter: {
+          async getInvoiceStatus({ invoice }) {
+            seenInvoices.push(invoice);
+            return { state: "UNPAID" as const };
+          },
+        },
+      });
+
+      await cursorStore.save(summary.nextCursor ?? undefined);
+
+      // Simulate process restart by creating a new store instance for each scan.
+      cursorStore = createFileSettlementCursorStore(cursorFilePath);
+    }
+
+    expect(seenInvoices).toEqual(["inv-restart-1", "inv-restart-2", "inv-restart-3"]);
   });
 
   it("emits backlog and detection latency metrics in summary", async () => {

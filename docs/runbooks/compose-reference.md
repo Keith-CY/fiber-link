@@ -44,6 +44,7 @@ Edit `.env` minimally:
   - `WORKER_SETTLEMENT_MAX_RETRIES`
   - `WORKER_SETTLEMENT_RETRY_DELAY_MS`
   - `WORKER_SETTLEMENT_PENDING_TIMEOUT_MS`
+  - `WORKER_SETTLEMENT_CURSOR_FILE` (default `/var/lib/fiber-link/settlement-cursor.json`, persisted via compose `worker-data` volume)
 - Optional: tune readiness probe timeouts:
   - `RPC_HEALTHCHECK_TIMEOUT_MS`
   - `WORKER_READINESS_TIMEOUT_MS`
@@ -54,6 +55,7 @@ Edit `.env` minimally:
   - RPC service listens on `3000` in container.
 - `.env` port overrides (`FNN_RPC_PORT`, `FNN_P2P_PORT`, `RPC_PORT`) control host-published ports only.
 - `FIBER_RPC_URL` is the compose-network endpoint used by `rpc` and `worker`; default is `http://fnn:8227`.
+- Worker cursor persistence uses `worker-data` volume mounted at `/var/lib/fiber-link`.
 - Compose startup order is `postgres/redis/fnn` -> `rpc` -> `worker` (current dependency wiring in `docker-compose.yml`).
 
 Start:

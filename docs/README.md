@@ -19,6 +19,11 @@
 - `docs/runbooks/deployment-evidence.md` — deployment evidence artifacts, checklist, and retention policy.
 - `scripts/capture-deployment-evidence.sh` — one-command evidence and log capture bundle.
 
+## W5 demo evidence
+
+- `docs/runbooks/w5-demo-evidence.md` — reproducible W5 demo evidence flow, naming convention, and stakeholder checklist.
+- `scripts/capture-w5-demo-evidence.sh` — one-command W5 demo evidence bundle with key IDs and pass/fail checks.
+
 ## Security assumptions
 
 - `docs/runbooks/security-assumptions.md` — versioned trust assumptions, operational limits, fallback boundaries, and ownership contacts.

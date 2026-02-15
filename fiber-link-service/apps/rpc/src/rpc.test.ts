@@ -7,6 +7,7 @@ import { verifyHmac } from "./auth/hmac";
 import { createInMemoryAppRepo } from "./repositories/app-repo";
 import { registerRpc } from "./rpc";
 import * as tipMethods from "./methods/tip";
+import * as dashboardMethods from "./methods/dashboard";
 
 function ensureBunInjectHeaderCompat() {
   if (typeof Bun === "undefined") {
@@ -482,6 +483,119 @@ describe("json-rpc", () => {
     expect(res.json()).toMatchObject({
       jsonrpc: "2.0",
       id: "g2",
+      error: { code: -32602, message: "Invalid params" },
+    });
+  });
+
+  it("returns dashboard.summary result from handler", async () => {
+    const app = buildServer();
+    const dashboardSpy = vi.spyOn(dashboardMethods, "handleDashboardSummary").mockResolvedValue({
+      balance: "12.5",
+      tips: [
+        {
+          id: "tip-1",
+          invoice: "inv-1",
+          postId: "p1",
+          amount: "1",
+          asset: "CKB",
+          state: "UNPAID",
+          direction: "IN",
+          counterpartyUserId: "u2",
+          createdAt: "2026-02-16T00:00:00.000Z",
+        },
+      ],
+      generatedAt: "2026-02-16T00:00:00.000Z",
+    });
+    try {
+      const payload = {
+        jsonrpc: "2.0",
+        id: "dash-1",
+        method: "dashboard.summary",
+        params: { userId: "u1", limit: 10 },
+      };
+      const ts = String(Math.floor(Date.now() / 1000));
+      const nonce = "dashboard-ok";
+      const signature = verifyHmac.sign({
+        secret: "replace-with-lookup",
+        payload: JSON.stringify(payload),
+        ts,
+        nonce,
+      });
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/rpc",
+        payload,
+        headers: {
+          "content-type": "application/json",
+          "x-app-id": "app1",
+          "x-ts": ts,
+          "x-nonce": nonce,
+          "x-signature": signature,
+        },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({
+        jsonrpc: "2.0",
+        id: "dash-1",
+        result: {
+          balance: "12.5",
+          tips: [
+            {
+              id: "tip-1",
+              invoice: "inv-1",
+              postId: "p1",
+              amount: "1",
+              asset: "CKB",
+              state: "UNPAID",
+              direction: "IN",
+              counterpartyUserId: "u2",
+              createdAt: "2026-02-16T00:00:00.000Z",
+            },
+          ],
+          generatedAt: "2026-02-16T00:00:00.000Z",
+        },
+      });
+      expect(dashboardSpy).toHaveBeenCalledWith({
+        appId: "app1",
+        userId: "u1",
+        limit: 10,
+      });
+    } finally {
+      dashboardSpy.mockRestore();
+    }
+  });
+
+  it("returns JSON-RPC error on invalid dashboard.summary params", async () => {
+    const app = buildServer();
+    const payload = { jsonrpc: "2.0", id: "dash-2", method: "dashboard.summary", params: {} };
+    const ts = String(Math.floor(Date.now() / 1000));
+    const nonce = "dashboard-bad";
+    const signature = verifyHmac.sign({
+      secret: "replace-with-lookup",
+      payload: JSON.stringify(payload),
+      ts,
+      nonce,
+    });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/rpc",
+      payload,
+      headers: {
+        "content-type": "application/json",
+        "x-app-id": "app1",
+        "x-ts": ts,
+        "x-nonce": nonce,
+        "x-signature": signature,
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({
+      jsonrpc: "2.0",
+      id: "dash-2",
       error: { code: -32602, message: "Invalid params" },
     });
   });

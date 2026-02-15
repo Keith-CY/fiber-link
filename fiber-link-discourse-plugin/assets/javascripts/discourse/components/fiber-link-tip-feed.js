@@ -87,6 +87,23 @@ function toStateLabel(status) {
   return "pending";
 }
 
+function formatTimestamp(rawValue) {
+  if (typeof rawValue !== "string" || !rawValue.trim()) {
+    return "unknown";
+  }
+
+  const value = new Date(rawValue);
+  if (Number.isNaN(value.getTime())) {
+    return rawValue;
+  }
+
+  return value.toISOString();
+}
+
+function normalizeDirection(rawValue) {
+  return rawValue === "OUT" ? "Outgoing" : "Incoming";
+}
+
 export function normalizeTipState(rawState) {
   if (rawState === "UNPAID" || rawState === "SETTLED" || rawState === "FAILED") {
     return rawState;
@@ -142,7 +159,38 @@ export function buildLifecycleModel(rawState, { isPolling = false } = {}) {
 }
 
 export default class FiberLinkTipFeed extends Component {
+  get isLoading() {
+    return Boolean(this.args.isLoading);
+  }
+
+  get errorMessage() {
+    if (typeof this.args.errorMessage !== "string") {
+      return null;
+    }
+    const value = this.args.errorMessage.trim();
+    return value ? value : null;
+  }
+
   get tips() {
-    return this.args.tips ?? [];
+    const rows = Array.isArray(this.args.tips) ? this.args.tips : [];
+    return rows.map((tip) => {
+      const lifecycle = buildLifecycleModel(tip?.state, { isPolling: false });
+      return {
+        id: typeof tip?.id === "string" ? tip.id : "unknown",
+        invoice: typeof tip?.invoice === "string" ? tip.invoice : "unknown",
+        amount: typeof tip?.amount === "string" ? tip.amount : "0",
+        asset: tip?.asset === "USDI" ? "USDI" : "CKB",
+        state: lifecycle.backendLabel,
+        directionLabel: normalizeDirection(tip?.direction),
+        counterpartyUserId:
+          typeof tip?.counterpartyUserId === "string" ? tip.counterpartyUserId : "unknown",
+        createdAtLabel: formatTimestamp(tip?.createdAt),
+        lifecycleSummary: lifecycle.summary,
+      };
+    });
+  }
+
+  get isEmpty() {
+    return !this.isLoading && !this.errorMessage && this.tips.length === 0;
   }
 }

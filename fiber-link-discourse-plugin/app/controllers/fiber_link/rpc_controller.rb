@@ -60,6 +60,27 @@ module ::FiberLink
           }
         when "tip.status"
           { invoice: params["invoice"] }
+        when "dashboard.summary"
+          requested_limit = begin
+            Integer(params["limit"])
+          rescue ArgumentError, TypeError
+            nil
+          end
+          normalized_limit =
+            if requested_limit.nil?
+              20
+            elsif requested_limit < 1
+              1
+            elsif requested_limit > 50
+              50
+            else
+              requested_limit
+            end
+
+          {
+            userId: current_user.id.to_s,
+            limit: normalized_limit,
+          }
         else
           render json: {
                    jsonrpc: "2.0",
