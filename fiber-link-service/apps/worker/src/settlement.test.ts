@@ -51,7 +51,7 @@ describe("settlement worker", () => {
     ]);
 
     expect([first.credited, second.credited].filter(Boolean)).toHaveLength(1);
-    const entries = ledgerRepo.__listForTests() ?? [];
+    const entries = ledgerRepo.__listForTests?.() ?? [];
     expect(entries).toHaveLength(1);
     expect(entries[0].idempotencyKey).toBe(settlementCreditIdempotencyKey(intent.id));
   });
