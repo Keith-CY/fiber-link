@@ -21,6 +21,11 @@ describe("tipIntentRepo (in-memory)", () => {
 
     expect(created.invoiceState).toBe("UNPAID");
     expect(created.settledAt).toBeNull();
+    expect(created.settlementRetryCount).toBe(0);
+    expect(created.settlementNextRetryAt).toBeNull();
+    expect(created.settlementLastError).toBeNull();
+    expect(created.settlementFailureReason).toBeNull();
+    expect(created.settlementLastCheckedAt).not.toBeNull();
 
     const found = await repo.findByInvoiceOrThrow("inv-1");
     expect(found.id).toBe(created.id);
@@ -65,6 +70,8 @@ describe("tipIntentRepo (in-memory)", () => {
     const first = await repo.updateInvoiceState("inv-2", "SETTLED");
     expect(first.invoiceState).toBe("SETTLED");
     expect(first.settledAt).not.toBeNull();
+    expect(first.settlementRetryCount).toBe(0);
+    expect(first.settlementFailureReason).toBeNull();
 
     const settledAt1 = first.settledAt?.getTime();
     const second = await repo.updateInvoiceState("inv-2", "SETTLED");
@@ -74,6 +81,62 @@ describe("tipIntentRepo (in-memory)", () => {
     const third = await repo.updateInvoiceState("inv-2", "FAILED");
     expect(third.invoiceState).toBe("FAILED");
     expect(third.settledAt).toBeNull();
+  });
+
+  it("tracks transient settlement retries and can clear retry evidence", async () => {
+    await repo.create({
+      appId: "app1",
+      postId: "p-retry",
+      fromUserId: "u1",
+      toUserId: "u2",
+      asset: "USDI",
+      amount: "10",
+      invoice: "inv-retry-1",
+    });
+
+    const retryPending = await repo.markSettlementRetryPending("inv-retry-1", {
+      now: new Date("2026-02-11T10:00:00.000Z"),
+      nextRetryAt: new Date("2026-02-11T10:01:00.000Z"),
+      error: "fiber timeout",
+    });
+    expect(retryPending.invoiceState).toBe("UNPAID");
+    expect(retryPending.settlementRetryCount).toBe(1);
+    expect(retryPending.settlementFailureReason).toBe("RETRY_TRANSIENT_ERROR");
+    expect(retryPending.settlementLastError).toContain("timeout");
+    expect(retryPending.settlementNextRetryAt?.toISOString()).toBe("2026-02-11T10:01:00.000Z");
+
+    const cleared = await repo.clearSettlementFailure("inv-retry-1", {
+      now: new Date("2026-02-11T10:02:00.000Z"),
+    });
+    expect(cleared.invoiceState).toBe("UNPAID");
+    expect(cleared.settlementRetryCount).toBe(0);
+    expect(cleared.settlementNextRetryAt).toBeNull();
+    expect(cleared.settlementLastError).toBeNull();
+    expect(cleared.settlementFailureReason).toBeNull();
+  });
+
+  it("marks terminal settlement failures to FAILED with evidence", async () => {
+    await repo.create({
+      appId: "app1",
+      postId: "p-terminal",
+      fromUserId: "u1",
+      toUserId: "u2",
+      asset: "USDI",
+      amount: "10",
+      invoice: "inv-terminal-1",
+    });
+
+    const failed = await repo.markSettlementTerminalFailure("inv-terminal-1", {
+      now: new Date("2026-02-11T11:00:00.000Z"),
+      reason: "FAILED_PENDING_TIMEOUT",
+      error: "invoice remained unpaid beyond timeout",
+    });
+
+    expect(failed.invoiceState).toBe("FAILED");
+    expect(failed.settledAt).toBeNull();
+    expect(failed.settlementFailureReason).toBe("FAILED_PENDING_TIMEOUT");
+    expect(failed.settlementLastError).toContain("timeout");
+    expect(failed.settlementNextRetryAt).toBeNull();
   });
 
   it("lists UNPAID intents with app/time filters and limit", async () => {

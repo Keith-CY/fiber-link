@@ -41,6 +41,9 @@ Edit `.env` minimally:
 - Optional: tune settlement polling knobs:
   - `WORKER_SETTLEMENT_INTERVAL_MS`
   - `WORKER_SETTLEMENT_BATCH_SIZE`
+  - `WORKER_SETTLEMENT_MAX_RETRIES`
+  - `WORKER_SETTLEMENT_RETRY_DELAY_MS`
+  - `WORKER_SETTLEMENT_PENDING_TIMEOUT_MS`
 - Optional: tune readiness probe timeouts:
   - `RPC_HEALTHCHECK_TIMEOUT_MS`
   - `WORKER_READINESS_TIMEOUT_MS`

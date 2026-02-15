@@ -1,14 +1,15 @@
-import { createAdapter } from "@fiber-link/fiber-adapter";
+import { FiberRpcError, createAdapter } from "@fiber-link/fiber-adapter";
 import {
   createDbClient,
   createDbLedgerRepo,
   createDbTipIntentRepo,
   type DbClient,
   type LedgerRepo,
+  type SettlementFailureReason,
   type TipIntentListCursor,
   type TipIntentRepo,
 } from "@fiber-link/db";
-import { createSettlementUpdateEvent, type SettlementState, type SettlementUpdateEvent } from "./contracts";
+import { createSettlementUpdateEvent, type SettlementUpdateEvent } from "./contracts";
 import { markSettled } from "./settlement";
 
 type SettlementAdapter = {
@@ -47,6 +48,9 @@ export type SettlementDiscoveryOptions = {
   createdAtFrom?: Date;
   createdAtTo?: Date;
   cursor?: TipIntentListCursor;
+  maxRetries?: number;
+  retryDelayMs?: number;
+  pendingTimeoutMs?: number;
   adapter?: SettlementAdapter;
   tipIntentRepo?: TipIntentRepo;
   ledgerRepo?: LedgerRepo;
@@ -59,6 +63,9 @@ export type SettlementDiscoverySummary = {
   settledCredits: number;
   settledDuplicates: number;
   failed: number;
+  retryScheduled: number;
+  terminalFailures: number;
+  skippedRetryPending: number;
   stillUnpaid: number;
   errors: number;
   events: SettlementUpdateEvent[];
@@ -145,11 +152,95 @@ function parseSettlementState(invoice: string, state: unknown): SettlementState 
   throw new SettlementStatusContractError(invoice, state);
 }
 
+const TERMINAL_RPC_ERROR_CODES = new Set([-32600, -32601, -32602]);
+const TRANSIENT_RPC_ERROR_CODES = new Set([-32603]);
+const TRANSIENT_MESSAGE_PATTERN = /(timeout|temporar|busy|unavailable|connect|network|throttle|rate limit|econn)/i;
+
+type SettlementErrorDecision =
+  | { kind: "TRANSIENT"; reason: "RETRY_TRANSIENT_ERROR"; message: string }
+  | { kind: "TERMINAL"; reason: SettlementFailureReason; message: string };
+
+function mapFailureReasonToOutcome(
+  reason: SettlementFailureReason,
+):
+  | "FAILED_UPSTREAM_REPORTED"
+  | "FAILED_PENDING_TIMEOUT"
+  | "FAILED_CONTRACT_MISMATCH"
+  | "FAILED_RETRY_EXHAUSTED"
+  | "FAILED_TERMINAL_ERROR" {
+  if (reason === "FAILED_UPSTREAM_REPORTED") return "FAILED_UPSTREAM_REPORTED";
+  if (reason === "FAILED_PENDING_TIMEOUT") return "FAILED_PENDING_TIMEOUT";
+  if (reason === "FAILED_CONTRACT_MISMATCH") return "FAILED_CONTRACT_MISMATCH";
+  if (reason === "FAILED_RETRY_EXHAUSTED") return "FAILED_RETRY_EXHAUSTED";
+  return "FAILED_TERMINAL_ERROR";
+}
+
+function classifySettlementError(error: unknown): SettlementErrorDecision {
+  if (error instanceof SettlementStatusContractError) {
+    return {
+      kind: "TERMINAL",
+      reason: "FAILED_CONTRACT_MISMATCH",
+      message: error.message,
+    };
+  }
+
+  if (error instanceof FiberRpcError) {
+    if (typeof error.code === "number") {
+      if (TERMINAL_RPC_ERROR_CODES.has(error.code)) {
+        return {
+          kind: "TERMINAL",
+          reason: "FAILED_TERMINAL_ERROR",
+          message: error.message,
+        };
+      }
+      if (TRANSIENT_RPC_ERROR_CODES.has(error.code) || (error.code <= -32000 && error.code >= -32099)) {
+        return {
+          kind: "TRANSIENT",
+          reason: "RETRY_TRANSIENT_ERROR",
+          message: error.message,
+        };
+      }
+    }
+
+    return {
+      kind: "TRANSIENT",
+      reason: "RETRY_TRANSIENT_ERROR",
+      message: error.message,
+    };
+  }
+
+  const message = error instanceof Error ? error.message : String(error);
+  if (TRANSIENT_MESSAGE_PATTERN.test(message)) {
+    return {
+      kind: "TRANSIENT",
+      reason: "RETRY_TRANSIENT_ERROR",
+      message,
+    };
+  }
+
+  if (message.toLowerCase().includes("mismatch")) {
+    return {
+      kind: "TERMINAL",
+      reason: "FAILED_CONTRACT_MISMATCH",
+      message,
+    };
+  }
+
+  return {
+    kind: "TRANSIENT",
+    reason: "RETRY_TRANSIENT_ERROR",
+    message,
+  };
+}
+
 export async function runSettlementDiscovery(options: SettlementDiscoveryOptions): Promise<SettlementDiscoverySummary> {
   const tipIntentRepo = options.tipIntentRepo ?? getDefaultTipIntentRepo();
   const ledgerRepo = options.ledgerRepo ?? getDefaultLedgerRepo();
   const adapter = options.adapter ?? getDefaultAdapter();
   const nowMsFn = options.nowMsFn ?? Date.now;
+  const maxRetries = options.maxRetries ?? 3;
+  const retryDelayMs = options.retryDelayMs ?? 60_000;
+  const pendingTimeoutMs = options.pendingTimeoutMs ?? 30 * 60_000;
   const logger = options.logger ?? defaultLogger;
 
   const baseQueryOptions = {
@@ -174,6 +265,9 @@ export async function runSettlementDiscovery(options: SettlementDiscoveryOptions
     settledCredits: 0,
     settledDuplicates: 0,
     failed: 0,
+    retryScheduled: 0,
+    terminalFailures: 0,
+    skippedRetryPending: 0,
     stillUnpaid: 0,
     errors: 0,
     events: [],
@@ -191,6 +285,14 @@ export async function runSettlementDiscovery(options: SettlementDiscoveryOptions
 
   for (const intent of intents) {
     const previousState = intent.invoiceState as SettlementState;
+    const nowMs = nowMsFn();
+    const now = new Date(nowMs);
+
+    if (intent.settlementNextRetryAt && intent.settlementNextRetryAt.getTime() > nowMs) {
+      summary.skippedRetryPending += 1;
+      continue;
+    }
+
     try {
       const status = await adapter.getInvoiceStatus({ invoice: intent.invoice });
       const observedState = parseSettlementState(intent.invoice, status?.state);
@@ -203,6 +305,7 @@ export async function runSettlementDiscovery(options: SettlementDiscoveryOptions
             ledgerRepo,
           },
         );
+        await tipIntentRepo.clearSettlementFailure(intent.invoice, { now });
         if (result.credited) {
           summary.settledCredits += 1;
         } else {
@@ -218,26 +321,58 @@ export async function runSettlementDiscovery(options: SettlementDiscoveryOptions
             ledgerCreditApplied: result.credited,
           }),
         );
-        settledLatenciesMs.push(Math.max(0, nowMsFn() - intent.createdAt.getTime()));
+        settledLatenciesMs.push(Math.max(0, nowMs - intent.createdAt.getTime()));
         continue;
       }
 
       if (observedState === "FAILED") {
-        await tipIntentRepo.updateInvoiceState(intent.invoice, "FAILED");
+        await tipIntentRepo.markSettlementTerminalFailure(intent.invoice, {
+          now,
+          reason: "FAILED_UPSTREAM_REPORTED",
+          error: "upstream invoice state reported FAILED",
+        });
         summary.failed += 1;
-        summary.events.push(
-          createSettlementUpdateEvent({
-            invoice: intent.invoice,
-            previousState,
-            observedState,
-            nextState: "FAILED",
-            outcome: "FAILED_MARKED",
-            ledgerCreditApplied: false,
-          }),
-        );
+        summary.terminalFailures += 1;
+        const event = createSettlementUpdateEvent({
+          invoice: intent.invoice,
+          previousState,
+          observedState,
+          nextState: "FAILED",
+          outcome: "FAILED_UPSTREAM_REPORTED",
+          ledgerCreditApplied: false,
+          failureClass: "TERMINAL",
+          error: "upstream invoice state reported FAILED",
+        });
+        summary.events.push(event);
+        logger.info("[worker] settlement audit", event);
         continue;
       }
 
+      if (nowMs - intent.createdAt.getTime() >= pendingTimeoutMs) {
+        const timeoutMessage = `invoice remained UNPAID past timeout (${pendingTimeoutMs}ms)`;
+        await tipIntentRepo.markSettlementTerminalFailure(intent.invoice, {
+          now,
+          reason: "FAILED_PENDING_TIMEOUT",
+          error: timeoutMessage,
+        });
+        summary.failed += 1;
+        summary.terminalFailures += 1;
+        const event = createSettlementUpdateEvent({
+          invoice: intent.invoice,
+          previousState,
+          observedState,
+          nextState: "FAILED",
+          outcome: "FAILED_PENDING_TIMEOUT",
+          ledgerCreditApplied: false,
+          failureClass: "TERMINAL",
+          error: timeoutMessage,
+        });
+        summary.events.push(event);
+        logger.info("[worker] settlement audit", event);
+        continue;
+      }
+
+      await tipIntentRepo.clearSettlementFailure(intent.invoice, { now });
       summary.stillUnpaid += 1;
       summary.events.push(
         createSettlementUpdateEvent({
@@ -250,11 +385,85 @@ export async function runSettlementDiscovery(options: SettlementDiscoveryOptions
         }),
       );
     } catch (error) {
-      summary.errors += 1;
-      logger.error("[worker] settlement discovery item failed", {
-        invoice: intent.invoice,
-        error: error instanceof Error ? error.message : String(error),
-      });
+      const decision = classifySettlementError(error);
+      try {
+        if (decision.kind === "TRANSIENT") {
+          const nextRetryCount = intent.settlementRetryCount + 1;
+          if (nextRetryCount > maxRetries) {
+            await tipIntentRepo.markSettlementTerminalFailure(intent.invoice, {
+              now,
+              reason: "FAILED_RETRY_EXHAUSTED",
+              error: decision.message,
+            });
+            summary.failed += 1;
+            summary.terminalFailures += 1;
+            const event = createSettlementUpdateEvent({
+              invoice: intent.invoice,
+              previousState,
+              observedState: "UNPAID",
+              nextState: "FAILED",
+              outcome: "FAILED_RETRY_EXHAUSTED",
+              ledgerCreditApplied: false,
+              failureClass: "TERMINAL",
+              retryCount: nextRetryCount,
+              error: decision.message,
+            });
+            summary.events.push(event);
+            logger.info("[worker] settlement audit", event);
+            continue;
+          }
+
+          const nextRetryAt = new Date(nowMs + retryDelayMs);
+          await tipIntentRepo.markSettlementRetryPending(intent.invoice, {
+            now,
+            nextRetryAt,
+            error: decision.message,
+          });
+          summary.retryScheduled += 1;
+          const event = createSettlementUpdateEvent({
+            invoice: intent.invoice,
+            previousState,
+            observedState: "UNPAID",
+            nextState: "UNPAID",
+            outcome: "RETRY_SCHEDULED_TRANSIENT",
+            ledgerCreditApplied: false,
+            failureClass: "TRANSIENT",
+            retryCount: nextRetryCount,
+            nextRetryAt: nextRetryAt.toISOString(),
+            error: decision.message,
+          });
+          summary.events.push(event);
+          logger.info("[worker] settlement audit", event);
+          continue;
+        }
+
+        await tipIntentRepo.markSettlementTerminalFailure(intent.invoice, {
+          now,
+          reason: decision.reason,
+          error: decision.message,
+        });
+        summary.failed += 1;
+        summary.terminalFailures += 1;
+        const event = createSettlementUpdateEvent({
+          invoice: intent.invoice,
+          previousState,
+          observedState: "UNPAID",
+          nextState: "FAILED",
+          outcome: mapFailureReasonToOutcome(decision.reason),
+          ledgerCreditApplied: false,
+          failureClass: "TERMINAL",
+          error: decision.message,
+        });
+        summary.events.push(event);
+        logger.info("[worker] settlement audit", event);
+      } catch (handlerError) {
+        summary.errors += 1;
+        logger.error("[worker] settlement discovery item failed", {
+          invoice: intent.invoice,
+          error: handlerError instanceof Error ? handlerError.message : String(handlerError),
+          originalError: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
   }
 

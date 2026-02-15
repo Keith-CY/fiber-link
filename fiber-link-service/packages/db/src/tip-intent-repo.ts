@@ -4,6 +4,13 @@ import type { DbClient } from "./client";
 import { tipIntents, type Asset, type InvoiceState } from "./schema";
 
 export type TipAsset = Asset;
+export type SettlementFailureReason =
+  | "RETRY_TRANSIENT_ERROR"
+  | "FAILED_UPSTREAM_REPORTED"
+  | "FAILED_PENDING_TIMEOUT"
+  | "FAILED_CONTRACT_MISMATCH"
+  | "FAILED_RETRY_EXHAUSTED"
+  | "FAILED_TERMINAL_ERROR";
 
 export type CreateTipIntentInput = {
   appId: string;
@@ -18,6 +25,11 @@ export type CreateTipIntentInput = {
 export type TipIntentRecord = CreateTipIntentInput & {
   id: string;
   invoiceState: InvoiceState;
+  settlementRetryCount: number;
+  settlementNextRetryAt: Date | null;
+  settlementLastError: string | null;
+  settlementFailureReason: SettlementFailureReason | null;
+  settlementLastCheckedAt: Date | null;
   createdAt: Date;
   settledAt: Date | null;
 };
@@ -48,6 +60,15 @@ export type TipIntentRepo = {
   create(input: CreateTipIntentInput): Promise<TipIntentRecord>;
   findByInvoiceOrThrow(invoice: string): Promise<TipIntentRecord>;
   updateInvoiceState(invoice: string, state: InvoiceState): Promise<TipIntentRecord>;
+  markSettlementRetryPending(
+    invoice: string,
+    params: { now: Date; nextRetryAt: Date; error: string },
+  ): Promise<TipIntentRecord>;
+  clearSettlementFailure(invoice: string, params: { now: Date }): Promise<TipIntentRecord>;
+  markSettlementTerminalFailure(
+    invoice: string,
+    params: { now: Date; reason: SettlementFailureReason; error: string },
+  ): Promise<TipIntentRecord>;
   listByInvoiceState(state: InvoiceState, options?: TipIntentListOptions): Promise<TipIntentRecord[]>;
   countByInvoiceState(state: InvoiceState, options?: TipIntentCountOptions): Promise<number>;
   __resetForTests?: () => void;
@@ -66,6 +87,11 @@ function toRecord(row: TipIntentRow): TipIntentRecord {
     amount: typeof row.amount === "string" ? row.amount : String(row.amount),
     invoice: row.invoice,
     invoiceState: row.invoiceState as InvoiceState,
+    settlementRetryCount: row.settlementRetryCount ?? 0,
+    settlementNextRetryAt: row.settlementNextRetryAt ?? null,
+    settlementLastError: row.settlementLastError ?? null,
+    settlementFailureReason: (row.settlementFailureReason as SettlementFailureReason | null) ?? null,
+    settlementLastCheckedAt: row.settlementLastCheckedAt ?? null,
     createdAt: row.createdAt,
     settledAt: row.settledAt ?? null,
   };
@@ -82,6 +108,14 @@ function isUniqueViolation(err: unknown): boolean {
 }
 
 export function createDbTipIntentRepo(db: DbClient): TipIntentRepo {
+  async function findRowOrThrow(invoice: string): Promise<TipIntentRow> {
+    const [row] = await db.select().from(tipIntents).where(eq(tipIntents.invoice, invoice)).limit(1);
+    if (!row) {
+      throw new TipIntentNotFoundError(invoice);
+    }
+    return row;
+  }
+
   function buildStateFilters(state: InvoiceState, options: TipIntentListOptions | TipIntentCountOptions = {}) {
     const filters = [eq(tipIntents.invoiceState, state)];
     if (options.appId) {
@@ -119,6 +153,11 @@ export function createDbTipIntentRepo(db: DbClient): TipIntentRepo {
             amount: input.amount,
             invoice: input.invoice,
             invoiceState: "UNPAID",
+            settlementRetryCount: 0,
+            settlementNextRetryAt: null,
+            settlementLastError: null,
+            settlementFailureReason: null,
+            settlementLastCheckedAt: now,
             createdAt: now,
             settledAt: null,
           })
@@ -133,25 +172,91 @@ export function createDbTipIntentRepo(db: DbClient): TipIntentRepo {
     },
 
     async findByInvoiceOrThrow(invoice) {
-      const [row] = await db.select().from(tipIntents).where(eq(tipIntents.invoice, invoice)).limit(1);
-      if (!row) {
-        throw new TipIntentNotFoundError(invoice);
-      }
+      const row = await findRowOrThrow(invoice);
       return toRecord(row);
     },
 
     async updateInvoiceState(invoice, state) {
       const now = new Date();
       const nextSettledAt = state === "SETTLED" ? sql`COALESCE(${tipIntents.settledAt}, ${now})` : null;
+      const clearFailure = state === "SETTLED";
       const [row] = await db
         .update(tipIntents)
-        .set({ invoiceState: state, settledAt: nextSettledAt })
+        .set({
+          invoiceState: state,
+          settledAt: nextSettledAt,
+          settlementLastCheckedAt: now,
+          settlementRetryCount: clearFailure ? 0 : tipIntents.settlementRetryCount,
+          settlementNextRetryAt: clearFailure ? null : tipIntents.settlementNextRetryAt,
+          settlementLastError: clearFailure ? null : tipIntents.settlementLastError,
+          settlementFailureReason: clearFailure ? null : tipIntents.settlementFailureReason,
+        })
         .where(eq(tipIntents.invoice, invoice))
         .returning();
       if (!row) {
         throw new TipIntentNotFoundError(invoice);
       }
       return toRecord(row);
+    },
+
+    async markSettlementRetryPending(invoice, params) {
+      const [row] = await db
+        .update(tipIntents)
+        .set({
+          settlementRetryCount: sql`${tipIntents.settlementRetryCount} + 1`,
+          settlementNextRetryAt: params.nextRetryAt,
+          settlementLastError: params.error,
+          settlementFailureReason: "RETRY_TRANSIENT_ERROR",
+          settlementLastCheckedAt: params.now,
+        })
+        .where(and(eq(tipIntents.invoice, invoice), eq(tipIntents.invoiceState, "UNPAID")))
+        .returning();
+
+      if (row) {
+        return toRecord(row);
+      }
+
+      return toRecord(await findRowOrThrow(invoice));
+    },
+
+    async clearSettlementFailure(invoice, params) {
+      const [row] = await db
+        .update(tipIntents)
+        .set({
+          settlementRetryCount: 0,
+          settlementNextRetryAt: null,
+          settlementLastError: null,
+          settlementFailureReason: null,
+          settlementLastCheckedAt: params.now,
+        })
+        .where(eq(tipIntents.invoice, invoice))
+        .returning();
+
+      if (!row) {
+        throw new TipIntentNotFoundError(invoice);
+      }
+      return toRecord(row);
+    },
+
+    async markSettlementTerminalFailure(invoice, params) {
+      const [row] = await db
+        .update(tipIntents)
+        .set({
+          invoiceState: "FAILED",
+          settledAt: null,
+          settlementNextRetryAt: null,
+          settlementLastError: params.error,
+          settlementFailureReason: params.reason,
+          settlementLastCheckedAt: params.now,
+        })
+        .where(and(eq(tipIntents.invoice, invoice), eq(tipIntents.invoiceState, "UNPAID")))
+        .returning();
+
+      if (row) {
+        return toRecord(row);
+      }
+
+      return toRecord(await findRowOrThrow(invoice));
     },
 
     async listByInvoiceState(state, options = {}) {
@@ -185,6 +290,8 @@ export function createInMemoryTipIntentRepo(): TipIntentRepo {
       ...record,
       createdAt: new Date(record.createdAt),
       settledAt: record.settledAt ? new Date(record.settledAt) : null,
+      settlementNextRetryAt: record.settlementNextRetryAt ? new Date(record.settlementNextRetryAt) : null,
+      settlementLastCheckedAt: record.settlementLastCheckedAt ? new Date(record.settlementLastCheckedAt) : null,
     };
   }
 
@@ -198,6 +305,11 @@ export function createInMemoryTipIntentRepo(): TipIntentRepo {
         ...input,
         id: randomUUID(),
         invoiceState: "UNPAID",
+        settlementRetryCount: 0,
+        settlementNextRetryAt: null,
+        settlementLastError: null,
+        settlementFailureReason: null,
+        settlementLastCheckedAt: now,
         createdAt: now,
         settledAt: null,
       };
@@ -225,9 +337,61 @@ export function createInMemoryTipIntentRepo(): TipIntentRepo {
       record.invoiceState = state;
       if (state === "SETTLED") {
         record.settledAt = record.settledAt ?? new Date();
+        record.settlementRetryCount = 0;
+        record.settlementNextRetryAt = null;
+        record.settlementLastError = null;
+        record.settlementFailureReason = null;
       } else {
         record.settledAt = null;
       }
+      record.settlementLastCheckedAt = new Date();
+      return clone(record);
+    },
+
+    async markSettlementRetryPending(invoice, params) {
+      const record = records.find((item) => item.invoice === invoice);
+      if (!record) {
+        throw new TipIntentNotFoundError(invoice);
+      }
+      if (record.invoiceState !== "UNPAID") {
+        return clone(record);
+      }
+
+      record.settlementRetryCount += 1;
+      record.settlementNextRetryAt = new Date(params.nextRetryAt);
+      record.settlementLastError = params.error;
+      record.settlementFailureReason = "RETRY_TRANSIENT_ERROR";
+      record.settlementLastCheckedAt = new Date(params.now);
+      return clone(record);
+    },
+
+    async clearSettlementFailure(invoice, params) {
+      const record = records.find((item) => item.invoice === invoice);
+      if (!record) {
+        throw new TipIntentNotFoundError(invoice);
+      }
+      record.settlementRetryCount = 0;
+      record.settlementNextRetryAt = null;
+      record.settlementLastError = null;
+      record.settlementFailureReason = null;
+      record.settlementLastCheckedAt = new Date(params.now);
+      return clone(record);
+    },
+
+    async markSettlementTerminalFailure(invoice, params) {
+      const record = records.find((item) => item.invoice === invoice);
+      if (!record) {
+        throw new TipIntentNotFoundError(invoice);
+      }
+      if (record.invoiceState !== "UNPAID") {
+        return clone(record);
+      }
+      record.invoiceState = "FAILED";
+      record.settledAt = null;
+      record.settlementNextRetryAt = null;
+      record.settlementLastError = params.error;
+      record.settlementFailureReason = params.reason;
+      record.settlementLastCheckedAt = new Date(params.now);
       return clone(record);
     },
 
