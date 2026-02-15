@@ -70,9 +70,4 @@ Bundle-local status mapping is generated automatically:
 - Keep deployment evidence for at least **30 days** by default.
 - Keep the full folder and `.tar.gz` archive immutable during retention.
 - Archive to long-term ticket/release evidence before cleanup.
-- Cleanup only bundles older than threshold:
-
-```bash
-find deploy/compose/evidence -mindepth 1 -maxdepth 1 -type d -mtime +30 -exec rm -rf {} +
-find deploy/compose/evidence -mindepth 1 -maxdepth 1 -type f -name '*.tar.gz' -mtime +30 -delete
-```
+- Cleanup only bundles older than threshold. Use the suggested command in each generated bundle's `metadata/retention-policy.md` to respect custom `--output-root` values.

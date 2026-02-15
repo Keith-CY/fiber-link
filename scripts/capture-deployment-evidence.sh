@@ -78,7 +78,7 @@ run_step() {
   fi
 
   set +e
-  bash -lc "${command}" > "${output_file}" 2>&1
+  bash -c "${command}" > "${output_file}" 2>&1
   local rc=$?
   set -e
 
@@ -161,7 +161,7 @@ ARCHIVE_FILE="${EVIDENCE_DIR}.tar.gz"
 COMMAND_LOG="${EVIDENCE_DIR}/commands/command-index.log"
 STEP_RESULTS_FILE="${EVIDENCE_DIR}/status/step-results.tsv"
 
-for binary in bash docker git tar awk; do
+for binary in bash docker git tar awk jq; do
   if ! command -v "${binary}" >/dev/null 2>&1; then
     log "missing required binary: ${binary}"
     exit "${EXIT_PRECHECK}"
@@ -276,27 +276,38 @@ snapshot_mapping_status="$(bool_status "${status_snapshot_status}")"
   printf '%s\n' "- Suggested cleanup command after retention: \`find \"$(dirname "${EVIDENCE_DIR}")\" -mindepth 1 -maxdepth 1 -type d -mtime +${RETENTION_DAYS} -exec rm -rf {} +\`"
 } > "${EVIDENCE_DIR}/metadata/retention-policy.md"
 
-{
-  printf '%s\n' "{"
-  printf '  "generatedAtUtc": "%s",\n' "${TIMESTAMP}"
-  printf '  "retentionDays": %s,\n' "${RETENTION_DAYS}"
-  printf '  "invoiceId": "%s",\n' "${invoice_id_value}"
-  printf '  "settlementId": "%s",\n' "${settlement_id_value}"
-  printf '  "dryRun": %s,\n' "${DRY_RUN}"
-  printf '  "overallStatus": "%s",\n' "${overall_status}"
-  printf '  "files": {\n'
-  printf '    "commands": "commands/command-index.log",\n'
-  printf '    "stepResults": "status/step-results.tsv",\n'
-  printf '    "acceptanceMapping": "status/acceptance-mapping.md",\n'
-  printf '    "composeLogs": "logs/compose-services.log",\n'
-  printf '    "fnnMetadata": "node/fnn-container-inspect.json",\n'
-  printf '    "rpcMetadata": "node/rpc-container-inspect.json",\n'
-  printf '    "workerMetadata": "node/worker-container-inspect.json",\n'
-  printf '    "composeStatusSnapshot": "snapshots/compose-ps.txt",\n'
-  printf '    "composeConfigSnapshot": "snapshots/compose-config.txt"\n'
-  printf '  }\n'
-  printf '%s\n' "}"
-} > "${EVIDENCE_DIR}/metadata/manifest.json"
+if [[ "${DRY_RUN}" -eq 1 ]]; then
+  dry_run_json=true
+else
+  dry_run_json=false
+fi
+
+jq -n \
+  --arg generatedAtUtc "${TIMESTAMP}" \
+  --argjson retentionDays "${RETENTION_DAYS}" \
+  --arg invoiceId "${invoice_id_value}" \
+  --arg settlementId "${settlement_id_value}" \
+  --argjson dryRun "${dry_run_json}" \
+  --arg overallStatus "${overall_status}" \
+  '{
+    generatedAtUtc: $generatedAtUtc,
+    retentionDays: $retentionDays,
+    invoiceId: $invoiceId,
+    settlementId: $settlementId,
+    dryRun: $dryRun,
+    overallStatus: $overallStatus,
+    files: {
+      commands: "commands/command-index.log",
+      stepResults: "status/step-results.tsv",
+      acceptanceMapping: "status/acceptance-mapping.md",
+      composeLogs: "logs/compose-services.log",
+      fnnMetadata: "node/fnn-container-inspect.json",
+      rpcMetadata: "node/rpc-container-inspect.json",
+      workerMetadata: "node/worker-container-inspect.json",
+      composeStatusSnapshot: "snapshots/compose-ps.txt",
+      composeConfigSnapshot: "snapshots/compose-config.txt"
+    }
+  }' > "${EVIDENCE_DIR}/metadata/manifest.json"
 
 set +e
 tar -czf "${ARCHIVE_FILE}" -C "$(dirname "${EVIDENCE_DIR}")" "$(basename "${EVIDENCE_DIR}")"
