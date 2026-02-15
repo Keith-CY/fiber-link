@@ -184,20 +184,25 @@ function classifySettlementError(error: unknown): SettlementErrorDecision {
     };
   }
 
-  if (error instanceof FiberRpcError) {
-    if (typeof error.code === "number") {
-      if (TERMINAL_RPC_ERROR_CODES.has(error.code)) {
+  const fiberRpcCtor: unknown = FiberRpcError;
+  const isFiberRpcError =
+    typeof fiberRpcCtor === "function" && error instanceof (fiberRpcCtor as typeof FiberRpcError);
+
+  if (isFiberRpcError) {
+    const rpcError = error as FiberRpcError;
+    if (typeof rpcError.code === "number") {
+      if (TERMINAL_RPC_ERROR_CODES.has(rpcError.code)) {
         return {
           kind: "TERMINAL",
           reason: "FAILED_TERMINAL_ERROR",
-          message: error.message,
+          message: rpcError.message,
         };
       }
-      if (TRANSIENT_RPC_ERROR_CODES.has(error.code) || (error.code <= -32000 && error.code >= -32099)) {
+      if (TRANSIENT_RPC_ERROR_CODES.has(rpcError.code) || (rpcError.code <= -32000 && rpcError.code >= -32099)) {
         return {
           kind: "TRANSIENT",
           reason: "RETRY_TRANSIENT_ERROR",
-          message: error.message,
+          message: rpcError.message,
         };
       }
     }
@@ -205,7 +210,7 @@ function classifySettlementError(error: unknown): SettlementErrorDecision {
     return {
       kind: "TRANSIENT",
       reason: "RETRY_TRANSIENT_ERROR",
-      message: error.message,
+      message: rpcError.message,
     };
   }
 
@@ -214,14 +219,6 @@ function classifySettlementError(error: unknown): SettlementErrorDecision {
     return {
       kind: "TRANSIENT",
       reason: "RETRY_TRANSIENT_ERROR",
-      message,
-    };
-  }
-
-  if (message.toLowerCase().includes("mismatch")) {
-    return {
-      kind: "TERMINAL",
-      reason: "FAILED_CONTRACT_MISMATCH",
       message,
     };
   }

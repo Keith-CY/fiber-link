@@ -1,8 +1,88 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createInMemoryTipIntentRepo } from "./tip-intent-repo";
+import type { DbClient } from "./client";
+import { InvoiceStateTransitionError, createDbTipIntentRepo, createInMemoryTipIntentRepo } from "./tip-intent-repo";
+
+function createDbRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "tip-1",
+    appId: "app1",
+    postId: "p1",
+    fromUserId: "u1",
+    toUserId: "u2",
+    asset: "USDI",
+    amount: "10",
+    invoice: "inv-1",
+    invoiceState: "UNPAID",
+    settlementRetryCount: 0,
+    settlementNextRetryAt: null,
+    settlementLastError: null,
+    settlementFailureReason: null,
+    settlementLastCheckedAt: new Date("2026-02-15T00:00:00.000Z"),
+    createdAt: new Date("2026-02-15T00:00:00.000Z"),
+    settledAt: null,
+    ...overrides,
+  };
+}
+
+function hasParamValue(node: unknown, needle: string, seen = new Set<unknown>()): boolean {
+  if (!node || typeof node !== "object") {
+    return false;
+  }
+  if (seen.has(node)) {
+    return false;
+  }
+  seen.add(node);
+
+  if ((node as { constructor?: { name?: string } }).constructor?.name === "Param") {
+    return (node as { value?: unknown }).value === needle;
+  }
+
+  if (Array.isArray(node)) {
+    return node.some((item) => hasParamValue(item, needle, seen));
+  }
+
+  for (const value of Object.values(node as Record<string, unknown>)) {
+    if (hasParamValue(value, needle, seen)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+describe("tipIntentRepo (db transition guards)", () => {
+  it("rejects FAILED -> UNPAID transition instead of reopening terminal state", async () => {
+    let lastWhereArg: unknown;
+    const updateReturning = vi.fn(async () => {
+      // If FAILED leaks into the WHERE clause, the simulated DB update succeeds and hides the transition bug.
+      if (hasParamValue(lastWhereArg, "FAILED")) {
+        return [createDbRow({ invoice: "inv-db-failed", invoiceState: "UNPAID" })];
+      }
+      return [];
+    });
+    const updateWhere = vi.fn((whereArg: unknown) => {
+      lastWhereArg = whereArg;
+      return { returning: updateReturning };
+    });
+    const updateSet = vi.fn(() => ({ where: updateWhere }));
+    const update = vi.fn(() => ({ set: updateSet }));
+
+    const selectLimit = vi.fn(async () => [createDbRow({ invoice: "inv-db-failed", invoiceState: "FAILED" })]);
+    const selectWhere = vi.fn(() => ({ limit: selectLimit }));
+    const selectFrom = vi.fn(() => ({ where: selectWhere }));
+    const select = vi.fn(() => ({ from: selectFrom }));
+
+    const db = { update, select } as unknown as DbClient;
+    const repo = createDbTipIntentRepo(db);
+
+    await expect(repo.updateInvoiceState("inv-db-failed", "UNPAID")).rejects.toBeInstanceOf(
+      InvoiceStateTransitionError,
+    );
+  });
+});
 
 describe("tipIntentRepo (in-memory)", () => {
   const repo = createInMemoryTipIntentRepo();
+  const waitTick = () => new Promise((resolve) => setTimeout(resolve, 5));
 
   beforeEach(() => {
     repo.__resetForTests?.();
@@ -77,10 +157,55 @@ describe("tipIntentRepo (in-memory)", () => {
     const second = await repo.updateInvoiceState("inv-2", "SETTLED");
     expect(second.invoiceState).toBe("SETTLED");
     expect(second.settledAt?.getTime()).toBe(settledAt1);
+  });
 
-    const third = await repo.updateInvoiceState("inv-2", "FAILED");
-    expect(third.invoiceState).toBe("FAILED");
-    expect(third.settledAt).toBeNull();
+  it("preserves terminal state when replayed", async () => {
+    await repo.create({
+      appId: "app1",
+      postId: "p2",
+      fromUserId: "u1",
+      toUserId: "u2",
+      asset: "USDI",
+      amount: "10",
+      invoice: "inv-2b",
+    });
+
+    await repo.updateInvoiceState("inv-2b", "SETTLED");
+
+    const settledAgain = await repo.updateInvoiceState("inv-2b", "SETTLED");
+    expect(settledAgain.invoiceState).toBe("SETTLED");
+    expect(settledAgain.settledAt).not.toBeNull();
+  });
+
+  it("rejects invalid terminal transition from SETTLED to FAILED", async () => {
+    await repo.create({
+      appId: "app1",
+      postId: "p3",
+      fromUserId: "u1",
+      toUserId: "u2",
+      asset: "USDI",
+      amount: "10",
+      invoice: "inv-3",
+    });
+
+    await repo.updateInvoiceState("inv-3", "SETTLED");
+
+    await expect(repo.updateInvoiceState("inv-3", "FAILED")).rejects.toBeInstanceOf(InvoiceStateTransitionError);
+  });
+
+  it("rejects invalid terminal transition from FAILED to SETTLED", async () => {
+    await repo.create({
+      appId: "app1",
+      postId: "p4",
+      fromUserId: "u1",
+      toUserId: "u2",
+      asset: "USDI",
+      amount: "10",
+      invoice: "inv-4",
+    });
+
+    await repo.updateInvoiceState("inv-4", "FAILED");
+    await expect(repo.updateInvoiceState("inv-4", "SETTLED")).rejects.toBeInstanceOf(InvoiceStateTransitionError);
   });
 
   it("tracks transient settlement retries and can clear retry evidence", async () => {
@@ -185,139 +310,121 @@ describe("tipIntentRepo (in-memory)", () => {
   });
 
   it("returns UNPAID intents ordered by createdAt asc before limit", async () => {
-    vi.useFakeTimers();
-    try {
-      vi.setSystemTime(new Date("2026-02-11T10:00:10.000Z"));
-      await repo.create({
-        appId: "app-a",
-        postId: "p1",
-        fromUserId: "u1",
-        toUserId: "u2",
-        asset: "USDI",
-        amount: "10",
-        invoice: "inv-order-late",
-      });
+    await repo.create({
+      appId: "app-a",
+      postId: "p1",
+      fromUserId: "u1",
+      toUserId: "u2",
+      asset: "USDI",
+      amount: "10",
+      invoice: "inv-order-early",
+    });
+    await waitTick();
+    await repo.create({
+      appId: "app-a",
+      postId: "p2",
+      fromUserId: "u3",
+      toUserId: "u4",
+      asset: "USDI",
+      amount: "20",
+      invoice: "inv-order-late",
+    });
 
-      vi.setSystemTime(new Date("2026-02-11T10:00:00.000Z"));
-      await repo.create({
-        appId: "app-a",
-        postId: "p2",
-        fromUserId: "u3",
-        toUserId: "u4",
-        asset: "USDI",
-        amount: "20",
-        invoice: "inv-order-early",
-      });
-
-      const listed = await repo.listByInvoiceState("UNPAID", { appId: "app-a", limit: 1 });
-      expect(listed).toHaveLength(1);
-      expect(listed[0]?.invoice).toBe("inv-order-early");
-    } finally {
-      vi.useRealTimers();
-    }
+    const listed = await repo.listByInvoiceState("UNPAID", { appId: "app-a", limit: 1 });
+    expect(listed).toHaveLength(1);
+    expect(listed[0]?.invoice).toBe("inv-order-early");
   });
 
   it("supports cursor-style pagination with createdAt+id watermark", async () => {
-    vi.useFakeTimers();
-    try {
-      vi.setSystemTime(new Date("2026-02-11T11:00:00.000Z"));
-      const first = await repo.create({
-        appId: "app-a",
-        postId: "p1",
-        fromUserId: "u1",
-        toUserId: "u2",
-        asset: "USDI",
-        amount: "10",
-        invoice: "inv-page-1",
-      });
-      vi.setSystemTime(new Date("2026-02-11T11:00:01.000Z"));
-      const second = await repo.create({
-        appId: "app-a",
-        postId: "p2",
-        fromUserId: "u3",
-        toUserId: "u4",
-        asset: "USDI",
-        amount: "20",
-        invoice: "inv-page-2",
-      });
-      vi.setSystemTime(new Date("2026-02-11T11:00:02.000Z"));
-      await repo.create({
-        appId: "app-a",
-        postId: "p3",
-        fromUserId: "u5",
-        toUserId: "u6",
-        asset: "USDI",
-        amount: "30",
-        invoice: "inv-page-3",
-      });
+    const first = await repo.create({
+      appId: "app-a",
+      postId: "p1",
+      fromUserId: "u1",
+      toUserId: "u2",
+      asset: "USDI",
+      amount: "10",
+      invoice: "inv-page-1",
+    });
+    await waitTick();
+    const second = await repo.create({
+      appId: "app-a",
+      postId: "p2",
+      fromUserId: "u3",
+      toUserId: "u4",
+      asset: "USDI",
+      amount: "20",
+      invoice: "inv-page-2",
+    });
+    await waitTick();
+    await repo.create({
+      appId: "app-a",
+      postId: "p3",
+      fromUserId: "u5",
+      toUserId: "u6",
+      asset: "USDI",
+      amount: "30",
+      invoice: "inv-page-3",
+    });
 
-      const page1 = await repo.listByInvoiceState("UNPAID", {
-        appId: "app-a",
-        limit: 2,
-      });
-      expect(page1.map((item) => item.invoice)).toEqual(["inv-page-1", "inv-page-2"]);
+    const page1 = await repo.listByInvoiceState("UNPAID", {
+      appId: "app-a",
+      limit: 2,
+    });
+    expect(page1.map((item) => item.invoice)).toEqual(["inv-page-1", "inv-page-2"]);
 
-      const page2 = await repo.listByInvoiceState("UNPAID", {
-        appId: "app-a",
-        limit: 2,
-        after: {
-          createdAt: second.createdAt,
-          id: second.id,
-        },
-      });
-      expect(page2.map((item) => item.invoice)).toEqual(["inv-page-3"]);
+    const page2 = await repo.listByInvoiceState("UNPAID", {
+      appId: "app-a",
+      limit: 2,
+      after: {
+        createdAt: second.createdAt,
+        id: second.id,
+      },
+    });
+    expect(page2.map((item) => item.invoice)).toEqual(["inv-page-3"]);
 
-      const page3 = await repo.listByInvoiceState("UNPAID", {
-        appId: "app-a",
-        limit: 2,
-        after: {
-          createdAt: first.createdAt,
-          id: first.id,
-        },
-      });
-      expect(page3.map((item) => item.invoice)).toEqual(["inv-page-2", "inv-page-3"]);
-    } finally {
-      vi.useRealTimers();
-    }
+    const page3 = await repo.listByInvoiceState("UNPAID", {
+      appId: "app-a",
+      limit: 2,
+      after: {
+        createdAt: first.createdAt,
+        id: first.id,
+      },
+    });
+    expect(page3.map((item) => item.invoice)).toEqual(["inv-page-2", "inv-page-3"]);
   });
 
   it("counts invoice-state backlog with app/time filters", async () => {
-    vi.useFakeTimers();
-    try {
-      vi.setSystemTime(new Date("2026-02-11T12:00:00.000Z"));
-      await repo.create({
-        appId: "app-a",
-        postId: "p1",
-        fromUserId: "u1",
-        toUserId: "u2",
-        asset: "USDI",
-        amount: "10",
-        invoice: "inv-count-1",
-      });
-      vi.setSystemTime(new Date("2026-02-11T12:00:01.000Z"));
-      await repo.create({
-        appId: "app-a",
-        postId: "p2",
-        fromUserId: "u3",
-        toUserId: "u4",
-        asset: "USDI",
-        amount: "20",
-        invoice: "inv-count-2",
-      });
-      vi.setSystemTime(new Date("2026-02-11T12:00:02.000Z"));
-      await repo.create({
-        appId: "app-b",
-        postId: "p3",
-        fromUserId: "u5",
-        toUserId: "u6",
-        asset: "USDI",
-        amount: "30",
-        invoice: "inv-count-3",
-      });
-      await repo.updateInvoiceState("inv-count-2", "SETTLED");
-    } finally {
-      vi.useRealTimers();
-    }
+    await repo.create({
+      appId: "app-a",
+      postId: "p1",
+      fromUserId: "u1",
+      toUserId: "u2",
+      asset: "USDI",
+      amount: "10",
+      invoice: "inv-count-1",
+    });
+    await waitTick();
+    await repo.create({
+      appId: "app-a",
+      postId: "p2",
+      fromUserId: "u3",
+      toUserId: "u4",
+      asset: "USDI",
+      amount: "20",
+      invoice: "inv-count-2",
+    });
+    const fromThirdOnly = new Date();
+    await waitTick();
+    await repo.create({
+      appId: "app-b",
+      postId: "p3",
+      fromUserId: "u5",
+      toUserId: "u6",
+      asset: "USDI",
+      amount: "30",
+      invoice: "inv-count-3",
+    });
+    await repo.updateInvoiceState("inv-count-2", "SETTLED");
 
     const totalUnpaid = await repo.countByInvoiceState("UNPAID");
     expect(totalUnpaid).toBe(2);
@@ -325,9 +432,107 @@ describe("tipIntentRepo (in-memory)", () => {
     const appAUnpaid = await repo.countByInvoiceState("UNPAID", { appId: "app-a" });
     expect(appAUnpaid).toBe(1);
 
-    const windowUnpaid = await repo.countByInvoiceState("UNPAID", {
-      createdAtFrom: new Date("2026-02-11T12:00:01.500Z"),
-    });
+    const windowUnpaid = await repo.countByInvoiceState("UNPAID", { createdAtFrom: fromThirdOnly });
     expect(windowUnpaid).toBe(1);
+  });
+
+  describe("issue #61 transition persistence smoke", () => {
+    it("maps created -> paid/settled wording to bounded UNPAID -> SETTLED contract and persists it", async () => {
+      // Issue #61 mentions a broader lifecycle (created -> paid/settled -> settling -> recorded).
+      // The current bounded persistence contract records that as UNPAID -> SETTLED/FAILED only.
+      await repo.create({
+        appId: "app-smoke",
+        postId: "p1",
+        fromUserId: "u1",
+        toUserId: "u2",
+        asset: "USDI",
+        amount: "10",
+        invoice: "inv-smoke-settled",
+      });
+
+      const settled = await repo.updateInvoiceState("inv-smoke-settled", "SETTLED");
+      expect(settled.invoiceState).toBe("SETTLED");
+      expect(settled.settledAt).not.toBeNull();
+
+      const persisted = await repo.findByInvoiceOrThrow("inv-smoke-settled");
+      expect(persisted.invoiceState).toBe("SETTLED");
+      expect(persisted.settledAt?.getTime()).toBe(settled.settledAt?.getTime());
+    });
+
+    it("rejects invalid terminal transitions and keeps persisted terminal state unchanged", async () => {
+      await repo.create({
+        appId: "app-smoke",
+        postId: "p2",
+        fromUserId: "u1",
+        toUserId: "u2",
+        asset: "USDI",
+        amount: "10",
+        invoice: "inv-smoke-invalid-a",
+      });
+      await repo.updateInvoiceState("inv-smoke-invalid-a", "SETTLED");
+
+      await expect(repo.updateInvoiceState("inv-smoke-invalid-a", "FAILED")).rejects.toBeInstanceOf(
+        InvoiceStateTransitionError,
+      );
+
+      const settledStill = await repo.findByInvoiceOrThrow("inv-smoke-invalid-a");
+      expect(settledStill.invoiceState).toBe("SETTLED");
+      expect(settledStill.settledAt).not.toBeNull();
+
+      await repo.create({
+        appId: "app-smoke",
+        postId: "p3",
+        fromUserId: "u1",
+        toUserId: "u2",
+        asset: "USDI",
+        amount: "10",
+        invoice: "inv-smoke-invalid-b",
+      });
+      await repo.updateInvoiceState("inv-smoke-invalid-b", "FAILED");
+
+      await expect(repo.updateInvoiceState("inv-smoke-invalid-b", "SETTLED")).rejects.toBeInstanceOf(
+        InvoiceStateTransitionError,
+      );
+
+      const failedStill = await repo.findByInvoiceOrThrow("inv-smoke-invalid-b");
+      expect(failedStill.invoiceState).toBe("FAILED");
+      expect(failedStill.settledAt).toBeNull();
+    });
+
+    it("keeps idempotent retry updates stable for terminal states", async () => {
+      await repo.create({
+        appId: "app-smoke",
+        postId: "p4",
+        fromUserId: "u1",
+        toUserId: "u2",
+        asset: "USDI",
+        amount: "10",
+        invoice: "inv-smoke-retry-settled",
+      });
+
+      const firstSettled = await repo.updateInvoiceState("inv-smoke-retry-settled", "SETTLED");
+      const retrySettled = await repo.updateInvoiceState("inv-smoke-retry-settled", "SETTLED");
+      expect(retrySettled.invoiceState).toBe("SETTLED");
+      expect(retrySettled.settledAt?.getTime()).toBe(firstSettled.settledAt?.getTime());
+
+      await repo.create({
+        appId: "app-smoke",
+        postId: "p5",
+        fromUserId: "u1",
+        toUserId: "u2",
+        asset: "USDI",
+        amount: "10",
+        invoice: "inv-smoke-retry-failed",
+      });
+
+      const firstFailed = await repo.updateInvoiceState("inv-smoke-retry-failed", "FAILED");
+      const retryFailed = await repo.updateInvoiceState("inv-smoke-retry-failed", "FAILED");
+      expect(retryFailed.invoiceState).toBe("FAILED");
+      expect(retryFailed.settledAt).toBeNull();
+
+      const persistedFailed = await repo.findByInvoiceOrThrow("inv-smoke-retry-failed");
+      expect(persistedFailed.invoiceState).toBe(firstFailed.invoiceState);
+      expect(persistedFailed.settledAt).toBeNull();
+    });
   });
 });

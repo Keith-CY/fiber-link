@@ -17,8 +17,10 @@ const adapterState = {
   createInvoiceError: null as Error | null,
 };
 
-vi.mock("@fiber-link/fiber-adapter", () => {
+vi.mock("@fiber-link/fiber-adapter", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@fiber-link/fiber-adapter")>();
   return {
+    ...actual,
     createAdapter() {
       return {
         async createInvoice(input: CreateInvoiceInput) {
@@ -185,6 +187,7 @@ describe("invoice -> payment -> settlement e2e", () => {
       adapter: createSettlementAdapter(),
       tipIntentRepo,
       ledgerRepo: flakyLedgerRepo,
+      retryDelayMs: 0,
     });
 
     expect(first).toMatchObject({
@@ -193,7 +196,8 @@ describe("invoice -> payment -> settlement e2e", () => {
       settledDuplicates: 0,
       failed: 0,
       stillUnpaid: 0,
-      errors: 1,
+      retryScheduled: 1,
+      errors: 0,
     });
 
     const afterFirst = await tipIntentRepo.findByInvoiceOrThrow(createResult.invoice);
@@ -205,6 +209,7 @@ describe("invoice -> payment -> settlement e2e", () => {
       adapter: createSettlementAdapter(),
       tipIntentRepo,
       ledgerRepo: flakyLedgerRepo,
+      retryDelayMs: 0,
     });
 
     expect(second).toMatchObject({

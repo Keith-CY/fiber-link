@@ -1,11 +1,46 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import Fastify from "fastify";
 import { TipIntentNotFoundError } from "@fiber-link/db";
+import { ServerResponse } from "node:http";
 import { buildServer } from "./server";
 import { verifyHmac } from "./auth/hmac";
 import { createInMemoryAppRepo } from "./repositories/app-repo";
 import { registerRpc } from "./rpc";
 import * as tipMethods from "./methods/tip";
+
+function ensureBunInjectHeaderCompat() {
+  if (typeof Bun === "undefined") {
+    return;
+  }
+
+  const proto = ServerResponse.prototype as ServerResponse & {
+    _header?: string;
+    __fiberLinkHeaderCompat?: string;
+  };
+
+  // Bun's ServerResponse may not populate `_header`, while light-my-request expects a string.
+  // Provide a minimal fallback for test injection only.
+  try {
+    if (typeof proto._header === "string") {
+      return;
+    }
+  } catch {
+    // no-op: continue to define fallback accessor
+  }
+
+  Object.defineProperty(proto, "_header", {
+    configurable: true,
+    enumerable: false,
+    get() {
+      return this.__fiberLinkHeaderCompat ?? "";
+    },
+    set(value: string) {
+      this.__fiberLinkHeaderCompat = value;
+    },
+  });
+}
+
+ensureBunInjectHeaderCompat();
 
 beforeEach(() => {
   process.env.FIBER_LINK_HMAC_SECRET = "replace-with-lookup";

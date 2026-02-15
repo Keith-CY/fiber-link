@@ -1,9 +1,33 @@
 import { createAdapter } from "@fiber-link/fiber-adapter";
-import { createDbClient, createDbTipIntentRepo, type TipIntentRepo } from "@fiber-link/db";
+import {
+  createDbClient,
+  createDbLedgerRepo,
+  createDbTipIntentRepo,
+  type LedgerRepo,
+  type TipIntentRepo,
+} from "@fiber-link/db";
 import type { InvoiceState } from "@fiber-link/fiber-adapter";
 
 let defaultTipIntentRepo: TipIntentRepo | null | undefined;
+let defaultLedgerRepo: LedgerRepo | null | undefined;
 let defaultAdapter: ReturnType<typeof createAdapter> | null | undefined;
+
+function isInvoiceStateConflictError(error: unknown): boolean {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+
+  const maybeError = error as { name?: unknown; message?: unknown };
+  if (maybeError.name === "InvoiceStateTransitionError") {
+    return true;
+  }
+
+  if (typeof maybeError.message === "string") {
+    return maybeError.message.includes("invalid invoice state transition");
+  }
+
+  return false;
+}
 
 function getDefaultTipIntentRepo(): TipIntentRepo {
   if (defaultTipIntentRepo !== undefined) {
@@ -24,17 +48,21 @@ function getDefaultTipIntentRepo(): TipIntentRepo {
   return defaultTipIntentRepo;
 }
 
+function getDefaultLedgerRepo(): LedgerRepo {
+  if (defaultLedgerRepo !== undefined) {
+    return defaultLedgerRepo;
+  }
+  defaultLedgerRepo = createDbLedgerRepo(createDbClient());
+  return defaultLedgerRepo;
+}
+
 function getDefaultAdapter() {
   if (defaultAdapter !== undefined) {
-    if (!defaultAdapter) {
-      throw new Error("Fiber adapter is not available (FIBER_RPC_URL missing).");
-    }
     return defaultAdapter;
   }
 
   const fiberRpcUrl = process.env.FIBER_RPC_URL;
   if (!fiberRpcUrl) {
-    defaultAdapter = null;
     throw new Error("FIBER_RPC_URL environment variable is not set.");
   }
   defaultAdapter = createAdapter({ endpoint: fiberRpcUrl });
@@ -56,20 +84,31 @@ export type HandleTipStatusInput = {
 
 type HandleTipStatusOptions = {
   tipIntentRepo?: TipIntentRepo;
+  ledgerRepo?: LedgerRepo;
   adapter?: {
     getInvoiceStatus: (input: { invoice: string }) => Promise<{ state: InvoiceState }>;
   };
 };
 
+type HandleTipCreateOptions = {
+  tipIntentRepo?: TipIntentRepo;
+  adapter?: {
+    createInvoice: (input: { amount: string; asset: "CKB" | "USDI" }) => Promise<{ invoice: string }>;
+  };
+};
+
 export async function handleTipCreate(
   input: HandleTipCreateInput,
-  options: { tipIntentRepo?: TipIntentRepo } = {},
+  options: HandleTipCreateOptions = {},
 ) {
-  const fiberRpcUrl = process.env.FIBER_RPC_URL;
-  if (!fiberRpcUrl) {
-    throw new Error("FIBER_RPC_URL environment variable is not set.");
+  let adapter = options.adapter;
+  if (!adapter) {
+    const fiberRpcUrl = process.env.FIBER_RPC_URL;
+    if (!fiberRpcUrl) {
+      throw new Error("FIBER_RPC_URL environment variable is not set.");
+    }
+    adapter = createAdapter({ endpoint: fiberRpcUrl });
   }
-  const adapter = createAdapter({ endpoint: fiberRpcUrl });
   const invoice = await adapter.createInvoice({ amount: input.amount, asset: input.asset });
   const repo = options.tipIntentRepo ?? getDefaultTipIntentRepo();
   await repo.create({
@@ -89,6 +128,7 @@ export async function handleTipStatus(
   options: HandleTipStatusOptions = {},
 ) {
   const tipIntentRepo = options.tipIntentRepo ?? getDefaultTipIntentRepo();
+  const ledgerRepo = options.ledgerRepo ?? getDefaultLedgerRepo();
   const adapter = options.adapter ?? getDefaultAdapter();
   const tipIntent = await tipIntentRepo.findByInvoiceOrThrow(input.invoice);
 
@@ -98,13 +138,37 @@ export async function handleTipStatus(
 
   const invoiceStatus = await adapter.getInvoiceStatus({ invoice: input.invoice });
   if (invoiceStatus.state === "SETTLED") {
-    const settled = await tipIntentRepo.updateInvoiceState(input.invoice, "SETTLED");
-    return { state: settled.invoiceState };
+    await ledgerRepo.creditOnce({
+      appId: tipIntent.appId,
+      userId: tipIntent.toUserId,
+      asset: tipIntent.asset,
+      amount: tipIntent.amount,
+      refId: tipIntent.id,
+      idempotencyKey: `settlement:tip_intent:${tipIntent.id}`,
+    });
+    try {
+      const settled = await tipIntentRepo.updateInvoiceState(input.invoice, "SETTLED");
+      return { state: settled.invoiceState };
+    } catch (error) {
+      if (isInvoiceStateConflictError(error)) {
+        const current = await tipIntentRepo.findByInvoiceOrThrow(input.invoice);
+        return { state: current.invoiceState };
+      }
+      throw error;
+    }
   }
 
   if (invoiceStatus.state === "FAILED") {
-    const failed = await tipIntentRepo.updateInvoiceState(input.invoice, "FAILED");
-    return { state: failed.invoiceState };
+    try {
+      const failed = await tipIntentRepo.updateInvoiceState(input.invoice, "FAILED");
+      return { state: failed.invoiceState };
+    } catch (error) {
+      if (isInvoiceStateConflictError(error)) {
+        const current = await tipIntentRepo.findByInvoiceOrThrow(input.invoice);
+        return { state: current.invoiceState };
+      }
+      throw error;
+    }
   }
 
   return { state: tipIntent.invoiceState };
