@@ -19,9 +19,93 @@ jobs:
     steps:
       - name: Sync issue/pr to Projects Kanban
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b
+        env:
+          FIBER_LINK_CANONICAL_PROJECT_ID: ${{ vars.FIBER_LINK_CANONICAL_PROJECT_ID }}
         with:
+          github-token: ${{ secrets.FIBER_LINK_PROJECTS_TOKEN || secrets.GITHUB_TOKEN }}
           script: |
-            const projectId = String(process.env.FIBER_LINK_PROJECT_ID || '').trim();
+            const sanitizeProjectIdValue = (value) => String(value || '').trim().replace(/^["']|["']$/g, '');
+            const defaultProjectId = 'PVT_kwHOAG7zoc4BPPlp';
+
+            const resolveProjectId = async (candidate) => {
+              const raw = sanitizeProjectIdValue(candidate);
+              if (!raw) {
+                return '';
+              }
+              if (/^PVT_[A-Za-z0-9_]+$/.test(raw) || /^PD_[A-Za-z0-9_]+$/.test(raw)) {
+                return raw;
+              }
+
+              const userOrOrgProject = raw.match(/^https?:\/\/github\.com\/(users|orgs)\/([^/]+)\/projects\/(\d+)(?:[/?#].*)?$/i);
+              if (userOrOrgProject) {
+                const [, scope, login, number] = userOrOrgProject;
+                const num = Number.parseInt(number, 10);
+                if (!Number.isFinite(num)) {
+                  return raw;
+                }
+
+                try {
+                  const query = scope === 'users'
+                    ? `query($login: String!, $number: Int!) { user(login: $login) { projectV2(number: $number) { id } } }`
+                    : `query($login: String!, $number: Int!) { organization(login: $login) { projectV2(number: $number) { id } } }`;
+                  const response = await github.graphql(query, { login, number: num });
+                  const node = scope === 'users' ? response?.user?.projectV2 : response?.organization?.projectV2;
+                  if (node?.id) {
+                    return node.id;
+                  }
+                } catch (error) {
+                  core.info(`Could not resolve project URL "${raw}" via GraphQL: ${error?.message || error}`);
+                }
+
+                return '';
+              }
+
+              const repoProject = raw.match(/^https?:\/\/github\.com\/([^/]+)\/([^/]+)\/projects\/(\d+)(?:[/?#].*)?$/i);
+              if (repoProject) {
+                const [, owner, repo, number] = repoProject;
+                const num = Number.parseInt(number, 10);
+                if (!Number.isFinite(num)) {
+                  return raw;
+                }
+
+                try {
+                  const response = await github.graphql(
+                    `query($owner: String!, $repo: String!, $number: Int!) {
+                      repository(owner: $owner, name: $repo) {
+                        projectV2(number: $number) {
+                          id
+                        }
+                      }
+                    }`,
+                    { owner, repo, number: num }
+                  );
+                  if (response?.repository?.projectV2?.id) {
+                    return response.repository.projectV2.id;
+                  }
+                } catch (error) {
+                  core.info(`Could not resolve repo project URL "${raw}" via GraphQL: ${error?.message || error}`);
+                }
+
+                return '';
+              }
+
+              return raw;
+            };
+
+            const resolveProjectCandidates = [
+              process.env.FIBER_LINK_PROJECT_ID,
+              process.env.FIBER_LINK_CANONICAL_PROJECT_ID,
+              defaultProjectId,
+            ];
+            let projectId = '';
+            for (const candidate of resolveProjectCandidates) {
+              const resolved = await resolveProjectId(candidate);
+              if (resolved) {
+                projectId = resolved;
+                break;
+              }
+            }
+            const ghClient = github;
             const statusFieldNames = ['Status', '状态'];
             const fieldAliases = {
               priority: ['Priority', '优先级'],
@@ -35,10 +119,9 @@ jobs:
             const eventName = context.eventName;
             const payload = context.payload;
             if (!projectId) {
-              core.warning('FIBER_LINK_PROJECT_ID is not set; skipping Kanban sync for this run.');
+              core.warning('No project id resolved (vars.FIBER_LINK_CANONICAL_PROJECT_ID / FIBER_LINK_PROJECT_ID / fallback). Skipping Kanban sync.');
               return;
             }
-            const ghClient = github;
 
             const getStatusCandidates = (item, labels) => {
               const hasLabel = (target) => labels.includes(target.toLowerCase());
