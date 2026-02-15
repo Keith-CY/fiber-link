@@ -101,6 +101,39 @@ describe("runSettlementDiscovery", () => {
     expect(saved.invoiceState).toBe("SETTLED");
   });
 
+  it("rejects invalid settlement-state payloads without partial writes", async () => {
+    const intent = await tipIntentRepo.create({
+      appId: "app-a",
+      postId: "p-invalid",
+      fromUserId: "u1",
+      toUserId: "u2",
+      asset: "USDI",
+      amount: "10",
+      invoice: "inv-invalid-state",
+    });
+
+    const summary = await runSettlementDiscovery({
+      limit: 100,
+      tipIntentRepo,
+      ledgerRepo,
+      adapter: {
+        async getInvoiceStatus() {
+          return { state: "UNKNOWN_STATE_FROM_NODE" };
+        },
+      },
+    });
+
+    expect(summary.scanned).toBe(1);
+    expect(summary.errors).toBe(1);
+    expect(summary.settledCredits).toBe(0);
+    expect(summary.failed).toBe(0);
+
+    const saved = await tipIntentRepo.findByInvoiceOrThrow(intent.invoice);
+    expect(saved.invoiceState).toBe("UNPAID");
+    expect(saved.settledAt).toBeNull();
+    expect(ledgerRepo.__listForTests?.()).toHaveLength(0);
+  });
+
   it("supports app and time-window filters for backfill", async () => {
     const inWindow = await tipIntentRepo.create({
       appId: "app-a",
