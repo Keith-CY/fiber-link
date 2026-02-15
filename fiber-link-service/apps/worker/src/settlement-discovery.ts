@@ -11,7 +11,7 @@ import {
 import { markSettled } from "./settlement";
 
 type SettlementAdapter = {
-  getInvoiceStatus: (input: { invoice: string }) => Promise<{ state: "UNPAID" | "SETTLED" | "FAILED" }>;
+  getInvoiceStatus: (input: { invoice: string }) => Promise<{ state: unknown }>;
 };
 
 type SettlementLogger = {
@@ -25,6 +25,20 @@ type LatencySummary = {
   p95: number | null;
   max: number | null;
 };
+
+const SETTLEMENT_STATES = ["UNPAID", "SETTLED", "FAILED"] as const;
+type SettlementState = (typeof SETTLEMENT_STATES)[number];
+const SETTLEMENT_STATE_SET: ReadonlySet<string> = new Set(SETTLEMENT_STATES);
+
+export class SettlementStatusContractError extends Error {
+  constructor(
+    public readonly invoice: string,
+    public readonly receivedState: unknown,
+  ) {
+    super(`invalid settlement status state for invoice ${invoice}: ${String(receivedState)}`);
+    this.name = "SettlementStatusContractError";
+  }
+}
 
 export type SettlementDiscoveryOptions = {
   limit: number;
@@ -122,6 +136,13 @@ function summarizeLatency(values: number[]): LatencySummary {
   };
 }
 
+function parseSettlementState(invoice: string, state: unknown): SettlementState {
+  if (typeof state === "string" && SETTLEMENT_STATE_SET.has(state)) {
+    return state as SettlementState;
+  }
+  throw new SettlementStatusContractError(invoice, state);
+}
+
 export async function runSettlementDiscovery(options: SettlementDiscoveryOptions): Promise<SettlementDiscoverySummary> {
   const tipIntentRepo = options.tipIntentRepo ?? getDefaultTipIntentRepo();
   const ledgerRepo = options.ledgerRepo ?? getDefaultLedgerRepo();
@@ -168,7 +189,9 @@ export async function runSettlementDiscovery(options: SettlementDiscoveryOptions
   for (const intent of intents) {
     try {
       const status = await adapter.getInvoiceStatus({ invoice: intent.invoice });
-      if (status.state === "SETTLED") {
+      const state = parseSettlementState(intent.invoice, status?.state);
+
+      if (state === "SETTLED") {
         const result = await markSettled(
           { invoice: intent.invoice },
           {
@@ -185,7 +208,7 @@ export async function runSettlementDiscovery(options: SettlementDiscoveryOptions
         continue;
       }
 
-      if (status.state === "FAILED") {
+      if (state === "FAILED") {
         await tipIntentRepo.updateInvoiceState(intent.invoice, "FAILED");
         summary.failed += 1;
         continue;
