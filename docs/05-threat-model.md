@@ -9,6 +9,10 @@
 - Creator/Recipient (earns tips, later withdraws)
 - Discourse admin (installs plugin)
 - Fiber Link operator (runs hub node + service)
+- External API client (attempting forged/replayed RPC calls)
+- Network attacker (MITM/replay/traffic manipulation attempts)
+- Compromised worker runtime (can attempt duplicate/malformed writes)
+- Stale or byzantine FNN node view (returns delayed or inconsistent state)
 - Attacker (external) / malicious user (insider-ish)
 
 **Components**
@@ -45,6 +49,18 @@
 - Threat-control acceptance evidence for W1 is tracked in:
   - `docs/runbooks/threat-model-evidence-checklist.md` (status + command + logs/tests + retention/sign-off)
 
+## 0.4 W1.2 explicit actor set (required coverage)
+
+The following actor set is mandatory for payment-path threat coverage:
+
+- External API client
+- Discourse admin/operator
+- Network attacker
+- Compromised worker runtime
+- Stale or byzantine FNN node view
+- Malicious end user
+- Internal operator with excessive privilege
+
 
 ## 1) Trust boundaries
 ### TB1: User browser ↔ Discourse
@@ -53,7 +69,7 @@
 
 ### TB2: Discourse Plugin ↔ Fiber Link Service
 - Threats: request forgery, replay, privilege escalation, rate abuse
-- Controls: strong auth between Discourse and service (see §5)
+- Controls: strong auth between Discourse and service (see §6)
 
 ### TB3: Fiber Link Service ↔ Hub Fiber Node (FNN)
 - Threats: forged settlement, incorrect invoice state, DoS, misreporting
@@ -71,8 +87,36 @@
 - Threats: replayed or stalled withdrawal jobs, inconsistent completion state
 - Controls: idempotent claiming, state-machine transitions in DB transactions, bounded retry rules
 
+## 1.1 W1.2 trust-boundary coverage checklist
 
-## 2) STRIDE threat analysis
+| Boundary | Critical payment-path coverage | Primary owner |
+|---|---|---|
+| Frontend/browser ↔ plugin server | Input tampering, session abuse, CSRF/XSS assumptions | Plugin owner |
+| Plugin server ↔ RPC API (`/rpc`) | HMAC auth, timestamp freshness, nonce replay lockout | RPC service owner |
+| RPC/Worker ↔ Postgres | State transition guards, idempotency constraints, durable evidence writes | DB + backend owner |
+| RPC/Worker ↔ Redis (nonce store) | Replay-protection durability and TTL enforcement | RPC service owner |
+| RPC/Worker ↔ Hub FNN RPC | Invoice/settlement truth source, timeout/error classification, stale-node handling | Worker/integration owner |
+| Worker runtime ↔ withdrawal execution | Retry policy, terminal-state routing, tx evidence persistence | Worker owner |
+
+## 2) Top 8 payment-path attack scenarios (W1.2 acceptance matrix)
+
+| ID | Scenario | Trust boundary | Owner | Impact | Mitigation | Residual risk |
+|---|---|---|---|---|---|---|
+| T1 | Forged `tip.create` or `tip.status` RPC request | Plugin ↔ RPC | RPC service owner | Unauthorized invoice creation or status probing | HMAC signature, app-scoped secret resolution, strict param validation | Secret compromise still enables abuse until rotation |
+| T2 | Replay of previously valid signed RPC request | Plugin ↔ RPC, RPC ↔ Redis | RPC service owner | Duplicate operations and noisy side effects | Timestamp freshness window + per-app nonce replay cache | Redis outage can degrade replay guarantees if fallback is in-memory only |
+| T3 | Duplicate settlement notification creates multiple credits | Worker ↔ DB | DB + backend owner | Ledger inflation and balance corruption | `ledger_entries.idempotency_key` uniqueness + `creditOnce` write-once semantics | Manual reconciliation still required after major incidents |
+| T4 | Withdrawal completion recorded without durable tx evidence | Worker ↔ DB, Worker ↔ FNN | Worker owner | False completion, user balance drift | `markCompletedWithDebit` requires tx hash + transactional debit/write coupling | Upstream may provide malformed evidence fields requiring defensive parsing updates |
+| T5 | Transient FNN errors misclassified as terminal failures | Worker ↔ FNN | Worker owner | Premature failed withdrawals and stuck funds UX | Error classification matrix + bounded retries + retry delay | Unknown vendor error strings can still be misclassified until observed and patched |
+| T6 | Stale/inconsistent FNN state prevents deterministic settlement | Worker ↔ FNN | Integration owner | Settlement lag, reconciliation mismatches | Polling with backfill cursor, repeated verification, mismatch reporting runbook | Eventual consistency can still delay balance updates |
+| T7 | Compromised worker attempts invalid state transitions | Worker ↔ DB | DB + backend owner | Partial writes or inconsistent workflow state | Guarded transition methods (`WHERE state=...`) + explicit conflict errors | Insider with DB superuser bypass could still mutate directly |
+| T8 | Privileged admin/operator executes unauthorized withdrawals | Admin/op boundary ↔ Worker/signing context | Ops owner | Fund loss | Environment secret controls, least privilege, audit logging, manual review policy | Custodial model retains key-management concentration risk |
+
+Coverage statement:
+
+- Each critical invoice -> payment -> settlement abuse case above has an explicit owner, impact statement, mitigation, and residual risk.
+- No unowned critical-path risk remains in this W1.2 matrix; newly observed threats must be appended to this table with owner assignment.
+
+## 3) STRIDE threat analysis (expanded)
 Below is a practical MVP-focused threat list. “Severity” is relative (H/M/L).
 
 ### S — Spoofing identity
@@ -177,14 +221,14 @@ Below is a practical MVP-focused threat list. “Severity” is relative (H/M/L)
      - Persist completion evidence with unique references for reconciliation
 
 
-## 3) Highest-risk items (what to get right first)
+## 4) Highest-risk items (what to get right first)
 1. **Key security (withdrawal + hub node keys)**
 2. **Ledger correctness (exactly-once crediting + reconciliation)**
 3. **Auth between Discourse and service (prevent forged tips/admin calls)**
 4. **Withdrawal controls (limits, address change protections, monitoring)**
 
 
-## 4) Risk control table (MVP)
+## 5) Risk control table (MVP)
 | Risk | Severity | Primary control(s) | Detection | Response |
 |---|---:|---|---|---|
 | Hub keys compromised | H | isolate keys; least access; rotation; cold storage for excess | abnormal withdrawal alerts | halt withdrawals; rotate keys; incident response |
@@ -196,9 +240,9 @@ Below is a practical MVP-focused threat list. “Severity” is relative (H/M/L)
 | PII leakage | M | access control; redaction; least privilege | audit logs | rotate secrets; notify |
 
 
-## 5) Recommended MVP controls (concrete)
+## 6) Recommended MVP controls (concrete)
 
-### 5.1 Auth between Discourse and Fiber Link Service
+### 6.1 Auth between Discourse and Fiber Link Service
 - **HMAC signed requests** (implemented):
   - headers: `x-app-id`, `x-ts`, `x-nonce`, `x-signature` over the raw request payload and timestamp/nonce
   - replay protection:
@@ -208,31 +252,31 @@ Below is a practical MVP-focused threat list. “Severity” is relative (H/M/L)
     - DB-stored app secret first, then env fallback map, then env fallback single secret
 - **Static API key only** is a fallback risk posture only if HMAC is not used for an endpoint, and requires strict IP scope.
 
-### 5.2 Ledger invariants
+### 6.2 Ledger invariants
 - A settled invoice can produce **at most one** credit entry.
 - Internal balance = sum(credits) − sum(debits) per user/asset.
 - Withdrawal must have a corresponding debit entry.
 
-### 5.3 Reconciliation
+### 6.3 Reconciliation
 - Periodic job:
   - list settled invoices from hub
   - compare with credited tip_intents
   - emit a report + alert on mismatch
 
-### 5.4 Withdrawal policy
+### 6.4 Withdrawal policy
 - Per-user balance cap and withdrawal cap
 - Minimum withdrawal threshold
 - Address change cooldown (e.g., 24h) and manual review on first withdrawal
 - Queue withdrawals; execute with separate worker identity
 
 
-## 6) Residual risks (explicitly accept or mitigate later)
+## 7) Residual risks (explicitly accept or mitigate later)
 - Custodial model implies operator trust and key management burden.
 - Some disputes will require manual support until more automation exists.
 - Fiber network operational risks (routing failures, channel issues) affect UX.
 
 
-## 7) Next research items to finalize this doc
+## 8) Next research items to finalize this doc
 - Exact Fiber invoice API and settlement semantics
 - Best practices for Discourse plugin secret storage and server-side hooks
 - Recommended key management approach for CKB/Fiber (HSM feasibility)
