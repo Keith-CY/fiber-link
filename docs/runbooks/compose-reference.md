@@ -18,6 +18,9 @@ For a strict deterministic execution sequence (precheck -> spin-up -> signed RPC
 - Outbound network access to:
   - GitHub release download (for FNN image build)
   - CKB testnet RPC endpoint (`https://testnet.ckbapp.dev/`)
+- Required external dependency behavior:
+  - the FNN release asset (`${FNN_ASSET}`) must remain available for the pinned `${FNN_VERSION}`
+  - the CKB RPC endpoint configured in `deploy/compose/fnn/config/testnet.yml` must be reachable from container network
 
 ## Quick Start
 From repo root:
@@ -38,6 +41,14 @@ Edit `.env` minimally:
 - Optional: tune settlement polling knobs:
   - `WORKER_SETTLEMENT_INTERVAL_MS`
   - `WORKER_SETTLEMENT_BATCH_SIZE`
+
+## Config and Override Semantics
+- Internal ports are fixed by service config:
+  - FNN listens on `8227` (RPC) and `8228` (P2P) in `deploy/compose/fnn/config/testnet.yml`.
+  - RPC service listens on `3000` in container.
+- `.env` port overrides (`FNN_RPC_PORT`, `FNN_P2P_PORT`, `RPC_PORT`) control host-published ports only.
+- `FIBER_RPC_URL` is the compose-network endpoint used by `rpc` and `worker`; default is `http://fnn:8227`.
+- Compose startup order is `postgres/redis/fnn` -> `rpc` -> `worker` (current dependency wiring in `docker-compose.yml`).
 
 Start:
 

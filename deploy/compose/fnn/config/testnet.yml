@@ -1,5 +1,9 @@
 # Based on official Fiber release testnet config:
 # https://github.com/nervosnetwork/fiber/releases
+# Compose contract:
+# - FNN internal ports stay fixed at rpc=8227 / p2p=8228 (host mappings are configured via .env).
+# - docker-compose startup order expects fnn to be reachable before rpc/worker bootstrap checks.
+# - ckb.rpc_url is an external dependency and must be reachable from the fnn container.
 fiber:
   listening_addr: "/ip4/0.0.0.0/tcp/8228"
   bootnode_addrs:
