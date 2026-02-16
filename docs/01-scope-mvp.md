@@ -50,3 +50,4 @@ Ship a working end-to-end tipping flow on a demo Discourse instance (testnet), p
 - Admin installation guide
 - Security + ops runbook (keys, backups, monitoring)
 - Public demo Discourse instance + short demo video
+- Milestone 1 public Discourse link: https://talk.nervos.org/t/dis-fiber-link-a-ckb-fiber-based-pay-layer-tipping-micropayments-for-communities/9845 (last verified: 2026-02-16)

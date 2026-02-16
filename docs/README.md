@@ -5,6 +5,12 @@
 - `docs/runbooks/phase2-verification.md` — end-to-end verification flow for service and plugin changes.
 - `scripts/plugin-smoke.sh` — local Discourse plugin smoke test entrypoint that runs in Docker (no local Ruby required).
 
+## Milestone 1 demo
+
+- Public Discourse instance: https://talk.nervos.org
+- Milestone 1 discoverable thread: https://talk.nervos.org/t/dis-fiber-link-a-ckb-fiber-based-pay-layer-tipping-micropayments-for-communities/9845
+- Last verified: 2026-02-16
+
 ## Testnet bootstrap
 
 - `docs/runbooks/testnet-bootstrap.md` — deterministic precheck -> spin-up -> RPC validation -> invoice smoke -> cleanup flow.
