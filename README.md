@@ -16,6 +16,7 @@ Primary reference thread:
 - `docs/04-research-plan.md` — research checklist + milestones
 - `docs/05-threat-model.md` — threat model + risk controls (MVP)
 - `docs/06-development-progress.md` — development progress + post-Phase 2 roadmap
+- `docs/admin-installation.md` — admin installation and smoke verification guide for Discourse + compose stack
 - `docs/runbooks/phase2-verification.md` — Phase 2 verification gate (happy path + failure path)
 - `docs/README.md` — testing docs index and plugin smoke-entry troubleshooting
 - `docs/runbooks/compose-reference.md` — Docker Compose reference (service + FNN)
