@@ -8,6 +8,11 @@ This repository is the *research + planning* starting point.
 Primary reference thread:
 - https://talk.nervos.org/t/dis-fiber-link-a-ckb-fiber-based-pay-layer-tipping-micropayments-for-communities/9845
 
+## Public Discourse Demo (Milestone 1)
+- Public Discourse instance: https://talk.nervos.org
+- Milestone 1 discoverable thread: https://talk.nervos.org/t/dis-fiber-link-a-ckb-fiber-based-pay-layer-tipping-micropayments-for-communities/9845
+- Last verified: 2026-02-16
+
 ## Documents
 - `docs/00-overview.md` — project overview (what/why)
 - `docs/01-scope-mvp.md` — MVP scope + non-goals
