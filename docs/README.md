@@ -5,10 +5,6 @@
 - `docs/runbooks/phase2-verification.md` — end-to-end verification flow for service and plugin changes.
 - `scripts/plugin-smoke.sh` — local Discourse plugin smoke test entrypoint that runs in Docker (no local Ruby required).
 
-## Admin installation
-
-- `docs/admin-installation.md` — admin installation and verification flow for Discourse + compose deployment.
-
 ## Testnet bootstrap
 
 - `docs/runbooks/testnet-bootstrap.md` — deterministic precheck -> spin-up -> RPC validation -> invoice smoke -> cleanup flow.
@@ -27,6 +23,7 @@
 
 - `docs/runbooks/security-assumptions.md` — versioned trust assumptions, operational limits, fallback boundaries, and ownership contacts.
 - `docs/runbooks/threat-model-evidence-checklist.md` — W1 threat-control verification checklist, acceptance matrix, and evidence retention/sign-off rules.
+- `runbooks/milestone-1-public-demo.md` — Milestone 1 proof and timestamped demo verification checklist.
 
 ## Kanban operations
 
