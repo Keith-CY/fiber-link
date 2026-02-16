@@ -119,11 +119,21 @@ describe("fiber adapter", () => {
     );
   });
 
-  it("executeWithdrawal maps asset to currency for send_payment", async () => {
-    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue({
-      ok: true,
-      json: async () => ({ jsonrpc: "2.0", id: 1, result: { payment_hash: "0xabc123" } }),
-    } as Response);
+  it("executeWithdrawal parses invoice before send_payment", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          jsonrpc: "2.0",
+          id: 1,
+          result: { invoice: { data: { payment_hash: "0xparsed-payment" } } },
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ jsonrpc: "2.0", id: 2, result: { payment_hash: "0xabc123" } }),
+      } as Response);
 
     const adapter = createAdapter({ endpoint: "http://localhost:8119" });
     const result = await adapter.executeWithdrawal({
@@ -134,14 +144,13 @@ describe("fiber adapter", () => {
     });
 
     expect(result.txHash).toBe("0xabc123");
-    expect(fetchSpy).toHaveBeenCalledWith(
-      "http://localhost:8119",
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(fetchSpy.mock.calls[1]?.[1]).toEqual(
       expect.objectContaining({
-        method: "POST",
-        body: expect.stringContaining("\"method\":\"send_payment\""),
+        body: expect.stringContaining("\"payment_hash\":\"0xparsed-payment\""),
       }),
     );
-    expect(fetchSpy.mock.calls[0]?.[1]).toEqual(
+    expect(fetchSpy.mock.calls[1]?.[1]).toEqual(
       expect.objectContaining({
         body: expect.stringContaining("\"currency\":\"USDI\""),
       }),
@@ -149,10 +158,20 @@ describe("fiber adapter", () => {
   });
 
   it("executeWithdrawal throws when rpc result has no transaction evidence", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue({
-      ok: true,
-      json: async () => ({ jsonrpc: "2.0", id: 1, result: {} }),
-    } as Response);
+    vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          jsonrpc: "2.0",
+          id: 1,
+          result: { invoice: { data: { payment_hash: "0xparsed-payment" } } },
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ jsonrpc: "2.0", id: 2, result: {} }),
+      } as Response);
 
     const adapter = createAdapter({ endpoint: "http://localhost:8119" });
     await expect(
