@@ -32,6 +32,7 @@ services:
 
   fnn:
     container_name: fiber-link-fnn
+    platform: ${FNN_PLATFORM:-linux/amd64}
     build:
       context: ../..
       dockerfile: deploy/compose/fnn/Dockerfile
@@ -48,7 +49,7 @@ services:
     volumes:
       - fnn-data:/data
     healthcheck:
-      test: ["CMD-SHELL", "curl -sS --max-time 3 http://127.0.0.1:8227 >/dev/null"]
+      test: ["CMD-SHELL", "FNN_HOST_IP=$$(hostname -i | awk '{print $$1}'); curl -sS --max-time 3 \"http://$${FNN_HOST_IP}:8227\" >/dev/null"]
       interval: 10s
       timeout: 5s
       retries: 12
@@ -114,7 +115,7 @@ services:
     healthcheck:
       test: ["CMD", "bun", "run", "apps/worker/src/scripts/healthcheck.ts"]
       interval: 15s
-      timeout: 5s
+      timeout: 20s
       retries: 8
       start_period: 25s
 

@@ -33,6 +33,55 @@ jobs:
         working-directory: fiber-link-service/packages/db
         run: bun run test -- --run --silent
 
+  fiber-adapter-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare compose env
+        run: |
+          cat > deploy/compose/.env <<'EOF'
+          POSTGRES_DB=fiber_link
+          POSTGRES_USER=fiber
+          POSTGRES_PASSWORD=ci-postgres-password
+          POSTGRES_PORT=5432
+          REDIS_PORT=6379
+          RPC_PORT=3000
+          FNN_VERSION=v0.6.1
+          FNN_ASSET=fnn_v0.6.1-x86_64-linux-portable.tar.gz
+          FNN_ASSET_SHA256=8f9a69361f662438fa1fc29ddc668192810b13021536ebd1101c84dc0cfa330f
+          FNN_PLATFORM=linux/amd64
+          FNN_RPC_PORT=8227
+          FNN_P2P_PORT=8228
+          FIBER_SECRET_KEY_PASSWORD=ci-fiber-secret-password
+          FIBER_LINK_HMAC_SECRET=ci-hmac-secret
+          FIBER_RPC_URL=http://fnn:8227
+          RPC_HEALTHCHECK_TIMEOUT_MS=3000
+          WORKER_WITHDRAWAL_INTERVAL_MS=30000
+          WORKER_SETTLEMENT_INTERVAL_MS=30000
+          WORKER_SETTLEMENT_BATCH_SIZE=200
+          WORKER_MAX_RETRIES=3
+          WORKER_RETRY_DELAY_MS=60000
+          WORKER_SETTLEMENT_MAX_RETRIES=3
+          WORKER_SETTLEMENT_RETRY_DELAY_MS=60000
+          WORKER_SETTLEMENT_PENDING_TIMEOUT_MS=1800000
+          WORKER_SETTLEMENT_CURSOR_FILE=/var/lib/fiber-link/settlement-cursor.json
+          WORKER_SHUTDOWN_TIMEOUT_MS=15000
+          WORKER_READINESS_TIMEOUT_MS=5000
+          EOF
+
+      - name: Run fiber-adapter docker e2e
+        run: scripts/e2e-fiber-adapter-docker.sh
+
+      - name: Dump compose logs on failure
+        if: failure()
+        run: docker compose -f deploy/compose/docker-compose.yml logs --no-color || true
+
+      - name: Compose cleanup
+        if: always()
+        run: docker compose -f deploy/compose/docker-compose.yml down -v --remove-orphans || true
+
   plugin-smoke:
     runs-on: ubuntu-latest
     timeout-minutes: 60

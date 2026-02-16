@@ -9,7 +9,7 @@ describe("fiber adapter", () => {
   it("createInvoice calls node rpc and returns invoice string", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: true,
-      json: async () => ({ jsonrpc: "2.0", id: 1, result: { invoice: "fiber:USDI:10:real" } }),
+      json: async () => ({ jsonrpc: "2.0", id: 1, result: { invoice_address: "fiber:USDI:10:real" } }),
     } as Response);
 
     const adapter = createAdapter({ endpoint: "http://localhost:8119" });
@@ -21,6 +21,7 @@ describe("fiber adapter", () => {
       expect.objectContaining({
         method: "POST",
         headers: { "content-type": "application/json" },
+        body: expect.stringContaining("\"method\":\"new_invoice\""),
       }),
     );
   });
@@ -34,7 +35,7 @@ describe("fiber adapter", () => {
     const adapter = createAdapter({ endpoint: "http://localhost:8119" });
 
     await expect(adapter.createInvoice({ amount: "10", asset: "USDI" })).rejects.toThrow(
-      "create_invoice response is missing 'invoice' string",
+      "new_invoice response is missing 'invoice_address' string",
     );
   });
 
@@ -43,11 +44,27 @@ describe("fiber adapter", () => {
       .spyOn(globalThis, "fetch")
       .mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ jsonrpc: "2.0", id: 1, result: { state: "settled" } }),
+        json: async () => ({
+          jsonrpc: "2.0",
+          id: 1,
+          result: { invoice: { data: { payment_hash: "0xaaa" } } },
+        }),
       } as Response)
       .mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ jsonrpc: "2.0", id: 1, result: { state: "failed" } }),
+        json: async () => ({ jsonrpc: "2.0", id: 1, result: { status: "Paid" } }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          jsonrpc: "2.0",
+          id: 1,
+          result: { invoice: { data: { payment_hash: "0xbbb" } } },
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ jsonrpc: "2.0", id: 1, result: { status: "Cancelled" } }),
       } as Response);
 
     const adapter = createAdapter({ endpoint: "http://localhost:8119" });
@@ -56,19 +73,24 @@ describe("fiber adapter", () => {
 
     expect(settled.state).toBe("SETTLED");
     expect(failed.state).toBe("FAILED");
-    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(fetchSpy).toHaveBeenCalledTimes(4);
   });
 
-  it("getInvoiceStatus throws when state is missing in rpc result", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue({
-      ok: true,
-      json: async () => ({ jsonrpc: "2.0", id: 1, result: {} }),
-    } as Response);
+  it("getInvoiceStatus throws when status is missing in rpc result", async () => {
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ jsonrpc: "2.0", id: 1, result: { invoice: { data: { payment_hash: "0xaaa" } } } }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ jsonrpc: "2.0", id: 1, result: {} }),
+      } as Response);
 
     const adapter = createAdapter({ endpoint: "http://localhost:8119" });
 
     await expect(adapter.getInvoiceStatus({ invoice: "inv-missing" })).rejects.toThrow(
-      "get_invoice response is missing 'state' string",
+      "get_invoice response is missing 'status' string",
     );
   });
 
