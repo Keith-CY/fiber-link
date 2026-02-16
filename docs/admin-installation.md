@@ -50,6 +50,7 @@ Edit `deploy/compose/.env` (minimum required values are marked ✅, optional/tun
 Start services:
 
 ```bash
+cd deploy/compose
 docker compose up -d --build
 ```
 
@@ -88,7 +89,7 @@ Restart/discover your Discourse app and then configure:
 - `fiber_link_app_id` = app id (example: `demo-app`)
 - `fiber_link_app_secret` = shared secret (must match RPC expectations)
 
-### Auth pairing behavior
+### Discourse + RPC auth pairing
 
 `fiber_link_app_id` + `fiber_link_app_secret` must match the auth source used by RPC:
 
@@ -113,15 +114,13 @@ Expected minimum:
 Additional checks:
 
 - `docker compose ps`
-- `docker inspect --format '{{json .State.Health}}' fiber-link-rpc`
+- `docker inspect --format '{{json .State.Health}}' fiber-link-rpc | jq .`
 - plugin smoke checks (optional, if you have Discourse dev env):
   - `scripts/plugin-smoke.sh`
 
 ## 5) Quick rollback
 
 If setup breaks or secrets are suspected leaked:
-
-Warning: this command removes compose volumes and deletes local database / worker persisted state.
 
 ```bash
 cd deploy/compose
