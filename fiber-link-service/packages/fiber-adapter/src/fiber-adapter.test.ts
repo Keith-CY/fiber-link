@@ -119,7 +119,7 @@ describe("fiber adapter", () => {
     );
   });
 
-  it("executeWithdrawal calls send_payment and returns txHash evidence", async () => {
+  it("executeWithdrawal maps asset to currency for send_payment", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: true,
       json: async () => ({ jsonrpc: "2.0", id: 1, result: { payment_hash: "0xabc123" } }),
@@ -143,7 +143,7 @@ describe("fiber adapter", () => {
     );
     expect(fetchSpy.mock.calls[0]?.[1]).toEqual(
       expect.objectContaining({
-        body: expect.stringContaining("\"request_id\":\"w-1\""),
+        body: expect.stringContaining("\"currency\":\"USDI\""),
       }),
     );
   });
