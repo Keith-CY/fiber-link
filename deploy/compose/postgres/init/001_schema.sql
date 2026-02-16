@@ -52,6 +52,11 @@ CREATE TABLE IF NOT EXISTS tip_intents (
   amount NUMERIC NOT NULL,
   invoice TEXT NOT NULL UNIQUE,
   invoice_state TEXT NOT NULL,
+  settlement_retry_count INTEGER NOT NULL DEFAULT 0,
+  settlement_next_retry_at TIMESTAMP,
+  settlement_last_error TEXT,
+  settlement_failure_reason TEXT,
+  settlement_last_checked_at TIMESTAMP,
   created_at TIMESTAMP NOT NULL DEFAULT NOW(),
   settled_at TIMESTAMP
 );
