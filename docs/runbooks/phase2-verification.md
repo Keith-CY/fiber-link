@@ -4,6 +4,9 @@ This runbook is the required verification gate for Phase 2 changes (happy path p
 
 ## Deployment Evidence Capture
 
+This flow is required to feed the public evidence index for Milestone 1: [`acceptance-evidence/milestone-1/index.md`](acceptance-evidence/milestone-1/index.md).
+
+
 For standardized deployment evidence (artifacts, checklist, and retention policy), run:
 
 ```bash

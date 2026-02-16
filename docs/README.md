@@ -17,6 +17,7 @@
 ## Deployment evidence
 
 - `docs/runbooks/deployment-evidence.md` — deployment evidence artifacts, checklist, and retention policy.
+- `docs/runbooks/acceptance-evidence/README.md` — 公共验收证明入口（Milestone 1 证据打包）.
 - `scripts/capture-deployment-evidence.sh` — one-command evidence and log capture bundle.
 
 ## Security assumptions

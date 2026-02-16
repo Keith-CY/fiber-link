@@ -19,6 +19,7 @@ Primary reference thread:
 - `docs/runbooks/phase2-verification.md` — Phase 2 verification gate (happy path + failure path)
 - `docs/README.md` — testing docs index and plugin smoke-entry troubleshooting
 - `docs/runbooks/compose-reference.md` — Docker Compose reference (service + FNN)
+- `docs/runbooks/acceptance-evidence/README.md` — Milestone 1 public acceptance evidence index (for #100).
 - `docs/runbooks/settlement-recovery.md` — settlement replay/backfill recovery operations
 - `docs/plans/2026-02-11-phase3-sprint1-settlement-v1-plan.md` — historical Sprint 1 implementation plan (settlement v1 baseline)
 
