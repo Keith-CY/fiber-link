@@ -26,18 +26,33 @@ compose() {
   )
 }
 
+get_container_state() {
+  local container="$1"
+  docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{if .State.Running}}running{{else}}stopped{{end}}{{end}}' "${container}" 2>/dev/null || true
+}
+
 wait_healthy() {
   local container="$1"
   local deadline
   deadline=$(( $(date +%s) + WAIT_TIMEOUT_SECONDS ))
 
   while true; do
+    local health
     local status
-    status="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{if .State.Running}}running{{else}}stopped{{end}}{{end}}' "${container}" 2>/dev/null || true)"
+    health="$(docker inspect --format '{{json .State.Health}}' "${container}" 2>/dev/null || true)"
 
-    if [[ "${status}" == "healthy" || "${status}" == "running" ]]; then
-      log "${container} is ${status}"
-      return 0
+    if [[ "${health}" == "null" ]]; then
+      status="$(get_container_state "${container}")"
+      if [[ "${status}" == "running" ]]; then
+        log "${container} is ${status}"
+        return 0
+      fi
+    else
+      status="$(get_container_state "${container}")"
+      if [[ "${status}" == "healthy" ]]; then
+        log "${container} is ${status}"
+        return 0
+      fi
     fi
 
     if [[ "$(date +%s)" -ge "${deadline}" ]]; then
