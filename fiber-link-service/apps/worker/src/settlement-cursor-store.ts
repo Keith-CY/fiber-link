@@ -51,6 +51,15 @@ export function createFileSettlementCursorStore(filePath: string): SettlementCur
         if ((error as NodeJS.ErrnoException)?.code === "ENOENT") {
           return undefined;
         }
+        if ((error as Error)?.message?.startsWith("Invalid settlement cursor file:")) {
+          const backupPath = `${normalizedPath}.invalid-${Date.now()}`;
+          await rename(normalizedPath, backupPath).catch((renameError) => {
+            if ((renameError as NodeJS.ErrnoException)?.code !== "ENOENT") {
+              throw renameError;
+            }
+          });
+          return undefined;
+        }
         throw error;
       }
     },
