@@ -3,9 +3,11 @@
 This document defines the Milestone 1 public proof scope and verification checklist.
 
 ## Scope note
-This PR is template-only for the proof document and review checklist.
+This PR is a template-only proof document and review checklist.
 
-The actual public proof URL (discourse demo URL + short demo video) is tracked in issue [#97](https://github.com/Keith-CY/fiber-link/issues/97) and will be added in a follow-up update.
+Public proof links:
+- Discourse thread (demo discovery): https://talk.nervos.org/t/dis-fiber-link-a-ckb-fiber-based-pay-layer-tipping-micropayments-for-communities/9845
+- Short demo video: pending and tracked in issue [#97](https://github.com/Keith-CY/fiber-link/issues/97)
 
 ## Verification timestamps
 
