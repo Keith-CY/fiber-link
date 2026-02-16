@@ -23,6 +23,9 @@ Primary reference thread:
 - `docs/runbooks/settlement-recovery.md` — settlement replay/backfill recovery operations
 - `docs/plans/2026-02-11-phase3-sprint1-settlement-v1-plan.md` — historical Sprint 1 implementation plan (settlement v1 baseline)
 
+## Milestone 1 proof
+- Public Discourse demo and short video proof: [docs/runbooks/milestone-1-public-demo.md](docs/runbooks/milestone-1-public-demo.md)
+
 ## Configuration (service)
 Environment variables used by the Fiber Link service:
 - `FIBER_LINK_NONCE_REDIS_URL` — Redis URL for shared nonce replay cache. If unset, the RPC service falls back to an in-memory cache (single-instance only).

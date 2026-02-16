@@ -27,6 +27,7 @@
 
 - `docs/runbooks/security-assumptions.md` — versioned trust assumptions, operational limits, fallback boundaries, and ownership contacts.
 - `docs/runbooks/threat-model-evidence-checklist.md` — W1 threat-control verification checklist, acceptance matrix, and evidence retention/sign-off rules.
+- `runbooks/milestone-1-public-demo.md` — Milestone 1 proof and timestamped demo verification checklist.
 
 ## Kanban operations
 
