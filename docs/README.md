@@ -5,11 +5,9 @@
 - `docs/runbooks/phase2-verification.md` — end-to-end verification flow for service and plugin changes.
 - `scripts/plugin-smoke.sh` — local Discourse plugin smoke test entrypoint that runs in Docker (no local Ruby required).
 
-## Milestone 1 demo
+## Admin installation
 
-- Public Discourse instance: https://talk.nervos.org
-- Milestone 1 discoverable thread: https://talk.nervos.org/t/dis-fiber-link-a-ckb-fiber-based-pay-layer-tipping-micropayments-for-communities/9845
-- Last verified: 2026-02-16
+- `docs/admin-installation.md` — admin installation and verification flow for Discourse + compose deployment.
 
 ## Testnet bootstrap
 
@@ -23,13 +21,7 @@
 ## Deployment evidence
 
 - `docs/runbooks/deployment-evidence.md` — deployment evidence artifacts, checklist, and retention policy.
-- `docs/runbooks/acceptance-evidence/README.md` — 公共验收证明入口（Milestone 1 证据打包）.
 - `scripts/capture-deployment-evidence.sh` — one-command evidence and log capture bundle.
-
-## W5 demo evidence
-
-- `docs/runbooks/w5-demo-evidence.md` — reproducible W5 demo evidence flow, naming convention, and stakeholder checklist.
-- `scripts/capture-w5-demo-evidence.sh` — one-command W5 demo evidence bundle with key IDs and pass/fail checks.
 
 ## Security assumptions
 

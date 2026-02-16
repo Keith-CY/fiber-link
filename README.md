@@ -8,11 +8,6 @@ This repository is the *research + planning* starting point.
 Primary reference thread:
 - https://talk.nervos.org/t/dis-fiber-link-a-ckb-fiber-based-pay-layer-tipping-micropayments-for-communities/9845
 
-## Public Discourse Demo (Milestone 1)
-- Public Discourse instance: https://talk.nervos.org
-- Milestone 1 discoverable thread: https://talk.nervos.org/t/dis-fiber-link-a-ckb-fiber-based-pay-layer-tipping-micropayments-for-communities/9845
-- Last verified: 2026-02-16
-
 ## Documents
 - `docs/00-overview.md` — project overview (what/why)
 - `docs/01-scope-mvp.md` — MVP scope + non-goals
@@ -21,10 +16,10 @@ Primary reference thread:
 - `docs/04-research-plan.md` — research checklist + milestones
 - `docs/05-threat-model.md` — threat model + risk controls (MVP)
 - `docs/06-development-progress.md` — development progress + post-Phase 2 roadmap
+- `docs/admin-installation.md` — admin installation and smoke verification guide for Discourse + compose stack
 - `docs/runbooks/phase2-verification.md` — Phase 2 verification gate (happy path + failure path)
 - `docs/README.md` — testing docs index and plugin smoke-entry troubleshooting
 - `docs/runbooks/compose-reference.md` — Docker Compose reference (service + FNN)
-- `docs/runbooks/acceptance-evidence/README.md` — Milestone 1 public acceptance evidence index (for #100).
 - `docs/runbooks/settlement-recovery.md` — settlement replay/backfill recovery operations
 - `docs/plans/2026-02-11-phase3-sprint1-settlement-v1-plan.md` — historical Sprint 1 implementation plan (settlement v1 baseline)
 
