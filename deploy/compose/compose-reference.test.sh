@@ -55,6 +55,13 @@ if [[ ! -x "${EVIDENCE_SCRIPT}" ]]; then
   exit 1
 fi
 
+for compose_file in "${ENV_FILE}" "${COMPOSE_FILE}"; do
+  if rg -n "^(<<<<<<<|=======|>>>>>>> )" "${compose_file}" >/dev/null; then
+    echo "merge-conflict marker found in ${compose_file}" >&2
+    exit 1
+  fi
+done
+
 if ! grep -q "capture-deployment-evidence.sh" "${RUNBOOK_FILE}"; then
   echo "compose runbook missing deployment evidence script reference" >&2
   exit 1
