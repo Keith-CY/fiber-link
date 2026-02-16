@@ -1,11 +1,13 @@
 import { rpcCall } from "./fiber-client";
 export { FiberRpcError } from "./fiber-client";
 
-export type CreateInvoiceArgs = { amount: string; asset: "CKB" | "USDI" };
+type Asset = "CKB" | "USDI";
+
+export type CreateInvoiceArgs = { amount: string; asset: Asset };
 export type InvoiceState = "UNPAID" | "SETTLED" | "FAILED";
 export type ExecuteWithdrawalArgs = {
   amount: string;
-  asset: "CKB" | "USDI";
+  asset: Asset;
   toAddress: string;
   requestId: string;
 };
@@ -27,8 +29,23 @@ function toHexQuantity(value: string): string {
   return `0x${BigInt(value).toString(16)}`;
 }
 
-function mapAssetToCurrency(_: "CKB" | "USDI"): string {
-  return process.env.FIBER_INVOICE_CURRENCY ?? "Fibt";
+const DEFAULT_INVOICE_CURRENCY_BY_ASSET: Record<Asset, string> = {
+  CKB: "Fibt",
+  USDI: "USDI",
+};
+
+function mapAssetToCurrency(asset: Asset): string {
+  const assetScoped = process.env[`FIBER_INVOICE_CURRENCY_${asset}`];
+  if (typeof assetScoped === "string" && assetScoped) {
+    return assetScoped;
+  }
+
+  const globalCurrency = process.env.FIBER_INVOICE_CURRENCY;
+  if (typeof globalCurrency === "string" && globalCurrency) {
+    return globalCurrency;
+  }
+
+  return DEFAULT_INVOICE_CURRENCY_BY_ASSET[asset];
 }
 
 function pickPaymentHash(result: Record<string, unknown> | undefined): string | null {
@@ -85,11 +102,11 @@ export function createAdapter({ endpoint }: { endpoint: string }) {
     },
     async executeWithdrawal({ amount, asset, toAddress, requestId }: ExecuteWithdrawalArgs) {
       void asset;
-      void requestId;
       // Current executor uses Fiber payment RPC; toAddress is treated as a payment request string.
       const result = (await rpcCall(endpoint, "send_payment", {
         invoice: toAddress,
         amount: toHexQuantity(amount),
+        request_id: requestId,
       })) as Record<string, unknown> | undefined;
       const txHash = pickTxEvidence(result);
       if (!txHash) {
