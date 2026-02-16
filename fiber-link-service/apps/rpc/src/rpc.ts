@@ -2,6 +2,8 @@ import type { FastifyInstance } from "fastify";
 import { TipIntentNotFoundError, createDbClient } from "@fiber-link/db";
 import { verifyHmac } from "./auth/hmac";
 import {
+  DashboardSummaryParamsSchema,
+  DashboardSummaryResultSchema,
   RpcErrorCode,
   RpcIdSchema,
   RpcRequestSchema,
@@ -12,6 +14,7 @@ import {
   type RpcId,
 } from "./contracts";
 import { handleTipCreate, handleTipStatus } from "./methods/tip";
+import { handleDashboardSummary } from "./methods/dashboard";
 import { createNonceStore } from "./nonce-store";
 import { type AppRepo, createDbAppRepo } from "./repositories/app-repo";
 import { rpcErrorResponse, rpcResultResponse } from "./rpc-error";
@@ -284,6 +287,26 @@ export function registerRpc(
           if (error instanceof TipIntentNotFoundError) {
             return reply.send(rpcErrorResponse(rpc.id, RpcErrorCode.TIP_NOT_FOUND, "Tip not found"));
           }
+          req.log.error(error);
+          return reply.send(rpcErrorResponse(rpc.id, RpcErrorCode.INTERNAL_ERROR, "Internal error"));
+        }
+      }
+      if (rpc.method === "dashboard.summary") {
+        const parsed = DashboardSummaryParamsSchema.safeParse(rpc.params);
+        if (!parsed.success) {
+          return reply.send(
+            rpcErrorResponse(rpc.id, RpcErrorCode.INVALID_PARAMS, "Invalid params", parsed.error.issues),
+          );
+        }
+        try {
+          const result = await handleDashboardSummary({ appId, ...parsed.data });
+          const validated = DashboardSummaryResultSchema.safeParse(result);
+          if (!validated.success) {
+            req.log.error(validated.error, "dashboard.summary produced invalid response payload");
+            return reply.send(rpcErrorResponse(rpc.id, RpcErrorCode.INTERNAL_ERROR, "Internal error"));
+          }
+          return reply.send(rpcResultResponse(rpc.id, validated.data));
+        } catch (error) {
           req.log.error(error);
           return reply.send(rpcErrorResponse(rpc.id, RpcErrorCode.INTERNAL_ERROR, "Internal error"));
         }

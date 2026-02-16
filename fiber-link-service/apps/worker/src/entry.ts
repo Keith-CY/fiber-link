@@ -1,6 +1,7 @@
 import { createAdapter } from "@fiber-link/fiber-adapter";
 import type { TipIntentListCursor } from "@fiber-link/db";
 import { runSettlementDiscovery } from "./settlement-discovery";
+import { createFileSettlementCursorStore } from "./settlement-cursor-store";
 import { createWorkerRuntime } from "./worker-runtime";
 
 const withdrawalIntervalMs = Number(process.env.WORKER_WITHDRAWAL_INTERVAL_MS ?? "30000");
@@ -12,6 +13,8 @@ const settlementMaxRetries = Number(process.env.WORKER_SETTLEMENT_MAX_RETRIES ??
 const settlementRetryDelayMs = Number(process.env.WORKER_SETTLEMENT_RETRY_DELAY_MS ?? String(retryDelayMs));
 const settlementPendingTimeoutMs = Number(process.env.WORKER_SETTLEMENT_PENDING_TIMEOUT_MS ?? "1800000");
 const shutdownTimeoutMs = Number(process.env.WORKER_SHUTDOWN_TIMEOUT_MS ?? "15000");
+const settlementCursorFile =
+  process.env.WORKER_SETTLEMENT_CURSOR_FILE ?? "/var/lib/fiber-link/settlement-cursor.json";
 const fiberRpcUrl = process.env.FIBER_RPC_URL;
 
 if (!Number.isInteger(withdrawalIntervalMs) || withdrawalIntervalMs <= 0) {
@@ -48,40 +51,49 @@ if (!Number.isInteger(shutdownTimeoutMs) || shutdownTimeoutMs <= 0) {
 if (!fiberRpcUrl) {
   throw new Error("FIBER_RPC_URL is required");
 }
+if (!settlementCursorFile.trim()) {
+  throw new Error("WORKER_SETTLEMENT_CURSOR_FILE must not be empty");
+}
 
-const fiberAdapter = createAdapter({ endpoint: fiberRpcUrl });
-let settlementCursor: TipIntentListCursor | undefined;
+async function main() {
+  const fiberAdapter = createAdapter({ endpoint: fiberRpcUrl });
+  const cursorStore = createFileSettlementCursorStore(settlementCursorFile);
+  let settlementCursor: TipIntentListCursor | undefined = await cursorStore.load();
 
-const runtime = createWorkerRuntime({
-  intervalMs: Math.min(withdrawalIntervalMs, settlementIntervalMs),
-  withdrawalIntervalMs,
-  maxRetries,
-  retryDelayMs,
-  shutdownTimeoutMs,
-  settlementIntervalMs,
-  settlementBatchSize,
-  pollSettlements: async ({ limit }) => {
-    const summary = await runSettlementDiscovery({
-      limit,
-      cursor: settlementCursor,
-      adapter: fiberAdapter,
-      maxRetries: settlementMaxRetries,
-      retryDelayMs: settlementRetryDelayMs,
-      pendingTimeoutMs: settlementPendingTimeoutMs,
-    });
-    settlementCursor = summary.nextCursor ?? undefined;
-    return summary;
-  },
-});
+  const runtime = createWorkerRuntime({
+    intervalMs: Math.min(withdrawalIntervalMs, settlementIntervalMs),
+    withdrawalIntervalMs,
+    maxRetries,
+    retryDelayMs,
+    shutdownTimeoutMs,
+    settlementIntervalMs,
+    settlementBatchSize,
+    pollSettlements: async ({ limit }) => {
+      const summary = await runSettlementDiscovery({
+        limit,
+        cursor: settlementCursor,
+        adapter: fiberAdapter,
+        maxRetries: settlementMaxRetries,
+        retryDelayMs: settlementRetryDelayMs,
+        pendingTimeoutMs: settlementPendingTimeoutMs,
+      });
+      settlementCursor = summary.nextCursor ?? undefined;
+      await cursorStore.save(settlementCursor);
+      return summary;
+    },
+  });
 
-process.once("SIGINT", () => {
-  void runtime.shutdown("SIGINT");
-});
-process.once("SIGTERM", () => {
-  void runtime.shutdown("SIGTERM");
-});
+  process.once("SIGINT", () => {
+    void runtime.shutdown("SIGINT");
+  });
+  process.once("SIGTERM", () => {
+    void runtime.shutdown("SIGTERM");
+  });
 
-void runtime.start().catch((error) => {
+  await runtime.start();
+}
+
+void main().catch((error) => {
   console.error("[worker] startup failed", error);
   process.exit(1);
 });

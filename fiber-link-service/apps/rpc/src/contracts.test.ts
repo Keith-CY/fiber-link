@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  DashboardSummaryResultSchema,
   RpcErrorCode,
   RpcRequestSchema,
   TipCreateParamsSchema,
@@ -34,6 +35,25 @@ describe("rpc contracts", () => {
     expect(TipCreateResultSchema.safeParse({ invoice: "invoice-1" }).success).toBe(true);
     expect(TipStatusResultSchema.safeParse({ state: "SETTLED" }).success).toBe(true);
     expect(TipStatusResultSchema.safeParse({ state: "BROKEN" }).success).toBe(false);
+    expect(
+      DashboardSummaryResultSchema.safeParse({
+        balance: "10",
+        tips: [
+          {
+            id: "tip-1",
+            invoice: "inv-1",
+            postId: "p1",
+            amount: "1",
+            asset: "CKB",
+            state: "UNPAID",
+            direction: "IN",
+            counterpartyUserId: "u2",
+            createdAt: "2026-02-16T00:00:00.000Z",
+          },
+        ],
+        generatedAt: "2026-02-16T00:00:00.000Z",
+      }).success,
+    ).toBe(true);
   });
 
   it("keeps rpc error code constants stable", () => {

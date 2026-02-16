@@ -1,40 +1,32 @@
-<h2>Fiber Link Lifecycle Demo</h2>
+<h2>Fiber Link Dashboard</h2>
 <p>
-  Uses the real status endpoint path:
-  <code>/fiber-link/rpc</code> with method <code>tip.status</code>.
+  Uses the service endpoint path:
+  <code>/fiber-link/rpc</code> with method <code>dashboard.summary</code>.
 </p>
 
-{{#if this.model.isEmptyState}}
-  <p class="fiber-link-dashboard-empty">
-    No invoice selected. Open this page with <code>?invoice=inv-tip-1</code> to load lifecycle
-    data.
-  </p>
+<h3>Balance</h3>
+{{#if this.model.isSummaryLoading}}
+  <p class="fiber-link-dashboard-loading">Loading balance...</p>
 {{else}}
-  {{#if this.model.isLoading}}
-    <p class="fiber-link-dashboard-loading">Loading lifecycle status...</p>
+  {{#if this.model.summaryErrorMessage}}
+    <p class="fiber-link-dashboard-error">Failed to load balance: {{this.model.summaryErrorMessage}}</p>
+  {{else}}
+    <p><strong>Available:</strong> {{this.model.balance}} {{this.model.balanceAsset}}</p>
+    {{#if this.model.generatedAt}}
+      <p><strong>Generated at:</strong> {{this.model.generatedAt}}</p>
+    {{/if}}
   {{/if}}
+{{/if}}
 
-  {{#if this.model.isErrorState}}
-    <p class="fiber-link-dashboard-error">Failed to load status: {{this.model.errorMessage}}</p>
-  {{/if}}
+<h3>Recent Tips</h3>
+{{fiber-link-tip-feed
+  tips=this.model.tipFeedItems
+  isLoading=this.model.isFeedLoading
+  errorMessage=this.model.feedErrorMessage
+}}
 
-  <p><strong>Invoice:</strong> {{this.model.invoice}}</p>
-  <p><strong>Backend state:</strong> {{this.model.backendLabel}}</p>
-  <p>{{this.model.lifecycleSummary}}</p>
-
-  {{#if this.model.lastCheckedAt}}
-    <p><strong>Last checked:</strong> {{this.model.lastCheckedAt}}</p>
-  {{/if}}
-
-  <ol class="fiber-link-dashboard-lifecycle">
-    {{#each this.model.lifecycleSteps as |step|}}
-      <li class={{step.stateClass}}>
-        <strong>{{step.label}}</strong>
-        <span>({{step.stateLabel}})</span>
-        <p>{{step.description}}</p>
-      </li>
-    {{/each}}
-  </ol>
+{{#if this.model.refreshedAt}}
+  <p><strong>Last refreshed:</strong> {{this.model.refreshedAt}}</p>
 {{/if}}
 
 <h3>State Mapping</h3>

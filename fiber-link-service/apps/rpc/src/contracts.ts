@@ -32,6 +32,29 @@ export const TipStatusResultSchema = z.object({
   state: z.enum(["UNPAID", "SETTLED", "FAILED"]),
 });
 
+export const DashboardSummaryParamsSchema = z.object({
+  userId: z.string().min(1),
+  limit: z.number().int().min(1).max(50).optional(),
+});
+
+export const DashboardSummaryResultSchema = z.object({
+  balance: z.string().min(1),
+  tips: z.array(
+    z.object({
+      id: z.string().min(1),
+      invoice: z.string().min(1),
+      postId: z.string().min(1),
+      amount: z.string().min(1),
+      asset: z.enum(["CKB", "USDI"]),
+      state: z.enum(["UNPAID", "SETTLED", "FAILED"]),
+      direction: z.enum(["IN", "OUT"]),
+      counterpartyUserId: z.string().min(1),
+      createdAt: z.string().datetime(),
+    }),
+  ),
+  generatedAt: z.string().datetime(),
+});
+
 export const RpcErrorCode = {
   INVALID_REQUEST: -32600,
   METHOD_NOT_FOUND: -32601,

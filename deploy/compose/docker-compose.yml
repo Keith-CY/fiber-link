@@ -106,8 +106,11 @@ services:
       WORKER_SETTLEMENT_MAX_RETRIES: ${WORKER_SETTLEMENT_MAX_RETRIES:-3}
       WORKER_SETTLEMENT_RETRY_DELAY_MS: ${WORKER_SETTLEMENT_RETRY_DELAY_MS:-60000}
       WORKER_SETTLEMENT_PENDING_TIMEOUT_MS: ${WORKER_SETTLEMENT_PENDING_TIMEOUT_MS:-1800000}
+      WORKER_SETTLEMENT_CURSOR_FILE: ${WORKER_SETTLEMENT_CURSOR_FILE:-/var/lib/fiber-link/settlement-cursor.json}
       WORKER_SHUTDOWN_TIMEOUT_MS: ${WORKER_SHUTDOWN_TIMEOUT_MS:-15000}
       WORKER_READINESS_TIMEOUT_MS: ${WORKER_READINESS_TIMEOUT_MS:-5000}
+    volumes:
+      - worker-data:/var/lib/fiber-link
     healthcheck:
       test: ["CMD", "bun", "run", "apps/worker/src/scripts/healthcheck.ts"]
       interval: 15s
@@ -118,3 +121,4 @@ services:
 volumes:
   postgres-data:
   fnn-data:
+  worker-data:

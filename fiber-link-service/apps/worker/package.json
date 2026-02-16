@@ -3,7 +3,8 @@
   "private": true,
   "scripts": {
     "test": "vitest",
-    "backfill:settlements": "bun run src/scripts/backfill-settlements.ts"
+    "backfill:settlements": "bun run src/scripts/backfill-settlements.ts",
+    "demo:w5": "bun run src/scripts/w5-demo.ts"
   },
   "dependencies": {
     "@fiber-link/db": "workspace:*",

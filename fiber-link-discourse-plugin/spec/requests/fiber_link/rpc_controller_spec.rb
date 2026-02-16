@@ -52,6 +52,46 @@ RSpec.describe ::FiberLink::RpcController, type: :request do
       }
     end
 
+    it "server-enforces dashboard.summary params" do
+      sign_in(user)
+
+      stub_request(:post, "https://fiber-link.example/rpc").to_return(
+        status: 200,
+        body: {
+          jsonrpc: "2.0",
+          id: "dash-req",
+          result: {
+            balance: "12.5",
+            tips: [],
+            generatedAt: "2026-02-16T00:00:00.000Z",
+          },
+        }.to_json,
+        headers: { "Content-Type" => "application/json" },
+      )
+
+      post "/fiber-link/rpc",
+           params: {
+             jsonrpc: "2.0",
+             id: "dash-req",
+             method: "dashboard.summary",
+             params: {
+               userId: "spoofed-user-id",
+               limit: 999,
+             },
+           },
+           as: :json
+
+      expect(response).to have_http_status(:ok)
+      expect(JSON.parse(response.body).dig("result", "balance")).to eq("12.5")
+
+      expect(WebMock).to have_requested(:post, "https://fiber-link.example/rpc").with { |request|
+        body = JSON.parse(request.body)
+        body.fetch("method") == "dashboard.summary" &&
+          body.dig("params", "userId") == user.id.to_s &&
+          body.dig("params", "limit") == 50
+      }
+    end
+
     it "rejects unknown methods without forwarding" do
       sign_in(user)
 

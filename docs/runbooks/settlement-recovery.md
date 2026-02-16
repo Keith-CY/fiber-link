@@ -8,6 +8,13 @@ Use this runbook when settlement credits are delayed or missed (for example work
 - You have:
   - `DATABASE_URL` pointing to target environment
   - `FIBER_RPC_URL` for the Fiber node RPC endpoint
+  - `WORKER_SETTLEMENT_CURSOR_FILE` pointing to persistent storage (compose default: `/var/lib/fiber-link/settlement-cursor.json`)
+
+## Worker restart cursor behavior
+
+- Worker polling stores and reloads the settlement cursor using `WORKER_SETTLEMENT_CURSOR_FILE`.
+- Cursor writes are atomic (`.tmp` + rename) to avoid partial state on crash.
+- If cursor points past the newest `UNPAID` record, polling wraps once to the oldest matching window (catch-up mode), so long outages do not permanently skip windows.
 
 ## 1) Run settlement replay/backfill
 
@@ -72,6 +79,7 @@ Notes:
 - Ensure `errors == 0` in output.
 - Re-run the same command once; counts should converge and no duplicate credits should appear.
 - Confirm target invoices moved from `UNPAID` to `SETTLED`/`FAILED` as appropriate.
+- Restart worker once and confirm next scan continues from stored cursor (no skipped invoice IDs within the active replay window).
 
 ## 3) If errors persist
 
