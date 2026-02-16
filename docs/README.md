@@ -9,6 +9,14 @@
 
 - `docs/admin-installation.md` — admin installation and verification flow for Discourse + compose deployment.
 
+## Milestone acceptance
+
+- `docs/acceptance/README.md` — canonical milestone acceptance tracker.
+- `docs/acceptance/source-inventory.md` — full docs inventory and acceptance mapping.
+- `docs/acceptance/milestone-1/index.md` — Milestone 1 checkpoints and acceptance gate.
+- `docs/acceptance/milestone-2/index.md` — Milestone 2 checkpoints and acceptance gate.
+- `docs/acceptance/milestone-3/index.md` — Milestone 3 checkpoints and acceptance gate.
+
 ## Testnet bootstrap
 
 - `docs/runbooks/testnet-bootstrap.md` — deterministic precheck -> spin-up -> RPC validation -> invoice smoke -> cleanup flow.
@@ -17,6 +25,8 @@
 
 - `docs/runbooks/compose-reference.md` — compose reference and deterministic smoke usage.
 - `scripts/testnet-smoke.sh` — one-command local testnet sanity check with machine-readable PASS/FAIL output.
+- `docs/runbooks/fiber-adapter-e2e.md` — end-to-end validation for `fiber-adapter -> fnn rpc` in docker network.
+- `scripts/e2e-fiber-adapter-docker.sh` — runnable entrypoint for the `fiber-adapter` docker e2e probe.
 
 ## Deployment evidence
 
@@ -27,7 +37,7 @@
 
 - `docs/runbooks/security-assumptions.md` — versioned trust assumptions, operational limits, fallback boundaries, and ownership contacts.
 - `docs/runbooks/threat-model-evidence-checklist.md` — W1 threat-control verification checklist, acceptance matrix, and evidence retention/sign-off rules.
-- `runbooks/milestone-1-public-demo.md` — Milestone 1 proof and timestamped demo verification checklist.
+- `#114` (`Milestone 1 proof`): external public proof issue for non-repo evidence tracking.
 
 ## Kanban operations
 

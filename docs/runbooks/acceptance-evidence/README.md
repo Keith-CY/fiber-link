@@ -3,6 +3,9 @@
 This directory stores published, review-visible acceptance proof artifacts that are linked from
 runbooks and the root docs index.
 
+Canonical milestone checkpoint tracker:
+- `docs/acceptance/README.md`
+
 ## Milestone 1 Evidence Bundle
 
 Issue coverage: `#100` (`Milestone 1: add published acceptance evidence artifacts for public verification`)

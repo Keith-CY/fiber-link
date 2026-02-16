@@ -171,7 +171,8 @@ if ! grep -q "apps/worker/src/scripts/healthcheck.ts" "${COMPOSE_FILE}"; then
   exit 1
 fi
 
-if ! grep -q "curl -sS --max-time 3 http://127.0.0.1:8227" "${COMPOSE_FILE}"; then
+if ! grep -q "curl -sS --max-time 3 http://127.0.0.1:8227" "${COMPOSE_FILE}" \
+  && ! grep -q '\$\${FNN_HOST_IP}:8227' "${COMPOSE_FILE}"; then
   echo "docker-compose missing fnn liveness/readiness probe" >&2
   exit 1
 fi

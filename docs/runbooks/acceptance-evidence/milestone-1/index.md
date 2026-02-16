@@ -3,6 +3,7 @@
 This file is the published verification artifact for Milestone 1 acceptance.
 
 - Issue: [#100](https://github.com/Keith-CY/fiber-link/issues/100)
+- Public proof issue: [#114](https://github.com/Keith-CY/fiber-link/issues/114)
 - Scope reference: `docs/04-research-plan.md`, `docs/06-development-progress.md`
 - Retention target: **30 days** (standard default), then promote or archive long-term.
 
@@ -22,9 +23,9 @@ This file is the published verification artifact for Milestone 1 acceptance.
 
 ## Artifact status (current)
 
-- Testnet bootstrap: **pending (to attach)**
-- Deployment evidence bundle: **pending (to attach)**
-- Settlement backfill summary: **pending (to attach)**
-- Compose verification logs: **pending (to attach)**
+- Testnet bootstrap: **pass** (`RESULT=PASS`) - artifact: `.tmp/testnet-smoke/20260217-033951/`
+- Deployment evidence bundle: **pass** (`RESULT=PASS`) - artifact: `deploy/compose/evidence/20260216T184149Z/` (`20260216T184149Z.tar.gz`)
+- Settlement backfill summary: **pass** (`ok=true`, `errors=0`) - command: `bun run apps/worker/src/scripts/backfill-settlements.ts -- --limit=20`
+- Compose verification logs: **pass** (`summary.status=pass`) - artifact: `deploy/compose/evidence/20260216T184504Z/summary.json`
 
 Update each row with artifact links when verification evidence is attached.

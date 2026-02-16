@@ -16,6 +16,7 @@ Primary reference thread:
 - `docs/04-research-plan.md` — research checklist + milestones
 - `docs/05-threat-model.md` — threat model + risk controls (MVP)
 - `docs/06-development-progress.md` — development progress + post-Phase 2 roadmap
+- `docs/acceptance/README.md` — milestone acceptance tracker (checkpoint indexes + criteria)
 - `docs/admin-installation.md` — admin installation and smoke verification guide for Discourse + compose stack
 - `docs/runbooks/phase2-verification.md` — Phase 2 verification gate (happy path + failure path)
 - `docs/README.md` — testing docs index and plugin smoke-entry troubleshooting
@@ -23,8 +24,9 @@ Primary reference thread:
 - `docs/runbooks/settlement-recovery.md` — settlement replay/backfill recovery operations
 - `docs/plans/2026-02-11-phase3-sprint1-settlement-v1-plan.md` — historical Sprint 1 implementation plan (settlement v1 baseline)
 
-## Milestone 1 proof
-- Public Discourse demo and short video proof: [docs/runbooks/milestone-1-public-demo.md](docs/runbooks/milestone-1-public-demo.md)
+## Milestone acceptance
+- Canonical acceptance tracker: `docs/acceptance/README.md`
+- Milestone 1 public proof issue: [#114](https://github.com/Keith-CY/fiber-link/issues/114)
 
 ## Configuration (service)
 Environment variables used by the Fiber Link service:

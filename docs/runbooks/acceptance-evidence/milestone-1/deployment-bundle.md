@@ -18,3 +18,11 @@
 - `logs/compose-services.log`
 - `metadata/manifest.json`
 - `metadata/retention-policy.md`
+
+## Latest local run
+
+- Date: 2026-02-17
+- Command: `scripts/capture-deployment-evidence.sh --invoice-id <invoice> --settlement-id UNSET --verbose`
+- Result: `RESULT=PASS CODE=0`
+- Evidence directory: `deploy/compose/evidence/20260216T184149Z/`
+- Evidence archive: `deploy/compose/evidence/20260216T184149Z.tar.gz`

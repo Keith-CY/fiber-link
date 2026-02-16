@@ -178,7 +178,7 @@ if [[ "${SKIP_SMOKE}" -eq 0 && "${CHECK_STATUS[worker]}" == "pass" ]]; then
     ready_ok=true
   fi
 
-  smoke_cmd="payload='{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"health.ping\",\"params\":{}}' && curl -fsS ${RPC_URL}/rpc -H 'content-type: application/json' -H 'x-app-id: local-dev' -H \"x-ts: \$(date +%s)\" -H 'x-nonce: local-dev-readiness' -H 'x-signature: invalid' --data \"$payload\" -o \"${EVIDENCE_DIR}/rpc-smoke.json\" && grep -q 'Unauthorized' \"${EVIDENCE_DIR}/rpc-smoke.json\""
+  smoke_cmd="payload='{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"health.ping\",\"params\":{}}' && curl -fsS ${RPC_URL}/rpc -H 'content-type: application/json' -H 'x-app-id: local-dev' -H \"x-ts: \$(date +%s)\" -H 'x-nonce: local-dev-readiness' -H 'x-signature: invalid' --data \"\$payload\" -o \"${EVIDENCE_DIR}/rpc-smoke.json\" && grep -q 'Unauthorized' \"${EVIDENCE_DIR}/rpc-smoke.json\""
 
   if run_step "rpc-smoke" "${EVIDENCE_DIR}/rpc-smoke.log" \
     "$smoke_cmd"; then
