@@ -1,5 +1,6 @@
 import Route from "@ember/routing/route";
 import EmberObject from "@ember/object";
+import { service } from "@ember/service";
 
 import { TIP_STATE_MAPPING } from "../components/fiber-link-tip-feed";
 import { getDashboardSummary } from "../services/fiber-link-api";
@@ -21,11 +22,23 @@ function formatTimestamp(rawValue) {
 }
 
 export default class FiberLinkDashboardRoute extends Route {
+  @service currentUser;
+
   _activeModel = null;
   _pollTimer = null;
 
-  model() {
+  model(params = {}) {
     this._clearPollTimer();
+
+    const normalizedWithdrawalState =
+      ["ALL", "PENDING", "PROCESSING", "RETRY_PENDING", "COMPLETED", "FAILED"].includes(
+        params.withdrawalState,
+      )
+        ? params.withdrawalState
+        : "ALL";
+    const normalizedSettlementState = ["ALL", "UNPAID", "SETTLED", "FAILED"].includes(params.settlementState)
+      ? params.settlementState
+      : "ALL";
 
     const model = EmberObject.create({
       isSummaryLoading: true,
@@ -38,6 +51,16 @@ export default class FiberLinkDashboardRoute extends Route {
       refreshedAt: null,
       tipFeedItems: [],
       mappingRows: TIP_STATE_MAPPING,
+      isAdminViewEnabled: Boolean(this.currentUser?.admin),
+      adminApps: [],
+      adminWithdrawals: [],
+      adminSettlements: [],
+      withdrawalStateFilter: normalizedWithdrawalState,
+      settlementStateFilter: normalizedSettlementState,
+      adminFiltersApplied: {
+        withdrawalState: normalizedWithdrawalState,
+        settlementState: normalizedSettlementState,
+      },
     });
 
     this._activeModel = model;
@@ -68,7 +91,14 @@ export default class FiberLinkDashboardRoute extends Route {
     });
 
     try {
-      const result = await getDashboardSummary({ limit: DASHBOARD_LIMIT });
+      const result = await getDashboardSummary({
+        limit: DASHBOARD_LIMIT,
+        includeAdmin: model.isAdminViewEnabled,
+        filters: {
+          withdrawalState: model.withdrawalStateFilter,
+          settlementState: model.settlementStateFilter,
+        },
+      });
       if (model !== this._activeModel) {
         return;
       }
@@ -86,6 +116,13 @@ export default class FiberLinkDashboardRoute extends Route {
         generatedAt: formatTimestamp(result?.generatedAt),
         refreshedAt: new Date().toISOString(),
         tipFeedItems: tips,
+        adminApps: Array.isArray(result?.admin?.apps) ? result.admin.apps : [],
+        adminWithdrawals: Array.isArray(result?.admin?.withdrawals) ? result.admin.withdrawals : [],
+        adminSettlements: Array.isArray(result?.admin?.settlements) ? result.admin.settlements : [],
+        adminFiltersApplied: result?.admin?.filtersApplied ?? {
+          withdrawalState: model.withdrawalStateFilter,
+          settlementState: model.settlementStateFilter,
+        },
       });
 
       if (hasUnpaid) {

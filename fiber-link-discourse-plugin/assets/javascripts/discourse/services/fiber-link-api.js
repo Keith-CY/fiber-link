@@ -60,6 +60,6 @@ export async function getTipStatus({ invoice }) {
   return rpcCall("tip.status", { invoice });
 }
 
-export async function getDashboardSummary({ limit = 20 } = {}) {
-  return rpcCall("dashboard.summary", { limit });
+export async function getDashboardSummary({ limit = 20, includeAdmin = false, filters = {} } = {}) {
+  return rpcCall("dashboard.summary", { limit, includeAdmin, filters });
 }

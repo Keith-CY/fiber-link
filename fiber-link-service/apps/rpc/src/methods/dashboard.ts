@@ -1,10 +1,22 @@
 import { and, desc, eq, or } from "drizzle-orm";
-import { createDbClient, createDbLedgerRepo, tipIntents } from "@fiber-link/db";
+import { apps, createDbClient, createDbLedgerRepo, tipIntents, withdrawals } from "@fiber-link/db";
+import type {
+  DashboardSettlementStateFilterSchema,
+  DashboardWithdrawalStateFilterSchema,
+} from "../contracts";
+
+type DashboardWithdrawalStateFilter = typeof DashboardWithdrawalStateFilterSchema._type;
+type DashboardSettlementStateFilter = typeof DashboardSettlementStateFilterSchema._type;
 
 type HandleDashboardSummaryInput = {
   appId: string;
   userId: string;
   limit?: number;
+  includeAdmin?: boolean;
+  filters?: {
+    withdrawalState?: DashboardWithdrawalStateFilter;
+    settlementState?: DashboardSettlementStateFilter;
+  };
 };
 
 let defaultDbClient: ReturnType<typeof createDbClient> | null = null;
@@ -40,6 +52,137 @@ export async function handleDashboardSummary(input: HandleDashboardSummaryInput)
       .limit(limit),
   ]);
 
+  let admin:
+    | {
+        filtersApplied: {
+          withdrawalState: DashboardWithdrawalStateFilter;
+          settlementState: DashboardSettlementStateFilter;
+        };
+        apps: { appId: string; createdAt: string }[];
+        withdrawals: {
+          id: string;
+          userId: string;
+          asset: "CKB" | "USDI";
+          amount: string;
+          state: "PENDING" | "PROCESSING" | "RETRY_PENDING" | "COMPLETED" | "FAILED";
+          retryCount: number;
+          createdAt: string;
+          updatedAt: string;
+          txHash: string | null;
+          nextRetryAt: string | null;
+          lastError: string | null;
+        }[];
+        settlements: {
+          id: string;
+          invoice: string;
+          fromUserId: string;
+          toUserId: string;
+          state: "UNPAID" | "SETTLED" | "FAILED";
+          retryCount: number;
+          createdAt: string;
+          settledAt: string | null;
+          nextRetryAt: string | null;
+          lastCheckedAt: string | null;
+          lastError: string | null;
+          failureReason: string | null;
+        }[];
+      }
+    | undefined;
+
+  if (input.includeAdmin) {
+    const withdrawalState = input.filters?.withdrawalState ?? "ALL";
+    const settlementState = input.filters?.settlementState ?? "ALL";
+
+    const withdrawalPredicates = [eq(withdrawals.appId, input.appId)];
+    if (withdrawalState !== "ALL") {
+      withdrawalPredicates.push(eq(withdrawals.state, withdrawalState));
+    }
+
+    const settlementPredicates = [eq(tipIntents.appId, input.appId)];
+    if (settlementState !== "ALL") {
+      settlementPredicates.push(eq(tipIntents.invoiceState, settlementState));
+    }
+
+    const [appRows, withdrawalRows, settlementRows] = await Promise.all([
+      db.select({ appId: apps.appId, createdAt: apps.createdAt }).from(apps).orderBy(desc(apps.createdAt)).limit(25),
+      db
+        .select({
+          id: withdrawals.id,
+          userId: withdrawals.userId,
+          asset: withdrawals.asset,
+          amount: withdrawals.amount,
+          state: withdrawals.state,
+          retryCount: withdrawals.retryCount,
+          createdAt: withdrawals.createdAt,
+          updatedAt: withdrawals.updatedAt,
+          txHash: withdrawals.txHash,
+          nextRetryAt: withdrawals.nextRetryAt,
+          lastError: withdrawals.lastError,
+        })
+        .from(withdrawals)
+        .where(and(...withdrawalPredicates))
+        .orderBy(desc(withdrawals.updatedAt), desc(withdrawals.id))
+        .limit(40),
+      db
+        .select({
+          id: tipIntents.id,
+          invoice: tipIntents.invoice,
+          fromUserId: tipIntents.fromUserId,
+          toUserId: tipIntents.toUserId,
+          state: tipIntents.invoiceState,
+          retryCount: tipIntents.settlementRetryCount,
+          createdAt: tipIntents.createdAt,
+          settledAt: tipIntents.settledAt,
+          nextRetryAt: tipIntents.settlementNextRetryAt,
+          lastCheckedAt: tipIntents.settlementLastCheckedAt,
+          lastError: tipIntents.settlementLastError,
+          failureReason: tipIntents.settlementFailureReason,
+        })
+        .from(tipIntents)
+        .where(and(...settlementPredicates))
+        .orderBy(desc(tipIntents.createdAt), desc(tipIntents.id))
+        .limit(40),
+    ]);
+
+    admin = {
+      filtersApplied: {
+        withdrawalState,
+        settlementState,
+      },
+      apps: appRows.map((row) => ({
+        appId: row.appId,
+        createdAt: row.createdAt.toISOString(),
+      })),
+      withdrawals: withdrawalRows.map((row) => ({
+        id: row.id,
+        userId: row.userId,
+        asset: row.asset,
+        amount: String(row.amount),
+        state: row.state,
+        retryCount: row.retryCount,
+        createdAt: row.createdAt.toISOString(),
+        updatedAt: row.updatedAt.toISOString(),
+        txHash: row.txHash,
+        nextRetryAt: row.nextRetryAt ? row.nextRetryAt.toISOString() : null,
+        lastError: row.lastError,
+      })),
+      settlements: settlementRows.map((row) => ({
+        id: row.id,
+        invoice: row.invoice,
+        fromUserId: row.fromUserId,
+        toUserId: row.toUserId,
+        state: row.state,
+        retryCount: row.retryCount,
+        createdAt: row.createdAt.toISOString(),
+        settledAt: row.settledAt ? row.settledAt.toISOString() : null,
+        nextRetryAt: row.nextRetryAt ? row.nextRetryAt.toISOString() : null,
+        lastCheckedAt: row.lastCheckedAt ? row.lastCheckedAt.toISOString() : null,
+        lastError: row.lastError,
+        failureReason: row.failureReason,
+      })),
+    };
+  }
+
   return {
     balance: String(balance),
     tips: recentTips.map((row) => ({
@@ -53,6 +196,7 @@ export async function handleDashboardSummary(input: HandleDashboardSummaryInput)
       counterpartyUserId: row.toUserId === input.userId ? row.fromUserId : row.toUserId,
       createdAt: row.createdAt.toISOString(),
     })),
+    ...(admin ? { admin } : {}),
     generatedAt: new Date().toISOString(),
   };
 }

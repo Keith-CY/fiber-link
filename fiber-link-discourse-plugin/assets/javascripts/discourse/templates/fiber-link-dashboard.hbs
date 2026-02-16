@@ -48,3 +48,107 @@
     {{/each}}
   </tbody>
 </table>
+
+{{#if this.model.isAdminViewEnabled}}
+  <hr />
+  <h3>Admin Inspection (Operational)</h3>
+
+  <form method="GET" action="/fiber-link">
+    <label>
+      Withdrawal state:
+      <select name="withdrawalState">
+        <option value="ALL">ALL</option>
+        <option value="PENDING">PENDING</option>
+        <option value="PROCESSING">PROCESSING</option>
+        <option value="RETRY_PENDING">RETRY_PENDING</option>
+        <option value="COMPLETED">COMPLETED</option>
+        <option value="FAILED">FAILED</option>
+      </select>
+    </label>
+
+    <label>
+      Settlement state:
+      <select name="settlementState">
+        <option value="ALL">ALL</option>
+        <option value="UNPAID">UNPAID</option>
+        <option value="SETTLED">SETTLED</option>
+        <option value="FAILED">FAILED</option>
+      </select>
+    </label>
+
+    <button type="submit">Apply</button>
+  </form>
+
+  <p>
+    <strong>Active filters:</strong>
+    withdrawals={{this.model.adminFiltersApplied.withdrawalState}},
+    settlements={{this.model.adminFiltersApplied.settlementState}}
+  </p>
+
+  <h4>Apps</h4>
+  <table class="fiber-link-dashboard-admin-apps">
+    <thead>
+      <tr><th>appId</th><th>createdAt</th></tr>
+    </thead>
+    <tbody>
+      {{#each this.model.adminApps as |row|}}
+        <tr>
+          <td><code>{{row.appId}}</code></td>
+          <td>{{row.createdAt}}</td>
+        </tr>
+      {{else}}
+        <tr><td colspan="2">No app records.</td></tr>
+      {{/each}}
+    </tbody>
+  </table>
+
+  <h4>Withdrawals</h4>
+  <table class="fiber-link-dashboard-admin-withdrawals">
+    <thead>
+      <tr>
+        <th>id</th><th>user</th><th>state</th><th>amount</th><th>asset</th><th>retry</th><th>updatedAt</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{#each this.model.adminWithdrawals as |row|}}
+        <tr>
+          <td><code>{{row.id}}</code></td>
+          <td>{{row.userId}}</td>
+          <td>{{row.state}}</td>
+          <td>{{row.amount}}</td>
+          <td>{{row.asset}}</td>
+          <td>{{row.retryCount}}</td>
+          <td>{{row.updatedAt}}</td>
+        </tr>
+      {{else}}
+        <tr><td colspan="7">No withdrawals for current filter.</td></tr>
+      {{/each}}
+    </tbody>
+  </table>
+
+  <h4>Settlement State</h4>
+  <table class="fiber-link-dashboard-admin-settlements">
+    <thead>
+      <tr>
+        <th>invoice</th><th>state</th><th>from</th><th>to</th><th>retry</th><th>nextRetryAt</th><th>lastError</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{#each this.model.adminSettlements as |row|}}
+        <tr>
+          <td><code>{{row.invoice}}</code></td>
+          <td>{{row.state}}</td>
+          <td>{{row.fromUserId}}</td>
+          <td>{{row.toUserId}}</td>
+          <td>{{row.retryCount}}</td>
+          <td>{{row.nextRetryAt}}</td>
+          <td>{{row.lastError}}</td>
+        </tr>
+      {{else}}
+        <tr><td colspan="7">No settlement rows for current filter.</td></tr>
+      {{/each}}
+    </tbody>
+  </table>
+{{else}}
+  <p><em>Admin inspection view is available to admins only.</em></p>
+{{/if}}

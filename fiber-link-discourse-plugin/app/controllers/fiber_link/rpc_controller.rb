@@ -77,9 +77,34 @@ module ::FiberLink
               requested_limit
             end
 
+          include_admin = params["includeAdmin"] == true
+          if include_admin && !current_user.admin?
+            render json: {
+                     jsonrpc: "2.0",
+                     id: request_id,
+                     error: { code: -32001, message: "Unauthorized" },
+                   },
+                   status: :forbidden
+            return
+          end
+
+          allowed_withdrawal_states = ["ALL", "PENDING", "PROCESSING", "RETRY_PENDING", "COMPLETED", "FAILED"]
+          allowed_settlement_states = ["ALL", "UNPAID", "SETTLED", "FAILED"]
+
+          withdrawal_state = params.dig("filters", "withdrawalState")
+          withdrawal_state = "ALL" unless allowed_withdrawal_states.include?(withdrawal_state)
+
+          settlement_state = params.dig("filters", "settlementState")
+          settlement_state = "ALL" unless allowed_settlement_states.include?(settlement_state)
+
           {
             userId: current_user.id.to_s,
             limit: normalized_limit,
+            includeAdmin: include_admin,
+            filters: {
+              withdrawalState: withdrawal_state,
+              settlementState: settlement_state,
+            },
           }
         else
           render json: {
