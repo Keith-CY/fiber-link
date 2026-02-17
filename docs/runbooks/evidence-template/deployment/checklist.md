@@ -7,3 +7,7 @@
 - [ ] Service status snapshots captured (`snapshots/*.txt`)
 - [ ] Command log and step status map captured (`commands/command-index.log`, `status/step-results.tsv`)
 - [ ] Acceptance mapping completed (`status/acceptance-mapping.md`)
+- [ ] Reviewer evidence fields filled:
+  - Proof artifact URL (`proofs/*`): _paste video/screenshot URL_
+  - Reviewed by: _name/handle_
+  - Reviewed at (UTC): _YYYY-MM-DD HH:MM:SSZ_
