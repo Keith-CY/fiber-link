@@ -40,7 +40,7 @@ Edit `deploy/compose/.env` (minimum required values are marked ✅, optional/tun
 | `FNN_RPC_PORT` | ⚪ | FNN host RPC port mapping |
 | `FNN_P2P_PORT` | ⚪ | FNN host P2P port mapping |
 | `FIBER_LINK_HMAC_SECRET_MAP` | ⚪ | Per-app secret overrides (JSON-style map) |
-| `FIBER_RPC_URL` | ⚪ | RPC endpoint override (tests may default to `http://fnn:8227`) |
+| `FIBER_RPC_URL` | ⚪ | RPC endpoint override for service-to-FNN calls (compose default: `http://fnn:8227`) |
 | `RPC_HEALTHCHECK_TIMEOUT_MS` | ⚪ | RPC readiness timeout |
 | `WORKER_SHUTDOWN_TIMEOUT_MS` | ⚪ | Worker shutdown timeout |
 | `WORKER_SETTLEMENT_INTERVAL_MS` | ⚪ | Polling loop interval |
@@ -50,7 +50,6 @@ Edit `deploy/compose/.env` (minimum required values are marked ✅, optional/tun
 Start services:
 
 ```bash
-cd deploy/compose
 docker compose up -d --build
 ```
 
@@ -114,7 +113,7 @@ Expected minimum:
 Additional checks:
 
 - `docker compose ps`
-- `docker inspect --format '{{json .State.Health}}' fiber-link-rpc | jq .`
+- `docker inspect --format '{{json .State.Health}}' fiber-link-rpc`
 - plugin smoke checks (optional, if you have Discourse dev env):
   - `scripts/plugin-smoke.sh`
 
@@ -137,6 +136,6 @@ Then:
 
 ## 6) Verification record
 
-- `Last validated`: 2026-02-16
+- `Last validated`: 2026-02-17
 - `Owner`: 261895902 (`Linn-San`)
 - `Status`: Draft runbook for operator onboarding (verification-focused)
