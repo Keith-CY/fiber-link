@@ -1,0 +1,271 @@
+#!/usr/bin/env python3
+"""Hourly task 1 helper for Fiber Link.
+
+Modes:
+- scan: gather findings and persist state JSON for later reporting.
+- report: summarize persisted findings from the last 60 minutes.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import subprocess
+import time
+from typing import Dict, List, Tuple
+
+REPO = "Keith-CY/fiber-link"
+STATE_FILE = "/root/.openclaw/workspace/memory/fiber-link-task1-state.json"
+
+
+def run_gh(args: List[str]) -> str:
+    proc = subprocess.run(
+        ["gh", "-R", REPO, *args],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return proc.stdout.strip()
+
+
+def list_json(resource: str, assignee: str | None = None, label: str | None = None) -> List[dict]:
+    if resource == "issue":
+        args = ["issue", "list", "--state", "open", "--json", "number,title,url,body,labels,assignees"]
+    elif resource == "pr":
+        args = ["pr", "list", "--state", "open", "--json", "number,title,url,reviewDecision,body,headRefName"]
+    else:
+        raise ValueError(resource)
+
+    if assignee:
+        args.extend(["--assignee", assignee])
+    if label:
+        args.extend(["--label", label])
+
+    raw = run_gh(args)
+    return json.loads(raw or "[]")
+
+
+def source_pr_from_issue_body(body: str) -> int | None:
+    m = re.search(r"Source PR:\\s*https://github.com/[^/]+/[^/]+/pull/(\\d+)", body or "")
+    if not m:
+        return None
+    return int(m.group(1))
+
+
+def pr_state(pr_num: int, cache: Dict[int, str]) -> str:
+    if pr_num in cache:
+        return cache[pr_num]
+    state = run_gh(["pr", "view", str(pr_num), "--json", "state", "--jq", ".state"]).strip()
+    cache[pr_num] = state
+    return state
+
+
+def classify_with_source_pr(issues: List[dict], pr_state_cache: Dict[int, str]) -> Tuple[List[dict], List[dict], List[dict]]:
+    """
+    Returns:
+      actionable_issues: no source PR or source PR is not OPEN
+      bound_issues: source PR exists and is OPEN (skip handling)
+      unbound_issues: actionable list with reason
+    """
+    actionable: List[dict] = []
+    bound: List[dict] = []
+    unbound: List[dict] = []
+
+    for issue in issues:
+        pr_num = source_pr_from_issue_body(issue.get("body", "") or "")
+        if not pr_num:
+            reason = {"issue": issue, "reason": "missing-source-pr"}
+            actionable.append(reason)
+            unbound.append(reason)
+            continue
+
+        state = pr_state(pr_num, pr_state_cache)
+        if state == "OPEN":
+            bound.append(issue)
+            continue
+
+        reason = {"issue": issue, "reason": f"source-pr-{state.lower()}"}
+        actionable.append(reason)
+        unbound.append(reason)
+
+    return actionable, bound, unbound
+
+
+def analyze() -> dict:
+    state_cache: Dict[int, str] = {}
+
+    assigned_issues = list_json("issue", assignee="@me")
+    nbs_issues = list_json("issue", label="nbs")
+
+    actionable_assigned_with_reason, _, _ = classify_with_source_pr(assigned_issues, state_cache)
+    actionable_nbs_with_reason, _, unbound_nbs = classify_with_source_pr(nbs_issues, state_cache)
+
+    change_requests = [
+        item for item in list_json("pr") if item.get("reviewDecision") == "CHANGES_REQUESTED"
+    ]
+
+    return {
+        "assigned": [item["issue"] for item in actionable_assigned_with_reason],
+        "assignedUnbound": actionable_assigned_with_reason,
+        "nbs": nbs_issues,
+        "nbsUnbound": unbound_nbs,
+        "changeRequests": change_requests,
+        "counts": {
+            "assigned": len(actionable_assigned_with_reason),
+            "nbs": len(nbs_issues),
+            "nbsUnbound": len(unbound_nbs),
+            "changeRequests": len(change_requests),
+        },
+        "ts": int(time.time()),
+        "runAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
+
+
+def load_state() -> dict:
+    try:
+        with open(STATE_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {"runs": []}
+
+
+def save_state(snapshot: dict) -> None:
+    payload = load_state()
+    runs = payload.get("runs", [])
+    runs.append(snapshot)
+    # keep last 300 entries as a bounded buffer (~24h for 20m cadence)
+    payload["runs"] = runs[-300:]
+    payload["latestRun"] = snapshot
+    with open(STATE_FILE, "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2)
+
+
+def summarize(snapshot: dict) -> str:
+    lines = [
+        f"Scan at {snapshot['runAt']}",
+        f"Assigned issues requiring handling: {snapshot['counts']['assigned']}",
+        f"Open nbs issues: {snapshot['counts']['nbs']} (unbound/non-open-source PR: {snapshot['counts']['nbsUnbound']})",
+        f"PRs with CHANGES_REQUESTED: {snapshot['counts']['changeRequests']}",
+    ]
+
+    if snapshot["counts"]["assigned"]:
+        lines.append("- Assigned issues to handle:")
+        for i in snapshot["assigned"]:
+            lines.append(f"  - #{i['number']} {i['title']} ({i['url']})")
+
+    if snapshot["counts"]["nbsUnbound"]:
+        lines.append("- Unbound nbs issues:")
+        for u in snapshot["nbsUnbound"]:
+            issue = u["issue"]
+            lines.append(f"  - #{issue['number']} {issue['title']} [{u['reason']}] ({issue['url']})")
+
+    if snapshot["counts"]["changeRequests"]:
+        lines.append("- PRs blocked by change request:")
+        for p in snapshot["changeRequests"]:
+            lines.append(f"  - #{p['number']} {p['title']} ({p['url']})")
+
+    if not any([
+        snapshot["counts"]["assigned"],
+        snapshot["counts"]["nbsUnbound"],
+        snapshot["counts"]["changeRequests"],
+    ]):
+        lines.append("- No actionable items.")
+    return "\n".join(lines)
+
+
+def changed_since_last(snapshot: dict, state: dict) -> bool:
+    runs = state.get("runs", [])
+    if not runs:
+        return True
+    last = runs[-1]
+    # report when actionable counts change
+    return any(
+        last["counts"][key] != snapshot["counts"][key]
+        for key in ["assigned", "nbsUnbound", "changeRequests"]
+    )
+
+
+def has_actionable(snapshot: dict) -> bool:
+    return any(snapshot["counts"][key] > 0 for key in ["assigned", "nbsUnbound", "changeRequests"])
+
+
+def run_report(hours: int = 1) -> str:
+    state = load_state()
+    runs = state.get("runs", [])
+    if not runs:
+        return "No task-1 runs recorded yet."
+
+    now = int(time.time())
+    cutoff = now - hours * 3600
+    recent = [r for r in runs if r.get("ts", 0) >= cutoff]
+
+    summary = {
+        "runs": len(recent),
+        "totalAssigned": sum(r["counts"]["assigned"] for r in recent),
+        "totalNbs": sum(r["counts"]["nbs"] for r in recent),
+        "totalUnboundNbs": sum(r["counts"]["nbsUnbound"] for r in recent),
+        "totalChangeRequests": sum(r["counts"]["changeRequests"] for r in recent),
+        "latest": summarize(recent[-1]) if recent else "No data",
+        "windowFrom": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(cutoff)),
+        "windowTo": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)),
+    }
+
+    if not recent:
+        return f"No task-1 scans in the last {hours}h."
+
+    if summary["totalAssigned"] == 0 and summary["totalUnboundNbs"] == 0 and summary["totalChangeRequests"] == 0:
+        return ""
+
+    lines = [
+        f"Task-1 report ({hours}h): {summary['runs']} scan runs",
+        f"Total assigned open issues: {summary['totalAssigned']}",
+        f"Total open nbs: {summary['totalNbs']} (unbound/non-open-source PR: {summary['totalUnboundNbs']})",
+        f"Total PRs with CHANGES_REQUESTED: {summary['totalChangeRequests']}",
+        "",
+        "Latest run:",
+        summarize(recent[-1]),
+    ]
+    return "\n".join(lines)
+
+
+def parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(description="Fiber Link hourly task 1 monitor")
+    p.add_argument("--mode", choices=["scan", "report", "scan-and-report"], default="scan")
+    p.add_argument("--hours", type=int, default=1, help="Report lookback window hours")
+    p.add_argument(
+        "--only-changes",
+        action="store_true",
+        help="For report mode, suppress output when totals are unchanged and no actionables exist",
+    )
+    return p.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
+    if args.mode == "scan":
+        snapshot = analyze()
+        save_state(snapshot)
+        if has_actionable(snapshot):
+            print(summarize(snapshot))
+        return 0
+
+    if args.mode == "scan-and-report":
+        snapshot = analyze()
+        state = load_state()
+        if args.only_changes and not changed_since_last(snapshot, state):
+            return 0
+        save_state(snapshot)
+        output = run_report(hours=args.hours)
+        if output:
+            print(output)
+        return 0
+
+    output = run_report(hours=args.hours)
+    if output:
+        print(output)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

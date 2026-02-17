@@ -104,4 +104,19 @@ describe("app router", () => {
 
     await expect(caller.list()).rejects.toMatchObject({ code: "INTERNAL_SERVER_ERROR" });
   });
+
+  it("returns empty list when COMMUNITY_ADMIN has no app memberships", async () => {
+    const now = new Date("2026-02-08T00:00:00.000Z");
+    const rows = [{ appId: "app1", createdAt: now }, { appId: "app2", createdAt: now }];
+    const db = createDbMock({
+      appsRows: rows,
+      appAdminsRows: [{ appId: "app3", adminUserId: "au2" }],
+    });
+
+    const ctx = { role: "COMMUNITY_ADMIN", adminUserId: "au1", db } satisfies TrpcContext;
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.list();
+
+    expect(result).toEqual([]);
+  });
 });

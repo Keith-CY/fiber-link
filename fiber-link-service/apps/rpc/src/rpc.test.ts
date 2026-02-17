@@ -815,4 +815,89 @@ describe("json-rpc", () => {
       error: { code: -32001, message: "Unauthorized" },
     });
   });
+
+  it("returns 503 when readinessProbe throws unexpectedly", async () => {
+    const app = Fastify({ logger: false });
+    registerRpc(app, {
+      readinessProbe: async () => {
+        throw new Error("readiness backend crashed");
+      },
+    });
+
+    const res = await app.inject({
+      method: "GET",
+      url: "/healthz/ready",
+    });
+
+    expect(res.statusCode).toBe(503);
+    expect(res.json()).toEqual({
+      status: "not_ready",
+      checks: {
+        database: { status: "error", message: "probe failure" },
+        redis: { status: "error", message: "probe failure" },
+        coreService: { status: "error", message: "probe failure" },
+      },
+    });
+  });
+
+  it("returns unauthorized when no app secret source is configured", async () => {
+    const app = Fastify({ logger: false });
+    app.decorateRequest("rawBody", "");
+
+    app.addContentTypeParser("application/json", { parseAs: "string" }, (req, body, done) => {
+      const rawBody = body as string;
+      req.rawBody = rawBody;
+      try {
+        done(null, JSON.parse(rawBody));
+      } catch (error) {
+        (error as Error & { statusCode?: number }).statusCode = 400;
+        done(error as Error, undefined);
+      }
+    });
+
+    registerRpc(app, {
+      appRepo: createInMemoryAppRepo(),
+    });
+
+    const originalSecret = process.env.FIBER_LINK_HMAC_SECRET;
+    const rawPayload = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "health.ping", params: {} });
+    const ts = String(Math.floor(Date.now() / 1000));
+    const nonce = "missing-secret";
+    const signature = verifyHmac.sign({
+      secret: "replace-with-lookup",
+      payload: rawPayload,
+      ts,
+      nonce,
+    });
+    process.env.FIBER_LINK_HMAC_SECRET = "";
+
+    try {
+      const res = await app.inject({
+        method: "POST",
+        url: "/rpc",
+        payload: rawPayload,
+        headers: {
+          "content-type": "application/json",
+          "x-app-id": "app-without-secret",
+          "x-ts": ts,
+          "x-nonce": nonce,
+          "x-signature": signature,
+        },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({
+        jsonrpc: "2.0",
+        id: 1,
+        error: { code: -32001, message: "Unauthorized" },
+      });
+    } finally {
+      if (originalSecret === undefined) {
+        delete process.env.FIBER_LINK_HMAC_SECRET;
+      } else {
+        process.env.FIBER_LINK_HMAC_SECRET = originalSecret;
+      }
+    }
+  });
+
 });
