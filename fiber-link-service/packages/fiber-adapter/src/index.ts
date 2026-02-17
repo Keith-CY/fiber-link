@@ -101,11 +101,11 @@ export function createAdapter({ endpoint }: { endpoint: string }) {
       return { close: () => undefined };
     },
     async executeWithdrawal({ amount, asset, toAddress, requestId }: ExecuteWithdrawalArgs) {
-      void asset;
-      // Current executor uses Fiber payment RPC; toAddress is treated as a payment request string.
+      const currency = mapAssetToCurrency(asset);
       const result = (await rpcCall(endpoint, "send_payment", {
         invoice: toAddress,
         amount: toHexQuantity(amount),
+        currency,
         request_id: requestId,
       })) as Record<string, unknown> | undefined;
       const txHash = pickTxEvidence(result);
