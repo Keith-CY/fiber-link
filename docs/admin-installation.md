@@ -1,34 +1,51 @@
 # Admin Installation Guide
 
-This guide provides the minimum operator path to stand up a runnable Fiber Link stack and
-enable the Discourse plugin for admin testing.
+This guide provides an operator-ready workflow for bringing up the Fiber Link stack and
+registering the Discourse plugin for basic admin verification.
 
-## 1. Bring up RPC / worker / FNN services
+## 1) Prerequisites
 
-From the repo root:
+- Linux/macOS host with Docker + Docker Compose available.
+- Git + bash.
+- Discourse admin account for plugin installation.
+- Access to a fresh clone of the repo:
+
+```bash
+git clone https://github.com/Keith-CY/fiber-link.git
+cd fiber-link
+```
+
+## 2) Stand up RPC / worker / FNN services
+
+From repo root:
 
 ```bash
 cd deploy/compose
 cp .env.example .env
 ```
 
-Edit `deploy/compose/.env` and set at least:
+Edit `deploy/compose/.env` (minimum required values are marked ✅, optional/tunable are ✅/⚪):
 
-- `POSTGRES_PASSWORD` — database password (non-empty).
-- `FIBER_SECRET_KEY_PASSWORD` — secret used by FNN container startup path.
-- `FIBER_LINK_HMAC_SECRET` — shared HMAC secret for app auth fallback.
-- `FNN_ASSET_SHA256` — checksum for `FNN_ASSET`.
-
-Important: keep `.env` out of git. This file is ignored by default.
-
-Optional values you may also set:
-
-- `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PORT`, `REDIS_PORT`
-- `RPC_PORT`, `FNN_RPC_PORT`, `FNN_P2P_PORT`
-- `FIBER_LINK_HMAC_SECRET_MAP`
-- `FIBER_RPC_URL` (defaults to `http://fnn:8227`)
-- `RPC_HEALTHCHECK_TIMEOUT_MS`
-- `WORKER_*` tuning knobs (`WORKER_SETTLEMENT_INTERVAL_MS`, `WORKER_SETTLEMENT_BATCH_SIZE`, etc.)
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `POSTGRES_PASSWORD` | ✅ | Database password used by postgres container |
+| `FIBER_SECRET_KEY_PASSWORD` | ✅ | Secret consumed by FNN startup path |
+| `FIBER_LINK_HMAC_SECRET` | ✅ | Default shared secret for RPC request auth |
+| `FNN_ASSET_SHA256` | ✅ | Asset checksum for FNN binary/fingerprint |
+| `POSTGRES_DB` | ⚪ | DB name (default from compose defaults if unset) |
+| `POSTGRES_USER` | ⚪ | DB user (defaults to `.env.example`) |
+| `POSTGRES_PORT` | ⚪ | Host postgres port mapping |
+| `REDIS_PORT` | ⚪ | Host redis port mapping |
+| `RPC_PORT` | ⚪ | Service exposed RPC port for local checks |
+| `FNN_RPC_PORT` | ⚪ | FNN host RPC port mapping |
+| `FNN_P2P_PORT` | ⚪ | FNN host P2P port mapping |
+| `FIBER_LINK_HMAC_SECRET_MAP` | ⚪ | Per-app secret overrides (JSON-style map) |
+| `FIBER_RPC_URL` | ⚪ | RPC endpoint override for service-to-FNN calls (compose default: `http://fnn:8227`) |
+| `RPC_HEALTHCHECK_TIMEOUT_MS` | ⚪ | RPC readiness timeout |
+| `WORKER_SHUTDOWN_TIMEOUT_MS` | ⚪ | Worker shutdown timeout |
+| `WORKER_SETTLEMENT_INTERVAL_MS` | ⚪ | Polling loop interval |
+| `WORKER_SETTLEMENT_BATCH_SIZE` | ⚪ | Settlement batch size |
+| `WORKER_READINESS_TIMEOUT_MS` | ⚪ | Worker readiness timeout |
 
 Start services:
 
@@ -36,88 +53,89 @@ Start services:
 docker compose up -d --build
 ```
 
-Check health:
+Check basic health:
 
 ```bash
 docker compose ps
 docker compose logs -f rpc worker fnn
 ```
 
-Stop when finished:
+You should see each service running and RPC/worker startup logs without immediate restart loops.
+
+Shut down cleanly:
 
 ```bash
 docker compose down
 ```
 
-## 2. Install and enable the Discourse plugin
+## 3) Install and enable the Discourse plugin
 
-Place the plugin folder under your Discourse `plugins/` directory and mount it into the site runtime.
-The plugin code directory is `fiber-link-discourse-plugin` in this repository.
+The plugin directory is `fiber-link-discourse-plugin/`.
 
-Recommended local/dev flow:
+### Install path
+
+From your Discourse app directory:
 
 ```bash
 cd /path/to/discourse
 ln -sfn /path/to/fiber-link/fiber-link-discourse-plugin plugins/fiber-link
 ```
 
-Then restart or boot your Discourse app and enable settings:
+Restart/discover your Discourse app and then configure:
 
 - `Admin > Settings > Plugins > fiber_link_enabled` = `true`
-- `fiber_link_service_url` = `http://127.0.0.1:3000` (or your reachable RPC host)
-- `fiber_link_app_id` = chosen app id (example: `demo-app`)
-- `fiber_link_app_secret` = shared secret value sent to RPC
+- `fiber_link_service_url` = reachable RPC URL (example: `http://127.0.0.1:3000`)
+- `fiber_link_app_id` = app id (example: `demo-app`)
+- `fiber_link_app_secret` = shared secret (must match RPC expectations)
 
-### Discourse + RPC auth pairing
+### Auth pairing behavior
 
-`fiber_link_app_id` and `fiber_link_app_secret` must match values accepted by RPC:
+`fiber_link_app_id` + `fiber_link_app_secret` must match the auth source used by RPC:
 
-- If app records exist in DB (`apps` table), RPC will read secret from DB for that app id.
-- If no app record exists, RPC falls back to:
-  - `FIBER_LINK_HMAC_SECRET_MAP["<app_id>"]` when set, else
-  - `FIBER_LINK_HMAC_SECRET`.
+- If app exists in DB (`apps` table), RPC validates against persisted app secret.
+- If not, fallback checks `FIBER_LINK_HMAC_SECRET_MAP[app_id]` when present.
+- Otherwise fallback to `FIBER_LINK_HMAC_SECRET`.
 
-## 3. Smoke check and verification
+## 4) Admin smoke test checklist
 
-From repository root, run:
+From repo root, run:
 
 ```bash
 scripts/testnet-smoke.sh
 ```
 
-Expected output (minimum):
+Expected minimum:
 
-```
-RESULT=PASS CODE=0 ARTIFACT_DIR=<path>
-```
+- script exits with `CODE=0` and `RESULT=PASS`
+- compose stack starts and tears down cleanly
+- invoice/settlement proof path logs a success signal
 
-At least one of the following should also be true:
+Additional checks:
 
-- Script prints invoice creation success line and exits code `0`.
-- `compose` stack can be cleanly torn down with `docker compose down`.
+- `docker compose ps`
+- `docker inspect --format '{{json .State.Health}}' fiber-link-rpc`
+- plugin smoke checks (optional, if you have Discourse dev env):
+  - `scripts/plugin-smoke.sh`
 
-Optional quick pre-flight checks:
+## 5) Quick rollback
+
+If setup breaks or secrets are suspected leaked:
 
 ```bash
 cd deploy/compose
-docker compose ps
-docker inspect --format '{{json .State.Health}}' fiber-link-rpc | jq .
+docker compose down --remove-orphans --volumes
 ```
 
-## 4. Required/Optional secrets and env vars (quick map)
+Then:
 
-Service layer (`deploy/compose/.env`):
+- Revoke/reset `FIBER_LINK_HMAC_SECRET`, `FIBER_SECRET_KEY_PASSWORD`.
+- Remove plugin from Discourse:
+  - disable plugin setting
+  - remove `plugins/fiber-link` symlink if used for testing
+- Re-run `.env` creation with a clean minimal configuration and repeat startup steps.
 
-- Required: `POSTGRES_PASSWORD`, `FIBER_SECRET_KEY_PASSWORD`, `FIBER_LINK_HMAC_SECRET`, `FNN_ASSET_SHA256`.
-- Recommended: `FIBER_LINK_HMAC_SECRET_MAP`, `RPC_HEALTHCHECK_TIMEOUT_MS`,
-  `WORKER_SHUTDOWN_TIMEOUT_MS`, `WORKER_SETTLEMENT_INTERVAL_MS`.
+## 6) Verification record
 
-Discourse settings:
-
-- Required: `fiber_link_service_url`, `fiber_link_app_id`, `fiber_link_app_secret`, `fiber_link_enabled`.
-- Optional: app-specific host/port/security adjustments in your Discourse environment.
-
-## 5. Initial verification record
-
-- `Last validated`: 2026-02-16
-- `Owner`: To be filled by operator
+- `Last validated`: 2026-02-17
+- `Owner`: 261895902 (`Linn-San`)
+- `Status`: Draft runbook for operator onboarding (verification-focused)
