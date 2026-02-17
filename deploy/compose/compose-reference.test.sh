@@ -56,7 +56,7 @@ if [[ ! -x "${EVIDENCE_SCRIPT}" ]]; then
 fi
 
 for compose_file in "${ENV_FILE}" "${COMPOSE_FILE}"; do
-  if rg -n "^(<<<<<<<|=======|>>>>>>> )" "${compose_file}" >/dev/null; then
+  if grep -nE "^(<<<<<<<|=======|>>>>>>> )" "${compose_file}" >/dev/null; then
     echo "merge-conflict marker found in ${compose_file}" >&2
     exit 1
   fi
