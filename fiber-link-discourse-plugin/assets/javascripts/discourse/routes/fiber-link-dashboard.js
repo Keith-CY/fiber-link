@@ -7,6 +7,15 @@ import { getDashboardSummary } from "../services/fiber-link-api";
 
 const POLL_INTERVAL_MS = 4000;
 const DASHBOARD_LIMIT = 20;
+const WITHDRAWAL_STATE_OPTIONS = Object.freeze([
+  "ALL",
+  "PENDING",
+  "PROCESSING",
+  "RETRY_PENDING",
+  "COMPLETED",
+  "FAILED",
+]);
+const SETTLEMENT_STATE_OPTIONS = Object.freeze(["ALL", "UNPAID", "SETTLED", "FAILED"]);
 
 function formatTimestamp(rawValue) {
   if (typeof rawValue !== "string" || !rawValue.trim()) {
@@ -30,13 +39,10 @@ export default class FiberLinkDashboardRoute extends Route {
   model(params = {}) {
     this._clearPollTimer();
 
-    const normalizedWithdrawalState =
-      ["ALL", "PENDING", "PROCESSING", "RETRY_PENDING", "COMPLETED", "FAILED"].includes(
-        params.withdrawalState,
-      )
-        ? params.withdrawalState
-        : "ALL";
-    const normalizedSettlementState = ["ALL", "UNPAID", "SETTLED", "FAILED"].includes(params.settlementState)
+    const normalizedWithdrawalState = WITHDRAWAL_STATE_OPTIONS.includes(params.withdrawalState)
+      ? params.withdrawalState
+      : "ALL";
+    const normalizedSettlementState = SETTLEMENT_STATE_OPTIONS.includes(params.settlementState)
       ? params.settlementState
       : "ALL";
 
@@ -55,6 +61,14 @@ export default class FiberLinkDashboardRoute extends Route {
       adminApps: [],
       adminWithdrawals: [],
       adminSettlements: [],
+      withdrawalStateOptions: WITHDRAWAL_STATE_OPTIONS.map((state) => ({
+        value: state,
+        selected: state === normalizedWithdrawalState,
+      })),
+      settlementStateOptions: SETTLEMENT_STATE_OPTIONS.map((state) => ({
+        value: state,
+        selected: state === normalizedSettlementState,
+      })),
       withdrawalStateFilter: normalizedWithdrawalState,
       settlementStateFilter: normalizedSettlementState,
       adminFiltersApplied: {

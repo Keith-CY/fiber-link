@@ -117,6 +117,7 @@ export const DashboardSummaryResultSchema = z.object({
     .optional(),
   generatedAt: z.string().datetime(),
 });
+export type DashboardSummaryResult = z.infer<typeof DashboardSummaryResultSchema>;
 
 export const RpcErrorCode = {
   INVALID_REQUEST: -32600,

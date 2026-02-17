@@ -57,22 +57,18 @@
     <label>
       Withdrawal state:
       <select name="withdrawalState">
-        <option value="ALL">ALL</option>
-        <option value="PENDING">PENDING</option>
-        <option value="PROCESSING">PROCESSING</option>
-        <option value="RETRY_PENDING">RETRY_PENDING</option>
-        <option value="COMPLETED">COMPLETED</option>
-        <option value="FAILED">FAILED</option>
+        {{#each this.model.withdrawalStateOptions as |option|}}
+          <option value={{option.value}} selected={{option.selected}}>{{option.value}}</option>
+        {{/each}}
       </select>
     </label>
 
     <label>
       Settlement state:
       <select name="settlementState">
-        <option value="ALL">ALL</option>
-        <option value="UNPAID">UNPAID</option>
-        <option value="SETTLED">SETTLED</option>
-        <option value="FAILED">FAILED</option>
+        {{#each this.model.settlementStateOptions as |option|}}
+          <option value={{option.value}} selected={{option.selected}}>{{option.value}}</option>
+        {{/each}}
       </select>
     </label>
 

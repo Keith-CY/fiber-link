@@ -1,12 +1,18 @@
 import { and, desc, eq, or } from "drizzle-orm";
 import { apps, createDbClient, createDbLedgerRepo, tipIntents, withdrawals } from "@fiber-link/db";
 import type {
+  DashboardSummaryResult,
   DashboardSettlementStateFilterSchema,
   DashboardWithdrawalStateFilterSchema,
 } from "../contracts";
 
 type DashboardWithdrawalStateFilter = typeof DashboardWithdrawalStateFilterSchema._type;
 type DashboardSettlementStateFilter = typeof DashboardSettlementStateFilterSchema._type;
+type DashboardAdminResult = NonNullable<DashboardSummaryResult["admin"]>;
+
+const ADMIN_APPS_LIMIT = 25;
+const ADMIN_WITHDRAWALS_LIMIT = 40;
+const ADMIN_SETTLEMENTS_LIMIT = 40;
 
 type HandleDashboardSummaryInput = {
   appId: string;
@@ -52,42 +58,7 @@ export async function handleDashboardSummary(input: HandleDashboardSummaryInput)
       .limit(limit),
   ]);
 
-  let admin:
-    | {
-        filtersApplied: {
-          withdrawalState: DashboardWithdrawalStateFilter;
-          settlementState: DashboardSettlementStateFilter;
-        };
-        apps: { appId: string; createdAt: string }[];
-        withdrawals: {
-          id: string;
-          userId: string;
-          asset: "CKB" | "USDI";
-          amount: string;
-          state: "PENDING" | "PROCESSING" | "RETRY_PENDING" | "COMPLETED" | "FAILED";
-          retryCount: number;
-          createdAt: string;
-          updatedAt: string;
-          txHash: string | null;
-          nextRetryAt: string | null;
-          lastError: string | null;
-        }[];
-        settlements: {
-          id: string;
-          invoice: string;
-          fromUserId: string;
-          toUserId: string;
-          state: "UNPAID" | "SETTLED" | "FAILED";
-          retryCount: number;
-          createdAt: string;
-          settledAt: string | null;
-          nextRetryAt: string | null;
-          lastCheckedAt: string | null;
-          lastError: string | null;
-          failureReason: string | null;
-        }[];
-      }
-    | undefined;
+  let admin: DashboardAdminResult | undefined;
 
   if (input.includeAdmin) {
     const withdrawalState = input.filters?.withdrawalState ?? "ALL";
@@ -104,7 +75,11 @@ export async function handleDashboardSummary(input: HandleDashboardSummaryInput)
     }
 
     const [appRows, withdrawalRows, settlementRows] = await Promise.all([
-      db.select({ appId: apps.appId, createdAt: apps.createdAt }).from(apps).orderBy(desc(apps.createdAt)).limit(25),
+      db
+        .select({ appId: apps.appId, createdAt: apps.createdAt })
+        .from(apps)
+        .orderBy(desc(apps.createdAt))
+        .limit(ADMIN_APPS_LIMIT),
       db
         .select({
           id: withdrawals.id,
@@ -122,7 +97,7 @@ export async function handleDashboardSummary(input: HandleDashboardSummaryInput)
         .from(withdrawals)
         .where(and(...withdrawalPredicates))
         .orderBy(desc(withdrawals.updatedAt), desc(withdrawals.id))
-        .limit(40),
+        .limit(ADMIN_WITHDRAWALS_LIMIT),
       db
         .select({
           id: tipIntents.id,
@@ -141,7 +116,7 @@ export async function handleDashboardSummary(input: HandleDashboardSummaryInput)
         .from(tipIntents)
         .where(and(...settlementPredicates))
         .orderBy(desc(tipIntents.createdAt), desc(tipIntents.id))
-        .limit(40),
+        .limit(ADMIN_SETTLEMENTS_LIMIT),
     ]);
 
     admin = {

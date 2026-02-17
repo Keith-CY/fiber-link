@@ -4,6 +4,8 @@ module ::FiberLink
   class RpcController < ::ApplicationController
     requires_plugin "fiber-link"
     before_action :ensure_logged_in
+    ALLOWED_WITHDRAWAL_STATES = ["ALL", "PENDING", "PROCESSING", "RETRY_PENDING", "COMPLETED", "FAILED"].freeze
+    ALLOWED_SETTLEMENT_STATES = ["ALL", "UNPAID", "SETTLED", "FAILED"].freeze
 
     def proxy
       service_url = SiteSetting.fiber_link_service_url
@@ -88,14 +90,11 @@ module ::FiberLink
             return
           end
 
-          allowed_withdrawal_states = ["ALL", "PENDING", "PROCESSING", "RETRY_PENDING", "COMPLETED", "FAILED"]
-          allowed_settlement_states = ["ALL", "UNPAID", "SETTLED", "FAILED"]
-
           withdrawal_state = params.dig("filters", "withdrawalState")
-          withdrawal_state = "ALL" unless allowed_withdrawal_states.include?(withdrawal_state)
+          withdrawal_state = "ALL" unless ALLOWED_WITHDRAWAL_STATES.include?(withdrawal_state)
 
           settlement_state = params.dig("filters", "settlementState")
-          settlement_state = "ALL" unless allowed_settlement_states.include?(settlement_state)
+          settlement_state = "ALL" unless ALLOWED_SETTLEMENT_STATES.include?(settlement_state)
 
           {
             userId: current_user.id.to_s,
