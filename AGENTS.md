@@ -1,4 +1,4 @@
-# Carrier Project Agent Rules
+# Fiber Link Agent Rules
 
 ## PR Review Process
 - Use the internal skill: `skills/pr-review/SKILL.md` for PR review workflow, severity labeling, inline commenting, and final decision behavior.

@@ -8,15 +8,15 @@ Guide agents to review pull requests like a collaborator: check CI first, use in
    - Re-review mine only when existing `BS` findings are present.
    - Skip re-review of others when previous review is complete with no new updates.
    - Re-review others when unresolved/new findings remain.
-1. Check CI first via `gh pr checks <number> --repo "$GITHUB_REPOSITORY"`.
-2. **Only do formal review after required checks are green.**
-3. If CI is pending/failing:
+2. Check CI first via `gh pr checks <number> --repo "$GITHUB_REPOSITORY"`.
+3. **Only do formal review after required checks are green.**
+4. If CI is pending/failing:
    - Leave only a short status comment.
    - Re-check when CI completes.
-4. Fetch PR diff: `gh pr diff <number> --repo "$GITHUB_REPOSITORY"`.
-5. Read full diff before commenting.
-6. Submit review with inline `comments` body where possible.
-7. Decision rules:
+5. Fetch PR diff: `gh pr diff <number> --repo "$GITHUB_REPOSITORY"`.
+6. Read full diff before commenting.
+7. Submit review with inline `comments` body where possible.
+8. Decision rules:
    - Any **BS** (Blocking Suggestion) => **Request Changes**.
    - Only **NBS** (Non-Blocking Suggestions) => keep review non-blocking.
    - No blocking problems => **Approve**.
