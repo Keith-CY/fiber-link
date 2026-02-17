@@ -69,26 +69,75 @@ function getDefaultFiberAdapter(endpoint: string) {
   return defaultFiberAdapter;
 }
 
+type ExecutionFailureKind = "transient" | "permanent";
+
+// Explicit contract table for withdrawal execution failure classification.
+// Source/version assumptions:
+// 1) JSON-RPC 2.0 error codes (-32700, -32600..-32603, -32000..-32099 server range).
+// 2) Local adapter contract in packages/fiber-adapter/src/fiber-client.ts:
+//    non-2xx responses throw FiberRpcError("Fiber RPC HTTP <status>").
+const FIBER_WITHDRAWAL_ERROR_CONTRACT = {
+  jsonRpcCodeKind: new Map<number, ExecutionFailureKind>([
+    [-32700, "permanent"], // Parse error
+    [-32600, "permanent"], // Invalid request
+    [-32601, "permanent"], // Method not found
+    [-32602, "permanent"], // Invalid params
+    [-32603, "transient"], // Internal error
+  ]),
+  jsonRpcServerErrorRange: {
+    min: -32099,
+    max: -32000,
+    kind: "transient" as const,
+  },
+  transientHttpStatus: new Set([408, 425, 429, 500, 502, 503, 504]),
+  defaultFiberKind: "transient" as const,
+  defaultUnknownKind: "permanent" as const,
+};
+
+function parseFiberHttpStatus(message: string): number | null {
+  const matched = /^Fiber RPC HTTP (\d{3})$/.exec(message.trim());
+  if (!matched) {
+    return null;
+  }
+  const status = Number(matched[1]);
+  return Number.isInteger(status) ? status : null;
+}
+
+function classifyFiberRpcError(error: FiberRpcError): ExecutionFailureKind {
+  if (typeof error.code === "number") {
+    const mappedCodeKind = FIBER_WITHDRAWAL_ERROR_CONTRACT.jsonRpcCodeKind.get(error.code);
+    if (mappedCodeKind) {
+      return mappedCodeKind;
+    }
+    const range = FIBER_WITHDRAWAL_ERROR_CONTRACT.jsonRpcServerErrorRange;
+    if (error.code >= range.min && error.code <= range.max) {
+      return range.kind;
+    }
+    return FIBER_WITHDRAWAL_ERROR_CONTRACT.defaultFiberKind;
+  }
+
+  const httpStatus = parseFiberHttpStatus(error.message);
+  if (httpStatus !== null) {
+    if (FIBER_WITHDRAWAL_ERROR_CONTRACT.transientHttpStatus.has(httpStatus)) {
+      return "transient";
+    }
+    if (httpStatus >= 500 && httpStatus <= 599) {
+      return "transient";
+    }
+    if (httpStatus >= 400 && httpStatus <= 499) {
+      return "permanent";
+    }
+  }
+
+  return FIBER_WITHDRAWAL_ERROR_CONTRACT.defaultFiberKind;
+}
+
 function classifyExecutionError(error: unknown): { kind: "transient" | "permanent"; reason: string } {
   const message = error instanceof Error ? error.message : String(error);
-  const transientPattern = /(timeout|temporar|busy|unavailable|connect|network|throttle|rate limit|econn)/i;
   if (error instanceof FiberRpcError) {
-    const code = error.code;
-    if (code === -32600 || code === -32601 || code === -32602) {
-      return { kind: "permanent", reason: message };
-    }
-    if (code === -32603 || (typeof code === "number" && code <= -32000 && code >= -32099)) {
-      return { kind: "transient", reason: message };
-    }
-    if (transientPattern.test(message)) {
-      return { kind: "transient", reason: message };
-    }
-    return { kind: "permanent", reason: message };
+    return { kind: classifyFiberRpcError(error), reason: message };
   }
-  if (transientPattern.test(message)) {
-    return { kind: "transient", reason: message };
-  }
-  return { kind: "permanent", reason: message };
+  return { kind: FIBER_WITHDRAWAL_ERROR_CONTRACT.defaultUnknownKind, reason: message };
 }
 
 export async function runWithdrawalBatch(options: RunWithdrawalBatchOptions = {}) {
