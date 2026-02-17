@@ -1,0 +1,95 @@
+name: PR Coverage Report
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  coverage-comment:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.1.8
+
+      - name: Install service dependencies
+        working-directory: fiber-link-service
+        run: bun install --frozen-lockfile
+
+      - name: Collect Vitest coverage
+        working-directory: fiber-link-service
+        run: |
+          set -euo pipefail
+          mkdir -p coverage-reports
+          run_pkg() {
+            local pkg="$1"
+            local name="$2"
+            (cd "$pkg" && bunx vitest run --silent --coverage.enabled --coverage.provider=v8 --coverage.reporter=json-summary --coverage.reportsDirectory="../../coverage-reports/$name")
+          }
+          run_pkg apps/rpc rpc
+          run_pkg apps/admin admin
+          run_pkg apps/worker worker
+          run_pkg packages/db db
+
+      - name: Build markdown summary
+        working-directory: fiber-link-service
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
+          const targets = [
+            ['rpc','RPC'],
+            ['admin','Admin'],
+            ['worker','Worker'],
+            ['db','DB'],
+          ];
+          let rows = [];
+          let sum = 0;
+          for (const [key,label] of targets) {
+            const p = path.join('coverage-reports', key, 'coverage-summary.json');
+            const j = JSON.parse(fs.readFileSync(p, 'utf8'));
+            const pct = Number(j.total.lines.pct || 0);
+            sum += pct;
+            rows.push(`| ${label} | ${pct.toFixed(2)}% |`);
+          }
+          const avg = sum / targets.length;
+          const marker = '<!-- fiber-link-pr-coverage-report -->';
+          const body = [
+            marker,
+            '### 📊 Coverage Report',
+            '',
+            '| Module | Line Coverage |',
+            '|---|---:|',
+            ...rows,
+            '',
+            `**Average line coverage:** ${avg.toFixed(2)}%`,
+          ].join('\n');
+          fs.writeFileSync('../coverage-comment.md', body);
+          NODE
+
+      - name: Create or update PR comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const body = fs.readFileSync('coverage-comment.md', 'utf8');
+            const marker = '<!-- fiber-link-pr-coverage-report -->';
+            const {owner, repo} = context.repo;
+            const issue_number = context.payload.pull_request.number;
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number, per_page: 100,
+            });
+            const existing = comments.find(c => c.user?.type === 'Bot' && c.body?.includes(marker));
+
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }
