@@ -74,6 +74,8 @@ jobs:
           trap 'git worktree remove -f ../_base_cov || true' EXIT
 
           (cd ../_base_cov/fiber-link-service && bun install --frozen-lockfile)
+          # base branch may not include coverage provider dependency yet
+          (cd ../_base_cov/fiber-link-service && bun add -d @vitest/coverage-v8@1.6.0)
 
           run_base_pkg() {
             local pkg="$1"
