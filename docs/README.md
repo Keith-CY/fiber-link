@@ -38,6 +38,7 @@
 - `docs/runbooks/security-assumptions.md` — versioned trust assumptions, operational limits, fallback boundaries, and ownership contacts.
 - `docs/runbooks/threat-model-evidence-checklist.md` — W1 threat-control verification checklist, acceptance matrix, and evidence retention/sign-off rules.
 - `#114` (`Milestone 1 proof`): external public proof issue for non-repo evidence tracking.
+- Final Milestone 1 acceptance references should use the latest public evidence update posted in `#114`.
 
 ## Kanban operations
 

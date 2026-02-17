@@ -27,6 +27,7 @@ Primary reference thread:
 ## Milestone acceptance
 - Canonical acceptance tracker: `docs/acceptance/README.md`
 - Milestone 1 public proof issue: [#114](https://github.com/Keith-CY/fiber-link/issues/114)
+- Historical public-demo template docs were consolidated into [#114](https://github.com/Keith-CY/fiber-link/issues/114) as the latest public-proof entry point.
 
 ## Configuration (service)
 Environment variables used by the Fiber Link service:

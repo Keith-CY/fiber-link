@@ -4,6 +4,7 @@ Last updated: 2026-02-16
 
 This directory is the canonical acceptance workspace for milestone checkpoints and acceptance criteria.
 Each milestone has its own directory, an `index.md`, and one markdown file per checkpoint.
+This PR primarily restructures tracking artifacts; `PARTIAL` and `PENDING` checkpoints remain in-progress and are not treated as accepted.
 
 ## Milestone index
 
