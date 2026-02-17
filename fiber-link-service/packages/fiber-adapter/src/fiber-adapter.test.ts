@@ -157,6 +157,86 @@ describe("fiber adapter", () => {
     );
   });
 
+  it("executeWithdrawal keeps explicit requestId in send_payment", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          jsonrpc: "2.0",
+          id: 1,
+          result: { invoice: { data: { payment_hash: "0xparsed-payment" } } },
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ jsonrpc: "2.0", id: 2, result: { payment_hash: "0xabc123" } }),
+      } as Response);
+
+    const adapter = createAdapter({ endpoint: "http://localhost:8119" });
+    await adapter.executeWithdrawal({
+      amount: "10",
+      asset: "USDI",
+      toAddress: "fiber:invoice:example",
+      requestId: "w-1",
+    });
+
+    expect(fetchSpy.mock.calls[1]?.[1]).toEqual(
+      expect.objectContaining({
+        body: expect.stringContaining("\"request_id\":\"w-1\""),
+      }),
+    );
+  });
+
+  it("executeWithdrawal generates deterministic fallback requestId", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        jsonrpc: "2.0",
+        id: 1,
+        result: { invoice: { data: { payment_hash: "0xparsed-payment" } } },
+      }),
+    } as Response);
+
+    const adapter = createAdapter({ endpoint: "http://localhost:8119" });
+    await adapter.executeWithdrawal({
+      amount: "10",
+      asset: "USDI",
+      toAddress: "fiber:invoice:example",
+      requestId: "",
+    });
+
+    const first = JSON.parse(fetchSpy.mock.calls[1]?.[1]?.body as string);
+    expect(first.params[0].request_id).toMatch(/^fiber:/);
+
+    fetchSpy.mockClear();
+
+    const fetchSpy2 = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          jsonrpc: "2.0",
+          id: 1,
+          result: { invoice: { data: { payment_hash: "0xparsed-payment" } } },
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ jsonrpc: "2.0", id: 2, result: { payment_hash: "0xabc123" } }),
+      } as Response);
+
+    await adapter.executeWithdrawal({
+      amount: "10",
+      asset: "USDI",
+      toAddress: "fiber:invoice:example",
+      requestId: "",
+    });
+    const second = JSON.parse(fetchSpy2.mock.calls[1]?.[1]?.body as string);
+    expect(second.params[0].request_id).toBe(first.params[0].request_id);
+  });
+
+
   it("executeWithdrawal throws when rpc result has no transaction evidence", async () => {
     vi
       .spyOn(globalThis, "fetch")
