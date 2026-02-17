@@ -1,6 +1,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createAdapter } from "./index";
 
+async function waitForCondition(condition: () => boolean, timeoutMs = 500) {
+  const start = Date.now();
+  while (!condition()) {
+    if (Date.now() - start > timeoutMs) {
+      throw new Error("timed out waiting for condition");
+    }
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}
+
 describe("fiber adapter", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -119,6 +129,61 @@ describe("fiber adapter", () => {
     );
   });
 
+  it("subscribeSettlements consumes stream events when enabled", async () => {
+    const encoded = new TextEncoder().encode('data: {"invoice":"inv-settled","state":"SETTLED"}\n\n');
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoded);
+      },
+      pull() {
+        return new Promise(() => undefined);
+      },
+    });
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      body: stream,
+    } as Response);
+    const settledInvoices: string[] = [];
+
+    const adapter = createAdapter({
+      endpoint: "http://localhost:8119",
+      settlementSubscription: {
+        enabled: true,
+        url: "http://localhost:8119/events/settlements",
+        reconnectDelayMs: 10,
+      },
+    });
+    const subscription = await adapter.subscribeSettlements({
+      onSettled: (invoice) => {
+        settledInvoices.push(invoice);
+      },
+    });
+
+    await waitForCondition(() => settledInvoices.length === 1);
+    await subscription.close();
+
+    expect(settledInvoices).toEqual(["inv-settled"]);
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "http://localhost:8119/events/settlements",
+      expect.objectContaining({
+        method: "GET",
+      }),
+    );
+  });
+
+  it("subscribeSettlements remains no-op when subscription config is disabled", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("must not call fetch"));
+    const adapter = createAdapter({ endpoint: "http://localhost:8119" });
+    const subscription = await adapter.subscribeSettlements({
+      onSettled: () => {
+        throw new Error("must not emit");
+      },
+    });
+    await subscription.close();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
   it("executeWithdrawal parses invoice before send_payment", async () => {
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
@@ -189,14 +254,20 @@ describe("fiber adapter", () => {
   });
 
   it("executeWithdrawal generates deterministic fallback requestId", async () => {
-    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
-        jsonrpc: "2.0",
-        id: 1,
-        result: { invoice: { data: { payment_hash: "0xparsed-payment" } } },
-      }),
-    } as Response);
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          jsonrpc: "2.0",
+          id: 1,
+          result: { invoice: { data: { payment_hash: "0xparsed-payment" } } },
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ jsonrpc: "2.0", id: 2, result: { payment_hash: "0xabc123" } }),
+      } as Response);
 
     const adapter = createAdapter({ endpoint: "http://localhost:8119" });
     await adapter.executeWithdrawal({
