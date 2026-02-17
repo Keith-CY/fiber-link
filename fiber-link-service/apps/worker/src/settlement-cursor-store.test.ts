@@ -48,7 +48,8 @@ describe("createFileSettlementCursorStore", () => {
     await expect(store.load()).resolves.toBeUndefined();
 
     const files = await readdir(root);
-    expect(files.some((name) => name.startsWith("cursor.json.invalid-")).toBe(true);
+    const hasBackup = files.some((name) => name.startsWith("cursor.json.invalid-"));
+    expect(hasBackup).toBe(true);
   });
 
   it("recovers partial cursor payload and continues startup", async () => {
@@ -60,7 +61,8 @@ describe("createFileSettlementCursorStore", () => {
     await expect(store.load()).resolves.toBeUndefined();
 
     const files = await readdir(root);
-    expect(files.some((name) => name.startsWith("cursor.json.invalid-")).toBe(true);
+    const hasBackup = files.some((name) => name.startsWith("cursor.json.invalid-"));
+    expect(hasBackup).toBe(true);
   });
 
   it("writes cursor payload with stable fields", async () => {
