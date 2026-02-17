@@ -121,6 +121,8 @@ Additional checks:
 
 If setup breaks or secrets are suspected leaked:
 
+Warning: this command removes compose volumes and deletes local database / worker persisted state.
+
 ```bash
 cd deploy/compose
 docker compose down --remove-orphans --volumes

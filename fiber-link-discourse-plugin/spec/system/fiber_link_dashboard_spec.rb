@@ -108,4 +108,41 @@ RSpec.describe "Fiber Link Dashboard", type: :system do
     expect(page).to have_content("inv-1")
     expect(page).to have_content("PENDING")
   end
+
+  it "renders contextual empty-state guidance and avoids absolute admin filter form action" do
+    admin = Fabricate(:admin)
+    sign_in(admin)
+
+    stub_request(:post, "https://fiber-link.example/rpc")
+      .with { |request| JSON.parse(request.body).fetch("method") == "dashboard.summary" }
+      .to_return(
+        status: 200,
+        body: {
+          jsonrpc: "2.0",
+          id: "dash-admin-empty",
+          result: {
+            balance: "0",
+            tips: [],
+            generatedAt: "2026-02-16T00:00:00.000Z",
+            admin: {
+              filtersApplied: { withdrawalState: "PENDING", settlementState: "FAILED" },
+              apps: [],
+              withdrawals: [],
+              settlements: [],
+            },
+          },
+        }.to_json,
+        headers: { "Content-Type" => "application/json" },
+      )
+
+    visit "/fiber-link?withdrawalState=PENDING&settlementState=FAILED"
+
+    expect(page).to have_content("No app records from admin payload. Verify plugin app credentials and refresh.")
+    expect(page).to have_content("No withdrawals for current filter.")
+    expect(page).to have_content("No settlement rows for current filter.")
+    expect(page).to have_link("Reset to ALL", href: /withdrawalState=ALL/)
+    expect(page).to have_link("Show all withdrawal states")
+    expect(page).to have_link("Show all settlement states")
+    expect(page).to have_no_css("form[action='/fiber-link']")
+  end
 end
