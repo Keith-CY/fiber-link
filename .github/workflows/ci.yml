@@ -63,6 +63,28 @@ jobs:
           run_pkg apps/admin admin
           run_pkg apps/worker worker
           run_pkg packages/db db
+
+      - name: Collect base branch coverage
+        working-directory: fiber-link-service
+        run: |
+          set -euo pipefail
+          mkdir -p ../base-coverage-reports
+          git fetch --no-tags origin "${{ github.event.pull_request.base.ref }}"
+          git worktree add ../_base_cov "origin/${{ github.event.pull_request.base.ref }}"
+          trap 'git worktree remove -f ../_base_cov || true' EXIT
+
+          (cd ../_base_cov/fiber-link-service && bun install --frozen-lockfile)
+
+          run_base_pkg() {
+            local pkg="$1"
+            local name="$2"
+            (cd "../_base_cov/fiber-link-service/$pkg" && bunx vitest run --silent --coverage.enabled --coverage.provider=v8 --coverage.reporter=json-summary --coverage.reportsDirectory="../../../../base-coverage-reports/$name")
+          }
+
+          run_base_pkg apps/rpc rpc
+          run_base_pkg apps/admin admin
+          run_base_pkg apps/worker worker
+          run_base_pkg packages/db db
       - name: Build markdown summary
         working-directory: fiber-link-service
         run: |
@@ -77,24 +99,37 @@ jobs:
           ];
           let rows = [];
           let sum = 0;
+          let baseSum = 0;
           for (const [key,label] of targets) {
             const p = path.join('coverage-reports', key, 'coverage-summary.json');
             const j = JSON.parse(fs.readFileSync(p, 'utf8'));
             const pct = Number(j.total.lines.pct || 0);
+
+            const bp = path.join('..', 'base-coverage-reports', key, 'coverage-summary.json');
+            const bj = JSON.parse(fs.readFileSync(bp, 'utf8'));
+            const basePct = Number(bj.total.lines.pct || 0);
+
+            const delta = pct - basePct;
+            const deltaStr = `${delta >= 0 ? '+' : ''}${delta.toFixed(2)}%`;
+
             sum += pct;
-            rows.push(`| ${label} | ${pct.toFixed(2)}% |`);
+            baseSum += basePct;
+            rows.push(`| ${label} | ${pct.toFixed(2)}% | ${deltaStr} |`);
           }
           const avg = sum / targets.length;
+          const baseAvg = baseSum / targets.length;
+          const avgDelta = avg - baseAvg;
           const marker = '<!-- fiber-link-pr-coverage-report -->';
           const body = [
             marker,
             '### 📊 Coverage Report',
             '',
-            '| Module | Line Coverage |',
-            '|---|---:|',
+            '| Module | Line Coverage | Δ vs base |',
+            '|---|---:|---:|',
             ...rows,
             '',
             `**Average line coverage:** ${avg.toFixed(2)}%`,
+            `**Δ vs base:** ${avgDelta >= 0 ? '+' : ''}${avgDelta.toFixed(2)}%`,
           ].join('\n');
           fs.writeFileSync('../coverage-comment.md', body);
           NODE
