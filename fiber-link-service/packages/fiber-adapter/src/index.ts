@@ -31,6 +31,8 @@ function toHexQuantity(value: string): string {
 }
 
 function generateFallbackRequestId({ invoice, amount, asset }: { invoice: string; amount: string; asset: Asset }) {
+  // Deterministic fallback keeps retries idempotent when caller-provided requestId is empty.
+  // We keep only 20 hex chars (80-bit space): collision risk is low for retries, but non-zero for long-term global dedupe.
   return `fiber:${createHash("sha256").update(`${invoice}|${amount}|${asset}`).digest("hex").slice(0, 20)}`;
 }
 

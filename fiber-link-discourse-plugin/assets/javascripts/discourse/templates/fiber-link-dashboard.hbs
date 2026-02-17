@@ -53,7 +53,7 @@
   <hr />
   <h3>Admin Inspection (Operational)</h3>
 
-  <form method="GET" action="/fiber-link">
+  <form method="GET">
     <label>
       Withdrawal state:
       <select name="withdrawalState">
@@ -79,6 +79,11 @@
     <strong>Active filters:</strong>
     withdrawals={{this.model.adminFiltersApplied.withdrawalState}},
     settlements={{this.model.adminFiltersApplied.settlementState}}
+    ({{#link-to
+      "fiber-link-dashboard"
+      (query-params withdrawalState="ALL" settlementState="ALL")
+      title="Clear both filters and reload full admin inspection data."
+    }}Reset to ALL{{/link-to}})
   </p>
 
   <h4>Apps</h4>
@@ -93,7 +98,9 @@
           <td>{{row.createdAt}}</td>
         </tr>
       {{else}}
-        <tr><td colspan="2">No app records.</td></tr>
+        <tr>
+          <td colspan="2">No app records from admin payload. Verify plugin app credentials and refresh.</td>
+        </tr>
       {{/each}}
     </tbody>
   </table>
@@ -117,7 +124,18 @@
           <td>{{row.updatedAt}}</td>
         </tr>
       {{else}}
-        <tr><td colspan="7">No withdrawals for current filter.</td></tr>
+        <tr>
+          <td colspan="7">
+            No withdrawals for current filter.
+            {{#link-to
+              "fiber-link-dashboard"
+              (query-params
+                withdrawalState="ALL"
+                settlementState=this.model.adminFiltersApplied.settlementState
+              )
+            }}Show all withdrawal states{{/link-to}}.
+          </td>
+        </tr>
       {{/each}}
     </tbody>
   </table>
@@ -141,7 +159,18 @@
           <td>{{row.lastError}}</td>
         </tr>
       {{else}}
-        <tr><td colspan="7">No settlement rows for current filter.</td></tr>
+        <tr>
+          <td colspan="7">
+            No settlement rows for current filter.
+            {{#link-to
+              "fiber-link-dashboard"
+              (query-params
+                withdrawalState=this.model.adminFiltersApplied.withdrawalState
+                settlementState="ALL"
+              )
+            }}Show all settlement states{{/link-to}}.
+          </td>
+        </tr>
       {{/each}}
     </tbody>
   </table>

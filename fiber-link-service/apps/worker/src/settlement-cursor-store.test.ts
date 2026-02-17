@@ -5,6 +5,14 @@ import { describe, expect, it } from "vitest";
 import { createFileSettlementCursorStore } from "./settlement-cursor-store";
 
 describe("createFileSettlementCursorStore", () => {
+  async function expectInvalidBackupPreservesPayload(root: string, originalPayload: string) {
+    const files = await readdir(root);
+    const backupName = files.find((name) => name.startsWith("cursor.json.invalid-"));
+    expect(backupName).toBeDefined();
+    const backupContent = await readFile(join(root, backupName as string), "utf8");
+    expect(backupContent).toBe(originalPayload);
+  }
+
   it("loads undefined when cursor file does not exist", async () => {
     const root = await mkdtemp(join(tmpdir(), "fiber-link-cursor-"));
     const filePath = join(root, "cursor.json");
@@ -42,27 +50,25 @@ describe("createFileSettlementCursorStore", () => {
   it("recovers malformed cursor payload and continues startup", async () => {
     const root = await mkdtemp(join(tmpdir(), "fiber-link-cursor-"));
     const filePath = join(root, "cursor.json");
-    await writeFile(filePath, "{not-json", "utf8");
+    const malformedPayload = "{not-json";
+    await writeFile(filePath, malformedPayload, "utf8");
 
     const store = createFileSettlementCursorStore(filePath);
     await expect(store.load()).resolves.toBeUndefined();
 
-    const files = await readdir(root);
-    const hasBackup = files.some((name) => name.startsWith("cursor.json.invalid-"));
-    expect(hasBackup).toBe(true);
+    await expectInvalidBackupPreservesPayload(root, malformedPayload);
   });
 
   it("recovers partial cursor payload and continues startup", async () => {
     const root = await mkdtemp(join(tmpdir(), "fiber-link-cursor-"));
     const filePath = join(root, "cursor.json");
-    await writeFile(filePath, '{"id":"tip-123"}', "utf8");
+    const partialPayload = '{"id":"tip-123"}';
+    await writeFile(filePath, partialPayload, "utf8");
 
     const store = createFileSettlementCursorStore(filePath);
     await expect(store.load()).resolves.toBeUndefined();
 
-    const files = await readdir(root);
-    const hasBackup = files.some((name) => name.startsWith("cursor.json.invalid-"));
-    expect(hasBackup).toBe(true);
+    await expectInvalidBackupPreservesPayload(root, partialPayload);
   });
 
   it("writes cursor payload with stable fields", async () => {
