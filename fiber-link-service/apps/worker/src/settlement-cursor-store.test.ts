@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
@@ -39,13 +39,30 @@ describe("createFileSettlementCursorStore", () => {
     await expect(store.load()).resolves.toBeUndefined();
   });
 
-  it("throws for malformed cursor payload", async () => {
+  it("recovers malformed cursor payload and continues startup", async () => {
     const root = await mkdtemp(join(tmpdir(), "fiber-link-cursor-"));
     const filePath = join(root, "cursor.json");
     await writeFile(filePath, "{not-json", "utf8");
 
     const store = createFileSettlementCursorStore(filePath);
-    await expect(store.load()).rejects.toThrow("Invalid settlement cursor file");
+    await expect(store.load()).resolves.toBeUndefined();
+
+    const files = await readdir(root);
+    const hasBackup = files.some((name) => name.startsWith("cursor.json.invalid-"));
+    expect(hasBackup).toBe(true);
+  });
+
+  it("recovers partial cursor payload and continues startup", async () => {
+    const root = await mkdtemp(join(tmpdir(), "fiber-link-cursor-"));
+    const filePath = join(root, "cursor.json");
+    await writeFile(filePath, '{"id":"tip-123"}', "utf8");
+
+    const store = createFileSettlementCursorStore(filePath);
+    await expect(store.load()).resolves.toBeUndefined();
+
+    const files = await readdir(root);
+    const hasBackup = files.some((name) => name.startsWith("cursor.json.invalid-"));
+    expect(hasBackup).toBe(true);
   });
 
   it("writes cursor payload with stable fields", async () => {
