@@ -389,6 +389,81 @@ describe("runSettlementDiscovery", () => {
     expect(summary.stillUnpaid).toBe(1);
   });
 
+
+  it("skips intents whose retry delay is in the future", async () => {
+    const now = new Date("2026-02-11T10:00:00.000Z");
+    await tipIntentRepo.create({
+      appId: "app-a",
+      postId: "p-skip",
+      fromUserId: "u1",
+      toUserId: "u2",
+      asset: "USDI",
+      amount: "10",
+      invoice: "inv-skip-retry",
+    });
+
+    await tipIntentRepo.markSettlementRetryPending("inv-skip-retry", {
+      now,
+      nextRetryAt: new Date("2026-02-11T10:10:00.000Z"),
+      error: "transient; retry later",
+    });
+
+    const adapter = {
+      getInvoiceStatus: async () => {
+        throw new Error("should not be called");
+      },
+    };
+
+    const summary = await runSettlementDiscovery({
+      limit: 100,
+      tipIntentRepo,
+      ledgerRepo,
+      adapter,
+      nowMsFn: () => now.getTime(),
+    });
+
+    expect(summary.scanned).toBe(1);
+    expect(summary.skippedRetryPending).toBe(1);
+    expect(summary.events).toHaveLength(0);
+    expect(summary.retryScheduled).toBe(0);
+  });
+
+  it("maps terminal-like rpc errors to terminal failure", async () => {
+    await tipIntentRepo.create({
+      appId: "app-a",
+      postId: "p-terminal-rpc",
+      fromUserId: "u1",
+      toUserId: "u2",
+      asset: "USDI",
+      amount: "10",
+      invoice: "inv-terminal-rpc",
+    });
+
+    const summary = await runSettlementDiscovery({
+      limit: 100,
+      tipIntentRepo,
+      ledgerRepo,
+      adapter: {
+        async getInvoiceStatus() {
+          throw new FiberRpcError("invalid request payload", -32600);
+        },
+      },
+    });
+
+    expect(summary.failed).toBe(1);
+    expect(summary.terminalFailures).toBe(1);
+    expect(summary.events).toHaveLength(1);
+    expect(summary.events[0]).toMatchObject({
+      invoice: "inv-terminal-rpc",
+      outcome: "FAILED_TERMINAL_ERROR",
+      failureClass: "TERMINAL",
+    });
+
+    const saved = await tipIntentRepo.findByInvoiceOrThrow("inv-terminal-rpc");
+    expect(saved.invoiceState).toBe("FAILED");
+    expect(saved.settlementFailureReason).toBe("FAILED_TERMINAL_ERROR");
+  });
+
   it("supports cursor pagination and wraps to avoid fixed-limit starvation", async () => {
     vi.useFakeTimers();
     try {
