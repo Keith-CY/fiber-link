@@ -540,9 +540,9 @@ describe("tipIntentRepo (in-memory)", () => {
 describe("tipIntentRepo (db error branches)", () => {
   it("throws TipIntentNotFoundError when clearSettlementFailure targets missing invoice", async () => {
     const updateReturning = vi.fn(async () => []);
-    const updateSet = vi.fn(() => ({ returning: updateReturning }));
-    const updateWhere = vi.fn(() => ({ set: updateSet }));
-    const update = vi.fn(() => ({ where: updateWhere }));
+    const updateWhere = vi.fn(() => ({ returning: updateReturning }));
+    const updateSet = vi.fn(() => ({ where: updateWhere }));
+    const update = vi.fn(() => ({ set: updateSet }));
 
     const selectLimit = vi.fn(async () => []);
     const selectWhere = vi.fn(() => ({ limit: selectLimit }));
@@ -561,9 +561,9 @@ describe("tipIntentRepo (db error branches)", () => {
 
   it("marks settlement retry pending only when record remains UNPAID", async () => {
     const updateReturning = vi.fn(async () => []);
-    const updateSet = vi.fn(() => ({ returning: updateReturning }));
-    const updateWhere = vi.fn(() => ({ set: updateSet }));
-    const update = vi.fn(() => ({ where: updateWhere }));
+    const updateWhere = vi.fn(() => ({ returning: updateReturning }));
+    const updateSet = vi.fn(() => ({ where: updateWhere }));
+    const update = vi.fn(() => ({ set: updateSet }));
 
     const row = { ...createDbRow({ invoice: "inv-settled", invoiceState: "SETTLED" }), settledAt: null };
     const selectLimit = vi.fn(async () => [row]);
@@ -587,9 +587,9 @@ describe("tipIntentRepo (db error branches)", () => {
 
   it("maps terminal failure on unresolved invoice to last known DB state", async () => {
     const updateReturning = vi.fn(async () => []);
-    const updateSet = vi.fn(() => ({ returning: updateReturning }));
-    const updateWhere = vi.fn(() => ({ set: updateSet }));
-    const update = vi.fn(() => ({ where: updateWhere }));
+    const updateWhere = vi.fn(() => ({ returning: updateReturning }));
+    const updateSet = vi.fn(() => ({ where: updateWhere }));
+    const update = vi.fn(() => ({ set: updateSet }));
 
     const row = { ...createDbRow({ invoice: "inv-failed", invoiceState: "FAILED" }), settledAt: null };
     const selectLimit = vi.fn(async () => [row]);
