@@ -4,6 +4,10 @@
 Guide agents to review pull requests like a collaborator: check CI first, use inline comments, distinguish blocking vs non-blocking issues.
 
 ## Review Process
+1. Before re-reviewing open PRs, follow the repository rule set in `AGENTS.md` for PR ownership and prior-review state:
+   - Re-review mine only when existing `BS` findings are present.
+   - Skip re-review of others when previous review is complete with no new updates.
+   - Re-review others when unresolved/new findings remain.
 1. Check CI first via `gh pr checks <number> --repo "$GITHUB_REPOSITORY"`.
 2. **Only do formal review after required checks are green.**
 3. If CI is pending/failing:
