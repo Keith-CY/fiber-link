@@ -13,8 +13,7 @@ import json
 import re
 import subprocess
 import time
-from dataclasses import dataclass
-from typing import Dict, List, Tuple
+from typing import Dict, List
 
 REPO = "Keith-CY/fiber-link"
 STATE_FILE = "/root/.openclaw/workspace/memory/fiber-link-task1-state.json"
@@ -48,7 +47,7 @@ def list_json(resource: str, assignee: str | None = None, label: str | None = No
 
 
 def source_pr_from_issue_body(body: str) -> int | None:
-    m = re.search(r"Source PR:\s*https://github.com/[^/]+/[^/]+/pull/(\\d+)", body or "")
+    m = re.search(r"Source PR:\\s*https://github.com/[^/]+/[^/]+/pull/(\\d+)", body or "")
     if not m:
         return None
     return int(m.group(1))
@@ -148,11 +147,28 @@ def summarize(snapshot: dict) -> str:
     return "\n".join(lines)
 
 
+def changed_since_last(snapshot: dict, state: dict) -> bool:
+    runs = state.get("runs", [])
+    if not runs:
+        return True
+    last = runs[-1]
+    # treat any change in actionable items as notable
+    return any(
+        last["counts"][key] != snapshot["counts"][key]
+        for key in ["assigned", "unboundNbs", "changeRequests"]
+    )
+
+
+def has_actionable(snapshot: dict) -> bool:
+    return any(snapshot["counts"][key] > 0 for key in ["assigned", "unboundNbs", "changeRequests"])
+
+
 def run_report(hours: int = 1) -> str:
     state = load_state()
     runs = state.get("runs", [])
     if not runs:
         return "No task-1 runs recorded yet."
+
     now = int(time.time())
     cutoff = now - hours * 3600
     recent = [r for r in runs if r.get("ts", 0) >= cutoff]
@@ -171,10 +187,13 @@ def run_report(hours: int = 1) -> str:
     if not recent:
         return f"No task-1 scans in the last {hours}h."
 
+    if summary["totalAssigned"] == 0 and summary["totalUnboundNbs"] == 0 and summary["totalChangeRequests"] == 0:
+        return ""
+
     lines = [
         f"Task-1 report ({hours}h): {summary['runs']} scan runs",
         f"Total assigned open issues: {summary['totalAssigned']}",
-        f"Total open nbs: {summary['totalNbs']} (unbound/non-open-source-PR: {summary['totalUnboundNbs']})",
+        f"Total open nbs: {summary['totalNbs']} (unbound/non-open-source PR: {summary['totalUnboundNbs']})",
         f"Total PRs with CHANGES_REQUESTED: {summary['totalChangeRequests']}",
         "",
         "Latest run:",
@@ -183,16 +202,16 @@ def run_report(hours: int = 1) -> str:
     return "\n".join(lines)
 
 
-@dataclass
-class Args:
-    mode: str
-
-
-def parse_args() -> Args:
+def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Fiber Link hourly task 1 monitor")
     p.add_argument("--mode", choices=["scan", "report", "scan-and-report"], default="scan")
     p.add_argument("--hours", type=int, default=1, help="Report lookback window hours")
-    return p.parse_args(namespace=Args("scan"))
+    p.add_argument(
+        "--only-changes",
+        action="store_true",
+        help="For report mode, suppress output when totals are unchanged and no actionables exist",
+    )
+    return p.parse_args()
 
 
 def main() -> int:
@@ -200,16 +219,25 @@ def main() -> int:
     if args.mode == "scan":
         snapshot = analyze()
         save_state(snapshot)
-        print(summarize(snapshot))
+        # Keep scan chatter off in scheduled runs; return concise line only when actionable
+        if has_actionable(snapshot):
+            print(summarize(snapshot))
         return 0
 
     if args.mode == "scan-and-report":
         snapshot = analyze()
+        state = load_state()
+        if args.only_changes and not changed_since_last(snapshot, state):
+            return 0
         save_state(snapshot)
-        print(run_report(hours=args.hours))
+        output = run_report(hours=args.hours)
+        if output:
+            print(output)
         return 0
 
-    print(run_report(hours=args.hours))
+    output = run_report(hours=args.hours)
+    if output:
+        print(output)
     return 0
 
 
