@@ -101,11 +101,17 @@ export function createAdapter({ endpoint }: { endpoint: string }) {
       return { close: () => undefined };
     },
     async executeWithdrawal({ amount, asset, toAddress, requestId }: ExecuteWithdrawalArgs) {
-      const currency = mapAssetToCurrency(asset);
-      const result = (await rpcCall(endpoint, "send_payment", {
+      const parsed = (await rpcCall(endpoint, "parse_invoice", {
         invoice: toAddress,
+      })) as Record<string, unknown> | undefined;
+      const paymentHash = pickPaymentHash(parsed);
+      if (!paymentHash) {
+        throw new Error("parse_invoice response is missing 'invoice.data.payment_hash' string");
+      }
+      const result = (await rpcCall(endpoint, "send_payment", {
+        payment_hash: paymentHash,
         amount: toHexQuantity(amount),
-        currency,
+        currency: mapAssetToCurrency(asset),
         request_id: requestId,
       })) as Record<string, unknown> | undefined;
       const txHash = pickTxEvidence(result);
