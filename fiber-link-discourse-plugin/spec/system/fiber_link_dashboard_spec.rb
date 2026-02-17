@@ -12,6 +12,30 @@ RSpec.describe "Fiber Link Dashboard", type: :system do
     sign_in(user)
   end
 
+  it "bootstraps runtime without manual client initialization" do
+    stub_request(:post, "https://fiber-link.example/rpc")
+      .with { |request| JSON.parse(request.body).fetch("method") == "dashboard.summary" }
+      .to_return(
+        status: 200,
+        body: {
+          jsonrpc: "2.0",
+          id: "dash-init",
+          result: {
+            balance: "0",
+            tips: [],
+            generatedAt: "2026-02-16T00:00:00.000Z",
+          },
+        }.to_json,
+        headers: { "Content-Type" => "application/json" },
+      )
+
+    visit "/fiber-link"
+
+    runtime = page.evaluate_script("window.__fiberLinkRuntime")
+    expect(runtime).to include("initialized" => true, "rpcPath" => "/fiber-link/rpc")
+    expect(page).to have_content("Fiber Link Dashboard")
+  end
+
   it "shows balance and tip feed values from dashboard.summary" do
     stub_request(:post, "https://fiber-link.example/rpc")
       .with { |request| JSON.parse(request.body).fetch("method") == "dashboard.summary" }
