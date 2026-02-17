@@ -4,6 +4,8 @@ module ::FiberLink
   class RpcController < ::ApplicationController
     requires_plugin "fiber-link"
     before_action :ensure_logged_in
+    ALLOWED_WITHDRAWAL_STATES = ["ALL", "PENDING", "PROCESSING", "RETRY_PENDING", "COMPLETED", "FAILED"].freeze
+    ALLOWED_SETTLEMENT_STATES = ["ALL", "UNPAID", "SETTLED", "FAILED"].freeze
 
     def proxy
       service_url = SiteSetting.fiber_link_service_url
@@ -77,9 +79,31 @@ module ::FiberLink
               requested_limit
             end
 
+          include_admin = params["includeAdmin"] == true
+          if include_admin && !current_user.admin?
+            render json: {
+                     jsonrpc: "2.0",
+                     id: request_id,
+                     error: { code: -32001, message: "Unauthorized" },
+                   },
+                   status: :forbidden
+            return
+          end
+
+          withdrawal_state = params.dig("filters", "withdrawalState")
+          withdrawal_state = "ALL" unless ALLOWED_WITHDRAWAL_STATES.include?(withdrawal_state)
+
+          settlement_state = params.dig("filters", "settlementState")
+          settlement_state = "ALL" unless ALLOWED_SETTLEMENT_STATES.include?(settlement_state)
+
           {
             userId: current_user.id.to_s,
             limit: normalized_limit,
+            includeAdmin: include_admin,
+            filters: {
+              withdrawalState: withdrawal_state,
+              settlementState: settlement_state,
+            },
           }
         else
           render json: {
