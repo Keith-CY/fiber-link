@@ -13,7 +13,7 @@ import json
 import re
 import subprocess
 import time
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 REPO = "Keith-CY/fiber-link"
 STATE_FILE = "/root/.openclaw/workspace/memory/fiber-link-task1-state.json"
@@ -61,33 +61,60 @@ def pr_state(pr_num: int, cache: Dict[int, str]) -> str:
     return state
 
 
+def classify_with_source_pr(issues: List[dict], pr_state_cache: Dict[int, str]) -> Tuple[List[dict], List[dict], List[dict]]:
+    """
+    Returns:
+      actionable_issues: no source PR or source PR is not OPEN
+      bound_issues: source PR exists and is OPEN (skip handling)
+      unbound_issues: actionable list with reason
+    """
+    actionable: List[dict] = []
+    bound: List[dict] = []
+    unbound: List[dict] = []
+
+    for issue in issues:
+        pr_num = source_pr_from_issue_body(issue.get("body", "") or "")
+        if not pr_num:
+            reason = {"issue": issue, "reason": "missing-source-pr"}
+            actionable.append(reason)
+            unbound.append(reason)
+            continue
+
+        state = pr_state(pr_num, pr_state_cache)
+        if state == "OPEN":
+            bound.append(issue)
+            continue
+
+        reason = {"issue": issue, "reason": f"source-pr-{state.lower()}"}
+        actionable.append(reason)
+        unbound.append(reason)
+
+    return actionable, bound, unbound
+
+
 def analyze() -> dict:
-    assigned = list_json("issue", assignee="@me")
-    nbs = list_json("issue", label="nbs")
+    state_cache: Dict[int, str] = {}
+
+    assigned_issues = list_json("issue", assignee="@me")
+    nbs_issues = list_json("issue", label="nbs")
+
+    actionable_assigned_with_reason, _, _ = classify_with_source_pr(assigned_issues, state_cache)
+    actionable_nbs_with_reason, _, unbound_nbs = classify_with_source_pr(nbs_issues, state_cache)
+
     change_requests = [
         item for item in list_json("pr") if item.get("reviewDecision") == "CHANGES_REQUESTED"
     ]
 
-    pr_state_cache: Dict[int, str] = {}
-    unbound_nbs = []
-    for issue in nbs:
-        pr_num = source_pr_from_issue_body(issue.get("body", "") or "")
-        if not pr_num:
-            unbound_nbs.append({"issue": issue, "reason": "missing-source-pr"})
-            continue
-        state = pr_state(pr_num, pr_state_cache)
-        if state != "OPEN":
-            unbound_nbs.append({"issue": issue, "reason": f"source-pr-{state.lower()}"})
-
     return {
-        "assigned": assigned,
-        "nbs": nbs,
+        "assigned": [item["issue"] for item in actionable_assigned_with_reason],
+        "assignedUnbound": actionable_assigned_with_reason,
+        "nbs": nbs_issues,
+        "nbsUnbound": unbound_nbs,
         "changeRequests": change_requests,
-        "unboundNbs": unbound_nbs,
         "counts": {
-            "assigned": len(assigned),
-            "nbs": len(nbs),
-            "unboundNbs": len(unbound_nbs),
+            "assigned": len(actionable_assigned_with_reason),
+            "nbs": len(nbs_issues),
+            "nbsUnbound": len(unbound_nbs),
             "changeRequests": len(change_requests),
         },
         "ts": int(time.time()),
@@ -117,19 +144,19 @@ def save_state(snapshot: dict) -> None:
 def summarize(snapshot: dict) -> str:
     lines = [
         f"Scan at {snapshot['runAt']}",
-        f"Assigned issues: {snapshot['counts']['assigned']}",
-        f"Open nbs issues: {snapshot['counts']['nbs']} (unbound/non-open-source PR: {snapshot['counts']['unboundNbs']})",
+        f"Assigned issues requiring handling: {snapshot['counts']['assigned']}",
+        f"Open nbs issues: {snapshot['counts']['nbs']} (unbound/non-open-source PR: {snapshot['counts']['nbsUnbound']})",
         f"PRs with CHANGES_REQUESTED: {snapshot['counts']['changeRequests']}",
     ]
 
     if snapshot["counts"]["assigned"]:
-        lines.append("- Assigned issues:")
+        lines.append("- Assigned issues to handle:")
         for i in snapshot["assigned"]:
             lines.append(f"  - #{i['number']} {i['title']} ({i['url']})")
 
-    if snapshot["counts"]["unboundNbs"]:
+    if snapshot["counts"]["nbsUnbound"]:
         lines.append("- Unbound nbs issues:")
-        for u in snapshot["unboundNbs"]:
+        for u in snapshot["nbsUnbound"]:
             issue = u["issue"]
             lines.append(f"  - #{issue['number']} {issue['title']} [{u['reason']}] ({issue['url']})")
 
@@ -140,7 +167,7 @@ def summarize(snapshot: dict) -> str:
 
     if not any([
         snapshot["counts"]["assigned"],
-        snapshot["counts"]["unboundNbs"],
+        snapshot["counts"]["nbsUnbound"],
         snapshot["counts"]["changeRequests"],
     ]):
         lines.append("- No actionable items.")
@@ -152,15 +179,15 @@ def changed_since_last(snapshot: dict, state: dict) -> bool:
     if not runs:
         return True
     last = runs[-1]
-    # treat any change in actionable items as notable
+    # report when actionable counts change
     return any(
         last["counts"][key] != snapshot["counts"][key]
-        for key in ["assigned", "unboundNbs", "changeRequests"]
+        for key in ["assigned", "nbsUnbound", "changeRequests"]
     )
 
 
 def has_actionable(snapshot: dict) -> bool:
-    return any(snapshot["counts"][key] > 0 for key in ["assigned", "unboundNbs", "changeRequests"])
+    return any(snapshot["counts"][key] > 0 for key in ["assigned", "nbsUnbound", "changeRequests"])
 
 
 def run_report(hours: int = 1) -> str:
@@ -177,7 +204,7 @@ def run_report(hours: int = 1) -> str:
         "runs": len(recent),
         "totalAssigned": sum(r["counts"]["assigned"] for r in recent),
         "totalNbs": sum(r["counts"]["nbs"] for r in recent),
-        "totalUnboundNbs": sum(r["counts"]["unboundNbs"] for r in recent),
+        "totalUnboundNbs": sum(r["counts"]["nbsUnbound"] for r in recent),
         "totalChangeRequests": sum(r["counts"]["changeRequests"] for r in recent),
         "latest": summarize(recent[-1]) if recent else "No data",
         "windowFrom": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(cutoff)),
@@ -219,7 +246,6 @@ def main() -> int:
     if args.mode == "scan":
         snapshot = analyze()
         save_state(snapshot)
-        # Keep scan chatter off in scheduled runs; return concise line only when actionable
         if has_actionable(snapshot):
             print(summarize(snapshot))
         return 0
