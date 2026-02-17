@@ -50,7 +50,6 @@ Edit `deploy/compose/.env` (minimum required values are marked ✅, optional/tun
 Start services:
 
 ```bash
-cd deploy/compose
 docker compose up -d --build
 ```
 
@@ -114,7 +113,7 @@ Expected minimum:
 Additional checks:
 
 - `docker compose ps`
-- `docker inspect --format '{{json .State.Health}}' fiber-link-rpc | jq .`
+- `docker inspect --format '{{json .State.Health}}' fiber-link-rpc`
 - plugin smoke checks (optional, if you have Discourse dev env):
   - `scripts/plugin-smoke.sh`
 
