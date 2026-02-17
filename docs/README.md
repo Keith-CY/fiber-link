@@ -1,5 +1,9 @@
 # Docs Index
 
+## Roadmap tracking
+
+- `docs/plans/2026-02-17-issue-32-epic-execution-status-tracker.md` — execution order, blocking graph, W1-W5 issue status snapshot, and remaining critical tasks for epic `#32` (status verified on 2026-02-17).
+
 ## Plugin testing
 
 - `docs/runbooks/phase2-verification.md` — end-to-end verification flow for service and plugin changes.
