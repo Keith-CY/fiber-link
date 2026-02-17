@@ -536,3 +536,78 @@ describe("tipIntentRepo (in-memory)", () => {
     });
   });
 });
+
+describe("tipIntentRepo (db error branches)", () => {
+  it("throws TipIntentNotFoundError when clearSettlementFailure targets missing invoice", async () => {
+    const updateReturning = vi.fn(async () => []);
+    const updateSet = vi.fn(() => ({ returning: updateReturning }));
+    const updateWhere = vi.fn(() => ({ set: updateSet }));
+    const update = vi.fn(() => ({ where: updateWhere }));
+
+    const selectLimit = vi.fn(async () => []);
+    const selectWhere = vi.fn(() => ({ limit: selectLimit }));
+    const selectFrom = vi.fn(() => ({ where: selectWhere }));
+    const select = vi.fn(() => ({ from: selectFrom }));
+
+    const db = { update, select } as unknown as any;
+    const repo = createDbTipIntentRepo(db);
+
+    await expect(
+      repo.clearSettlementFailure("missing-invoice", {
+        now: new Date("2026-02-12T00:00:00.000Z"),
+      }),
+    ).rejects.toBeInstanceOf(Error);
+  });
+
+  it("marks settlement retry pending only when record remains UNPAID", async () => {
+    const updateReturning = vi.fn(async () => []);
+    const updateSet = vi.fn(() => ({ returning: updateReturning }));
+    const updateWhere = vi.fn(() => ({ set: updateSet }));
+    const update = vi.fn(() => ({ where: updateWhere }));
+
+    const row = { ...createDbRow({ invoice: "inv-settled", invoiceState: "SETTLED" }), settledAt: null };
+    const selectLimit = vi.fn(async () => [row]);
+    const selectWhere = vi.fn(() => ({ limit: selectLimit }));
+    const selectFrom = vi.fn(() => ({ where: selectWhere }));
+    const select = vi.fn(() => ({ from: selectFrom }));
+
+    const db = { update, select } as unknown as any;
+    const repo = createDbTipIntentRepo(db);
+
+    const rowAfterUpdate = await repo.markSettlementRetryPending("inv-settled", {
+      now: new Date("2026-02-12T00:00:00.000Z"),
+      nextRetryAt: new Date("2026-02-12T00:05:00.000Z"),
+      error: "temp net issue",
+    });
+
+    expect(rowAfterUpdate.invoiceState).toBe("SETTLED");
+    expect(rowAfterUpdate.settlementFailureReason).toBeNull();
+    expect(updateSet).toHaveBeenCalled();
+  });
+
+  it("maps terminal failure on unresolved invoice to last known DB state", async () => {
+    const updateReturning = vi.fn(async () => []);
+    const updateSet = vi.fn(() => ({ returning: updateReturning }));
+    const updateWhere = vi.fn(() => ({ set: updateSet }));
+    const update = vi.fn(() => ({ where: updateWhere }));
+
+    const row = { ...createDbRow({ invoice: "inv-failed", invoiceState: "FAILED" }), settledAt: null };
+    const selectLimit = vi.fn(async () => [row]);
+    const selectWhere = vi.fn(() => ({ limit: selectLimit }));
+    const selectFrom = vi.fn(() => ({ where: selectWhere }));
+    const select = vi.fn(() => ({ from: selectFrom }));
+
+    const db = { update, select } as unknown as any;
+    const repo = createDbTipIntentRepo(db);
+
+    const saved = await repo.markSettlementTerminalFailure("inv-failed", {
+      now: new Date("2026-02-12T01:00:00.000Z"),
+      reason: "FAILED_RETRY_EXHAUSTED",
+      error: "retry budget used",
+    });
+
+    expect(saved.invoiceState).toBe("FAILED");
+    expect(saved.settlementFailureReason).toBe("FAILED_RETRY_EXHAUSTED");
+  });
+});
+
