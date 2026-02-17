@@ -5,6 +5,10 @@
 - `docs/runbooks/phase2-verification.md` — end-to-end verification flow for service and plugin changes.
 - `scripts/plugin-smoke.sh` — local Discourse plugin smoke test entrypoint that runs in Docker (no local Ruby required).
 
+## W4 integration tracking
+
+- `docs/runbooks/w4-integration-status-2026-02-17.md` — issue #36 W4 subtask matrix, completion snapshot, and verification/operations checks as of 2026-02-17.
+
 ## Admin installation
 
 - `docs/admin-installation.md` — admin installation and verification flow for Discourse + compose deployment.
