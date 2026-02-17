@@ -17,3 +17,10 @@
 - Checkpoint 3 `health.ping` returned `"status":"ok"`.
 - Checkpoint 4 `tip.create` returned non-empty `invoice`.
 - Checkpoint 5 logs archived and clean shutdown.
+
+## Latest local run
+
+- Date: 2026-02-17
+- Command: `scripts/testnet-smoke.sh --verbose`
+- Result: `RESULT=PASS CODE=0`
+- Artifact directory: `.tmp/testnet-smoke/20260217-033951/`

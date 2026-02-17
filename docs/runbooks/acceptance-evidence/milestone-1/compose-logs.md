@@ -9,3 +9,11 @@
 
 - Published copy should be stored at:
   - `docs/runbooks/acceptance-evidence/milestone-1/compose-logs.md` (this file)
+
+## Latest local run
+
+- Date: 2026-02-17
+- Command: `cd deploy/compose && ./compose-readiness.sh --verbose`
+- Result: `summary.status=pass`
+- Evidence directory: `deploy/compose/evidence/20260216T184504Z/`
+- Summary file: `deploy/compose/evidence/20260216T184504Z/summary.json`

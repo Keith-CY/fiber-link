@@ -49,4 +49,4 @@ Ship a working end-to-end tipping flow on a demo Discourse instance (testnet), p
 - Docker Compose reference deployment
 - Admin installation guide
 - Security + ops runbook (keys, backups, monitoring)
-- Public demo Discourse instance + short demo video: [Milestone 1 demo proof](runbooks/milestone-1-public-demo.md)
+- Public demonstration proof is tracked in issue [#114](https://github.com/Keith-CY/fiber-link/issues/114)
