@@ -33,6 +33,129 @@ jobs:
         working-directory: fiber-link-service/packages/db
         run: bun run test -- --run --silent
 
+
+  coverage-comment:
+    name: Coverage Comment
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.1.8
+      - name: Install service dependencies
+        working-directory: fiber-link-service
+        run: bun install --frozen-lockfile
+      - name: Collect Vitest coverage
+        working-directory: fiber-link-service
+        run: |
+          set -euo pipefail
+          mkdir -p coverage-reports
+          run_pkg() {
+            local pkg="$1"
+            local name="$2"
+            (cd "$pkg" && bunx vitest run --silent --coverage.enabled --coverage.provider=v8 --coverage.reporter=json-summary --coverage.reportsDirectory="../../coverage-reports/$name")
+          }
+          run_pkg apps/rpc rpc
+          run_pkg apps/admin admin
+          run_pkg apps/worker worker
+          run_pkg packages/db db
+
+      - name: Collect base branch coverage
+        working-directory: fiber-link-service
+        run: |
+          set -euo pipefail
+          mkdir -p ../base-coverage-reports
+          git fetch --no-tags origin "${{ github.event.pull_request.base.ref }}"
+          git worktree add ../_base_cov "origin/${{ github.event.pull_request.base.ref }}"
+          trap 'git worktree remove -f ../_base_cov || true' EXIT
+
+          (cd ../_base_cov/fiber-link-service && bun install --frozen-lockfile)
+          # base branch may not include coverage provider dependency yet
+          (cd ../_base_cov/fiber-link-service && bun add -d @vitest/coverage-v8@1.6.0)
+
+          run_base_pkg() {
+            local pkg="$1"
+            local name="$2"
+            (cd "../_base_cov/fiber-link-service/$pkg" && bunx vitest run --silent --coverage.enabled --coverage.provider=v8 --coverage.reporter=json-summary --coverage.reportsDirectory="../../../../base-coverage-reports/$name")
+          }
+
+          run_base_pkg apps/rpc rpc
+          run_base_pkg apps/admin admin
+          run_base_pkg apps/worker worker
+          run_base_pkg packages/db db
+      - name: Build markdown summary
+        working-directory: fiber-link-service
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
+          const targets = [
+            ['rpc','RPC'],
+            ['admin','Admin'],
+            ['worker','Worker'],
+            ['db','DB'],
+          ];
+          let rows = [];
+          let sum = 0;
+          let baseSum = 0;
+          for (const [key,label] of targets) {
+            const p = path.join('coverage-reports', key, 'coverage-summary.json');
+            const j = JSON.parse(fs.readFileSync(p, 'utf8'));
+            const pct = Number(j.total.lines.pct || 0);
+
+            const bp = path.join('..', 'base-coverage-reports', key, 'coverage-summary.json');
+            const bj = JSON.parse(fs.readFileSync(bp, 'utf8'));
+            const basePct = Number(bj.total.lines.pct || 0);
+
+            const delta = pct - basePct;
+            const deltaStr = `${delta >= 0 ? '+' : ''}${delta.toFixed(2)}%`;
+
+            sum += pct;
+            baseSum += basePct;
+            rows.push(`| ${label} | ${pct.toFixed(2)}% | ${deltaStr} |`);
+          }
+          const avg = sum / targets.length;
+          const baseAvg = baseSum / targets.length;
+          const avgDelta = avg - baseAvg;
+          const marker = '<!-- fiber-link-pr-coverage-report -->';
+          const body = [
+            marker,
+            '### 📊 Coverage Report',
+            '',
+            '| Module | Line Coverage | Δ vs base |',
+            '|---|---:|---:|',
+            ...rows,
+            '',
+            `**Average line coverage:** ${avg.toFixed(2)}%`,
+            `**Δ vs base:** ${avgDelta >= 0 ? '+' : ''}${avgDelta.toFixed(2)}%`,
+          ].join('\n');
+          fs.writeFileSync('../coverage-comment.md', body);
+          NODE
+      - name: Create or update PR comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          marker='<!-- fiber-link-pr-coverage-report -->'
+          pr='${{ github.event.pull_request.number }}'
+          body=$(cat coverage-comment.md)
+          ids=$(gh api "repos/${GITHUB_REPOSITORY}/issues/${pr}/comments" --paginate             | jq -r --arg m "$marker" '.[] | select(.body | contains($m)) | .id')
+          existing_id=$(printf '%s
+' "$ids" | sed '/^$/d' | head -n1)
+          if [ -n "${existing_id:-}" ]; then
+            gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${existing_id}" -f body="$body" >/dev/null
+            printf '%s
+' "$ids" | sed '/^$/d' | tail -n +2 | while read -r extra_id; do
+              gh api -X DELETE "repos/${GITHUB_REPOSITORY}/issues/comments/${extra_id}" >/dev/null || true
+            done
+          else
+            gh api "repos/${GITHUB_REPOSITORY}/issues/${pr}/comments" -f body="$body" >/dev/null
+          fi
+
   fiber-adapter-e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 40
