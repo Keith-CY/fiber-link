@@ -1,10 +1,5 @@
+import { defaultWorkerLogger, logWithContract, type WorkerLogger } from "./worker-logging";
 import { runWithdrawalBatch as runWithdrawalBatchDefault } from "./withdrawal-batch";
-
-type WorkerLogger = {
-  info: (message: string, context?: Record<string, unknown>) => void;
-  warn: (message: string, context?: Record<string, unknown>) => void;
-  error: (message: string, error?: unknown) => void;
-};
 
 type RunWithdrawalBatchFn = (options: { maxRetries: number; retryDelayMs: number }) => Promise<unknown>;
 type PollSettlementsFn = (options: { limit: number }) => Promise<unknown>;
@@ -31,17 +26,7 @@ export type WorkerRuntime = {
   shutdown: (signal: NodeJS.Signals | "manual") => Promise<void>;
 };
 
-const defaultLogger: WorkerLogger = {
-  info(message, context) {
-    console.log(message, context ?? {});
-  },
-  warn(message, context) {
-    console.warn(message, context ?? {});
-  },
-  error(message, error) {
-    console.error(message, error);
-  },
-};
+const defaultLogger: WorkerLogger = defaultWorkerLogger;
 
 async function waitForDrain(batchPromise: Promise<void>, timeoutMs: number): Promise<boolean> {
   let timeoutId: ReturnType<typeof setTimeout> | null = null;
@@ -85,7 +70,7 @@ export function createWorkerRuntime(options: CreateWorkerRuntimeOptions): Worker
       return;
     }
     if (inFlightBatch) {
-      logger.warn("[worker] previous worker cycle still running; skipping tick", {
+      logWithContract(logger, "warn", "worker-runtime", "runtime.overlap-skip", "[worker] previous worker cycle still running; skipping tick", {
         intervalMs: options.intervalMs,
       });
       return;
@@ -113,11 +98,13 @@ export function createWorkerRuntime(options: CreateWorkerRuntimeOptions): Worker
               retryDelayMs: options.retryDelayMs,
             });
             lastWithdrawalRunAtMs = nowMs;
-            logger.info("[worker] withdrawal batch", {
+            logWithContract(logger, "info", "worker-runtime", "runtime.withdrawal-batch-success", "[worker] withdrawal batch", {
               result,
             });
           } catch (error) {
-            logger.error("[worker] withdrawal batch failed", error);
+            logWithContract(logger, "error", "worker-runtime", "runtime.withdrawal-batch-failed", "[worker] withdrawal batch failed", {
+              error: error instanceof Error ? error.message : String(error),
+            });
           }
         }
 
@@ -125,12 +112,14 @@ export function createWorkerRuntime(options: CreateWorkerRuntimeOptions): Worker
           try {
             const result = await pollSettlements({ limit: settlementBatchSize });
             lastSettlementRunAtMs = nowMs;
-            logger.info("[worker] settlement polling batch", {
+            logWithContract(logger, "info", "worker-runtime", "runtime.settlement-batch-success", "[worker] settlement polling batch", {
               result,
               limit: settlementBatchSize,
             });
           } catch (error) {
-            logger.error("[worker] settlement polling batch failed", error);
+            logWithContract(logger, "error", "worker-runtime", "runtime.settlement-batch-failed", "[worker] settlement polling batch failed", {
+              error: error instanceof Error ? error.message : String(error),
+            });
           }
         }
       } finally {
@@ -149,7 +138,7 @@ export function createWorkerRuntime(options: CreateWorkerRuntimeOptions): Worker
     timer = setIntervalFn(() => {
       void processCycle();
     }, options.intervalMs);
-    logger.info("[worker] started", {
+    logWithContract(logger, "info", "worker-runtime", "runtime.started", "[worker] started", {
       tickIntervalMs: options.intervalMs,
       withdrawalIntervalMs,
       maxRetries: options.maxRetries,
@@ -177,14 +166,17 @@ export function createWorkerRuntime(options: CreateWorkerRuntimeOptions): Worker
         const drained = await waitForDrain(inFlightBatch, options.shutdownTimeoutMs);
         if (!drained) {
           exitCode = 1;
-          logger.error("[worker] shutdown drain timed out; exiting with in-flight work", {
+          logWithContract(logger, "error", "worker-runtime", "runtime.shutdown-timeout", "[worker] shutdown drain timed out; exiting with in-flight work", {
             signal,
             shutdownTimeoutMs: options.shutdownTimeoutMs,
           });
         }
       }
 
-      logger.info("[worker] shutdown", { signal, exitCode });
+      logWithContract(logger, "info", "worker-runtime", "runtime.shutdown", "[worker] shutdown", {
+        signal,
+        exitCode,
+      });
       exitFn(exitCode);
     })();
 

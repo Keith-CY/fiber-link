@@ -1,4 +1,21 @@
 import { beforeEach, describe, expect, it } from "vitest";
+
+type StructuredLog = { level: "info" | "error"; message: string; context?: Record<string, unknown> };
+
+function createCollectingLogger() {
+  const events: StructuredLog[] = [];
+  return {
+    events,
+    logger: {
+      info(message: string, context?: Record<string, unknown>) {
+        events.push({ level: "info", message, context });
+      },
+      error(message: string, context?: Record<string, unknown>) {
+        events.push({ level: "error", message, context });
+      },
+    },
+  };
+}
 import {
   createInMemoryLedgerRepo,
   createInMemoryTipIntentRepo,
@@ -59,14 +76,13 @@ describe("settlement subscription strategy integration", () => {
     invoiceStates.set(subscriptionIntent.invoice, "SETTLED");
     invoiceStates.set(pollingIntent.invoice, "SETTLED");
 
+    const { events, logger } = createCollectingLogger();
+
     const runner = await startSettlementSubscriptionRunner({
       adapter,
       tipIntentRepo,
       ledgerRepo,
-      logger: {
-        info: () => undefined,
-        error: () => undefined,
-      },
+      logger,
     });
 
     await emit?.(subscriptionIntent.invoice);
@@ -86,6 +102,19 @@ describe("settlement subscription strategy integration", () => {
 
     const entries = ledgerRepo.__listForTests?.() ?? [];
     expect(entries).toHaveLength(2);
+
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        level: "info",
+        context: expect.objectContaining({ component: "worker-settlement-subscription", event: "subscription.event" }),
+      }),
+    );
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        level: "info",
+        context: expect.objectContaining({ component: "worker-settlement-subscription", event: "subscription.event" }),
+      }),
+    );
     expect(entries.filter((entry) => entry.refId === subscriptionIntent.id)).toHaveLength(1);
     expect(entries.filter((entry) => entry.refId === pollingIntent.id)).toHaveLength(1);
   });
@@ -122,14 +151,13 @@ describe("settlement subscription strategy integration", () => {
     });
     invoiceStates.set(fallbackIntent.invoice, "SETTLED");
 
+    const { events, logger } = createCollectingLogger();
+
     const runner = await startSettlementSubscriptionRunner({
       adapter,
       tipIntentRepo,
       ledgerRepo,
-      logger: {
-        info: () => undefined,
-        error: () => undefined,
-      },
+      logger,
     });
 
     await emit?.("missing-invoice");
@@ -145,5 +173,14 @@ describe("settlement subscription strategy integration", () => {
     expect(summary.scanned).toBe(1);
     expect(summary.settledCredits).toBe(1);
     expect(ledgerRepo.__listForTests?.()).toHaveLength(1);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        level: "error",
+        context: expect.objectContaining({
+          component: "worker-settlement-subscription",
+          event: "subscription.invoice-failed",
+        }),
+      }),
+    );
   });
 });

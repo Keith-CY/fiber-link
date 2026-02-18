@@ -10,15 +10,11 @@ import {
   type TipIntentRepo,
 } from "@fiber-link/db";
 import { createSettlementUpdateEvent, type SettlementUpdateEvent } from "./contracts";
+import { defaultWorkerLogger, logWithContract, type WorkerLogger } from "./worker-logging";
 import { markSettled } from "./settlement";
 
 type SettlementAdapter = {
   getInvoiceStatus: (input: { invoice: string }) => Promise<{ state: unknown }>;
-};
-
-type SettlementLogger = {
-  info: (message: string, context?: Record<string, unknown>) => void;
-  error: (message: string, error?: unknown) => void;
 };
 
 type LatencySummary = {
@@ -55,7 +51,7 @@ export type SettlementDiscoveryOptions = {
   tipIntentRepo?: TipIntentRepo;
   ledgerRepo?: LedgerRepo;
   nowMsFn?: () => number;
-  logger?: SettlementLogger;
+  logger?: WorkerLogger;
 };
 
 export type SettlementDiscoverySummary = {
@@ -75,14 +71,7 @@ export type SettlementDiscoverySummary = {
   detectionLatencyMs: LatencySummary;
 };
 
-const defaultLogger: SettlementLogger = {
-  info(message, context) {
-    console.log(message, context ?? {});
-  },
-  error(message, error) {
-    console.error(message, error);
-  },
-};
+const defaultLogger: WorkerLogger = defaultWorkerLogger;
 
 let defaultDb: DbClient | null = null;
 let defaultTipIntentRepo: TipIntentRepo | null = null;
@@ -255,6 +244,10 @@ export async function runSettlementDiscovery(options: SettlementDiscoveryOptions
   });
   if (options.cursor && intents.length === 0) {
     intents = await tipIntentRepo.listByInvoiceState("UNPAID", baseQueryOptions);
+    logWithContract(logger, "warn", "worker-settlement-discovery", "discovery.fallback-scan", "[worker] settlement discovery fallback scan", {
+      reason: "cursor_stale",
+      cursor: options.cursor,
+    });
   }
 
   const summary: SettlementDiscoverySummary = {
@@ -341,7 +334,7 @@ export async function runSettlementDiscovery(options: SettlementDiscoveryOptions
           error: "upstream invoice state reported FAILED",
         });
         summary.events.push(event);
-        logger.info("[worker] settlement audit", event);
+        logWithContract(logger, "info", "worker-settlement-discovery", "discovery.audit", "[worker] settlement audit", event);
         continue;
       }
 
@@ -365,7 +358,7 @@ export async function runSettlementDiscovery(options: SettlementDiscoveryOptions
           error: timeoutMessage,
         });
         summary.events.push(event);
-        logger.info("[worker] settlement audit", event);
+        logWithContract(logger, "info", "worker-settlement-discovery", "discovery.audit", "[worker] settlement audit", event);
         continue;
       }
 
@@ -406,7 +399,7 @@ export async function runSettlementDiscovery(options: SettlementDiscoveryOptions
               error: decision.message,
             });
             summary.events.push(event);
-            logger.info("[worker] settlement audit", event);
+            logWithContract(logger, "info", "worker-settlement-discovery", "discovery.audit", "[worker] settlement audit", event);
             continue;
           }
 
@@ -430,7 +423,7 @@ export async function runSettlementDiscovery(options: SettlementDiscoveryOptions
             error: decision.message,
           });
           summary.events.push(event);
-          logger.info("[worker] settlement audit", event);
+          logWithContract(logger, "info", "worker-settlement-discovery", "discovery.audit", "[worker] settlement audit", event);
           continue;
         }
 
@@ -452,10 +445,10 @@ export async function runSettlementDiscovery(options: SettlementDiscoveryOptions
           error: decision.message,
         });
         summary.events.push(event);
-        logger.info("[worker] settlement audit", event);
+        logWithContract(logger, "info", "worker-settlement-discovery", "discovery.audit", "[worker] settlement audit", event);
       } catch (handlerError) {
         summary.errors += 1;
-        logger.error("[worker] settlement discovery item failed", {
+        logWithContract(logger, "error", "worker-settlement-discovery", "discovery.item-failed", "[worker] settlement discovery item failed", {
           invoice: intent.invoice,
           error: handlerError instanceof Error ? handlerError.message : String(handlerError),
           originalError: error instanceof Error ? error.message : String(error),

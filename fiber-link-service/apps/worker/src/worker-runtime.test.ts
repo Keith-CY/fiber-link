@@ -1,6 +1,27 @@
 import { describe, expect, it } from "vitest";
 import { createWorkerRuntime } from "./worker-runtime";
 
+
+type StructuredLog = { level: "info" | "warn" | "error"; message: string; context?: Record<string, unknown> };
+
+function createCollectingLogger() {
+  const events: StructuredLog[] = [];
+  return {
+    events,
+    logger: {
+      info(message: string, context?: Record<string, unknown>) {
+        events.push({ level: "info", message, context });
+      },
+      warn(message: string, context?: Record<string, unknown>) {
+        events.push({ level: "warn", message, context });
+      },
+      error(message: string, context?: Record<string, unknown>) {
+        events.push({ level: "error", message, context });
+      },
+    } as const,
+  };
+}
+
 function createDeferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
   const promise = new Promise<T>((r) => {
@@ -132,6 +153,48 @@ describe("createWorkerRuntime", () => {
     ticks[0]?.();
     await Promise.resolve();
     expect(pollCalls).toEqual([25, 25]);
+  });
+
+
+  it("captures normalized startup and shutdown logs", async () => {
+    const { events, logger } = createCollectingLogger();
+
+    const runtime = createWorkerRuntime({
+      intervalMs: 1000,
+      maxRetries: 3,
+      retryDelayMs: 60_000,
+      shutdownTimeoutMs: 100,
+      runWithdrawalBatch: async () => {},
+      setIntervalFn: () => {
+        return 1 as unknown as ReturnType<typeof setInterval>;
+      },
+      clearIntervalFn: () => {},
+      exitFn: () => {},
+      logger,
+    });
+
+    await runtime.start();
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        level: "info",
+        context: expect.objectContaining({
+          component: "worker-runtime",
+          event: "runtime.started",
+        }),
+      }),
+    );
+
+    await runtime.shutdown("SIGTERM");
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        level: "info",
+        context: expect.objectContaining({
+          component: "worker-runtime",
+          event: "runtime.shutdown",
+        }),
+      }),
+    );
+
   });
 
   it("logs cycle overlap warning with cycle-scoped wording", async () => {

@@ -1,4 +1,25 @@
 import { mkdtemp } from "node:fs/promises";
+
+type StructuredLog = { level: "info" | "warn" | "error"; message: string; context?: Record<string, unknown> };
+
+function createCollectingLogger() {
+  const events: StructuredLog[] = [];
+  return {
+    events,
+    logger: {
+      info(message: string, context?: Record<string, unknown>) {
+        events.push({ level: "info", message, context });
+      },
+      warn(message: string, context?: Record<string, unknown>) {
+        events.push({ level: "warn", message, context });
+      },
+      error(message: string, context?: Record<string, unknown>) {
+        events.push({ level: "error", message, context });
+      },
+    },
+  };
+}
+
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -462,6 +483,49 @@ describe("runSettlementDiscovery", () => {
     const saved = await tipIntentRepo.findByInvoiceOrThrow("inv-terminal-rpc");
     expect(saved.invoiceState).toBe("FAILED");
     expect(saved.settlementFailureReason).toBe("FAILED_TERMINAL_ERROR");
+  });
+
+
+
+  it("logs fallback scan when cursor no longer matches current state", async () => {
+    const { events, logger } = createCollectingLogger();
+    await tipIntentRepo.create({
+      appId: "app-a",
+      postId: "p-fallback",
+      fromUserId: "u1",
+      toUserId: "u2",
+      asset: "USDI",
+      amount: "10",
+      invoice: "inv-fallback-1",
+    });
+
+    const staleCursor = {
+      createdAt: new Date("2099-01-01T00:00:00.000Z"),
+      id: "zzzz",
+    };
+
+    await runSettlementDiscovery({
+      limit: 10,
+      cursor: staleCursor,
+      tipIntentRepo,
+      ledgerRepo,
+      logger,
+      adapter: {
+        async getInvoiceStatus() {
+          return { state: "UNPAID" as const };
+        },
+      },
+    });
+
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        level: "warn",
+        context: expect.objectContaining({
+          component: "worker-settlement-discovery",
+          event: "discovery.fallback-scan",
+        }),
+      }),
+    );
   });
 
   it("supports cursor pagination and wraps to avoid fixed-limit starvation", async () => {

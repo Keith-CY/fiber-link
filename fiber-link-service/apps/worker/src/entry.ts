@@ -1,4 +1,5 @@
 import { createAdapter } from "@fiber-link/fiber-adapter";
+import { defaultWorkerLogger, logWithContract } from "./worker-logging";
 import type { TipIntentListCursor } from "@fiber-link/db";
 import { runSettlementDiscovery } from "./settlement-discovery";
 import { createFileSettlementCursorStore } from "./settlement-cursor-store";
@@ -98,15 +99,24 @@ async function main() {
       subscriptionRunner = await startSettlementSubscriptionRunner({
         adapter: fiberAdapter,
       });
-      console.info("[worker] settlement strategy enabled", {
+      logWithContract(defaultWorkerLogger, "info", "worker-entry", "entry.settlement-strategy", "[worker] settlement strategy enabled", {
         strategy: "subscription",
         pollingFallback: true,
       });
     } catch (error) {
-      console.error("[worker] settlement subscription startup failed; continuing with polling fallback", error);
+      logWithContract(
+        defaultWorkerLogger,
+        "error",
+        "worker-entry",
+        "entry.subscription-startup-failed",
+        "[worker] settlement subscription startup failed; continuing with polling fallback",
+        {
+          error: error instanceof Error ? error.message : String(error),
+        },
+      );
     }
   } else {
-    console.info("[worker] settlement strategy enabled", {
+    logWithContract(defaultWorkerLogger, "info", "worker-entry", "entry.settlement-strategy", "[worker] settlement strategy enabled", {
       strategy: "polling",
       pollingFallback: false,
     });
@@ -128,6 +138,8 @@ async function main() {
 }
 
 void main().catch((error) => {
-  console.error("[worker] startup failed", error);
+  logWithContract(defaultWorkerLogger, "error", "worker-entry", "entry.startup-failed", "[worker] startup failed", {
+    error: error instanceof Error ? error.message : String(error),
+  });
   process.exit(1);
 });
