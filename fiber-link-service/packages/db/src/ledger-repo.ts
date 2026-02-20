@@ -1,6 +1,7 @@
 import { randomUUID } from "crypto";
 import { and, eq, sql } from "drizzle-orm";
 import type { DbClient } from "./client";
+import { assertPositiveAmount, formatDecimal, parseDecimal, pow10 } from "./amount";
 import { ledgerEntries, type Asset } from "./schema";
 
 export type LedgerAsset = Asset;
@@ -58,58 +59,6 @@ function isUniqueViolation(err: unknown): boolean {
   );
 }
 
-type ParsedDecimal = { value: bigint; scale: number };
-
-function pow10(n: number): bigint {
-  if (n <= 0) return 1n;
-  return BigInt(`1${"0".repeat(n)}`);
-}
-
-function parseDecimal(value: string): ParsedDecimal {
-  const raw = value.trim();
-  if (!raw) {
-    throw new Error("invalid amount");
-  }
-
-  let sign = 1n;
-  let s = raw;
-  if (s.startsWith("+")) s = s.slice(1);
-  if (s.startsWith("-")) {
-    sign = -1n;
-    s = s.slice(1);
-  }
-
-  const [intPartRaw, fracPartRaw = ""] = s.split(".");
-  const intPart = intPartRaw === "" ? "0" : intPartRaw;
-  const fracPart = fracPartRaw;
-
-  if (!/^\d+$/.test(intPart) || (fracPart && !/^\d+$/.test(fracPart))) {
-    throw new Error("invalid amount");
-  }
-
-  const scale = fracPart.length;
-  const digitsStr = `${intPart}${fracPart}`.replace(/^0+(?=\d)/, "");
-  const digits = BigInt(digitsStr || "0");
-  const normalizedSign = digits === 0n ? 1n : sign;
-  return { value: normalizedSign * digits, scale };
-}
-
-function formatDecimal(value: bigint, scale: number): string {
-  if (scale === 0) return value.toString();
-
-  const sign = value < 0n ? "-" : "";
-  const abs = value < 0n ? -value : value;
-  const digits = abs.toString().padStart(scale + 1, "0");
-  const intPart = digits.slice(0, -scale).replace(/^0+(?=\d)/, "");
-  let fracPart = digits.slice(-scale);
-  fracPart = fracPart.replace(/0+$/, "");
-
-  if (!fracPart) {
-    return `${sign}${intPart || "0"}`;
-  }
-  return `${sign}${intPart || "0"}.${fracPart}`;
-}
-
 function sumEntries(entries: { type: LedgerEntryType; amount: string }[]): string {
   if (entries.length === 0) return "0";
 
@@ -126,6 +75,8 @@ function sumEntries(entries: { type: LedgerEntryType; amount: string }[]): strin
 
 export function createDbLedgerRepo(db: DbClient): LedgerRepo {
   async function writeOnce(input: LedgerWriteInput, type: LedgerEntryType): Promise<LedgerWriteResult> {
+    assertPositiveAmount(input.amount);
+
     const now = new Date();
 
     try {
@@ -192,6 +143,8 @@ export function createInMemoryLedgerRepo(): LedgerRepo {
   }
 
   async function writeOnce(input: LedgerWriteInput, type: LedgerEntryType): Promise<LedgerWriteResult> {
+    assertPositiveAmount(input.amount);
+
     const existing = entries.find((item) => item.idempotencyKey === input.idempotencyKey);
     if (existing) {
       return { applied: false, entry: clone(existing) };

@@ -31,6 +31,33 @@ describe("rpc contracts", () => {
         amount: "10",
       }).success,
     ).toBe(true);
+    expect(
+      TipCreateParamsSchema.safeParse({
+        postId: "p1",
+        fromUserId: "u1",
+        toUserId: "u2",
+        asset: "USDI",
+        amount: "0",
+      }).success,
+    ).toBe(false);
+    expect(
+      TipCreateParamsSchema.safeParse({
+        postId: "p1",
+        fromUserId: "u1",
+        toUserId: "u2",
+        asset: "USDI",
+        amount: "-1",
+      }).success,
+    ).toBe(false);
+    expect(
+      TipCreateParamsSchema.safeParse({
+        postId: "p1",
+        fromUserId: "u1",
+        toUserId: "u2",
+        asset: "USDI",
+        amount: "abc",
+      }).success,
+    ).toBe(false);
 
     expect(TipCreateResultSchema.safeParse({ invoice: "invoice-1" }).success).toBe(true);
     expect(TipStatusResultSchema.safeParse({ state: "SETTLED" }).success).toBe(true);

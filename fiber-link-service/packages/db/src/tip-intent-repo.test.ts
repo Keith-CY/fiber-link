@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { InvalidAmountError } from "./amount";
 import type { DbClient } from "./client";
 import { InvoiceStateTransitionError, createDbTipIntentRepo, createInMemoryTipIntentRepo } from "./tip-intent-repo";
 
@@ -134,6 +135,32 @@ describe("tipIntentRepo (in-memory)", () => {
         invoice: "inv-dup",
       }),
     ).rejects.toThrow("duplicate invoice");
+  });
+
+  it("rejects non-positive tip amounts", async () => {
+    await expect(
+      repo.create({
+        appId: "app1",
+        postId: "p1",
+        fromUserId: "u1",
+        toUserId: "u2",
+        asset: "USDI",
+        amount: "0",
+        invoice: "inv-zero",
+      }),
+    ).rejects.toBeInstanceOf(InvalidAmountError);
+
+    await expect(
+      repo.create({
+        appId: "app1",
+        postId: "p1",
+        fromUserId: "u1",
+        toUserId: "u2",
+        asset: "USDI",
+        amount: "-1",
+        invoice: "inv-neg",
+      }),
+    ).rejects.toBeInstanceOf(InvalidAmountError);
   });
 
   it("updates invoice state idempotently", async () => {

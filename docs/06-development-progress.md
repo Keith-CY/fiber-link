@@ -95,6 +95,7 @@ Delivered:
 - Withdrawal request path enforces insufficient-funds checks via `createWithBalanceCheck` (`fiber-link-service/apps/rpc/src/methods/withdrawal.ts`, `fiber-link-service/packages/db/src/withdrawal-repo.ts`).
 - Available balance computation accounts for current pending withdrawals before allowing new requests (`fiber-link-service/packages/db/src/withdrawal-repo.ts`).
 - Withdrawal completion writes a durable ledger debit with idempotency key `withdrawal:debit:<withdrawal_id>` (`fiber-link-service/packages/db/src/withdrawal-repo.ts`, `fiber-link-service/apps/worker/src/withdrawal-batch.ts`).
+- Amount invariants now enforce strict positive decimals (`> 0`) across tip creation, ledger writes, and withdrawal creation paths (`fiber-link-service/packages/db/src/amount.ts`, `fiber-link-service/apps/rpc/src/contracts.ts`).
 
 Remaining hardening:
 - Add explicit per-app/per-user withdrawal policy limits (caps, cooldown rules) above the invariant baseline.

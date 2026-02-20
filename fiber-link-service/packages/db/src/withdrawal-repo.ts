@@ -1,6 +1,7 @@
 import { randomUUID } from "crypto";
 import { and, eq, lte, or, sql } from "drizzle-orm";
 import type { DbClient } from "./client";
+import { assertPositiveAmount, formatDecimal, parseDecimal, pow10 } from "./amount";
 import { withdrawalDebitIdempotencyKey } from "./idempotency";
 import { createDbLedgerRepo, type LedgerRepo } from "./ledger-repo";
 import { withdrawals, type Asset, type WithdrawalState } from "./schema";
@@ -106,58 +107,6 @@ function toRecord(row: WithdrawalRow): WithdrawalRecord {
   };
 }
 
-type ParsedDecimal = { value: bigint; scale: number };
-
-function pow10(n: number): bigint {
-  if (n <= 0) return 1n;
-  return BigInt(`1${"0".repeat(n)}`);
-}
-
-function parseDecimal(value: string): ParsedDecimal {
-  const raw = value.trim();
-  if (!raw) {
-    throw new Error("invalid amount");
-  }
-
-  let sign = 1n;
-  let s = raw;
-  if (s.startsWith("+")) s = s.slice(1);
-  if (s.startsWith("-")) {
-    sign = -1n;
-    s = s.slice(1);
-  }
-
-  const [intPartRaw, fracPartRaw = ""] = s.split(".");
-  const intPart = intPartRaw === "" ? "0" : intPartRaw;
-  const fracPart = fracPartRaw;
-
-  if (!/^\d+$/.test(intPart) || (fracPart && !/^\d+$/.test(fracPart))) {
-    throw new Error("invalid amount");
-  }
-
-  const scale = fracPart.length;
-  const digitsStr = `${intPart}${fracPart}`.replace(/^0+(?=\d)/, "");
-  const digits = BigInt(digitsStr || "0");
-  const normalizedSign = digits === 0n ? 1n : sign;
-  return { value: normalizedSign * digits, scale };
-}
-
-function formatDecimal(value: bigint, scale: number): string {
-  if (scale === 0) return value.toString();
-
-  const sign = value < 0n ? "-" : "";
-  const abs = value < 0n ? -value : value;
-  const digits = abs.toString().padStart(scale + 1, "0");
-  const intPart = digits.slice(0, -scale).replace(/^0+(?=\d)/, "");
-  let fracPart = digits.slice(-scale);
-  fracPart = fracPart.replace(/0+$/, "");
-
-  if (!fracPart) {
-    return `${sign}${intPart || "0"}`;
-  }
-  return `${sign}${intPart || "0"}.${fracPart}`;
-}
-
 function sumAmounts(amounts: string[]): string {
   if (amounts.length === 0) return "0";
   const parsed = amounts.map(parseDecimal);
@@ -211,6 +160,7 @@ async function throwInvalidTransition(db: DbClient, id: string, targetState: str
 export function createDbWithdrawalRepo(db: DbClient): WithdrawalRepo {
   return {
     async create(input) {
+      assertPositiveAmount(input.amount);
       const now = new Date();
       const [row] = await db
         .insert(withdrawals)
@@ -234,6 +184,7 @@ export function createDbWithdrawalRepo(db: DbClient): WithdrawalRepo {
     },
 
     async createWithBalanceCheck(input, _deps) {
+      assertPositiveAmount(input.amount);
       return db.transaction(async (tx) => {
         const lockKey = `${input.appId}:${input.userId}:${input.asset}`;
         await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${lockKey}))`);
@@ -428,6 +379,7 @@ export function createInMemoryWithdrawalRepo(): WithdrawalRepo {
 
   return {
     async create(input) {
+      assertPositiveAmount(input.amount);
       const now = new Date();
       const record: WithdrawalRecord = {
         ...input,
