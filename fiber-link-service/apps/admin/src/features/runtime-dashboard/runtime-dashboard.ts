@@ -18,10 +18,10 @@ export type DashboardSummary = {
   severity: RuntimeSeverity;
 };
 
-const SECRET_PATTERNS = [/token=[^\s]+/gi, /password=[^\s]+/gi, /secret=[^\s]+/gi];
+const SECRET_VALUE_PATTERN = /\b(token|password|secret)=([^&;\s]*)/gi;
 
 export function redactSecrets(input: string): string {
-  return SECRET_PATTERNS.reduce((acc, pattern) => acc.replace(pattern, (m) => `${m.split("=")[0]}=[REDACTED]`), input);
+  return input.replace(SECRET_VALUE_PATTERN, (_m, key) => `${key}=[REDACTED]`);
 }
 
 export function classifySeverity(signal: RuntimeSignal): RuntimeSeverity {
