@@ -14,8 +14,19 @@ describe("secure defaults", () => {
     expect(canRunHighRiskAction(true)).toBe(true);
   });
 
-  it("fails closed when policy is uncertain and masks secrets", () => {
+  it("fails closed when policy is uncertain", () => {
     expect(evaluatePolicyDecision({ policyKnown: false })).toBe("deny");
-    expect(maskSensitive("abc123secretxyz")).toContain("***");
+  });
+
+  describe("maskSensitive", () => {
+    it("masks long strings and preserves prefix/suffix", () => {
+      expect(maskSensitive("abc123secretxyz")).toBe("ab***yz");
+    });
+
+    it("masks short strings completely", () => {
+      expect(maskSensitive("1234")).toBe("****");
+      expect(maskSensitive("abc")).toBe("****");
+      expect(maskSensitive("")).toBe("****");
+    });
   });
 });

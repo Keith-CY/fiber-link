@@ -13,6 +13,7 @@ export const SECURE_DEFAULTS: SecurityDefaults = {
 };
 
 export function maskSensitive(value: string): string {
+  if (value.length <= 4) return "****";
   return value.replace(/([A-Za-z0-9]{2})[A-Za-z0-9]+([A-Za-z0-9]{2})/g, "$1***$2");
 }
 
