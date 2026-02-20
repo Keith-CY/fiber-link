@@ -47,7 +47,7 @@ export function runUpgradeFlow(input: {
 
   records.push({ action: "upgrade", fromVersion: input.fromVersion, toVersion: input.toVersion, success: true, message: "upgrade applied" });
 
-  if (input.postchecks.runtimeHealthy && input.postchecks.firstPathValidated) return { records, finalVersion: input.toVersion };
+  const postOk = input.postchecks.runtimeHealthy && input.postchecks.firstPathValidated;
   if (postOk) return { records, finalVersion: input.toVersion };
 
   if (input.autoRollback) {
@@ -60,6 +60,14 @@ export function runUpgradeFlow(input: {
     });
     return { records, finalVersion: input.fromVersion };
   }
+
+  records.push({
+    action: "upgrade",
+    fromVersion: input.fromVersion,
+    toVersion: input.toVersion,
+    success: false,
+    message: "postcheck failure, no rollback performed",
+  });
 
   return { records, finalVersion: input.toVersion };
 }
