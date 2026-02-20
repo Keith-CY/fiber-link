@@ -6,6 +6,7 @@ describe("secure defaults", () => {
     expect(SECURE_DEFAULTS.leastPrivilegeMode).toBe(true);
     expect(SECURE_DEFAULTS.maskSensitiveOutput).toBe(true);
     expect(SECURE_DEFAULTS.requireHighRiskConfirmation).toBe(true);
+    expect(SECURE_DEFAULTS.failClosedOnPolicyUncertainty).toBe(true);
   });
 
   it("requires explicit confirmation for high-risk actions", () => {
