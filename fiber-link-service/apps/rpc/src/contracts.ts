@@ -12,12 +12,17 @@ export const RpcRequestSchema = z.object({
 });
 export type RpcRequest = z.infer<typeof RpcRequestSchema>;
 
+const PositiveAmountStringSchema = z
+  .string()
+  .regex(/^\d+(?:\.\d+)?$/)
+  .refine((value) => !/^0+(?:\.0+)?$/.test(value), "amount must be greater than 0");
+
 export const TipCreateParamsSchema = z.object({
   postId: z.string().min(1),
   fromUserId: z.string().min(1),
   toUserId: z.string().min(1),
   asset: z.enum(["CKB", "USDI"]),
-  amount: z.string().min(1),
+  amount: PositiveAmountStringSchema,
 });
 
 export const TipCreateResultSchema = z.object({

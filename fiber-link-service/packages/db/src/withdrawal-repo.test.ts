@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { DbClient } from "./client";
+import { InvalidAmountError } from "./amount";
 import { withdrawalDebitIdempotencyKey } from "./idempotency";
 import { createInMemoryLedgerRepo } from "./ledger-repo";
 import {
@@ -211,6 +212,34 @@ describe("createInMemoryWithdrawalRepo balance gating", () => {
     );
 
     expect(created.state).toBe("PENDING");
+  });
+
+  it("rejects non-positive withdrawal amounts", async () => {
+    const ledger = createInMemoryLedgerRepo();
+    const repo = createInMemoryWithdrawalRepo();
+
+    await expect(
+      repo.createWithBalanceCheck(
+        {
+          appId: "app1",
+          userId: "u1",
+          asset: "USDI",
+          amount: "0",
+          toAddress: "addr-zero",
+        },
+        { ledgerRepo: ledger },
+      ),
+    ).rejects.toBeInstanceOf(InvalidAmountError);
+
+    await expect(
+      repo.create({
+        appId: "app1",
+        userId: "u1",
+        asset: "USDI",
+        amount: "-1",
+        toAddress: "addr-neg",
+      }),
+    ).rejects.toBeInstanceOf(InvalidAmountError);
   });
 
   it("guards duplicate completion retries from producing extra debit entries", async () => {

@@ -158,8 +158,9 @@ Below is a practical MVP-focused threat list. “Severity” is relative (H/M/L)
 6. **Plugin UI tampering (amount/asset)** (M→H)
    - Attack: user alters amount or asset in client.
    - Controls:
-     - Server validates allowed assets and min/max amounts
+     - Server validates allowed assets and enforces strict positive decimal amount input (`> 0`)
      - Server computes canonical amount and creates invoice accordingly
+     - Policy caps (per-tip/per-day) remain a separate follow-up control above this invariant baseline
 
 ### R — Repudiation
 7. **User disputes ("I didn’t request a withdrawal")** (M)

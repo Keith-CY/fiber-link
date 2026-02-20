@@ -1,6 +1,7 @@
 import { randomUUID } from "crypto";
 import { and, asc, eq, gt, gte, lte, or, sql } from "drizzle-orm";
 import type { DbClient } from "./client";
+import { assertPositiveAmount } from "./amount";
 import { tipIntents, type Asset, type InvoiceState } from "./schema";
 
 export type TipAsset = Asset;
@@ -161,6 +162,7 @@ export function createDbTipIntentRepo(db: DbClient): TipIntentRepo {
 
   return {
     async create(input) {
+      assertPositiveAmount(input.amount);
       const now = new Date();
       try {
         const [row] = await db
@@ -330,6 +332,7 @@ export function createInMemoryTipIntentRepo(): TipIntentRepo {
 
   return {
     async create(input) {
+      assertPositiveAmount(input.amount);
       if (records.some((item) => item.invoice === input.invoice)) {
         throw new Error("duplicate invoice");
       }

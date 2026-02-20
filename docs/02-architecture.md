@@ -105,6 +105,7 @@ Traceable code path:
 
 - `tip_intents.invoice` is unique and serves as lookup key for status reconciliation.
 - `ledger_entries.idempotency_key` is unique and blocks duplicate balance mutations.
+- Amount invariants are enforced as strict positive decimals (`> 0`) across tip creation, ledger writes, and withdrawal creation paths.
 - Withdrawal transitions are guarded by state-aware `WHERE` clauses; invalid transitions raise explicit conflict errors.
 - Terminal withdrawal evidence includes `tx_hash` and `completed_at`.
 

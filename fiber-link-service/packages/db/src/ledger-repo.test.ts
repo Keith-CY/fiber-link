@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import { InvalidAmountError } from "./amount";
 import { createInMemoryLedgerRepo } from "./ledger-repo";
 
 describe("ledgerRepo (in-memory)", () => {
@@ -84,5 +85,29 @@ describe("ledgerRepo (in-memory)", () => {
       asset: "USDI",
     });
     expect(balance).toBe("7.25");
+  });
+
+  it("rejects non-positive ledger writes", async () => {
+    await expect(
+      repo.creditOnce({
+        appId: "app1",
+        userId: "u2",
+        asset: "USDI",
+        amount: "0",
+        refId: "tip-zero",
+        idempotencyKey: "settlement:tip_intent:tip-zero",
+      }),
+    ).rejects.toBeInstanceOf(InvalidAmountError);
+
+    await expect(
+      repo.debitOnce({
+        appId: "app1",
+        userId: "u2",
+        asset: "USDI",
+        amount: "-1",
+        refId: "wd-neg",
+        idempotencyKey: "withdrawal:debit:wd-neg",
+      }),
+    ).rejects.toBeInstanceOf(InvalidAmountError);
   });
 });
