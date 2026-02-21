@@ -146,4 +146,91 @@ describe("settlement subscription strategy integration", () => {
     expect(summary.settledCredits).toBe(1);
     expect(ledgerRepo.__listForTests?.()).toHaveLength(1);
   });
+
+  it("recovers overflow-dropped subscription events via polling fallback", async () => {
+    const invoiceStates = new Map<string, InvoiceState>();
+    let emitBurst: ((invoices: string[]) => void) | null = null;
+
+    const adapter = {
+      async subscribeSettlements(args: {
+        onSettled: (invoice: string) => void | Promise<void>;
+        onError?: (error: unknown) => void;
+      }) {
+        emitBurst = (invoices: string[]) => {
+          for (const invoice of invoices) {
+            void args.onSettled(invoice);
+          }
+        };
+        return {
+          close: () => undefined,
+        };
+      },
+      async getInvoiceStatus({ invoice }: { invoice: string }) {
+        return { state: invoiceStates.get(invoice) ?? "UNPAID" };
+      },
+    };
+
+    const first = await tipIntentRepo.create({
+      appId: "app-overflow",
+      postId: "post-overflow-1",
+      fromUserId: "from-overflow-1",
+      toUserId: "to-overflow-1",
+      asset: "USDI",
+      amount: "3",
+      invoice: "inv-overflow-1",
+    });
+    const second = await tipIntentRepo.create({
+      appId: "app-overflow",
+      postId: "post-overflow-2",
+      fromUserId: "from-overflow-2",
+      toUserId: "to-overflow-2",
+      asset: "USDI",
+      amount: "4",
+      invoice: "inv-overflow-2",
+    });
+    const third = await tipIntentRepo.create({
+      appId: "app-overflow",
+      postId: "post-overflow-3",
+      fromUserId: "from-overflow-3",
+      toUserId: "to-overflow-3",
+      asset: "USDI",
+      amount: "5",
+      invoice: "inv-overflow-3",
+    });
+
+    invoiceStates.set(first.invoice, "SETTLED");
+    invoiceStates.set(second.invoice, "SETTLED");
+    invoiceStates.set(third.invoice, "SETTLED");
+
+    const overflowed: string[] = [];
+    const runner = await startSettlementSubscriptionRunner({
+      adapter,
+      tipIntentRepo,
+      ledgerRepo,
+      maxPendingEvents: 0,
+      onQueueOverflow(info) {
+        overflowed.push(info.invoice);
+      },
+      logger: {
+        info: () => undefined,
+        error: () => undefined,
+      },
+    });
+
+    emitBurst?.([first.invoice, second.invoice, third.invoice]);
+    await runner.close();
+
+    expect(overflowed).toHaveLength(2);
+
+    const summary = await runSettlementDiscovery({
+      limit: 10,
+      adapter,
+      tipIntentRepo,
+      ledgerRepo,
+    });
+
+    expect(summary.scanned).toBe(2);
+    expect(summary.settledCredits).toBe(2);
+    expect(ledgerRepo.__listForTests?.()).toHaveLength(3);
+  });
 });

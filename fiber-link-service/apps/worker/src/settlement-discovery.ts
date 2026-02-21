@@ -10,6 +10,7 @@ import {
   type TipIntentRepo,
 } from "@fiber-link/db";
 import { createSettlementUpdateEvent, type SettlementUpdateEvent } from "./contracts";
+import { createComponentLogger, type WorkerLogContext } from "./logger";
 import { markSettled } from "./settlement";
 
 type SettlementAdapter = {
@@ -17,8 +18,8 @@ type SettlementAdapter = {
 };
 
 type SettlementLogger = {
-  info: (message: string, context?: Record<string, unknown>) => void;
-  error: (message: string, error?: unknown) => void;
+  info: (event: string, context?: WorkerLogContext) => void;
+  error: (event: string, context?: WorkerLogContext) => void;
 };
 
 type LatencySummary = {
@@ -76,12 +77,7 @@ export type SettlementDiscoverySummary = {
 };
 
 const defaultLogger: SettlementLogger = {
-  info(message, context) {
-    console.log(message, context ?? {});
-  },
-  error(message, error) {
-    console.error(message, error);
-  },
+  ...createComponentLogger("settlement-discovery"),
 };
 
 let defaultDb: DbClient | null = null;
@@ -341,7 +337,11 @@ export async function runSettlementDiscovery(options: SettlementDiscoveryOptions
           error: "upstream invoice state reported FAILED",
         });
         summary.events.push(event);
-        logger.info("[worker] settlement audit", event);
+        logger.info("settlement.discovery.audit", {
+          ...event,
+          appId: intent.appId,
+          requestId: `settlement:${event.invoice}`,
+        });
         continue;
       }
 
@@ -365,7 +365,11 @@ export async function runSettlementDiscovery(options: SettlementDiscoveryOptions
           error: timeoutMessage,
         });
         summary.events.push(event);
-        logger.info("[worker] settlement audit", event);
+        logger.info("settlement.discovery.audit", {
+          ...event,
+          appId: intent.appId,
+          requestId: `settlement:${event.invoice}`,
+        });
         continue;
       }
 
@@ -406,7 +410,11 @@ export async function runSettlementDiscovery(options: SettlementDiscoveryOptions
               error: decision.message,
             });
             summary.events.push(event);
-            logger.info("[worker] settlement audit", event);
+            logger.info("settlement.discovery.audit", {
+              ...event,
+              appId: intent.appId,
+              requestId: `settlement:${event.invoice}`,
+            });
             continue;
           }
 
@@ -430,7 +438,11 @@ export async function runSettlementDiscovery(options: SettlementDiscoveryOptions
             error: decision.message,
           });
           summary.events.push(event);
-          logger.info("[worker] settlement audit", event);
+          logger.info("settlement.discovery.audit", {
+            ...event,
+            appId: intent.appId,
+            requestId: `settlement:${event.invoice}`,
+          });
           continue;
         }
 
@@ -452,11 +464,17 @@ export async function runSettlementDiscovery(options: SettlementDiscoveryOptions
           error: decision.message,
         });
         summary.events.push(event);
-        logger.info("[worker] settlement audit", event);
+        logger.info("settlement.discovery.audit", {
+          ...event,
+          appId: intent.appId,
+          requestId: `settlement:${event.invoice}`,
+        });
       } catch (handlerError) {
         summary.errors += 1;
-        logger.error("[worker] settlement discovery item failed", {
+        logger.error("settlement.discovery.item_failed", {
           invoice: intent.invoice,
+          appId: intent.appId,
+          requestId: `settlement:${intent.invoice}`,
           error: handlerError instanceof Error ? handlerError.message : String(handlerError),
           originalError: error instanceof Error ? error.message : String(error),
         });
@@ -475,6 +493,6 @@ export async function runSettlementDiscovery(options: SettlementDiscoveryOptions
   summary.backlogUnpaidAfterScan = await tipIntentRepo.countByInvoiceState("UNPAID", baseQueryOptions);
   summary.detectionLatencyMs = summarizeLatency(settledLatenciesMs);
 
-  logger.info("[worker] settlement discovery summary", summary);
+  logger.info("settlement.discovery.summary", summary);
   return summary;
 }

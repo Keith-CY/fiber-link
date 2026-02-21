@@ -3,29 +3,12 @@ import { appRouter } from "../server/api/routers/app";
 import { withdrawalRouter } from "../server/api/routers/withdrawal";
 import type { TrpcContext } from "../server/api/trpc";
 
-export type DashboardApp = {
-  appId: string;
-  createdAt: Date;
-};
+type AppListOutput = Awaited<ReturnType<ReturnType<typeof appRouter.createCaller>["list"]>>;
+type WithdrawalListOutput = Awaited<ReturnType<ReturnType<typeof withdrawalRouter.createCaller>["list"]>>;
 
-export type DashboardWithdrawalState = "PENDING" | "PROCESSING" | "RETRY_PENDING" | "COMPLETED" | "FAILED";
-
-export type DashboardWithdrawal = {
-  id: string;
-  appId: string;
-  userId: string;
-  asset: string;
-  amount: string;
-  toAddress: string;
-  state: DashboardWithdrawalState;
-  retryCount: number;
-  nextRetryAt: Date | null;
-  lastError: string | null;
-  createdAt: Date;
-  updatedAt: Date;
-  completedAt: Date | null;
-  txHash: string | null;
-};
+export type DashboardApp = AppListOutput[number];
+export type DashboardWithdrawal = WithdrawalListOutput[number];
+export type DashboardWithdrawalState = DashboardWithdrawal["state"];
 
 export const WITHDRAWAL_STATE_ORDER: DashboardWithdrawalState[] = [
   "PENDING",
@@ -130,7 +113,7 @@ export async function loadDashboardState(ctx: TrpcContext): Promise<DashboardSta
     const withdrawalCaller = withdrawalRouter.createCaller(ctx);
     const [apps, withdrawals] = await Promise.all([appCaller.list(), withdrawalCaller.list()]);
 
-    return createReadyDashboardState(ctx.role, apps as DashboardApp[], withdrawals as DashboardWithdrawal[]);
+    return createReadyDashboardState(ctx.role, apps, withdrawals);
   } catch (error) {
     return { kind: "error", message: getErrorMessage(error) };
   }
