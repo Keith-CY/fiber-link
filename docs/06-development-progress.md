@@ -8,8 +8,8 @@ This document summarizes what has shipped so far (Phase 2), epic closeout status
 
 - Epic anchor `#32` acceptance closeout record:
   `docs/plans/2026-02-21-issue-32-epic-closeout.md`
-- W4 closeout record:
-  `docs/runbooks/w4-integration-closeout-2026-02-21.md`
+- W4 closeout status update:
+  `docs/runbooks/w4-integration-status-2026-02-17.md` and pending closeout PR `#206`
 - W5 demo evidence runbook:
   `docs/runbooks/w5-demo-evidence.md`
 - W1/W2/W3/W4/W5 execution tasks are implemented and closed at task level.
