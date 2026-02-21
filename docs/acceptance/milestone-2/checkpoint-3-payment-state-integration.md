@@ -13,7 +13,7 @@ Ensure payment state can be consumed by user-facing flow using reliable synchron
   - `docs/runbooks/settlement-recovery.md`
 - W4 integration status sync snapshots:
   - `docs/runbooks/w4-integration-status-2026-02-17.md`
-  - `docs/runbooks/w4-integration-closeout-2026-02-21.md`
+  - [docs/runbooks/w4-integration-closeout-2026-02-21.md](../../runbooks/w4-integration-closeout-2026-02-21.md)
 - Verification gate for worker replay behavior:
   - `docs/runbooks/phase2-verification.md`
 
