@@ -14,7 +14,7 @@ Current decision source-of-truth is the accepted one-page records:
 ## Decision register
 
 ### Asset set
-- Decision: CKB + TBD stablecoin UDT (candidate: USDI).
+- Decision: CKB + stablecoin UDT (candidate: USDI).
 - Status: OPEN
 - Target date: 2026-02-10
 - Linked Task(s): Phase2 Task 1, Phase2 Task 4, Phase2 Task 6

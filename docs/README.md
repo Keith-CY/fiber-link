@@ -2,7 +2,9 @@
 
 ## Roadmap tracking
 
-- `docs/plans/2026-02-17-issue-32-epic-execution-status-tracker.md` — execution order, blocking graph, W1-W5 issue status snapshot, and remaining critical tasks for epic `#32` (status verified on 2026-02-17).
+- `docs/current-architecture.md` — canonical source-of-truth index for architecture, current status, and historical redirects.
+- `docs/plans/2026-02-21-issue-32-epic-closeout.md` — latest closeout mapping for epic `#32`.
+- `docs/plans/2026-02-17-issue-32-epic-execution-status-tracker.md` — superseded historical status snapshot retained for traceability.
 
 ## Plugin testing
 
