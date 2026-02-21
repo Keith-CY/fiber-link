@@ -11,19 +11,20 @@ Ensure payment state can be consumed by user-facing flow using reliable synchron
 - Polling + replay strategy and runbook:
   - `docs/06-development-progress.md`
   - `docs/runbooks/settlement-recovery.md`
-- W4 integration status sync (issue + PR evidence):
+- W4 integration status sync snapshots:
   - `docs/runbooks/w4-integration-status-2026-02-17.md`
+  - `docs/runbooks/w4-integration-closeout-2026-02-21.md`
 - Verification gate for worker replay behavior:
   - `docs/runbooks/phase2-verification.md`
 
 ## Current status
 
-`PARTIAL`
+`COMPLETED`
 
-Polling and replay path are implemented and documented. Event-subscription path is explicitly marked as later optimization.
-Status synchronized on 2026-02-17: W4 child tasks are closed except legacy event-subscription scope tracked as open in issue `#24`.
+Polling, replay, and event-subscription baseline paths are implemented and documented.
+Status synchronized on 2026-02-21: W4 child tasks and listed legacy scope are all closed (`#43`, `#50`, `#55`, `#60`, `#64`, `#26`, `#24`, `#28`, `#29`).
 
 ## Exit criteria
 
 - Polling path remains production baseline and convergence proof is available.
-- If subscription path is introduced, acceptance docs must capture its correctness and fallback behavior.
+- Subscription path correctness and fallback behavior are documented in W4 status and worker runbooks.

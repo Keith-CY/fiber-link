@@ -12,6 +12,7 @@
 ## W4 integration tracking
 
 - `docs/runbooks/w4-integration-status-2026-02-17.md` — issue #36 W4 subtask matrix, completion snapshot, and verification/operations checks as of 2026-02-17.
+- `docs/runbooks/w4-integration-closeout-2026-02-21.md` — final W4 closeout summary showing all #36 scope items and legacy supporting tasks closed as of 2026-02-21.
 
 ## Admin installation
 
