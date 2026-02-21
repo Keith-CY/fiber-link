@@ -36,16 +36,16 @@ Legend:
 
 | Slot | Community | Stage | Platform | Primary Contact | appId | App Created | 1st Tip Intent | 1st Credit | 1st WD Requested | 1st WD Completed | 1st WD USD (>=5) | Notes / Blockers |
 | ---: | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | Nervos Talk (talk.nervos.org) | design_partner | discourse_existing | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | Seed community; confirm willingness to run weekly feedback loop. |
-| 2 | TBD | design_partner | discourse_existing | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| 3 | TBD | design_partner | discourse_existing | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| 4 | TBD | fast_follower | discourse_existing | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| 5 | TBD | fast_follower | discourse_existing | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| 6 | TBD | fast_follower | discourse_existing | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| 7 | TBD | fast_follower | discourse_new | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| 8 | TBD | fast_follower | discourse_new | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| 9 | TBD | fast_follower | discourse_new | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| 10 | TBD | fast_follower | discourse_new | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| 1 | Nervos Talk (talk.nervos.org) | design_partner | discourse_existing | Pending | Pending | Pending | Pending | Pending | Pending | Pending | Pending | Seed community; confirm willingness to run weekly feedback loop. |
+| 2 | Pending | design_partner | discourse_existing | Pending | Pending | Pending | Pending | Pending | Pending | Pending | Pending | Pending |
+| 3 | Pending | design_partner | discourse_existing | Pending | Pending | Pending | Pending | Pending | Pending | Pending | Pending | Pending |
+| 4 | Pending | fast_follower | discourse_existing | Pending | Pending | Pending | Pending | Pending | Pending | Pending | Pending | Pending |
+| 5 | Pending | fast_follower | discourse_existing | Pending | Pending | Pending | Pending | Pending | Pending | Pending | Pending | Pending |
+| 6 | Pending | fast_follower | discourse_existing | Pending | Pending | Pending | Pending | Pending | Pending | Pending | Pending | Pending |
+| 7 | Pending | fast_follower | discourse_new | Pending | Pending | Pending | Pending | Pending | Pending | Pending | Pending | Pending |
+| 8 | Pending | fast_follower | discourse_new | Pending | Pending | Pending | Pending | Pending | Pending | Pending | Pending | Pending |
+| 9 | Pending | fast_follower | discourse_new | Pending | Pending | Pending | Pending | Pending | Pending | Pending | Pending | Pending |
+| 10 | Pending | fast_follower | discourse_new | Pending | Pending | Pending | Pending | Pending | Pending | Pending | Pending | Pending |
 
 ## Weekly Operating Cadence (Year 1)
 

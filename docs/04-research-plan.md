@@ -2,7 +2,7 @@
 
 Last updated: 2026-02-12
 
-This checklist is now a live TODO board after Phase 2 completion.
+This checklist is now a live action board after Phase 2 completion.
 
 References:
 - Phase 2 status: `docs/06-development-progress.md`
@@ -23,7 +23,7 @@ References:
   - USD price feed policy
   - admin membership model
 
-## Active TODO (Phase 3)
+## Active Work Items (Phase 3)
 
 ### Priority 1: Settlement Discovery + Reconciliation (Sprint 1)
 
