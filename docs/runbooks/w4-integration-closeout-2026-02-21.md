@@ -25,9 +25,9 @@ All W4 child tasks and listed legacy supporting tasks are `CLOSED`.
 
 ## Operational verification references
 
-- `docs/runbooks/phase2-verification.md`
-- `docs/runbooks/settlement-recovery.md`
-- `docs/runbooks/fiber-adapter-e2e.md`
+- [docs/runbooks/phase2-verification.md](./phase2-verification.md)
+- [docs/runbooks/settlement-recovery.md](./settlement-recovery.md)
+- [docs/runbooks/fiber-adapter-e2e.md](./fiber-adapter-e2e.md)
 
 ## Closure decision
 
