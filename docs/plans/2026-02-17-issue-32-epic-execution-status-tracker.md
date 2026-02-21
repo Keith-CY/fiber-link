@@ -4,6 +4,9 @@ Date: 2026-02-17
 Scope: `#32` Epic roadmap anchor (`Invoice -> Payment -> Settlement v1`)  
 Last status verification: 2026-02-17
 
+> Historical snapshot only. For final closeout, see:
+> `docs/plans/2026-02-21-issue-32-epic-closeout.md`.
+
 ## Objective and Acceptance Criteria Mapping
 
 Epic objective (`#32`): deliver a verifiable end-to-end flow `invoice -> payment -> settlement -> accounting` on Fiber testnet with auditable evidence.

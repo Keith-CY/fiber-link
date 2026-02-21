@@ -1,8 +1,21 @@
 # Fiber Link Development Progress
 
-Last updated: 2026-02-15
+Last updated: 2026-02-21
 
-This document summarizes what has shipped so far (Phase 2) and what remains (post-Phase 2 roadmap).
+This document summarizes what has shipped so far (Phase 2), epic closeout status, and remaining hardening work.
+
+## Epic #32 Closeout Snapshot (2026-02-21)
+
+- Epic anchor `#32` acceptance closeout record:
+  `docs/plans/2026-02-21-issue-32-epic-closeout.md`
+- W4 closeout record:
+  `docs/runbooks/w4-integration-closeout-2026-02-21.md`
+- W5 demo evidence runbook:
+  `docs/runbooks/w5-demo-evidence.md`
+- W1/W2/W3/W4/W5 execution tasks are implemented and closed at task level.
+
+The "What's Not Done Yet" sections below are post-epic hardening/backlog items, not blockers for the
+invoice -> payment -> settlement v1 epic acceptance decision.
 
 ## Phase 2 Status (Completed)
 
