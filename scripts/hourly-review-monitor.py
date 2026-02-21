@@ -29,11 +29,11 @@ def run_gh(args: List[str]) -> str:
     return proc.stdout.strip()
 
 
-def list_json(resource: str, assignee: str | None = None, label: str | None = None) -> List[dict]:
+def list_json(resource: str, assignee: str | None = None, label: str | None = None, state: str = "open") -> List[dict]:
     if resource == "issue":
-        args = ["issue", "list", "--state", "open", "--json", "number,title,url,body,labels,assignees"]
+        args = ["issue", "list", "--state", state, "--json", "number,title,url,body,labels,assignees"]
     elif resource == "pr":
-        args = ["pr", "list", "--state", "open", "--json", "number,title,url,reviewDecision,body,headRefName"]
+        args = ["pr", "list", "--state", state, "--json", "number,title,url,reviewDecision,body,headRefName"]
     else:
         raise ValueError(resource)
 
@@ -85,7 +85,41 @@ def classify_with_source_pr(issues: List[dict], pr_state_cache: Dict[int, str]) 
             bound.append(issue)
             continue
 
-        reason = {"issue": issue, "reason": f"source-pr-{state.lower()}"}
+        reason = {"issue": issue, "reason": f"source-pr-{state.lower()}", "sourcePr": pr_num}
+        actionable.append(reason)
+        unbound.append(reason)
+
+    return actionable, bound, unbound
+
+
+def load_all_pr_cache(state: str = "all") -> List[dict]:
+    # Used for checking whether nbs issues are already bound to follow-up PRs.
+    return list_json("pr", state=state)
+
+
+def pr_mentions_issue_text(pr: dict, issue_number: int) -> bool:
+    # Match issue number in PR title/body. This is a pragmatic signal for development linkage.
+    pattern = re.compile(rf"(?:^|[^\\w#])#?{issue_number}(?:$|[^\\w])")
+    for field in (pr.get("title"), pr.get("body")):
+        if field and pattern.search(str(field)):
+            return True
+    return False
+
+
+def classify_nbs_by_development(issues: List[dict], all_prs: List[dict]) -> Tuple[List[dict], List[dict], List[dict]]:
+    actionable: List[dict] = []
+    bound: List[dict] = []
+    unbound: List[dict] = []
+
+    for issue in issues:
+        num = int(issue.get("number"))
+        linked_prs = [pr for pr in all_prs if pr_mentions_issue_text(pr, num)]
+
+        if linked_prs:
+            bound.append(issue)
+            continue
+
+        reason = {"issue": issue, "reason": "no-linked-pr", "linkedPRs": []}
         actionable.append(reason)
         unbound.append(reason)
 
@@ -97,9 +131,10 @@ def analyze() -> dict:
 
     assigned_issues = list_json("issue", assignee="@me")
     nbs_issues = list_json("issue", label="nbs")
+    all_prs = load_all_pr_cache(state="all")
 
     actionable_assigned_with_reason, _, _ = classify_with_source_pr(assigned_issues, state_cache)
-    actionable_nbs_with_reason, _, unbound_nbs = classify_with_source_pr(nbs_issues, state_cache)
+    actionable_nbs_with_reason, _, unbound_nbs = classify_nbs_by_development(nbs_issues, all_prs)
 
     change_requests = [
         item for item in list_json("pr") if item.get("reviewDecision") == "CHANGES_REQUESTED"
@@ -145,7 +180,7 @@ def summarize(snapshot: dict) -> str:
     lines = [
         f"Scan at {snapshot['runAt']}",
         f"Assigned issues requiring handling: {snapshot['counts']['assigned']}",
-        f"Open nbs issues: {snapshot['counts']['nbs']} (unbound/non-open-source PR: {snapshot['counts']['nbsUnbound']})",
+        f"Open nbs issues: {snapshot['counts']['nbs']} (unlinked to PR yet: {snapshot['counts']['nbsUnbound']})",
         f"PRs with CHANGES_REQUESTED: {snapshot['counts']['changeRequests']}",
     ]
 
@@ -155,7 +190,7 @@ def summarize(snapshot: dict) -> str:
             lines.append(f"  - #{i['number']} {i['title']} ({i['url']})")
 
     if snapshot["counts"]["nbsUnbound"]:
-        lines.append("- Unbound nbs issues:")
+        lines.append("- Open nbs issues requiring follow-up:")
         for u in snapshot["nbsUnbound"]:
             issue = u["issue"]
             lines.append(f"  - #{issue['number']} {issue['title']} [{u['reason']}] ({issue['url']})")
@@ -220,7 +255,7 @@ def run_report(hours: int = 1) -> str:
     lines = [
         f"Task-1 report ({hours}h): {summary['runs']} scan runs",
         f"Total assigned open issues: {summary['totalAssigned']}",
-        f"Total open nbs: {summary['totalNbs']} (unbound/non-open-source PR: {summary['totalUnboundNbs']})",
+        f"Total open nbs: {summary['totalNbs']} (unlinked to PR yet: {summary['totalUnboundNbs']})",
         f"Total PRs with CHANGES_REQUESTED: {summary['totalChangeRequests']}",
         "",
         "Latest run:",
