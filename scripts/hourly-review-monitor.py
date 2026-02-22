@@ -27,7 +27,10 @@ NO_UPDATE_ESCALATION_THRESHOLD = 3
 MERGE_READY_STREAK_THRESHOLD = 3
 MAX_UNCHANGED_ALERTS_PER_DAY = 3
 STALE_OPEN_PR_HOURS = 24.0
+OWNER_PING_THRESHOLD_HOURS = 72.0
 TEST_FILES_DRIFT_ALERT_THRESHOLD = 5
+AUDIT_DELTA_MARKER = "<!-- fiber-link-hourly-audit-delta -->"
+DIGEST_MARKER = "<!-- fiber-link-unchanged-digest -->"
 
 
 def run_gh(args: List[str]) -> str:
@@ -38,6 +41,17 @@ def run_gh(args: List[str]) -> str:
         text=True,
     )
     return proc.stdout.strip()
+
+
+def parse_positive_int_env(var_name: str) -> int | None:
+    raw = os.environ.get(var_name)
+    if not raw:
+        return None
+    try:
+        parsed = int(raw)
+    except ValueError:
+        return None
+    return parsed if parsed > 0 else None
 
 
 def list_json(resource: str, assignee: str | None = None, label: str | None = None) -> List[dict]:
@@ -137,6 +151,32 @@ def normalize_pr(pr: dict, now_ts: int) -> dict:
         "author": author.get("login"),
         "unchangedHours": unchanged_hours,
     }
+
+
+def split_stale_open_prs(stale_open_prs: List[dict]) -> Tuple[List[dict], List[dict], List[dict]]:
+    watchdog: List[dict] = []
+    digest: List[dict] = []
+    owner_ping_candidates: List[dict] = []
+
+    for pr in stale_open_prs:
+        unchanged_hours = pr.get("unchangedHours")
+        review_decision = (pr.get("reviewDecision") or "").upper()
+        owner = pr.get("author")
+        needs_owner_ping = (
+            isinstance(unchanged_hours, (int, float))
+            and unchanged_hours >= OWNER_PING_THRESHOLD_HOURS
+            and isinstance(owner, str)
+            and bool(owner.strip())
+        )
+        immediate_watchdog = review_decision == "CHANGES_REQUESTED" or needs_owner_ping
+        if needs_owner_ping:
+            owner_ping_candidates.append(pr)
+        if immediate_watchdog:
+            watchdog.append(pr)
+        else:
+            digest.append(pr)
+
+    return watchdog, digest, owner_ping_candidates
 
 
 def classify_with_source_pr(issues: List[dict], pr_state_cache: Dict[int, str]) -> Tuple[List[dict], List[dict], List[dict]]:
@@ -266,6 +306,8 @@ def detect_change(snapshot: dict, state: dict) -> dict:
             ("nbsUnbound", ()),
             ("changeRequests", ()),
             ("staleOpenPrs", ()),
+            ("staleOpenPrsDigest", ()),
+            ("ownerPingCandidates", ()),
         ]
     ):
         sources.add("ci")
@@ -291,9 +333,10 @@ def analyze() -> dict:
     raw_open_prs = list_json("pr")
     open_prs = [normalize_pr(pr, now_ts) for pr in raw_open_prs]
     change_requests = [pr for pr in open_prs if pr.get("reviewDecision") == "CHANGES_REQUESTED"]
-    stale_open_prs = [
+    stale_open_prs_all = [
         pr for pr in open_prs if (pr.get("unchangedHours") is not None and pr.get("unchangedHours", 0) >= STALE_OPEN_PR_HOURS)
     ]
+    stale_open_prs, stale_open_prs_digest, owner_ping_candidates = split_stale_open_prs(stale_open_prs_all)
     test_files_count = count_test_files()
     docs_superseded_count = read_docs_superseded_count()
 
@@ -305,6 +348,8 @@ def analyze() -> dict:
         signals.append("stagnation_signal")
     if stale_open_prs:
         signals.append("stale_open_pr_watchdog")
+    if owner_ping_candidates:
+        signals.append("owner_ping_policy")
 
     oldest_unchanged_hours = max((pr.get("unchangedHours", 0) for pr in stale_open_prs), default=0)
 
@@ -319,11 +364,17 @@ def analyze() -> dict:
         "changeRequests": change_requests,
         "openPrs": open_prs,
         "staleOpenPrs": stale_open_prs,
+        "staleOpenPrsDigest": stale_open_prs_digest,
+        "staleOpenPrsAll": stale_open_prs_all,
+        "ownerPingCandidates": owner_ping_candidates,
         "signals": signals,
         "metrics": {
             "candidateIssues": len(actionable_open_with_reason),
             "openPrCount": len(open_prs),
             "staleOpenPrCount": len(stale_open_prs),
+            "staleOpenPrDigestCount": len(stale_open_prs_digest),
+            "staleOpenPrTotalCount": len(stale_open_prs_all),
+            "ownerPingCandidateCount": len(owner_ping_candidates),
             "oldestOpenPrUnchangedHours": oldest_unchanged_hours,
             "pr208UnchangedHours": pr208_unchanged_hours,
             "testFiles": test_files_count,
@@ -338,6 +389,9 @@ def analyze() -> dict:
             "changeRequests": len(change_requests),
             "openPrs": len(open_prs),
             "staleOpenPrs": len(stale_open_prs),
+            "staleOpenPrsDigest": len(stale_open_prs_digest),
+            "staleOpenPrsAll": len(stale_open_prs_all),
+            "ownerPingCandidates": len(owner_ping_candidates),
         },
         "changeDetectionSource": "ci",
         "changeDetectionSources": ["ci"],
@@ -421,13 +475,19 @@ def summarize(snapshot: dict) -> str:
     open_count = count_metric(snapshot, "open", "assigned")
     open_pr_count = count_metric(snapshot, "openPrs")
     stale_open_pr_count = count_metric(snapshot, "staleOpenPrs")
+    stale_open_pr_digest_count = count_metric(snapshot, "staleOpenPrsDigest")
+    owner_ping_count = count_metric(snapshot, "ownerPingCandidates")
 
     lines = [
         f"Scan at {snapshot['runAt']}",
         f"Open issues requiring handling: {open_count}",
         f"Open nbs issues: {count_metric(snapshot, 'nbs')} (unbound/non-open-source PR: {count_metric(snapshot, 'nbsUnbound')})",
         f"PRs with CHANGES_REQUESTED: {count_metric(snapshot, 'changeRequests')}",
-        f"Open PRs (watchdog): {open_pr_count} (stale >= {int(STALE_OPEN_PR_HOURS)}h: {stale_open_pr_count})",
+        (
+            f"Open PRs (watchdog): {open_pr_count} "
+            f"(stale >= {int(STALE_OPEN_PR_HOURS)}h immediate: {stale_open_pr_count}, digest: {stale_open_pr_digest_count})"
+        ),
+        f"Owner ping candidates (>= {int(OWNER_PING_THRESHOLD_HOURS)}h): {owner_ping_count}",
         f"changeDetectionSource: {snapshot.get('changeDetectionSource', 'unknown')}",
         f"nextActionAt: {snapshot.get('nextActionAt', 'n/a')}",
     ]
@@ -479,14 +539,17 @@ def summarize(snapshot: dict) -> str:
     if stale_open_pr_count:
         lines.append("- Stale open PR watchdog candidates:")
         for p in snapshot_items(snapshot, "staleOpenPrs"):
-            owner = p.get("author") or "unknown-owner"
-            unchanged_hours = p.get("unchangedHours")
-            if isinstance(unchanged_hours, (int, float)):
-                lines.append(
-                    f"  - #{p['number']} {p['title']} ({p['url']}) owner={owner} unchangedHours={unchanged_hours:.2f}"
-                )
-            else:
-                lines.append(f"  - #{p['number']} {p['title']} ({p['url']}) owner={owner}")
+            lines.append(format_pr_candidate_line(p))
+
+    if stale_open_pr_digest_count:
+        lines.append("- Low-priority unchanged PR digest candidates:")
+        for p in snapshot_items(snapshot, "staleOpenPrsDigest"):
+            lines.append(format_pr_candidate_line(p))
+
+    if owner_ping_count:
+        lines.append("- Owner ping policy candidates:")
+        for p in snapshot_items(snapshot, "ownerPingCandidates"):
+            lines.append(format_pr_candidate_line(p, ping_owner=True))
 
     if not any(
         [
@@ -514,6 +577,139 @@ def build_skip_summary(last_snapshot: dict, current_snapshot: dict, skips: int, 
             f"nextActionAt: {current_snapshot.get('nextActionAt', 'n/a')}",
         ]
     )
+
+
+def format_count_delta(current: int, previous: int) -> str:
+    return f"{current} (delta {current - previous:+d})"
+
+
+def format_pr_candidate_line(pr: dict, prefix: str = "  - ", ping_owner: bool = False) -> str:
+    owner = pr.get("author") or "unknown-owner"
+    owner_part = f"ping=@{owner}" if ping_owner else f"owner={owner}"
+    line = f"{prefix}#{pr.get('number')} {pr.get('title')} ({pr.get('url')}) {owner_part}"
+    unchanged_hours = pr.get("unchangedHours")
+    if isinstance(unchanged_hours, (int, float)):
+        line += f" unchangedHours={unchanged_hours:.2f}"
+    return line
+
+
+def build_scan_metadata(snapshot: dict) -> dict:
+    return {
+        "cleanRunStreak": snapshot.get("cleanRunStreak", 0),
+        "consecutiveNoUpdateSkips": 0,
+        "unchangedAlertDay": iso_utc(int(time.time()))[:10],
+        "unchangedAlertCount": 0,
+        "nextActionAt": snapshot.get("nextActionAt"),
+    }
+
+
+def get_previous_snapshot(state: dict) -> dict:
+    runs = state.get("runs", [])
+    return runs[-1] if runs else {}
+
+
+def maybe_publish_scan_comments(snapshot: dict, previous_snapshot: dict, change: dict, comment_pr: int | None, digest_issue: int | None) -> None:
+    if not change.get("changed"):
+        return
+    maybe_publish_audit_delta_comment(snapshot, previous_snapshot, comment_pr)
+    maybe_publish_digest_comment(snapshot, digest_issue)
+
+
+def build_audit_delta_comment(pr_number: int, snapshot: dict, previous_snapshot: dict | None) -> str:
+    previous = previous_snapshot or {}
+    open_current = count_metric(snapshot, "open", "assigned")
+    open_previous = count_metric(previous, "open", "assigned")
+    nbs_unbound_current = count_metric(snapshot, "nbsUnbound")
+    nbs_unbound_previous = count_metric(previous, "nbsUnbound")
+    change_requests_current = count_metric(snapshot, "changeRequests")
+    change_requests_previous = count_metric(previous, "changeRequests")
+    stale_watchdog_current = count_metric(snapshot, "staleOpenPrs")
+    stale_watchdog_previous = count_metric(previous, "staleOpenPrs")
+    stale_digest_current = count_metric(snapshot, "staleOpenPrsDigest")
+    stale_digest_previous = count_metric(previous, "staleOpenPrsDigest")
+    owner_ping_current = count_metric(snapshot, "ownerPingCandidates")
+    owner_ping_previous = count_metric(previous, "ownerPingCandidates")
+    previous_heads = pr_head_map(previous)
+    current_heads = pr_head_map(snapshot)
+
+    lines = [
+        AUDIT_DELTA_MARKER,
+        f"Hourly audit delta for PR #{pr_number} at {snapshot.get('runAt', 'n/a')}",
+        "",
+        f"Open issues requiring handling: {format_count_delta(open_current, open_previous)}",
+        f"Unbound nbs issues: {format_count_delta(nbs_unbound_current, nbs_unbound_previous)}",
+        f"PRs with CHANGES_REQUESTED: {format_count_delta(change_requests_current, change_requests_previous)}",
+        f"Stale open PR watchdog: {format_count_delta(stale_watchdog_current, stale_watchdog_previous)}",
+        f"Low-priority digest candidates: {format_count_delta(stale_digest_current, stale_digest_previous)}",
+        f"Owner ping candidates: {format_count_delta(owner_ping_current, owner_ping_previous)}",
+        f"headSha previous/current: {format_head_sha_pairs(previous_heads, current_heads)}",
+        f"nextActionAt: {snapshot.get('nextActionAt', 'n/a')}",
+    ]
+
+    if snapshot.get("signals"):
+        lines.append(f"signals: {', '.join(snapshot.get('signals', []))}")
+    return "\n".join(lines)
+
+
+def build_low_priority_digest_comment(snapshot: dict) -> str:
+    digest_candidates = snapshot_items(snapshot, "staleOpenPrsDigest")
+    lines = [
+        DIGEST_MARKER,
+        f"Low-priority unchanged PR digest at {snapshot.get('runAt', 'n/a')}",
+        f"Candidate count: {len(digest_candidates)}",
+        "",
+    ]
+    if digest_candidates:
+        for pr in digest_candidates:
+            lines.append(format_pr_candidate_line(pr, prefix="- "))
+    else:
+        lines.append("- No low-priority unchanged PRs in this run.")
+    lines.append(f"nextActionAt: {snapshot.get('nextActionAt', 'n/a')}")
+    return "\n".join(lines)
+
+
+def list_issue_comments(issue_number: int) -> List[dict]:
+    raw = run_gh(["api", "--paginate", "--slurp", f"repos/{REPO}/issues/{issue_number}/comments?per_page=100"])
+    pages = json.loads(raw or "[]")
+    comments: List[dict] = []
+    if isinstance(pages, list):
+        for page in pages:
+            if isinstance(page, list):
+                comments.extend(page)
+            elif isinstance(page, dict):
+                comments.append(page)
+    return comments
+
+
+def upsert_issue_comment(issue_number: int, marker: str, body: str) -> None:
+    comments = list_issue_comments(issue_number)
+    existing_comment_id = None
+    for comment in comments:
+        if marker in (comment.get("body") or ""):
+            existing_comment_id = comment.get("id")
+            break
+
+    if existing_comment_id:
+        run_gh(["api", "-X", "PATCH", f"repos/{REPO}/issues/comments/{existing_comment_id}", "-f", f"body={body}"])
+        return
+
+    run_gh(["api", f"repos/{REPO}/issues/{issue_number}/comments", "-f", f"body={body}"])
+
+
+def maybe_publish_audit_delta_comment(snapshot: dict, previous_snapshot: dict | None, comment_pr: int | None) -> None:
+    if not comment_pr:
+        return
+    body = build_audit_delta_comment(comment_pr, snapshot, previous_snapshot)
+    upsert_issue_comment(comment_pr, AUDIT_DELTA_MARKER, body)
+
+
+def maybe_publish_digest_comment(snapshot: dict, digest_issue: int | None) -> None:
+    if not digest_issue:
+        return
+    if count_metric(snapshot, "staleOpenPrsDigest") == 0:
+        return
+    body = build_low_priority_digest_comment(snapshot)
+    upsert_issue_comment(digest_issue, DIGEST_MARKER, body)
 
 
 def changed_since_last(snapshot: dict, state: dict) -> bool:
@@ -547,6 +743,8 @@ def run_report(hours: int = 1) -> str:
         "totalUnboundNbs": sum(count_metric(r, "nbsUnbound") for r in recent),
         "totalChangeRequests": sum(count_metric(r, "changeRequests") for r in recent),
         "totalStaleOpenPrs": sum(count_metric(r, "staleOpenPrs") for r in recent),
+        "totalStaleOpenPrDigest": sum(count_metric(r, "staleOpenPrsDigest") for r in recent),
+        "totalOwnerPingCandidates": sum(count_metric(r, "ownerPingCandidates") for r in recent),
         "totalSignals": sum(len(r.get("signals", [])) for r in recent),
         "lastTestFiles": metric_value(recent[-1], "testFiles") if recent else None,
         "lastDocsSuperseded": metric_value(recent[-1], "docsSuperseded") if recent else None,
@@ -573,6 +771,8 @@ def run_report(hours: int = 1) -> str:
         f"Total open nbs: {summary['totalNbs']} (unbound/non-open-source PR: {summary['totalUnboundNbs']})",
         f"Total PRs with CHANGES_REQUESTED: {summary['totalChangeRequests']}",
         f"Total stale open PR watchdog hits: {summary['totalStaleOpenPrs']}",
+        f"Total low-priority digest candidates: {summary['totalStaleOpenPrDigest']}",
+        f"Total owner ping candidates: {summary['totalOwnerPingCandidates']}",
         f"Total signals emitted: {summary['totalSignals']}",
     ]
     if isinstance(summary["lastTestFiles"], (int, float)):
@@ -590,6 +790,8 @@ def run_report(hours: int = 1) -> str:
 
 
 def parse_args() -> argparse.Namespace:
+    default_comment_pr = parse_positive_int_env("TASK1_AUDIT_DELTA_PR")
+    default_digest_issue = parse_positive_int_env("TASK1_DIGEST_ISSUE")
     p = argparse.ArgumentParser(description="Fiber Link hourly task 1 monitor")
     p.add_argument("--mode", choices=["scan", "report", "scan-and-report"], default="scan")
     p.add_argument("--hours", type=int, default=1, help="Report lookback window hours")
@@ -597,6 +799,18 @@ def parse_args() -> argparse.Namespace:
         "--only-changes",
         action="store_true",
         help="For report mode, suppress output when totals are unchanged and no actionables exist",
+    )
+    p.add_argument(
+        "--comment-pr",
+        type=int,
+        default=default_comment_pr,
+        help="Upsert hourly audit delta comment into this PR number",
+    )
+    p.add_argument(
+        "--digest-issue",
+        type=int,
+        default=default_digest_issue,
+        help="Upsert low-priority unchanged PR digest comment into this issue number",
     )
     return p.parse_args()
 
@@ -607,15 +821,10 @@ def main() -> int:
 
     if args.mode == "scan":
         snapshot = analyze()
-        enrich_snapshot(snapshot, state)
-        metadata = {
-            "cleanRunStreak": snapshot.get("cleanRunStreak", 0),
-            "consecutiveNoUpdateSkips": 0,
-            "unchangedAlertDay": iso_utc(int(time.time()))[:10],
-            "unchangedAlertCount": 0,
-            "nextActionAt": snapshot.get("nextActionAt"),
-        }
-        save_state(snapshot, metadata)
+        change = enrich_snapshot(snapshot, state)
+        previous = get_previous_snapshot(state)
+        maybe_publish_scan_comments(snapshot, previous, change, args.comment_pr, args.digest_issue)
+        save_state(snapshot, build_scan_metadata(snapshot))
         if has_actionable(snapshot):
             print(summarize(snapshot))
         return 0
@@ -623,6 +832,7 @@ def main() -> int:
     if args.mode == "scan-and-report":
         snapshot = analyze()
         change = enrich_snapshot(snapshot, state)
+        previous = get_previous_snapshot(state)
 
         if args.only_changes and not change["changed"]:
             runs = state.get("runs", [])
@@ -650,14 +860,8 @@ def main() -> int:
             )
             return 0
 
-        metadata = {
-            "cleanRunStreak": snapshot.get("cleanRunStreak", 0),
-            "consecutiveNoUpdateSkips": 0,
-            "unchangedAlertDay": iso_utc(int(time.time()))[:10],
-            "unchangedAlertCount": 0,
-            "nextActionAt": snapshot.get("nextActionAt"),
-        }
-        save_state(snapshot, metadata)
+        maybe_publish_scan_comments(snapshot, previous, change, args.comment_pr, args.digest_issue)
+        save_state(snapshot, build_scan_metadata(snapshot))
         output = run_report(hours=args.hours)
         if output:
             print(output)
