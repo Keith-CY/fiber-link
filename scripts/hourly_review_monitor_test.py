@@ -1,5 +1,6 @@
 import importlib.util
 import json
+from datetime import datetime, timezone
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -230,6 +231,232 @@ class HourlyReviewMonitorTests(unittest.TestCase):
         self.assertEqual([p["number"] for p in snapshot["staleOpenPrsDigest"]], [301])
         self.assertEqual([p["number"] for p in snapshot["ownerPingCandidates"]], [302])
         self.assertIn("owner_ping_policy", snapshot["signals"])
+
+    def test_new_pr_arrival_emits_immediate_trigger_signal(self) -> None:
+        first_pr = {
+            "number": 301,
+            "title": "existing PR",
+            "url": "https://example.com/pr/301",
+            "reviewDecision": "APPROVED",
+            "headRefName": "main",
+            "headRefOid": "a" * 40,
+            "updatedAt": datetime.fromtimestamp(1700000000, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "author": {"login": "owner"},
+        }
+        new_pr = {
+            "number": 302,
+            "title": "newly opened PR",
+            "url": "https://example.com/pr/302",
+            "reviewDecision": "APPROVED",
+            "headRefName": "feature",
+            "headRefOid": "b" * 40,
+            "updatedAt": datetime.fromtimestamp(1700003600, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "author": {"login": "owner"},
+        }
+        state = {
+            "prState": {
+                301: {"headSha": "a" * 40, "reviewDecision": "APPROVED", "noUpdateStreak": 2, "noUpdateHours": 0.5},
+            }
+        }
+
+        with (
+            patch.object(MODULE, "list_json") as list_json_mock,
+            patch.object(MODULE, "count_test_files", return_value=10),
+            patch.object(MODULE, "read_docs_superseded_count", return_value=1),
+            patch.object(MODULE.time, "time", return_value=1700007200),
+        ):
+            list_json_mock.side_effect = [
+                [],
+                [first_pr, new_pr],
+            ]
+            snapshot = MODULE.analyze(state=state)
+
+        self.assertEqual(snapshot["counts"]["newOpenPrs"], 1)
+        self.assertEqual([pr["number"] for pr in snapshot["newOpenPrs"]], [302])
+        self.assertIn("new_pr_detected", snapshot["signals"])
+
+    def test_tracks_no_update_streak_and_no_update_hours_per_pr(self) -> None:
+        pr = {
+            "number": 401,
+            "title": "tracked PR",
+            "url": "https://example.com/pr/401",
+            "reviewDecision": "APPROVED",
+            "headRefName": "main",
+            "headRefOid": "c" * 40,
+            "updatedAt": datetime.fromtimestamp(1699996800, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "author": {"login": "owner"},
+        }
+        state = {
+            "prState": {
+                401: {
+                    "headSha": "c" * 40,
+                    "reviewDecision": "APPROVED",
+                    "noUpdateStreak": 2,
+                    "noUpdateHours": 1.0,
+                    "approvedAt": 1699990000,
+                }
+            }
+        }
+
+        with (
+            patch.object(MODULE, "list_json") as list_json_mock,
+            patch.object(MODULE, "count_test_files", return_value=10),
+            patch.object(MODULE, "read_docs_superseded_count", return_value=1),
+            patch.object(MODULE.time, "time", return_value=1700000000),
+        ):
+            list_json_mock.side_effect = [[], [pr]]
+            snapshot = MODULE.analyze(state=state)
+
+        updated_pr = snapshot["openPrs"][0]
+        self.assertEqual(updated_pr["noUpdateStreak"], 3)
+        self.assertAlmostEqual(updated_pr["noUpdateHours"], 0.89, places=2)
+        self.assertEqual(snapshot["openPrs"][0]["approvedButUnmergedHours"], 2.78)
+        self.assertEqual(snapshot["counts"]["openPrs"], 1)
+
+    def test_tracks_approved_but_unmerged_reminder_and_escalation_signals(self) -> None:
+        pr = {
+            "number": 501,
+            "title": "approved and waiting",
+            "url": "https://example.com/pr/501",
+            "reviewDecision": "APPROVED",
+            "headRefName": "main",
+            "headRefOid": "d" * 40,
+            "updatedAt": datetime.fromtimestamp(1699990000, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "author": {"login": "owner"},
+        }
+        state = {
+            "prState": {
+                501: {
+                    "headSha": "d" * 40,
+                    "reviewDecision": "APPROVED",
+                    "noUpdateStreak": 1,
+                    "approvedAt": 1699990000,
+                    "noUpdateHours": 0.0,
+                }
+            }
+        }
+
+        with (
+            patch.object(MODULE, "TASK1_APPROVED_BUT_UNMERGED_REMINDER_HOURS", 0.25),
+            patch.object(MODULE, "TASK1_APPROVED_BUT_UNMERGED_ESCALATION_HOURS", 0.5),
+            patch.object(MODULE, "list_json") as list_json_mock,
+            patch.object(MODULE, "count_test_files", return_value=10),
+            patch.object(MODULE, "read_docs_superseded_count", return_value=1),
+            patch.object(MODULE.time, "time", return_value=1700000000),
+        ):
+            list_json_mock.side_effect = [[], [pr]]
+            snapshot = MODULE.analyze(state=state)
+
+        self.assertEqual(snapshot["counts"]["approvedButUnmerged"], 1)
+        self.assertIn("approved_but_unmerged_escalation", snapshot["signals"])
+        self.assertNotIn("approved_but_unmerged_reminder", snapshot["signals"])
+
+    def test_stable_terminal_prs_aggregate_into_digest_signal(self) -> None:
+        with (
+            patch.object(MODULE, "STALE_OPEN_PR_HOURS", 1.0),
+            patch.object(MODULE, "TASK1_STABLE_NO_UPDATE_HOURS_THRESHOLD", 1.0),
+            patch.object(MODULE, "TASK1_STABLE_NO_UPDATE_STREAK_THRESHOLD", 2),
+        ):
+            pr_a = {
+                "number": 601,
+                "title": "stable approved",
+                "url": "https://example.com/pr/601",
+                "reviewDecision": "APPROVED",
+                "headRefName": "main",
+                "headRefOid": "e" * 40,
+                "updatedAt": datetime.fromtimestamp(1699990000, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "author": {"login": "owner"},
+            }
+            pr_b = {
+                "number": 602,
+                "title": "another stable approved",
+                "url": "https://example.com/pr/602",
+                "reviewDecision": "APPROVED",
+                "headRefName": "main",
+                "headRefOid": "f" * 40,
+                "updatedAt": datetime.fromtimestamp(1699990000, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "author": {"login": "owner2"},
+            }
+            state = {
+                "prState": {
+                    601: {"headSha": "e" * 40, "reviewDecision": "APPROVED", "noUpdateStreak": 2, "noUpdateHours": 1.0, "approvedAt": 1699990000},
+                    602: {"headSha": "f" * 40, "reviewDecision": "APPROVED", "noUpdateStreak": 2, "noUpdateHours": 1.0, "approvedAt": 1699990000},
+                }
+            }
+
+            with (
+                patch.object(MODULE, "list_json") as list_json_mock,
+                patch.object(MODULE, "count_test_files", return_value=10),
+                patch.object(MODULE, "read_docs_superseded_count", return_value=1),
+                patch.object(MODULE.time, "time", return_value=1700000000),
+            ):
+                list_json_mock.side_effect = [[], [pr_a, pr_b]]
+                snapshot = MODULE.analyze(state=state)
+
+        self.assertEqual(snapshot["counts"]["stableTerminalPrs"], 2)
+        self.assertIn("stable_terminal_pr_digest", snapshot["signals"])
+        comment = MODULE.build_low_priority_digest_comment(snapshot)
+        self.assertIn("#601", comment)
+        self.assertIn("#602", comment)
+
+    def test_adaptive_polling_downshifts_and_resumes_on_new_sha(self) -> None:
+        with (
+            patch.object(MODULE, "STALE_OPEN_PR_HOURS", 1.0),
+            patch.object(MODULE, "TASK1_STABLE_NO_UPDATE_HOURS_THRESHOLD", 1.0),
+            patch.object(MODULE, "TASK1_STABLE_NO_UPDATE_STREAK_THRESHOLD", 2),
+        ):
+            pr_stable = {
+                "number": 701,
+                "title": "stable terminal",
+                "url": "https://example.com/pr/701",
+                "reviewDecision": "APPROVED",
+                "headRefName": "main",
+                "headRefOid": "1" * 40,
+                "updatedAt": datetime.fromtimestamp(1699990000, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "author": {"login": "owner"},
+            }
+            state = {
+                "prState": {
+                    701: {
+                        "headSha": "1" * 40,
+                        "reviewDecision": "APPROVED",
+                        "noUpdateStreak": 2,
+                        "noUpdateHours": 1.0,
+                        "approvedAt": 1699990000,
+                    }
+                }
+            }
+
+            with (
+                patch.object(MODULE, "list_json") as list_json_mock,
+                patch.object(MODULE, "count_test_files", return_value=10),
+                patch.object(MODULE, "read_docs_superseded_count", return_value=1),
+                patch.object(MODULE.time, "time", return_value=1700000000),
+            ):
+                list_json_mock.side_effect = [[], [pr_stable]]
+                snapshot_downshift = MODULE.analyze(state=state)
+
+        self.assertEqual(snapshot_downshift["pollingMode"], "downshift-stable-terminal-prs")
+        self.assertEqual(snapshot_downshift["pollingIntervalMinutes"], MODULE.TASK1_STABLE_POLL_INTERVAL_MINUTES)
+
+        changed_pr = {
+            **pr_stable,
+            "headRefOid": "2" * 40,
+            "updatedAt": datetime.fromtimestamp(1700000000, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        }
+        resume_state = {"runs": [snapshot_downshift], "prState": snapshot_downshift["prState"]}
+        with (
+            patch.object(MODULE, "list_json") as list_json_mock,
+            patch.object(MODULE, "count_test_files", return_value=10),
+            patch.object(MODULE, "read_docs_superseded_count", return_value=1),
+            patch.object(MODULE.time, "time", return_value=1700000360),
+        ):
+            list_json_mock.side_effect = [[], [changed_pr]]
+            snapshot_resume = MODULE.analyze(state=resume_state)
+
+        self.assertEqual(snapshot_resume["pollingMode"], "resume")
+        self.assertEqual(snapshot_resume["pollingIntervalMinutes"], MODULE.CHECK_INTERVAL_MINUTES)
+        self.assertEqual(snapshot_resume["counts"]["shaChangedPrCount"], 1)
 
     def test_upsert_issue_comment_creates_new_comment_when_marker_missing(self) -> None:
         marker = "<!-- marker -->"
