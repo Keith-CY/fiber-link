@@ -159,63 +159,55 @@ def source_pr_from_issue_body(body: str) -> int | None:
     return int(m.group(1))
 
 
+def _parse_pr_state_dict(raw: object) -> Dict[int, dict]:
+    if not isinstance(raw, dict):
+        return {}
+    parsed: Dict[int, dict] = {}
+    for pr_number, details in raw.items():
+        try:
+            number = int(pr_number)
+        except (TypeError, ValueError):
+            continue
+        if isinstance(details, dict):
+            parsed[number] = details
+    return parsed
+
+
+def _parse_pr_state_from_open_prs(raw: object) -> Dict[int, dict]:
+    if not isinstance(raw, list):
+        return {}
+    parsed: Dict[int, dict] = {}
+    for pr in raw:
+        if not isinstance(pr, dict):
+            continue
+        number = pr.get("number")
+        if not isinstance(number, int):
+            continue
+        parsed[number] = {
+            "headSha": pr.get("headSha") or "",
+            "reviewDecision": pr.get("reviewDecision"),
+            "noUpdateStreak": pr.get("noUpdateStreak", 0),
+            "noUpdateHours": pr.get("noUpdateHours", 0),
+            "approvedAt": pr.get("approvedAt"),
+        }
+    return parsed
+
+
 def pr_state_map(snapshot: dict) -> Dict[int, dict]:
-    raw = snapshot.get("prState")
-    if isinstance(raw, dict):
-        parsed: Dict[int, dict] = {}
-        for pr_number, details in raw.items():
-            try:
-                number = int(pr_number)
-            except (TypeError, ValueError):
-                continue
-            if isinstance(details, dict):
-                parsed[number] = details
-        if parsed:
-            return parsed
+    candidates: List[Dict[int, dict]] = []
+    candidates.append(_parse_pr_state_dict(snapshot.get("prState")))
 
     latest_run = snapshot.get("latestRun")
     if isinstance(latest_run, dict):
-        raw = latest_run.get("openPrs", [])
-        if isinstance(raw, list):
-            parsed: Dict[int, dict] = {}
-            for pr in raw:
-                if not isinstance(pr, dict):
-                    continue
-                number = pr.get("number")
-                if not isinstance(number, int):
-                    continue
-                parsed[number] = {
-                    "headSha": pr.get("headSha") or "",
-                    "reviewDecision": pr.get("reviewDecision"),
-                    "noUpdateStreak": pr.get("noUpdateStreak", 0),
-                    "noUpdateHours": pr.get("noUpdateHours", 0),
-                    "approvedAt": pr.get("approvedAt"),
-                }
-            if parsed:
-                return parsed
+        candidates.append(_parse_pr_state_from_open_prs(latest_run.get("openPrs", [])))
 
     runs = snapshot.get("runs")
-    if isinstance(runs, list) and runs:
-        previous = runs[-1]
-        if isinstance(previous, dict):
-            raw = previous.get("openPrs", [])
-            if isinstance(raw, list):
-                parsed = {}
-                for pr in raw:
-                    if not isinstance(pr, dict):
-                        continue
-                    number = pr.get("number")
-                    if not isinstance(number, int):
-                        continue
-                    parsed[number] = {
-                        "headSha": pr.get("headSha") or "",
-                        "reviewDecision": pr.get("reviewDecision"),
-                        "noUpdateStreak": pr.get("noUpdateStreak", 0),
-                        "noUpdateHours": pr.get("noUpdateHours", 0),
-                        "approvedAt": pr.get("approvedAt"),
-                    }
-                if parsed:
-                    return parsed
+    if isinstance(runs, list) and runs and isinstance(runs[-1], dict):
+        candidates.append(_parse_pr_state_from_open_prs(runs[-1].get("openPrs", [])))
+
+    for parsed in candidates:
+        if parsed:
+            return parsed
     return {}
 
 
@@ -381,20 +373,26 @@ def build_pr_runtime_state(
     return tracked_prs, next_state, new_prs, sha_changed_prs, approved_but_unmerged, stable_terminal_candidates
 
 
+def _needs_normal_polling(snapshot: dict, signals: Set[str]) -> bool:
+    return any(
+        [
+            count_metric(snapshot, "open", "assigned") > 0,
+            count_metric(snapshot, "nbsUnbound") > 0,
+            count_metric(snapshot, "changeRequests") > 0,
+            count_metric(snapshot, "ownerPingCandidates") > 0,
+            count_metric(snapshot, "newOpenPrs") > 0,
+            "approved_but_unmerged_escalation" in signals,
+            "approved_but_unmerged_reminder" in signals,
+        ]
+    )
+
+
 def compute_next_action_interval(snapshot: dict) -> tuple[int, str]:
     signals = set(snapshot.get("signals", []))
     if count_metric(snapshot, "shaChangedPrCount") > 0:
         return CHECK_INTERVAL_MINUTES, "resume"
 
-    if (
-        count_metric(snapshot, "open", "assigned") > 0
-        or count_metric(snapshot, "nbsUnbound") > 0
-        or count_metric(snapshot, "changeRequests") > 0
-        or count_metric(snapshot, "ownerPingCandidates") > 0
-        or count_metric(snapshot, "newOpenPrs") > 0
-        or "approved_but_unmerged_escalation" in signals
-        or "approved_but_unmerged_reminder" in signals
-    ):
+    if _needs_normal_polling(snapshot, signals):
         return CHECK_INTERVAL_MINUTES, "normal"
 
     if count_metric(snapshot, "stableTerminalPrs") <= 0:
@@ -578,22 +576,19 @@ def analyze(state: dict | None = None) -> dict:
     pr208 = next((pr for pr in open_prs if pr.get("number") == 208), None)
     pr208_unchanged_hours = pr208.get("unchangedHours") if pr208 else None
 
-    approved_but_unmerged_hours = [
-        pr.get("approvedButUnmergedHours", 0.0) for pr in approved_but_unmerged if isinstance(pr.get("approvedButUnmergedHours"), (int, float))
-    ]
-    approved_but_unmerged_reminder = [
-        pr
-        for pr in approved_but_unmerged
-        if isinstance(pr.get("approvedButUnmergedHours"), (int, float))
-        and pr["approvedButUnmergedHours"] >= TASK1_APPROVED_BUT_UNMERGED_REMINDER_HOURS
-    ]
-    approved_but_unmerged_escalation = [
-        pr
-        for pr in approved_but_unmerged
-        if isinstance(pr.get("approvedButUnmergedHours"), (int, float))
-        and pr["approvedButUnmergedHours"] >= TASK1_APPROVED_BUT_UNMERGED_ESCALATION_HOURS
-    ]
-    approved_but_unmerged_max_hours = max(approved_but_unmerged_hours, default=0.0)
+    approved_but_unmerged_max_hours = 0.0
+    approved_but_unmerged_reminder: List[dict] = []
+    approved_but_unmerged_escalation: List[dict] = []
+    for pr in approved_but_unmerged:
+        hours = pr.get("approvedButUnmergedHours")
+        if not isinstance(hours, (int, float)):
+            continue
+        approved_but_unmerged_max_hours = max(approved_but_unmerged_max_hours, float(hours))
+        if hours >= TASK1_APPROVED_BUT_UNMERGED_ESCALATION_HOURS:
+            approved_but_unmerged_escalation.append(pr)
+            continue
+        if hours >= TASK1_APPROVED_BUT_UNMERGED_REMINDER_HOURS:
+            approved_but_unmerged_reminder.append(pr)
     max_no_update_streak = max((pr.get("noUpdateStreak", 0) for pr in open_prs), default=0)
     max_no_update_hours = max((pr.get("noUpdateHours", 0.0) for pr in open_prs), default=0.0)
 
