@@ -567,8 +567,6 @@ def analyze(state: dict | None = None) -> dict:
     open_prs, pr_state, new_open_prs, sha_changed_prs, approved_but_unmerged, _stable_terminal_candidates = build_pr_runtime_state(
         open_prs, prior_pr_state, now_ts
     )
-    if not prior_pr_state:
-        new_open_prs = []
     change_requests = [pr for pr in open_prs if pr.get("reviewDecision") == "CHANGES_REQUESTED"]
     stale_open_prs_all = [
         pr for pr in open_prs if (pr.get("unchangedHours") is not None and pr.get("unchangedHours", 0) >= STALE_OPEN_PR_HOURS)
@@ -967,10 +965,10 @@ def build_audit_delta_comment(pr_number: int, snapshot: dict, previous_snapshot:
 
 
 def build_low_priority_digest_comment(snapshot: dict) -> str:
-    digest_candidates = snapshot_items(snapshot, "stableTerminalPrs", "staleOpenPrsDigest")
+    digest_candidates = snapshot_items(snapshot, "stableTerminalPrs") + snapshot_items(snapshot, "staleOpenPrsDigest")
     lines = [
         DIGEST_MARKER,
-        f"Stable terminal PR digest at {snapshot.get('runAt', 'n/a')}",
+        f"Stable terminal + low-priority digest at {snapshot.get('runAt', 'n/a')}",
         f"Candidate count: {len(digest_candidates)}",
         "",
     ]
@@ -978,7 +976,7 @@ def build_low_priority_digest_comment(snapshot: dict) -> str:
         for pr in digest_candidates:
             lines.append(format_pr_candidate_line(pr, prefix="- "))
     else:
-        lines.append("- No stable terminal PRs in this run.")
+        lines.append("- No stable-terminal or low-priority digest candidates in this run.")
     lines.append(f"nextActionAt: {snapshot.get('nextActionAt', 'n/a')}")
     return "\n".join(lines)
 
@@ -1021,7 +1019,7 @@ def maybe_publish_audit_delta_comment(snapshot: dict, previous_snapshot: dict | 
 def maybe_publish_digest_comment(snapshot: dict, digest_issue: int | None) -> None:
     if not digest_issue:
         return
-    if count_metric(snapshot, "stableTerminalPrs") == 0:
+    if count_metric(snapshot, "stableTerminalPrs") == 0 and count_metric(snapshot, "staleOpenPrsDigest") == 0:
         return
     body = build_low_priority_digest_comment(snapshot)
     upsert_issue_comment(digest_issue, DIGEST_MARKER, body)
