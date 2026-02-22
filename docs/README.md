@@ -5,6 +5,8 @@
 - `docs/current-architecture.md` — canonical source-of-truth index for architecture, current status, and historical redirects.
 - `docs/plans/2026-02-21-issue-32-epic-closeout.md` — latest closeout mapping for epic `#32`.
 - `docs/plans/2026-02-17-issue-32-epic-execution-status-tracker.md` — superseded historical status snapshot retained for traceability.
+- `docs/plans/2026-02-03-fiber-link-mvp-design.md` — historical early design snapshot; use canonical links at the top of the file.
+- `docs/plans/2026-02-03-fiber-link-mvp-plan.md` — historical implementation draft; use canonical links at the top of the file.
 
 ## Plugin testing
 

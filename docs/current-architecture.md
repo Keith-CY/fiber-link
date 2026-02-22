@@ -1,6 +1,6 @@
 # Current Architecture (Canonical Index)
 
-Last updated: 2026-02-21
+Last updated: 2026-02-22
 
 This file is the source-of-truth index for architecture, operational boundaries, and active
 implementation references.
@@ -40,6 +40,15 @@ implementation references.
 These docs remain for historical traceability but should not be treated as current implementation
 guidance.
 
+- `docs/plans/2026-02-03-fiber-link-mvp-design.md`
+  - Status: diverged early-design snapshot.
+  - Canonical replacement: `docs/01-scope-mvp.md` and `docs/02-architecture.md`.
+  - Canonical index: `docs/current-architecture.md`.
+- `docs/plans/2026-02-03-fiber-link-mvp-plan.md`
+  - Status: superseded implementation draft.
+  - Canonical replacement: `docs/06-development-progress.md` and
+    `docs/plans/2026-02-21-issue-32-epic-closeout.md`.
+  - Canonical index: `docs/current-architecture.md`.
 - `docs/plans/2026-02-17-issue-32-epic-execution-status-tracker.md`
   - Status: superseded historical snapshot.
   - Canonical replacement: `docs/plans/2026-02-21-issue-32-epic-closeout.md`.
@@ -47,5 +56,5 @@ guidance.
 
 ## Freshness Snapshot
 
-- Historical/superseded docs tracked with explicit redirect: 1
+- Historical/superseded docs tracked with explicit redirect: 3
 - Planning placeholder marker count in `docs/`: 0
