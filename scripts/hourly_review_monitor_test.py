@@ -28,7 +28,11 @@ class HourlyReviewMonitorTests(unittest.TestCase):
             "labels": [{"name": "nbs"}],
         }
 
-        with patch.object(MODULE, "list_json") as list_json_mock:
+        with (
+            patch.object(MODULE, "list_json") as list_json_mock,
+            patch.object(MODULE, "count_test_files", return_value=10),
+            patch.object(MODULE, "read_docs_superseded_count", return_value=1),
+        ):
             list_json_mock.side_effect = [
                 [open_issue, nbs_issue],  # list_json("issue")
                 [],  # list_json("pr")
@@ -84,6 +88,8 @@ class HourlyReviewMonitorTests(unittest.TestCase):
         with (
             patch.object(MODULE, "list_json") as list_json_mock,
             patch.object(MODULE, "classify_with_source_pr", return_value=([], [source_bound_issue], [])),
+            patch.object(MODULE, "count_test_files", return_value=10),
+            patch.object(MODULE, "read_docs_superseded_count", return_value=1),
             patch.object(MODULE.time, "time", return_value=1700000000),
         ):
             list_json_mock.side_effect = [
@@ -144,6 +150,32 @@ class HourlyReviewMonitorTests(unittest.TestCase):
         self.assertIn("headSha previous/current", rendered)
         self.assertIn("#208 aaaaaa1/aaaaaa1", rendered)
         self.assertIn("consecutiveNoUpdateSkips: 2", rendered)
+
+    def test_enrich_snapshot_adds_regression_signals(self) -> None:
+        state = {
+            "runs": [
+                {
+                    "metrics": {"testFiles": 20, "docsSuperseded": 1},
+                    "counts": {"open": 0, "nbsUnbound": 0, "changeRequests": 0, "staleOpenPrs": 0},
+                    "openPrs": [],
+                }
+            ],
+            "cleanRunStreak": 0,
+        }
+        snapshot = {
+            "metrics": {"testFiles": 12, "docsSuperseded": 3},
+            "counts": {"open": 0, "nbsUnbound": 0, "changeRequests": 0, "staleOpenPrs": 0},
+            "openPrs": [],
+            "signals": [],
+        }
+
+        with patch.object(MODULE.time, "time", return_value=1700000000):
+            MODULE.enrich_snapshot(snapshot, state)
+
+        self.assertEqual(snapshot["metrics"]["testFilesDelta"], -8)
+        self.assertEqual(snapshot["metrics"]["docsSupersededDelta"], 2)
+        self.assertIn("test_files_drift", snapshot["signals"])
+        self.assertIn("docs_superseded_regression", snapshot["signals"])
 
 
 if __name__ == "__main__":

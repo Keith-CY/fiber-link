@@ -10,19 +10,24 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Dict, List, Set, Tuple
 
 REPO = "Keith-CY/fiber-link"
 STATE_FILE = "/root/.openclaw/workspace/memory/fiber-link-task1-state.json"
+REPO_ROOT = Path(__file__).resolve().parents[1]
+DOCS_ARCH_INDEX_FILE = REPO_ROOT / "docs/current-architecture.md"
 CHECK_INTERVAL_MINUTES = 20
 NO_UPDATE_ESCALATION_THRESHOLD = 3
 MERGE_READY_STREAK_THRESHOLD = 3
 MAX_UNCHANGED_ALERTS_PER_DAY = 3
 STALE_OPEN_PR_HOURS = 24.0
+TEST_FILES_DRIFT_ALERT_THRESHOLD = 5
 
 
 def run_gh(args: List[str]) -> str:
@@ -70,6 +75,29 @@ def parse_iso_utc(ts: str | None) -> int | None:
         return int(datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp())
     except ValueError:
         return None
+
+
+def count_test_files() -> int:
+    ignored_dirs = {".git", "node_modules", "__pycache__", "vendor", "tmp"}
+    total = 0
+    for root, dirs, files in os.walk(REPO_ROOT):
+        dirs[:] = [d for d in dirs if d not in ignored_dirs]
+        for file_name in files:
+            lowered = file_name.lower()
+            if ".test." in lowered or "_test." in lowered or lowered.endswith("_spec.rb"):
+                total += 1
+    return total
+
+
+def read_docs_superseded_count() -> int | None:
+    try:
+        content = DOCS_ARCH_INDEX_FILE.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return None
+    match = re.search(r"Historical/superseded docs tracked with explicit redirect:\s*(\d+)", content)
+    if not match:
+        return None
+    return int(match.group(1))
 
 
 def source_pr_from_issue_body(body: str) -> int | None:
@@ -233,7 +261,12 @@ def detect_change(snapshot: dict, state: dict) -> dict:
 
     if any(
         count_metric(last, key, *fallback_keys) != count_metric(snapshot, key, *fallback_keys)
-        for key, fallback_keys in [("open", ("assigned",)), ("nbsUnbound", ()), ("changeRequests", ())]
+        for key, fallback_keys in [
+            ("open", ("assigned",)),
+            ("nbsUnbound", ()),
+            ("changeRequests", ()),
+            ("staleOpenPrs", ()),
+        ]
     ):
         sources.add("ci")
 
@@ -261,6 +294,8 @@ def analyze() -> dict:
     stale_open_prs = [
         pr for pr in open_prs if (pr.get("unchangedHours") is not None and pr.get("unchangedHours", 0) >= STALE_OPEN_PR_HOURS)
     ]
+    test_files_count = count_test_files()
+    docs_superseded_count = read_docs_superseded_count()
 
     pr208 = next((pr for pr in open_prs if pr.get("number") == 208), None)
     pr208_unchanged_hours = pr208.get("unchangedHours") if pr208 else None
@@ -291,6 +326,8 @@ def analyze() -> dict:
             "staleOpenPrCount": len(stale_open_prs),
             "oldestOpenPrUnchangedHours": oldest_unchanged_hours,
             "pr208UnchangedHours": pr208_unchanged_hours,
+            "testFiles": test_files_count,
+            "docsSuperseded": docs_superseded_count,
         },
         "counts": {
             "open": len(actionable_open_with_reason),
@@ -348,6 +385,30 @@ def enrich_snapshot(snapshot: dict, state: dict) -> dict:
     snapshot["changeDetectionSource"] = primary_change_source(sources)
     snapshot["changeDetectionDetails"] = change["details"]
     snapshot["nextActionAt"] = iso_utc(int(time.time()) + CHECK_INTERVAL_MINUTES * 60)
+    snapshot.setdefault("signals", [])
+
+    runs = state.get("runs", [])
+    if runs:
+        previous = runs[-1]
+        previous_test_files = metric_value(previous, "testFiles")
+        current_test_files = metric_value(snapshot, "testFiles")
+        if isinstance(previous_test_files, (int, float)) and isinstance(current_test_files, (int, float)):
+            test_files_delta = int(current_test_files - previous_test_files)
+            snapshot["metrics"]["testFilesDelta"] = test_files_delta
+            if abs(test_files_delta) >= TEST_FILES_DRIFT_ALERT_THRESHOLD:
+                snapshot["signals"].append("test_files_drift")
+
+        previous_docs_superseded = metric_value(previous, "docsSuperseded")
+        current_docs_superseded = metric_value(snapshot, "docsSuperseded")
+        if isinstance(previous_docs_superseded, (int, float)) and isinstance(current_docs_superseded, (int, float)):
+            docs_superseded_delta = int(current_docs_superseded - previous_docs_superseded)
+            snapshot["metrics"]["docsSupersededDelta"] = docs_superseded_delta
+            if docs_superseded_delta > 0:
+                # Regression-only alert.
+                snapshot["signals"].append("docs_superseded_regression")
+
+    if snapshot["signals"]:
+        snapshot["signals"] = sorted(set(snapshot["signals"]))
 
     previous_clean_streak = int(state.get("cleanRunStreak", 0))
     clean_streak = 0 if has_actionable(snapshot) else previous_clean_streak + 1
@@ -374,6 +435,22 @@ def summarize(snapshot: dict) -> str:
     pr208_unchanged_hours = metric_value(snapshot, "pr208UnchangedHours")
     if isinstance(pr208_unchanged_hours, (int, float)):
         lines.append(f"pr208UnchangedHours: {pr208_unchanged_hours:.2f}")
+
+    test_files = metric_value(snapshot, "testFiles")
+    if isinstance(test_files, (int, float)):
+        test_files_delta = metric_value(snapshot, "testFilesDelta")
+        if isinstance(test_files_delta, (int, float)):
+            lines.append(f"test_files: {int(test_files)} (delta: {int(test_files_delta):+d})")
+        else:
+            lines.append(f"test_files: {int(test_files)}")
+
+    docs_superseded = metric_value(snapshot, "docsSuperseded")
+    if isinstance(docs_superseded, (int, float)):
+        docs_superseded_delta = metric_value(snapshot, "docsSupersededDelta")
+        if isinstance(docs_superseded_delta, (int, float)):
+            lines.append(f"docs_superseded: {int(docs_superseded)} (delta: {int(docs_superseded_delta):+d})")
+        else:
+            lines.append(f"docs_superseded: {int(docs_superseded)}")
 
     if snapshot.get("signals"):
         lines.append(f"signals: {', '.join(snapshot.get('signals', []))}")
@@ -471,6 +548,8 @@ def run_report(hours: int = 1) -> str:
         "totalChangeRequests": sum(count_metric(r, "changeRequests") for r in recent),
         "totalStaleOpenPrs": sum(count_metric(r, "staleOpenPrs") for r in recent),
         "totalSignals": sum(len(r.get("signals", [])) for r in recent),
+        "lastTestFiles": metric_value(recent[-1], "testFiles") if recent else None,
+        "lastDocsSuperseded": metric_value(recent[-1], "docsSuperseded") if recent else None,
         "latest": summarize(recent[-1]) if recent else "No data",
         "windowFrom": iso_utc(cutoff),
         "windowTo": iso_utc(now),
@@ -495,10 +574,18 @@ def run_report(hours: int = 1) -> str:
         f"Total PRs with CHANGES_REQUESTED: {summary['totalChangeRequests']}",
         f"Total stale open PR watchdog hits: {summary['totalStaleOpenPrs']}",
         f"Total signals emitted: {summary['totalSignals']}",
-        "",
-        "Latest run:",
-        summarize(recent[-1]),
     ]
+    if isinstance(summary["lastTestFiles"], (int, float)):
+        lines.append(f"Latest test_files: {int(summary['lastTestFiles'])}")
+    if isinstance(summary["lastDocsSuperseded"], (int, float)):
+        lines.append(f"Latest docs_superseded: {int(summary['lastDocsSuperseded'])}")
+    lines.extend(
+        [
+            "",
+            "Latest run:",
+            summarize(recent[-1]),
+        ]
+    )
     return "\n".join(lines)
 
 
