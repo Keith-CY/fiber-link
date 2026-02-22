@@ -13,27 +13,40 @@ SPEC.loader.exec_module(MODULE)
 
 class HourlyReviewMonitorTests(unittest.TestCase):
     def test_analyze_fetches_all_open_issues_without_assignee_filter(self) -> None:
-        open_issue = {"number": 1, "title": "Open issue", "url": "https://example.com/1", "body": ""}
-        nbs_issue = {"number": 2, "title": "NBS issue", "url": "https://example.com/2", "body": ""}
+        open_issue = {
+            "number": 1,
+            "title": "Open issue",
+            "url": "https://example.com/1",
+            "body": "",
+            "labels": [],
+        }
+        nbs_issue = {
+            "number": 2,
+            "title": "NBS issue",
+            "url": "https://example.com/2",
+            "body": "",
+            "labels": [{"name": "nbs"}],
+        }
 
         with patch.object(MODULE, "list_json") as list_json_mock:
             list_json_mock.side_effect = [
                 [open_issue, nbs_issue],  # list_json("issue")
-                [nbs_issue],  # list_json("issue", label="nbs")
                 [],  # list_json("pr")
             ]
 
             snapshot = MODULE.analyze()
 
-        self.assertEqual(list_json_mock.call_count, 3)
+        self.assertEqual(list_json_mock.call_count, 2)
         self.assertEqual(list_json_mock.call_args_list[0].args, ("issue",))
         self.assertEqual(list_json_mock.call_args_list[0].kwargs, {})
-        self.assertEqual(list_json_mock.call_args_list[1].args, ("issue",))
-        self.assertEqual(list_json_mock.call_args_list[1].kwargs, {"label": "nbs"})
+        self.assertEqual(list_json_mock.call_args_list[1].args, ("pr",))
+        self.assertEqual(list_json_mock.call_args_list[1].kwargs, {})
         self.assertEqual(snapshot["counts"]["open"], 2)
         self.assertEqual(snapshot["counts"]["assigned"], 2)
         self.assertEqual(len(snapshot["open"]), 2)
         self.assertEqual(len(snapshot["assigned"]), 2)
+        self.assertEqual(snapshot["counts"]["nbs"], 1)
+        self.assertEqual(snapshot["counts"]["nbsUnbound"], 1)
 
     def test_summarize_supports_legacy_assigned_only_snapshot(self) -> None:
         legacy_snapshot = {

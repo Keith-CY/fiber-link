@@ -53,6 +53,10 @@ def source_pr_from_issue_body(body: str) -> int | None:
     return int(m.group(1))
 
 
+def has_label(issue: dict, label_name: str) -> bool:
+    return any((label.get("name") or "").lower() == label_name.lower() for label in issue.get("labels", []))
+
+
 def pr_state(pr_num: int, cache: Dict[int, str]) -> str:
     if pr_num in cache:
         return cache[pr_num]
@@ -117,11 +121,10 @@ def analyze() -> dict:
     state_cache: Dict[int, str] = {}
 
     open_issues = list_json("issue")
-    nbs_issues = list_json("issue", label="nbs")
-
     actionable_open_with_reason, _, _ = classify_with_source_pr(open_issues, state_cache)
-    actionable_nbs_with_reason, _, unbound_nbs = classify_with_source_pr(nbs_issues, state_cache)
     open_actionable_issues = [item["issue"] for item in actionable_open_with_reason]
+    nbs_issues = [issue for issue in open_issues if has_label(issue, "nbs")]
+    unbound_nbs = [item for item in actionable_open_with_reason if has_label(item["issue"], "nbs")]
 
     change_requests = [
         item for item in list_json("pr") if item.get("reviewDecision") == "CHANGES_REQUESTED"
@@ -215,12 +218,10 @@ def changed_since_last(snapshot: dict, state: dict) -> bool:
 
 
 def has_actionable(snapshot: dict) -> bool:
-    return any(
-        [
-            count_metric(snapshot, "open", "assigned") > 0,
-            count_metric(snapshot, "nbsUnbound") > 0,
-            count_metric(snapshot, "changeRequests") > 0,
-        ]
+    return (
+        count_metric(snapshot, "open", "assigned") > 0
+        or count_metric(snapshot, "nbsUnbound") > 0
+        or count_metric(snapshot, "changeRequests") > 0
     )
 
 
