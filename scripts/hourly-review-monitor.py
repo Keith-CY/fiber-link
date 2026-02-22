@@ -53,6 +53,10 @@ def source_pr_from_issue_body(body: str) -> int | None:
     return int(m.group(1))
 
 
+def has_label(issue: dict, label_name: str) -> bool:
+    return any((label.get("name") or "").lower() == label_name.lower() for label in issue.get("labels", []))
+
+
 def pr_state(pr_num: int, cache: Dict[int, str]) -> str:
     if pr_num in cache:
         return cache[pr_num]
@@ -92,27 +96,53 @@ def classify_with_source_pr(issues: List[dict], pr_state_cache: Dict[int, str]) 
     return actionable, bound, unbound
 
 
+def count_metric(snapshot: dict, key: str, *fallback_keys: str) -> int:
+    counts = snapshot.get("counts", {})
+    if key in counts:
+        return counts[key]
+    for fallback in fallback_keys:
+        if fallback in counts:
+            return counts[fallback]
+    return 0
+
+
+def snapshot_items(snapshot: dict, key: str, *fallback_keys: str) -> List[dict]:
+    items = snapshot.get(key)
+    if isinstance(items, list):
+        return items
+    for fallback in fallback_keys:
+        items = snapshot.get(fallback)
+        if isinstance(items, list):
+            return items
+    return []
+
+
 def analyze() -> dict:
     state_cache: Dict[int, str] = {}
 
-    assigned_issues = list_json("issue", assignee="@me")
-    nbs_issues = list_json("issue", label="nbs")
-
-    actionable_assigned_with_reason, _, _ = classify_with_source_pr(assigned_issues, state_cache)
-    actionable_nbs_with_reason, _, unbound_nbs = classify_with_source_pr(nbs_issues, state_cache)
+    open_issues = list_json("issue")
+    actionable_open_with_reason, _, _ = classify_with_source_pr(open_issues, state_cache)
+    open_actionable_issues = [item["issue"] for item in actionable_open_with_reason]
+    nbs_issues = [issue for issue in open_issues if has_label(issue, "nbs")]
+    unbound_nbs = [item for item in actionable_open_with_reason if has_label(item["issue"], "nbs")]
 
     change_requests = [
         item for item in list_json("pr") if item.get("reviewDecision") == "CHANGES_REQUESTED"
     ]
 
     return {
-        "assigned": [item["issue"] for item in actionable_assigned_with_reason],
-        "assignedUnbound": actionable_assigned_with_reason,
+        "open": open_actionable_issues,
+        "openUnbound": actionable_open_with_reason,
+        # Backward compatibility for historical state consumers.
+        "assigned": open_actionable_issues,
+        "assignedUnbound": actionable_open_with_reason,
         "nbs": nbs_issues,
         "nbsUnbound": unbound_nbs,
         "changeRequests": change_requests,
         "counts": {
-            "assigned": len(actionable_assigned_with_reason),
+            "open": len(actionable_open_with_reason),
+            # Backward compatibility for historical state consumers.
+            "assigned": len(actionable_open_with_reason),
             "nbs": len(nbs_issues),
             "nbsUnbound": len(unbound_nbs),
             "changeRequests": len(change_requests),
@@ -142,33 +172,34 @@ def save_state(snapshot: dict) -> None:
 
 
 def summarize(snapshot: dict) -> str:
+    open_count = count_metric(snapshot, "open", "assigned")
     lines = [
         f"Scan at {snapshot['runAt']}",
-        f"Assigned issues requiring handling: {snapshot['counts']['assigned']}",
-        f"Open nbs issues: {snapshot['counts']['nbs']} (unbound/non-open-source PR: {snapshot['counts']['nbsUnbound']})",
-        f"PRs with CHANGES_REQUESTED: {snapshot['counts']['changeRequests']}",
+        f"Open issues requiring handling: {open_count}",
+        f"Open nbs issues: {count_metric(snapshot, 'nbs')} (unbound/non-open-source PR: {count_metric(snapshot, 'nbsUnbound')})",
+        f"PRs with CHANGES_REQUESTED: {count_metric(snapshot, 'changeRequests')}",
     ]
 
-    if snapshot["counts"]["assigned"]:
-        lines.append("- Assigned issues to handle:")
-        for i in snapshot["assigned"]:
+    if open_count:
+        lines.append("- Open issues to handle:")
+        for i in snapshot_items(snapshot, "open", "assigned"):
             lines.append(f"  - #{i['number']} {i['title']} ({i['url']})")
 
-    if snapshot["counts"]["nbsUnbound"]:
+    if count_metric(snapshot, "nbsUnbound"):
         lines.append("- Unbound nbs issues:")
-        for u in snapshot["nbsUnbound"]:
+        for u in snapshot_items(snapshot, "nbsUnbound"):
             issue = u["issue"]
             lines.append(f"  - #{issue['number']} {issue['title']} [{u['reason']}] ({issue['url']})")
 
-    if snapshot["counts"]["changeRequests"]:
+    if count_metric(snapshot, "changeRequests"):
         lines.append("- PRs blocked by change request:")
-        for p in snapshot["changeRequests"]:
+        for p in snapshot_items(snapshot, "changeRequests"):
             lines.append(f"  - #{p['number']} {p['title']} ({p['url']})")
 
     if not any([
-        snapshot["counts"]["assigned"],
-        snapshot["counts"]["nbsUnbound"],
-        snapshot["counts"]["changeRequests"],
+        open_count,
+        count_metric(snapshot, "nbsUnbound"),
+        count_metric(snapshot, "changeRequests"),
     ]):
         lines.append("- No actionable items.")
     return "\n".join(lines)
@@ -181,13 +212,17 @@ def changed_since_last(snapshot: dict, state: dict) -> bool:
     last = runs[-1]
     # report when actionable counts change
     return any(
-        last["counts"][key] != snapshot["counts"][key]
-        for key in ["assigned", "nbsUnbound", "changeRequests"]
+        count_metric(last, key, *fallback_keys) != count_metric(snapshot, key, *fallback_keys)
+        for key, fallback_keys in [("open", ("assigned",)), ("nbsUnbound", ()), ("changeRequests", ())]
     )
 
 
 def has_actionable(snapshot: dict) -> bool:
-    return any(snapshot["counts"][key] > 0 for key in ["assigned", "nbsUnbound", "changeRequests"])
+    return (
+        count_metric(snapshot, "open", "assigned") > 0
+        or count_metric(snapshot, "nbsUnbound") > 0
+        or count_metric(snapshot, "changeRequests") > 0
+    )
 
 
 def run_report(hours: int = 1) -> str:
@@ -202,10 +237,10 @@ def run_report(hours: int = 1) -> str:
 
     summary = {
         "runs": len(recent),
-        "totalAssigned": sum(r["counts"]["assigned"] for r in recent),
-        "totalNbs": sum(r["counts"]["nbs"] for r in recent),
-        "totalUnboundNbs": sum(r["counts"]["nbsUnbound"] for r in recent),
-        "totalChangeRequests": sum(r["counts"]["changeRequests"] for r in recent),
+        "totalOpen": sum(count_metric(r, "open", "assigned") for r in recent),
+        "totalNbs": sum(count_metric(r, "nbs") for r in recent),
+        "totalUnboundNbs": sum(count_metric(r, "nbsUnbound") for r in recent),
+        "totalChangeRequests": sum(count_metric(r, "changeRequests") for r in recent),
         "latest": summarize(recent[-1]) if recent else "No data",
         "windowFrom": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(cutoff)),
         "windowTo": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)),
@@ -214,12 +249,12 @@ def run_report(hours: int = 1) -> str:
     if not recent:
         return f"No task-1 scans in the last {hours}h."
 
-    if summary["totalAssigned"] == 0 and summary["totalUnboundNbs"] == 0 and summary["totalChangeRequests"] == 0:
+    if summary["totalOpen"] == 0 and summary["totalUnboundNbs"] == 0 and summary["totalChangeRequests"] == 0:
         return ""
 
     lines = [
         f"Task-1 report ({hours}h): {summary['runs']} scan runs",
-        f"Total assigned open issues: {summary['totalAssigned']}",
+        f"Total open issues requiring handling: {summary['totalOpen']}",
         f"Total open nbs: {summary['totalNbs']} (unbound/non-open-source PR: {summary['totalUnboundNbs']})",
         f"Total PRs with CHANGES_REQUESTED: {summary['totalChangeRequests']}",
         "",
