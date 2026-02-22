@@ -28,7 +28,11 @@ class HourlyReviewMonitorTests(unittest.TestCase):
             "labels": [{"name": "nbs"}],
         }
 
-        with patch.object(MODULE, "list_json") as list_json_mock:
+        with (
+            patch.object(MODULE, "list_json") as list_json_mock,
+            patch.object(MODULE, "count_test_files", return_value=10),
+            patch.object(MODULE, "read_docs_superseded_count", return_value=1),
+        ):
             list_json_mock.side_effect = [
                 [open_issue, nbs_issue],  # list_json("issue")
                 [],  # list_json("pr")
@@ -61,6 +65,117 @@ class HourlyReviewMonitorTests(unittest.TestCase):
 
         self.assertIn("Open issues requiring handling: 1", rendered)
         self.assertIn("#12 Legacy item", rendered)
+
+    def test_analyze_emits_stagnation_signal_and_pr208_metric(self) -> None:
+        source_bound_issue = {
+            "number": 3,
+            "title": "Bound issue",
+            "url": "https://example.com/3",
+            "body": "Source PR: https://github.com/Keith-CY/fiber-link/pull/208",
+            "labels": [],
+        }
+        pr_208 = {
+            "number": 208,
+            "title": "Open tracking PR",
+            "url": "https://example.com/pr/208",
+            "reviewDecision": "APPROVED",
+            "headRefName": "main",
+            "headRefOid": "abcdef1234567890",
+            "updatedAt": "2026-02-22T00:00:00Z",
+            "author": {"login": "owner"},
+        }
+
+        with (
+            patch.object(MODULE, "list_json") as list_json_mock,
+            patch.object(MODULE, "classify_with_source_pr", return_value=([], [source_bound_issue], [])),
+            patch.object(MODULE, "count_test_files", return_value=10),
+            patch.object(MODULE, "read_docs_superseded_count", return_value=1),
+            patch.object(MODULE.time, "time", return_value=1700000000),
+        ):
+            list_json_mock.side_effect = [
+                [source_bound_issue],  # list_json("issue")
+                [pr_208],  # list_json("pr")
+            ]
+            snapshot = MODULE.analyze()
+
+        self.assertIn("stagnation_signal", snapshot["signals"])
+        self.assertEqual(snapshot["counts"]["open"], 0)
+        self.assertEqual(snapshot["counts"]["openPrs"], 1)
+        self.assertIsInstance(snapshot["metrics"]["pr208UnchangedHours"], float)
+
+    def test_detect_change_reports_sha_and_review_decision(self) -> None:
+        state = {
+            "runs": [
+                {
+                    "openPrs": [
+                        {
+                            "number": 208,
+                            "headSha": "aaaaaa111111",
+                            "reviewDecision": "APPROVED",
+                        }
+                    ],
+                    "counts": {"open": 1, "nbsUnbound": 0, "changeRequests": 0},
+                }
+            ]
+        }
+        snapshot = {
+            "openPrs": [
+                {
+                    "number": 208,
+                    "headSha": "bbbbbb222222",
+                    "reviewDecision": "CHANGES_REQUESTED",
+                }
+            ],
+            "counts": {"open": 1, "nbsUnbound": 0, "changeRequests": 1},
+        }
+
+        detected = MODULE.detect_change(snapshot, state)
+
+        self.assertTrue(detected["changed"])
+        self.assertIn("sha", detected["sources"])
+        self.assertIn("reviewDecision", detected["sources"])
+
+    def test_build_skip_summary_contains_previous_and_current_head_sha(self) -> None:
+        last_snapshot = {
+            "openPrs": [{"number": 208, "headSha": "aaaaaa111111"}],
+            "nextActionAt": "2026-02-22T00:20:00Z",
+        }
+        current_snapshot = {
+            "openPrs": [{"number": 208, "headSha": "aaaaaa111111"}],
+            "nextActionAt": "2026-02-22T00:40:00Z",
+        }
+
+        rendered = MODULE.build_skip_summary(last_snapshot, current_snapshot, skips=2, escalated=False)
+
+        self.assertIn("headSha previous/current", rendered)
+        self.assertIn("#208 aaaaaa1/aaaaaa1", rendered)
+        self.assertIn("consecutiveNoUpdateSkips: 2", rendered)
+
+    def test_enrich_snapshot_adds_regression_signals(self) -> None:
+        state = {
+            "runs": [
+                {
+                    "metrics": {"testFiles": 20, "docsSuperseded": 1},
+                    "counts": {"open": 0, "nbsUnbound": 0, "changeRequests": 0, "staleOpenPrs": 0},
+                    "openPrs": [],
+                }
+            ],
+            "cleanRunStreak": 0,
+        }
+        snapshot = {
+            "metrics": {"testFiles": 12, "docsSuperseded": 3},
+            "counts": {"open": 0, "nbsUnbound": 0, "changeRequests": 0, "staleOpenPrs": 0},
+            "openPrs": [],
+            "signals": [],
+        }
+
+        with patch.object(MODULE.time, "time", return_value=1700000000):
+            MODULE.enrich_snapshot(snapshot, state)
+
+        self.assertEqual(snapshot["metrics"]["testFilesDelta"], -8)
+        self.assertEqual(snapshot["metrics"]["docsSupersededDelta"], 2)
+        self.assertIn("test_files_drift", snapshot["signals"])
+        self.assertIn("docs_superseded_regression", snapshot["signals"])
 
 
 if __name__ == "__main__":
