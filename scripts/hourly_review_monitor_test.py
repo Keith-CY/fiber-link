@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -176,6 +177,114 @@ class HourlyReviewMonitorTests(unittest.TestCase):
         self.assertEqual(snapshot["metrics"]["docsSupersededDelta"], 2)
         self.assertIn("test_files_drift", snapshot["signals"])
         self.assertIn("docs_superseded_regression", snapshot["signals"])
+
+    def test_analyze_splits_stale_pr_watchdog_digest_and_owner_ping(self) -> None:
+        stale_digest = {
+            "number": 301,
+            "title": "digest candidate",
+            "url": "https://example.com/pr/301",
+            "reviewDecision": "APPROVED",
+            "headRefName": "branch-1",
+            "headRefOid": "a" * 40,
+            "updatedAt": "2023-11-13T20:13:20Z",  # ~30h before mocked now
+            "author": {"login": "alice"},
+        }
+        stale_watchdog = {
+            "number": 302,
+            "title": "watchdog + owner ping",
+            "url": "https://example.com/pr/302",
+            "reviewDecision": "APPROVED",
+            "headRefName": "branch-2",
+            "headRefOid": "b" * 40,
+            "updatedAt": "2023-11-11T18:13:20Z",  # ~80h before mocked now
+            "author": {"login": "bob"},
+        }
+        stale_change_requested = {
+            "number": 303,
+            "title": "changes requested stays immediate",
+            "url": "https://example.com/pr/303",
+            "reviewDecision": "CHANGES_REQUESTED",
+            "headRefName": "branch-3",
+            "headRefOid": "c" * 40,
+            "updatedAt": "2023-11-13T20:13:20Z",  # ~30h before mocked now
+            "author": {"login": "carol"},
+        }
+
+        with (
+            patch.object(MODULE, "list_json") as list_json_mock,
+            patch.object(MODULE, "classify_with_source_pr", return_value=([], [], [])),
+            patch.object(MODULE, "count_test_files", return_value=10),
+            patch.object(MODULE, "read_docs_superseded_count", return_value=1),
+            patch.object(MODULE.time, "time", return_value=1700000000),
+        ):
+            list_json_mock.side_effect = [
+                [],  # list_json("issue")
+                [stale_digest, stale_watchdog, stale_change_requested],  # list_json("pr")
+            ]
+
+            snapshot = MODULE.analyze()
+
+        self.assertEqual(snapshot["counts"]["staleOpenPrs"], 2)
+        self.assertEqual(snapshot["counts"]["staleOpenPrsDigest"], 1)
+        self.assertEqual(snapshot["counts"]["ownerPingCandidates"], 1)
+        self.assertEqual([p["number"] for p in snapshot["staleOpenPrsDigest"]], [301])
+        self.assertEqual([p["number"] for p in snapshot["ownerPingCandidates"]], [302])
+        self.assertIn("owner_ping_policy", snapshot["signals"])
+
+    def test_upsert_issue_comment_creates_new_comment_when_marker_missing(self) -> None:
+        marker = "<!-- marker -->"
+        body = "comment body"
+        with patch.object(MODULE, "run_gh") as run_gh_mock:
+            run_gh_mock.side_effect = ["[]", ""]
+            MODULE.upsert_issue_comment(208, marker, body)
+
+        self.assertEqual(
+            run_gh_mock.call_args_list[0].args[0],
+            ["api", f"repos/{MODULE.REPO}/issues/208/comments?per_page=100"],
+        )
+        self.assertEqual(
+            run_gh_mock.call_args_list[1].args[0],
+            ["api", f"repos/{MODULE.REPO}/issues/208/comments", "-f", f"body={body}"],
+        )
+
+    def test_upsert_issue_comment_updates_existing_marker_comment(self) -> None:
+        marker = "<!-- marker -->"
+        body = "fresh body"
+        existing = [{"id": 77, "body": f"old\n{marker}"}]
+        with patch.object(MODULE, "run_gh") as run_gh_mock:
+            run_gh_mock.side_effect = [json.dumps(existing), ""]
+            MODULE.upsert_issue_comment(208, marker, body)
+
+        self.assertEqual(
+            run_gh_mock.call_args_list[0].args[0],
+            ["api", f"repos/{MODULE.REPO}/issues/208/comments?per_page=100"],
+        )
+        self.assertEqual(
+            run_gh_mock.call_args_list[1].args[0],
+            ["api", "-X", "PATCH", f"repos/{MODULE.REPO}/issues/comments/77", "-f", f"body={body}"],
+        )
+
+    def test_build_audit_delta_comment_includes_key_counts(self) -> None:
+        previous = {
+            "runAt": "2026-02-22T06:00:00Z",
+            "counts": {"open": 5, "nbsUnbound": 1, "changeRequests": 2, "staleOpenPrs": 2, "staleOpenPrsDigest": 0},
+            "signals": [],
+        }
+        current = {
+            "runAt": "2026-02-22T06:20:00Z",
+            "nextActionAt": "2026-02-22T06:40:00Z",
+            "counts": {"open": 3, "nbsUnbound": 1, "changeRequests": 1, "staleOpenPrs": 1, "staleOpenPrsDigest": 2},
+            "signals": ["owner_ping_policy"],
+            "openPrs": [{"number": 208, "headSha": "abc1234"}],
+        }
+
+        rendered = MODULE.build_audit_delta_comment(208, current, previous)
+
+        self.assertIn("fiber-link-hourly-audit-delta", rendered)
+        self.assertIn("Open issues requiring handling: 3 (delta -2)", rendered)
+        self.assertIn("Stale open PR watchdog: 1 (delta -1)", rendered)
+        self.assertIn("Low-priority digest candidates: 2 (delta +2)", rendered)
+        self.assertIn("nextActionAt: 2026-02-22T06:40:00Z", rendered)
 
 
 if __name__ == "__main__":
