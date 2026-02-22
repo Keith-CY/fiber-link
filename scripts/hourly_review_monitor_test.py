@@ -235,12 +235,12 @@ class HourlyReviewMonitorTests(unittest.TestCase):
         marker = "<!-- marker -->"
         body = "comment body"
         with patch.object(MODULE, "run_gh") as run_gh_mock:
-            run_gh_mock.side_effect = ["[]", ""]
+            run_gh_mock.side_effect = [json.dumps([[]]), ""]
             MODULE.upsert_issue_comment(208, marker, body)
 
         self.assertEqual(
             run_gh_mock.call_args_list[0].args[0],
-            ["api", f"repos/{MODULE.REPO}/issues/208/comments?per_page=100"],
+            ["api", "--paginate", "--slurp", f"repos/{MODULE.REPO}/issues/208/comments?per_page=100"],
         )
         self.assertEqual(
             run_gh_mock.call_args_list[1].args[0],
@@ -250,14 +250,14 @@ class HourlyReviewMonitorTests(unittest.TestCase):
     def test_upsert_issue_comment_updates_existing_marker_comment(self) -> None:
         marker = "<!-- marker -->"
         body = "fresh body"
-        existing = [{"id": 77, "body": f"old\n{marker}"}]
+        existing = [[{"id": 77, "body": f"old\n{marker}"}]]
         with patch.object(MODULE, "run_gh") as run_gh_mock:
             run_gh_mock.side_effect = [json.dumps(existing), ""]
             MODULE.upsert_issue_comment(208, marker, body)
 
         self.assertEqual(
             run_gh_mock.call_args_list[0].args[0],
-            ["api", f"repos/{MODULE.REPO}/issues/208/comments?per_page=100"],
+            ["api", "--paginate", "--slurp", f"repos/{MODULE.REPO}/issues/208/comments?per_page=100"],
         )
         self.assertEqual(
             run_gh_mock.call_args_list[1].args[0],

@@ -539,38 +539,17 @@ def summarize(snapshot: dict) -> str:
     if stale_open_pr_count:
         lines.append("- Stale open PR watchdog candidates:")
         for p in snapshot_items(snapshot, "staleOpenPrs"):
-            owner = p.get("author") or "unknown-owner"
-            unchanged_hours = p.get("unchangedHours")
-            if isinstance(unchanged_hours, (int, float)):
-                lines.append(
-                    f"  - #{p['number']} {p['title']} ({p['url']}) owner={owner} unchangedHours={unchanged_hours:.2f}"
-                )
-            else:
-                lines.append(f"  - #{p['number']} {p['title']} ({p['url']}) owner={owner}")
+            lines.append(format_pr_candidate_line(p))
 
     if stale_open_pr_digest_count:
         lines.append("- Low-priority unchanged PR digest candidates:")
         for p in snapshot_items(snapshot, "staleOpenPrsDigest"):
-            owner = p.get("author") or "unknown-owner"
-            unchanged_hours = p.get("unchangedHours")
-            if isinstance(unchanged_hours, (int, float)):
-                lines.append(
-                    f"  - #{p['number']} {p['title']} ({p['url']}) owner={owner} unchangedHours={unchanged_hours:.2f}"
-                )
-            else:
-                lines.append(f"  - #{p['number']} {p['title']} ({p['url']}) owner={owner}")
+            lines.append(format_pr_candidate_line(p))
 
     if owner_ping_count:
         lines.append("- Owner ping policy candidates:")
         for p in snapshot_items(snapshot, "ownerPingCandidates"):
-            owner = p.get("author") or "unknown-owner"
-            unchanged_hours = p.get("unchangedHours")
-            if isinstance(unchanged_hours, (int, float)):
-                lines.append(
-                    f"  - #{p['number']} {p['title']} ({p['url']}) ping=@{owner} unchangedHours={unchanged_hours:.2f}"
-                )
-            else:
-                lines.append(f"  - #{p['number']} {p['title']} ({p['url']}) ping=@{owner}")
+            lines.append(format_pr_candidate_line(p, ping_owner=True))
 
     if not any(
         [
@@ -602,6 +581,38 @@ def build_skip_summary(last_snapshot: dict, current_snapshot: dict, skips: int, 
 
 def format_count_delta(current: int, previous: int) -> str:
     return f"{current} (delta {current - previous:+d})"
+
+
+def format_pr_candidate_line(pr: dict, prefix: str = "  - ", ping_owner: bool = False) -> str:
+    owner = pr.get("author") or "unknown-owner"
+    owner_part = f"ping=@{owner}" if ping_owner else f"owner={owner}"
+    line = f"{prefix}#{pr.get('number')} {pr.get('title')} ({pr.get('url')}) {owner_part}"
+    unchanged_hours = pr.get("unchangedHours")
+    if isinstance(unchanged_hours, (int, float)):
+        line += f" unchangedHours={unchanged_hours:.2f}"
+    return line
+
+
+def build_scan_metadata(snapshot: dict) -> dict:
+    return {
+        "cleanRunStreak": snapshot.get("cleanRunStreak", 0),
+        "consecutiveNoUpdateSkips": 0,
+        "unchangedAlertDay": iso_utc(int(time.time()))[:10],
+        "unchangedAlertCount": 0,
+        "nextActionAt": snapshot.get("nextActionAt"),
+    }
+
+
+def get_previous_snapshot(state: dict) -> dict:
+    runs = state.get("runs", [])
+    return runs[-1] if runs else {}
+
+
+def maybe_publish_scan_comments(snapshot: dict, previous_snapshot: dict, change: dict, comment_pr: int | None, digest_issue: int | None) -> None:
+    if not change.get("changed"):
+        return
+    maybe_publish_audit_delta_comment(snapshot, previous_snapshot, comment_pr)
+    maybe_publish_digest_comment(snapshot, digest_issue)
 
 
 def build_audit_delta_comment(pr_number: int, snapshot: dict, previous_snapshot: dict | None) -> str:
@@ -650,23 +661,28 @@ def build_low_priority_digest_comment(snapshot: dict) -> str:
     ]
     if digest_candidates:
         for pr in digest_candidates:
-            owner = pr.get("author") or "unknown-owner"
-            unchanged_hours = pr.get("unchangedHours")
-            if isinstance(unchanged_hours, (int, float)):
-                lines.append(
-                    f"- #{pr.get('number')} {pr.get('title')} ({pr.get('url')}) owner={owner} unchangedHours={unchanged_hours:.2f}"
-                )
-            else:
-                lines.append(f"- #{pr.get('number')} {pr.get('title')} ({pr.get('url')}) owner={owner}")
+            lines.append(format_pr_candidate_line(pr, prefix="- "))
     else:
         lines.append("- No low-priority unchanged PRs in this run.")
     lines.append(f"nextActionAt: {snapshot.get('nextActionAt', 'n/a')}")
     return "\n".join(lines)
 
 
+def list_issue_comments(issue_number: int) -> List[dict]:
+    raw = run_gh(["api", "--paginate", "--slurp", f"repos/{REPO}/issues/{issue_number}/comments?per_page=100"])
+    pages = json.loads(raw or "[]")
+    comments: List[dict] = []
+    if isinstance(pages, list):
+        for page in pages:
+            if isinstance(page, list):
+                comments.extend(page)
+            elif isinstance(page, dict):
+                comments.append(page)
+    return comments
+
+
 def upsert_issue_comment(issue_number: int, marker: str, body: str) -> None:
-    raw = run_gh(["api", f"repos/{REPO}/issues/{issue_number}/comments?per_page=100"])
-    comments = json.loads(raw or "[]")
+    comments = list_issue_comments(issue_number)
     existing_comment_id = None
     for comment in comments:
         if marker in (comment.get("body") or ""):
@@ -806,18 +822,9 @@ def main() -> int:
     if args.mode == "scan":
         snapshot = analyze()
         change = enrich_snapshot(snapshot, state)
-        metadata = {
-            "cleanRunStreak": snapshot.get("cleanRunStreak", 0),
-            "consecutiveNoUpdateSkips": 0,
-            "unchangedAlertDay": iso_utc(int(time.time()))[:10],
-            "unchangedAlertCount": 0,
-            "nextActionAt": snapshot.get("nextActionAt"),
-        }
-        previous = state.get("runs", [])[-1] if state.get("runs") else {}
-        if change.get("changed"):
-            maybe_publish_audit_delta_comment(snapshot, previous, args.comment_pr)
-            maybe_publish_digest_comment(snapshot, args.digest_issue)
-        save_state(snapshot, metadata)
+        previous = get_previous_snapshot(state)
+        maybe_publish_scan_comments(snapshot, previous, change, args.comment_pr, args.digest_issue)
+        save_state(snapshot, build_scan_metadata(snapshot))
         if has_actionable(snapshot):
             print(summarize(snapshot))
         return 0
@@ -825,7 +832,7 @@ def main() -> int:
     if args.mode == "scan-and-report":
         snapshot = analyze()
         change = enrich_snapshot(snapshot, state)
-        previous = state.get("runs", [])[-1] if state.get("runs") else {}
+        previous = get_previous_snapshot(state)
 
         if args.only_changes and not change["changed"]:
             runs = state.get("runs", [])
@@ -853,18 +860,8 @@ def main() -> int:
             )
             return 0
 
-        if change.get("changed"):
-            maybe_publish_audit_delta_comment(snapshot, previous, args.comment_pr)
-            maybe_publish_digest_comment(snapshot, args.digest_issue)
-
-        metadata = {
-            "cleanRunStreak": snapshot.get("cleanRunStreak", 0),
-            "consecutiveNoUpdateSkips": 0,
-            "unchangedAlertDay": iso_utc(int(time.time()))[:10],
-            "unchangedAlertCount": 0,
-            "nextActionAt": snapshot.get("nextActionAt"),
-        }
-        save_state(snapshot, metadata)
+        maybe_publish_scan_comments(snapshot, previous, change, args.comment_pr, args.digest_issue)
+        save_state(snapshot, build_scan_metadata(snapshot))
         output = run_report(hours=args.hours)
         if output:
             print(output)
