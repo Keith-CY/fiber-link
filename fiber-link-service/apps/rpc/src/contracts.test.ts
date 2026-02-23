@@ -81,6 +81,42 @@ describe("rpc contracts", () => {
         generatedAt: "2026-02-16T00:00:00.000Z",
       }).success,
     ).toBe(true);
+
+    expect(
+      DashboardSummaryResultSchema.safeParse({
+        balance: "0",
+        tips: [],
+        admin: {
+          filtersApplied: {
+            withdrawalState: "ALL",
+            settlementState: "ALL",
+          },
+          apps: [],
+          withdrawals: [],
+          settlements: [],
+          pipelineBoard: {
+            stageCounts: [
+              { stage: "UNPAID", count: 2 },
+              { stage: "SETTLED", count: 1 },
+              { stage: "FAILED", count: 0 },
+            ],
+            invoiceRows: [
+              {
+                invoice: "inv-1",
+                state: "UNPAID",
+                amount: "2.5",
+                asset: "CKB",
+                fromUserId: "u1",
+                toUserId: "u2",
+                createdAt: "2026-02-16T00:00:00.000Z",
+                timelineHref: "/fiber-link/timeline/inv-1",
+              },
+            ],
+          },
+        },
+        generatedAt: "2026-02-16T00:00:00.000Z",
+      }).success,
+    ).toBe(true);
   });
 
   it("keeps rpc error code constants stable", () => {
