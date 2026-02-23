@@ -1,4 +1,4 @@
-import { createAdapter } from "@fiber-link/fiber-adapter";
+import { createAdapterProvider } from "@fiber-link/fiber-adapter";
 import type { TipIntentListCursor } from "@fiber-link/db";
 import { parseWorkerConfig } from "./config";
 import { runSettlementDiscovery } from "./settlement-discovery";
@@ -7,11 +7,12 @@ import {
   startSettlementSubscriptionRunner,
   type SettlementSubscriptionRunner,
 } from "./settlement-subscription-runner";
+import { runWithdrawalBatch } from "./withdrawal-batch";
 import { createWorkerRuntime } from "./worker-runtime";
 
 async function main() {
   const config = parseWorkerConfig(process.env);
-  const fiberAdapter = createAdapter({ endpoint: config.fiberRpcUrl });
+  const fiberAdapter = createAdapterProvider({ endpoint: config.fiberRpcUrl });
   const cursorStore = createFileSettlementCursorStore(config.settlementCursorFile);
   let settlementCursor: TipIntentListCursor | undefined = await cursorStore.load();
   let subscriptionRunner: SettlementSubscriptionRunner | null = null;
@@ -24,6 +25,23 @@ async function main() {
     shutdownTimeoutMs: config.shutdownTimeoutMs,
     settlementIntervalMs: config.settlementIntervalMs,
     settlementBatchSize: config.settlementBatchSize,
+    runWithdrawalBatch: ({ maxRetries, retryDelayMs }) =>
+      runWithdrawalBatch({
+        maxRetries,
+        retryDelayMs,
+        executeWithdrawal: async (withdrawal) => {
+          const withdrawalResult = await fiberAdapter.executeWithdrawal({
+            amount: withdrawal.amount,
+            asset: withdrawal.asset,
+            toAddress: withdrawal.toAddress,
+            requestId: withdrawal.id,
+          });
+          return {
+            ok: true,
+            txHash: withdrawalResult.txHash,
+          };
+        },
+      }),
     pollSettlements: async ({ limit }) => {
       const summary = await runSettlementDiscovery({
         limit,
