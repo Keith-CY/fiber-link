@@ -80,6 +80,10 @@ TASK1_APPROVED_BUT_UNMERGED_ESCALATION_HOURS = parse_positive_float_env_value("T
 
 # Repo noise budget thresholds.
 TEST_FILES_DRIFT_ALERT_THRESHOLD = parse_positive_int_env_value("TASK1_TEST_FILES_DRIFT_ALERT_THRESHOLD", 5)
+# Empty-queue optimization and notification tuning.
+TASK1_IDLE_LIGHTWEIGHT_STREAK_THRESHOLD = parse_positive_int_env_value("TASK1_IDLE_LIGHTWEIGHT_STREAK_THRESHOLD", 1)
+TASK1_IDLE_DIGEST_STREAK_THRESHOLD = parse_positive_int_env_value("TASK1_IDLE_DIGEST_STREAK_THRESHOLD", 3)
+TASK1_IDLE_DIGEST_INTERVAL_RUNS = parse_positive_int_env_value("TASK1_IDLE_DIGEST_INTERVAL_RUNS", 3)
 
 def parse_positive_int_env(var_name: str) -> int | None:
     raw = os.environ.get(var_name)
@@ -401,7 +405,12 @@ def compute_next_action_interval(snapshot: dict) -> tuple[int, str]:
     return TASK1_STABLE_POLL_INTERVAL_MINUTES, "downshift-stable-terminal-prs"
 
 
-def classify_with_source_pr(issues: List[dict], pr_state_cache: Dict[int, str]) -> Tuple[List[dict], List[dict], List[dict]]:
+def classify_with_source_pr(
+    issues: List[dict],
+    pr_state_cache: Dict[int, str],
+    open_pr_numbers: Set[int] | None = None,
+    allow_pr_state_lookup: bool = True,
+) -> Tuple[List[dict], List[dict], List[dict]]:
     """
     Returns:
       actionable_issues: no source PR or source PR is not OPEN
@@ -420,6 +429,21 @@ def classify_with_source_pr(issues: List[dict], pr_state_cache: Dict[int, str]) 
             unbound.append(reason)
             continue
 
+        if open_pr_numbers is not None:
+            if pr_num in open_pr_numbers:
+                bound.append(issue)
+                continue
+            reason = {"issue": issue, "reason": "source-pr-not-open"}
+            actionable.append(reason)
+            unbound.append(reason)
+            continue
+
+        if not allow_pr_state_lookup:
+            reason = {"issue": issue, "reason": "source-pr-lookup-skipped"}
+            actionable.append(reason)
+            unbound.append(reason)
+            continue
+
         state = pr_state(pr_num, pr_state_cache)
         if state == "OPEN":
             bound.append(issue)
@@ -430,6 +454,32 @@ def classify_with_source_pr(issues: List[dict], pr_state_cache: Dict[int, str]) 
         unbound.append(reason)
 
     return actionable, bound, unbound
+
+
+def apply_idle_queue_state(snapshot: dict, state: dict) -> None:
+    prior_idle_streak = int(state.get("idleStreak", 0))
+    prior_last_non_empty = state.get("lastNonEmptyRunAt")
+    current_run_at = snapshot.get("runAt")
+    current_ts = snapshot.get("ts")
+    open_pr_count = count_metric(snapshot, "openPrs")
+
+    if open_pr_count > 0:
+        idle_streak = 0
+        last_non_empty_run_at = current_run_at if isinstance(current_run_at, str) else None
+    else:
+        idle_streak = prior_idle_streak + 1
+        last_non_empty_run_at = prior_last_non_empty if isinstance(prior_last_non_empty, str) else None
+
+    snapshot["idleStreak"] = idle_streak
+    snapshot["lastNonEmptyRunAt"] = last_non_empty_run_at
+    snapshot["idleDigestMode"] = open_pr_count == 0 and idle_streak >= TASK1_IDLE_DIGEST_STREAK_THRESHOLD
+    snapshot["metrics"]["idleStreak"] = idle_streak
+    snapshot["metrics"]["queryMode"] = snapshot.get("queryMode", "standard")
+
+    if isinstance(last_non_empty_run_at, str) and isinstance(current_ts, int):
+        last_non_empty_ts = parse_iso_utc(last_non_empty_run_at)
+        if isinstance(last_non_empty_ts, int):
+            snapshot["metrics"]["hoursSinceLastNonEmptyRun"] = round(max(0, current_ts - last_non_empty_ts) / 3600, 2)
 
 
 def count_metric(snapshot: dict, key: str, *fallback_keys: str) -> int:
@@ -553,14 +603,26 @@ def analyze(state: dict | None = None) -> dict:
         state = load_state()
 
     prior_pr_state = pr_state_map(state)
+    prior_idle_streak = int(state.get("idleStreak", 0))
+
+    raw_open_prs = list_json("pr")
+    open_pr_numbers = {pr.get("number") for pr in raw_open_prs if isinstance(pr.get("number"), int)}
+    use_lightweight_query = len(open_pr_numbers) == 0 and prior_idle_streak >= TASK1_IDLE_LIGHTWEIGHT_STREAK_THRESHOLD
 
     open_issues = list_json("issue")
-    actionable_open_with_reason, _, _ = classify_with_source_pr(open_issues, state_cache)
+    if use_lightweight_query:
+        actionable_open_with_reason, _, _ = classify_with_source_pr(
+            open_issues,
+            state_cache,
+            open_pr_numbers=open_pr_numbers,
+            allow_pr_state_lookup=False,
+        )
+    else:
+        actionable_open_with_reason, _, _ = classify_with_source_pr(open_issues, state_cache)
     open_actionable_issues = [item["issue"] for item in actionable_open_with_reason]
     nbs_issues = [issue for issue in open_issues if has_label(issue, "nbs")]
     unbound_nbs = [item for item in actionable_open_with_reason if has_label(item["issue"], "nbs")]
 
-    raw_open_prs = list_json("pr")
     open_prs = [normalize_pr(pr, now_ts) for pr in raw_open_prs]
     open_prs, pr_state, new_open_prs, sha_changed_prs, approved_but_unmerged, _stable_terminal_candidates = build_pr_runtime_state(
         open_prs, prior_pr_state, now_ts
@@ -664,11 +726,13 @@ def analyze(state: dict | None = None) -> dict:
         },
         "changeDetectionSource": "ci",
         "changeDetectionSources": ["ci"],
+        "queryMode": "lightweight" if use_lightweight_query else "standard",
         "ts": now_ts,
         "runAt": iso_utc(now_ts),
         "nextActionAt": iso_utc(now_ts + CHECK_INTERVAL_MINUTES * 60),
     }
 
+    apply_idle_queue_state(snapshot, state)
     next_interval, polling_mode = compute_next_action_interval(snapshot)
     snapshot["nextActionAt"] = iso_utc(now_ts + next_interval * 60)
     snapshot["pollingMode"] = polling_mode
@@ -769,10 +833,14 @@ def summarize(snapshot: dict) -> str:
         f"Stable terminal PR candidates: {stable_terminal_pr_count}",
         f"New PRs detected: {new_pr_count}",
         f"Approved-but-unmerged PRs: {approved_but_unmerged_count}",
+        f"queryMode: {snapshot.get('queryMode', metric_value(snapshot, 'queryMode', 'standard'))}",
         f"Polling mode: {snapshot.get('pollingMode', 'normal')} (interval: {snapshot.get('pollingIntervalMinutes', CHECK_INTERVAL_MINUTES)}m)",
         f"Owner ping candidates (>= {int(OWNER_PING_THRESHOLD_HOURS)}h): {owner_ping_count}",
         f"changeDetectionSource: {snapshot.get('changeDetectionSource', 'unknown')}",
         f"nextActionAt: {snapshot.get('nextActionAt', 'n/a')}",
+        f"idleStreak (empty PR queue runs): {snapshot.get('idleStreak', 0)}",
+        f"idleDigestMode: {'on' if snapshot.get('idleDigestMode') else 'off'}",
+        f"lastNonEmptyRunAt: {snapshot.get('lastNonEmptyRunAt') or 'n/a'}",
     ]
 
     max_no_update_streak = metric_value(snapshot, "maxNoUpdateStreak")
@@ -881,6 +949,33 @@ def build_skip_summary(last_snapshot: dict, current_snapshot: dict, skips: int, 
     )
 
 
+def build_idle_digest_summary(last_snapshot: dict, current_snapshot: dict, skips: int, escalated: bool) -> str:
+    previous_heads = pr_head_map(last_snapshot)
+    current_heads = pr_head_map(current_snapshot)
+    head_pairs = format_head_sha_pairs(previous_heads, current_heads)
+    level = "ESCALATED" if escalated else "DIGEST"
+    return "\n".join(
+        [
+            f"Idle-queue summary ({level}): unchanged state while PR queue is empty.",
+            f"headSha previous/current: {head_pairs}",
+            f"consecutiveNoUpdateSkips: {skips}",
+            f"idleStreak: {current_snapshot.get('idleStreak', 0)}",
+            f"lastNonEmptyRunAt: {current_snapshot.get('lastNonEmptyRunAt') or 'n/a'}",
+            f"queryMode: {current_snapshot.get('queryMode', 'standard')}",
+            f"nextActionAt: {current_snapshot.get('nextActionAt', 'n/a')}",
+        ]
+    )
+
+
+def should_emit_skip_notification(snapshot: dict, skips: int, escalated: bool, can_alert: bool) -> bool:
+    if not can_alert:
+        return False
+    if snapshot.get("idleDigestMode") and not escalated:
+        interval = max(1, TASK1_IDLE_DIGEST_INTERVAL_RUNS)
+        return skips % interval == 0
+    return True
+
+
 def format_count_delta(current: int, previous: int) -> str:
     return f"{current} (delta {current - previous:+d})"
 
@@ -902,6 +997,10 @@ def build_scan_metadata(snapshot: dict) -> dict:
         "unchangedAlertDay": iso_utc(int(time.time()))[:10],
         "unchangedAlertCount": 0,
         "nextActionAt": snapshot.get("nextActionAt"),
+        "idleStreak": snapshot.get("idleStreak", 0),
+        "lastNonEmptyRunAt": snapshot.get("lastNonEmptyRunAt"),
+        "idleDigestMode": bool(snapshot.get("idleDigestMode")),
+        "queryMode": snapshot.get("queryMode", metric_value(snapshot, "queryMode", "standard")),
     }
 
 
@@ -1059,6 +1158,9 @@ def run_report(hours: int = 1) -> str:
         "totalSignals": sum(len(r.get("signals", [])) for r in recent),
         "lastTestFiles": metric_value(recent[-1], "testFiles") if recent else None,
         "lastDocsSuperseded": metric_value(recent[-1], "docsSuperseded") if recent else None,
+        "latestIdleStreak": recent[-1].get("idleStreak") if recent else None,
+        "latestLastNonEmptyRunAt": recent[-1].get("lastNonEmptyRunAt") if recent else None,
+        "latestQueryMode": recent[-1].get("queryMode") if recent else None,
         "latest": summarize(recent[-1]) if recent else "No data",
         "windowFrom": iso_utc(cutoff),
         "windowTo": iso_utc(now),
@@ -1093,6 +1195,12 @@ def run_report(hours: int = 1) -> str:
         lines.append(f"Latest test_files: {int(summary['lastTestFiles'])}")
     if isinstance(summary["lastDocsSuperseded"], (int, float)):
         lines.append(f"Latest docs_superseded: {int(summary['lastDocsSuperseded'])}")
+    if isinstance(summary["latestIdleStreak"], int):
+        lines.append(f"Latest idleStreak: {summary['latestIdleStreak']}")
+    if isinstance(summary["latestLastNonEmptyRunAt"], str):
+        lines.append(f"Latest lastNonEmptyRunAt: {summary['latestLastNonEmptyRunAt']}")
+    if isinstance(summary["latestQueryMode"], str):
+        lines.append(f"Latest queryMode: {summary['latestQueryMode']}")
     lines.extend(
         [
             "",
@@ -1159,8 +1267,11 @@ def main() -> int:
             alert_count = int(state.get("unchangedAlertCount", 0)) if alert_day == today else 0
             can_alert = alert_count < MAX_UNCHANGED_ALERTS_PER_DAY or escalated
 
-            if can_alert:
-                print(build_skip_summary(last_snapshot, snapshot, skips, escalated))
+            if should_emit_skip_notification(snapshot, skips, escalated, can_alert):
+                if snapshot.get("idleDigestMode"):
+                    print(build_idle_digest_summary(last_snapshot, snapshot, skips, escalated))
+                else:
+                    print(build_skip_summary(last_snapshot, snapshot, skips, escalated))
                 alert_count += 1
 
             save_metadata(
@@ -1170,6 +1281,10 @@ def main() -> int:
                     "unchangedAlertCount": alert_count,
                     "nextActionAt": snapshot.get("nextActionAt"),
                     "lastSkipAt": iso_utc(int(time.time())),
+                    "idleStreak": snapshot.get("idleStreak", 0),
+                    "lastNonEmptyRunAt": snapshot.get("lastNonEmptyRunAt"),
+                    "idleDigestMode": bool(snapshot.get("idleDigestMode")),
+                    "queryMode": snapshot.get("queryMode", metric_value(snapshot, "queryMode", "standard")),
                 }
             )
             return 0
