@@ -36,16 +36,16 @@ class HourlyReviewMonitorTests(unittest.TestCase):
             patch.object(MODULE, "read_docs_superseded_count", return_value=1),
         ):
             list_json_mock.side_effect = [
-                [open_issue, nbs_issue],  # list_json("issue")
                 [],  # list_json("pr")
+                [open_issue, nbs_issue],  # list_json("issue")
             ]
 
             snapshot = MODULE.analyze()
 
         self.assertEqual(list_json_mock.call_count, 2)
-        self.assertEqual(list_json_mock.call_args_list[0].args, ("issue",))
+        self.assertEqual(list_json_mock.call_args_list[0].args, ("pr",))
         self.assertEqual(list_json_mock.call_args_list[0].kwargs, {})
-        self.assertEqual(list_json_mock.call_args_list[1].args, ("pr",))
+        self.assertEqual(list_json_mock.call_args_list[1].args, ("issue",))
         self.assertEqual(list_json_mock.call_args_list[1].kwargs, {})
         self.assertEqual(snapshot["counts"]["open"], 2)
         self.assertEqual(snapshot["counts"]["assigned"], 2)
@@ -67,6 +67,105 @@ class HourlyReviewMonitorTests(unittest.TestCase):
 
         self.assertIn("Open issues requiring handling: 1", rendered)
         self.assertIn("#12 Legacy item", rendered)
+
+    def test_analyze_tracks_idle_streak_and_last_non_empty_run_at(self) -> None:
+        state = {"idleStreak": 2, "lastNonEmptyRunAt": "2026-02-22T00:00:00Z"}
+
+        with (
+            patch.object(MODULE, "list_json") as list_json_mock,
+            patch.object(MODULE, "count_test_files", return_value=10),
+            patch.object(MODULE, "read_docs_superseded_count", return_value=1),
+            patch.object(MODULE.time, "time", return_value=1700000000),
+        ):
+            list_json_mock.side_effect = [[], []]
+            idle_snapshot = MODULE.analyze(state=state)
+
+        self.assertEqual(idle_snapshot["idleStreak"], 3)
+        self.assertEqual(idle_snapshot["lastNonEmptyRunAt"], "2026-02-22T00:00:00Z")
+        self.assertEqual(idle_snapshot["queryMode"], "lightweight")
+        self.assertEqual(idle_snapshot["metrics"]["queryMode"], "lightweight")
+
+        open_pr = {
+            "number": 200,
+            "title": "fresh PR",
+            "url": "https://example.com/pr/200",
+            "reviewDecision": "APPROVED",
+            "headRefName": "main",
+            "headRefOid": "f" * 40,
+            "updatedAt": "2026-02-22T00:00:00Z",
+            "author": {"login": "owner"},
+        }
+
+        with (
+            patch.object(MODULE, "list_json") as list_json_mock,
+            patch.object(MODULE, "count_test_files", return_value=10),
+            patch.object(MODULE, "read_docs_superseded_count", return_value=1),
+            patch.object(MODULE.time, "time", return_value=1700000000),
+        ):
+            list_json_mock.side_effect = [[open_pr], []]
+            non_idle_snapshot = MODULE.analyze(state=state)
+
+        self.assertEqual(non_idle_snapshot["idleStreak"], 0)
+        self.assertEqual(non_idle_snapshot["lastNonEmptyRunAt"], non_idle_snapshot["runAt"])
+        self.assertEqual(non_idle_snapshot["queryMode"], "standard")
+
+    def test_analyze_uses_lightweight_query_mode_after_idle_streak(self) -> None:
+        source_issue = {
+            "number": 33,
+            "title": "source bound",
+            "url": "https://example.com/33",
+            "body": "Source PR: https://github.com/Keith-CY/fiber-link/pull/999",
+            "labels": [],
+        }
+        state = {"idleStreak": 2}
+
+        with (
+            patch.object(MODULE, "list_json") as list_json_mock,
+            patch.object(MODULE, "pr_state") as pr_state_mock,
+            patch.object(MODULE, "count_test_files", return_value=10),
+            patch.object(MODULE, "read_docs_superseded_count", return_value=1),
+        ):
+            list_json_mock.side_effect = [[], [source_issue]]
+            snapshot = MODULE.analyze(state=state)
+
+        pr_state_mock.assert_not_called()
+        self.assertEqual(snapshot["queryMode"], "lightweight")
+        self.assertEqual(snapshot["openUnbound"][0]["reason"], "source-pr-not-open")
+
+    def test_summarize_includes_last_non_empty_run_timestamp(self) -> None:
+        snapshot = {
+            "runAt": "2026-02-22T12:00:00Z",
+            "counts": {
+                "open": 0,
+                "nbs": 0,
+                "nbsUnbound": 0,
+                "changeRequests": 0,
+                "openPrs": 0,
+                "staleOpenPrs": 0,
+                "staleOpenPrsDigest": 0,
+                "ownerPingCandidates": 0,
+                "stableTerminalPrs": 0,
+                "newOpenPrs": 0,
+                "approvedButUnmerged": 0,
+            },
+            "idleStreak": 5,
+            "idleDigestMode": True,
+            "lastNonEmptyRunAt": "2026-02-22T08:20:00Z",
+            "queryMode": "lightweight",
+        }
+
+        rendered = MODULE.summarize(snapshot)
+
+        self.assertIn("lastNonEmptyRunAt: 2026-02-22T08:20:00Z", rendered)
+        self.assertIn("idleStreak (empty PR queue runs): 5", rendered)
+        self.assertIn("queryMode: lightweight", rendered)
+
+    def test_should_emit_skip_notification_uses_digest_cadence(self) -> None:
+        with patch.object(MODULE, "TASK1_IDLE_DIGEST_INTERVAL_RUNS", 3):
+            self.assertFalse(MODULE.should_emit_skip_notification({"idleDigestMode": True}, skips=1, escalated=False, can_alert=True))
+            self.assertTrue(MODULE.should_emit_skip_notification({"idleDigestMode": True}, skips=3, escalated=False, can_alert=True))
+            self.assertTrue(MODULE.should_emit_skip_notification({"idleDigestMode": True}, skips=1, escalated=True, can_alert=True))
+            self.assertFalse(MODULE.should_emit_skip_notification({"idleDigestMode": False}, skips=1, escalated=False, can_alert=False))
 
     def test_analyze_emits_stagnation_signal_and_pr208_metric(self) -> None:
         source_bound_issue = {
@@ -95,8 +194,8 @@ class HourlyReviewMonitorTests(unittest.TestCase):
             patch.object(MODULE.time, "time", return_value=1700000000),
         ):
             list_json_mock.side_effect = [
-                [source_bound_issue],  # list_json("issue")
                 [pr_208],  # list_json("pr")
+                [source_bound_issue],  # list_json("issue")
             ]
             snapshot = MODULE.analyze()
 
@@ -219,8 +318,8 @@ class HourlyReviewMonitorTests(unittest.TestCase):
             patch.object(MODULE.time, "time", return_value=1700000000),
         ):
             list_json_mock.side_effect = [
-                [],  # list_json("issue")
                 [stale_digest, stale_watchdog, stale_change_requested],  # list_json("pr")
+                [],  # list_json("issue")
             ]
 
             snapshot = MODULE.analyze()
@@ -266,8 +365,8 @@ class HourlyReviewMonitorTests(unittest.TestCase):
             patch.object(MODULE.time, "time", return_value=1700007200),
         ):
             list_json_mock.side_effect = [
-                [],
                 [first_pr, new_pr],
+                [],
             ]
             snapshot = MODULE.analyze(state=state)
 
@@ -304,7 +403,7 @@ class HourlyReviewMonitorTests(unittest.TestCase):
             patch.object(MODULE, "read_docs_superseded_count", return_value=1),
             patch.object(MODULE.time, "time", return_value=1700000000),
         ):
-            list_json_mock.side_effect = [[], [pr]]
+            list_json_mock.side_effect = [[pr], []]
             snapshot = MODULE.analyze(state=state)
 
         updated_pr = snapshot["openPrs"][0]
@@ -344,7 +443,7 @@ class HourlyReviewMonitorTests(unittest.TestCase):
             patch.object(MODULE, "read_docs_superseded_count", return_value=1),
             patch.object(MODULE.time, "time", return_value=1700000000),
         ):
-            list_json_mock.side_effect = [[], [pr]]
+            list_json_mock.side_effect = [[pr], []]
             snapshot = MODULE.analyze(state=state)
 
         self.assertEqual(snapshot["counts"]["approvedButUnmerged"], 1)
@@ -390,7 +489,7 @@ class HourlyReviewMonitorTests(unittest.TestCase):
                 patch.object(MODULE, "read_docs_superseded_count", return_value=1),
                 patch.object(MODULE.time, "time", return_value=1700000000),
             ):
-                list_json_mock.side_effect = [[], [pr_a, pr_b]]
+                list_json_mock.side_effect = [[pr_a, pr_b], []]
                 snapshot = MODULE.analyze(state=state)
 
         self.assertEqual(snapshot["counts"]["stableTerminalPrs"], 2)
@@ -433,7 +532,7 @@ class HourlyReviewMonitorTests(unittest.TestCase):
                 patch.object(MODULE, "read_docs_superseded_count", return_value=1),
                 patch.object(MODULE.time, "time", return_value=1700000000),
             ):
-                list_json_mock.side_effect = [[], [pr_stable]]
+                list_json_mock.side_effect = [[pr_stable], []]
                 snapshot_downshift = MODULE.analyze(state=state)
 
         self.assertEqual(snapshot_downshift["pollingMode"], "downshift-stable-terminal-prs")
@@ -451,7 +550,7 @@ class HourlyReviewMonitorTests(unittest.TestCase):
             patch.object(MODULE, "read_docs_superseded_count", return_value=1),
             patch.object(MODULE.time, "time", return_value=1700000360),
         ):
-            list_json_mock.side_effect = [[], [changed_pr]]
+            list_json_mock.side_effect = [[changed_pr], []]
             snapshot_resume = MODULE.analyze(state=resume_state)
 
         self.assertEqual(snapshot_resume["pollingMode"], "resume")
