@@ -3,8 +3,23 @@
 ## Roadmap tracking
 
 - `docs/current-architecture.md` — canonical source-of-truth index for architecture, current status, and historical redirects.
+- `docs/audit-snapshot.md` — generated architecture-audit snapshot (operational metrics and deltas). This is non-canonical.
 - `docs/plans/2026-02-21-issue-32-epic-closeout.md` — latest closeout mapping for epic `#32`.
 - `docs/plans/2026-02-17-issue-32-epic-execution-status-tracker.md` — superseded historical status snapshot retained for traceability.
+
+## Architecture audit contract
+
+- Generator entrypoint: `scripts/architecture_audit.py`
+- Workflow: `.github/workflows/architecture-audit.yml`
+- Allowed generated outputs:
+  - `docs/audit-snapshot.md`
+  - `.github/architecture-audit-state.json`
+- `docs/current-architecture.md` is canonical and must never be overwritten by automation.
+
+## Placeholder marker policy
+
+- Do not leave unresolved `TODO`/`TBD`/`FIXME` markers in user-facing docs.
+- Track unresolved doc work as GitHub issues and link issue IDs in the relevant docs.
 
 ## Plugin testing
 

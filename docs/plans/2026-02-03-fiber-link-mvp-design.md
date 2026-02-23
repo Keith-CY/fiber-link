@@ -1,5 +1,9 @@
 # Fiber Link MVP Design
 
+Status: Superseded historical design snapshot.
+Canonical replacements: `docs/00-overview.md`, `docs/01-scope-mvp.md`, `docs/02-architecture.md`.
+Canonical index: `docs/current-architecture.md`.
+
 **Date:** 2026-02-03
 
 ## Goal
