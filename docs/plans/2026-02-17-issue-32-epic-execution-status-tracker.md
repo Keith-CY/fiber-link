@@ -5,8 +5,8 @@ Scope: `#32` Epic roadmap anchor (`Invoice -> Payment -> Settlement v1`)
 Last status verification: 2026-02-17
 
 Status: Superseded historical snapshot.  
-Use `docs/plans/2026-02-21-issue-32-epic-closeout.md` for latest epic closeout mapping and
-`docs/current-architecture.md` for canonical architecture references.
+Use `docs/plans/2026-02-21-issue-32-epic-closeout.md` for the latest epic closeout mapping and
+`docs/current-architecture.md` for the canonical architecture index.
 
 ## Objective and Acceptance Criteria Mapping
 

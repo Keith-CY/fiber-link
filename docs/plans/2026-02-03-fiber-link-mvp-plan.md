@@ -1,8 +1,9 @@
 # Fiber Link MVP Implementation Plan
 
-Status: Historical implementation draft (superseded).
+Status: Superseded historical implementation-plan snapshot.
 Canonical references:
 - `docs/current-architecture.md` (canonical index)
+- `docs/02-architecture.md` (system architecture baseline)
 - `docs/06-development-progress.md` (current implementation status)
 - `docs/plans/2026-02-21-issue-32-epic-closeout.md` (latest epic closeout mapping)
 

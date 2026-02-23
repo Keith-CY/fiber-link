@@ -1,9 +1,27 @@
-# Epic #32 Closeout Record
+# Epic #32 Closeout Record (Canonical)
 
 Date: 2026-02-21
 Scope: [Issue #32](https://github.com/Keith-CY/fiber-link/issues/32) `Invoice -> Payment -> Settlement v1`
+Status: Canonical closeout map
 
 This record captures final acceptance mapping and closeout evidence for epic `#32`.
+
+Historical snapshots:
+- `docs/plans/2026-02-17-issue-32-epic-execution-status-tracker.md`
+- `docs/plans/2026-02-03-fiber-link-mvp-plan.md`
+- `docs/plans/2026-02-03-fiber-link-mvp-design.md`
+
+Canonical index:
+- `docs/current-architecture.md`
+
+## Closeout Summary
+
+- Implementation baseline is delivered in `main` and reflected in `docs/06-development-progress.md`.
+- Security and operational controls are tracked in:
+  - `docs/05-threat-model.md`
+  - `docs/runbooks/security-assumptions.md`
+  - `docs/runbooks/threat-model-evidence-checklist.md`
+- Remaining epic-adjacent gaps must be tracked as explicit GitHub issues and linked from the relevant runbook or plan section.
 
 ## Acceptance criteria mapping
 
@@ -32,3 +50,8 @@ This record captures final acceptance mapping and closeout evidence for epic `#3
 Recommended closure order:
 1. Close W4 plan issue `#36` using the W4 closeout PR.
 2. Close W5 plan issue `#37` and epic `#32` with this closeout record.
+
+## References
+
+- Epic issue `#32`: https://github.com/Keith-CY/fiber-link/issues/32
+- Canonical docs index: `docs/README.md`
