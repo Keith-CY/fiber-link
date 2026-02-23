@@ -16,6 +16,19 @@ const WITHDRAWAL_STATE_OPTIONS = Object.freeze([
   "FAILED",
 ]);
 const SETTLEMENT_STATE_OPTIONS = Object.freeze(["ALL", "UNPAID", "SETTLED", "FAILED"]);
+const PIPELINE_STAGE_OPTIONS = Object.freeze(["UNPAID", "SETTLED", "FAILED"]);
+
+function normalizePipelineBoard(rawBoard) {
+  const stageCounts = Array.isArray(rawBoard?.stageCounts)
+    ? rawBoard.stageCounts
+    : PIPELINE_STAGE_OPTIONS.map((stage) => ({ stage, count: 0 }));
+  const invoiceRows = Array.isArray(rawBoard?.invoiceRows) ? rawBoard.invoiceRows : [];
+
+  return {
+    stageCounts,
+    invoiceRows,
+  };
+}
 
 function formatTimestamp(rawValue) {
   if (typeof rawValue !== "string" || !rawValue.trim()) {
@@ -75,6 +88,7 @@ export default class FiberLinkDashboardRoute extends Route {
         withdrawalState: normalizedWithdrawalState,
         settlementState: normalizedSettlementState,
       },
+      adminPipelineBoard: normalizePipelineBoard(),
     });
 
     this._activeModel = model;
@@ -133,6 +147,7 @@ export default class FiberLinkDashboardRoute extends Route {
         adminApps: Array.isArray(result?.admin?.apps) ? result.admin.apps : [],
         adminWithdrawals: Array.isArray(result?.admin?.withdrawals) ? result.admin.withdrawals : [],
         adminSettlements: Array.isArray(result?.admin?.settlements) ? result.admin.settlements : [],
+        adminPipelineBoard: normalizePipelineBoard(result?.admin?.pipelineBoard),
         adminFiltersApplied: result?.admin?.filtersApplied ?? {
           withdrawalState: model.withdrawalStateFilter,
           settlementState: model.settlementStateFilter,

@@ -1,8 +1,11 @@
 # Fiber Link MVP Implementation Plan
 
 Status: Superseded historical implementation-plan snapshot.
-Canonical replacements: `docs/02-architecture.md`, `docs/06-development-progress.md`.
-Canonical index: `docs/current-architecture.md`.
+Canonical references:
+- `docs/current-architecture.md` (canonical index)
+- `docs/02-architecture.md` (system architecture baseline)
+- `docs/06-development-progress.md` (current implementation status)
+- `docs/plans/2026-02-21-issue-32-epic-closeout.md` (latest epic closeout mapping)
 
 **Goal:** Build an MVP that enables Discourse tipping via CKB Fiber with a custodial hub, internal ledger, and batched UDT withdrawals, plus an Admin Web console.
 

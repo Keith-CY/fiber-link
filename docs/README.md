@@ -6,6 +6,8 @@
 - `docs/audit-snapshot.md` — generated architecture-audit snapshot (operational metrics and deltas). This is non-canonical.
 - `docs/plans/2026-02-21-issue-32-epic-closeout.md` — latest closeout mapping for epic `#32`.
 - `docs/plans/2026-02-17-issue-32-epic-execution-status-tracker.md` — superseded historical status snapshot retained for traceability.
+- `docs/plans/2026-02-03-fiber-link-mvp-design.md` — historical early design snapshot; use canonical links at the top of the file.
+- `docs/plans/2026-02-03-fiber-link-mvp-plan.md` — historical implementation draft; use canonical links at the top of the file.
 
 ## Architecture audit contract
 
@@ -29,6 +31,7 @@
 ## W4 integration tracking
 
 - `docs/runbooks/w4-integration-status-2026-02-17.md` — issue #36 W4 subtask matrix, completion snapshot, and verification/operations checks as of 2026-02-17.
+- `docs/runbooks/w4-integration-closeout-2026-02-21.md` — final W4 closeout summary showing all #36 scope items and legacy supporting tasks closed as of 2026-02-21.
 
 ## Admin installation
 

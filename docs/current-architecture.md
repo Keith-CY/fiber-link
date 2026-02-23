@@ -66,3 +66,8 @@ guidance.
 - Historical/superseded docs tracked with explicit redirect: 3
 - Planning placeholder marker count in `docs/`: 0
 - Audit snapshot path (non-canonical): `docs/audit-snapshot.md`
+
+## Open Improvement Tracks
+
+- https://github.com/Keith-CY/fiber-link/issues/255
+- https://github.com/Keith-CY/fiber-link/issues/256

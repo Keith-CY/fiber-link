@@ -47,6 +47,7 @@ export const DashboardWithdrawalStateFilterSchema = z.enum([
 ]);
 
 export const DashboardSettlementStateFilterSchema = z.enum(["ALL", "UNPAID", "SETTLED", "FAILED"]);
+const DashboardPipelineStageSchema = z.enum(["UNPAID", "SETTLED", "FAILED"]);
 
 export const DashboardSummaryParamsSchema = z.object({
   userId: z.string().min(1),
@@ -118,6 +119,28 @@ export const DashboardSummaryResultSchema = z.object({
           failureReason: z.string().nullable(),
         }),
       ),
+      pipelineBoard: z
+        .object({
+          stageCounts: z.array(
+            z.object({
+              stage: DashboardPipelineStageSchema,
+              count: z.number().int().min(0),
+            }),
+          ),
+          invoiceRows: z.array(
+            z.object({
+              invoice: z.string().min(1),
+              state: DashboardPipelineStageSchema,
+              amount: z.string().min(1),
+              asset: z.enum(["CKB", "USDI"]),
+              fromUserId: z.string().min(1),
+              toUserId: z.string().min(1),
+              createdAt: z.string().datetime(),
+              timelineHref: z.string().min(1),
+            }),
+          ),
+        })
+        .optional(),
     })
     .optional(),
   generatedAt: z.string().datetime(),

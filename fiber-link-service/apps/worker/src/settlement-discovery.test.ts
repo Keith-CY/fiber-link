@@ -2,7 +2,7 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createInMemoryLedgerRepo, createInMemoryTipIntentRepo } from "@fiber-link/db";
+import { createInMemoryLedgerRepo, createInMemoryTipIntentEventRepo, createInMemoryTipIntentRepo } from "@fiber-link/db";
 import { FiberRpcError } from "@fiber-link/fiber-adapter";
 import { runSettlementDiscovery } from "./settlement-discovery";
 import { createFileSettlementCursorStore } from "./settlement-cursor-store";
@@ -10,10 +10,20 @@ import { createFileSettlementCursorStore } from "./settlement-cursor-store";
 describe("runSettlementDiscovery", () => {
   const tipIntentRepo = createInMemoryTipIntentRepo();
   const ledgerRepo = createInMemoryLedgerRepo();
+  const tipIntentEventRepo = createInMemoryTipIntentEventRepo();
+
+  const runDiscovery = (options: Parameters<typeof runSettlementDiscovery>[0]) =>
+    runSettlementDiscovery({
+      tipIntentRepo,
+      ledgerRepo,
+      tipIntentEventRepo,
+      ...options,
+    });
 
   beforeEach(() => {
     tipIntentRepo.__resetForTests?.();
     ledgerRepo.__resetForTests?.();
+    tipIntentEventRepo.__resetForTests?.();
   });
 
   it("processes UNPAID intents and applies state transitions from invoice status", async () => {
@@ -45,7 +55,7 @@ describe("runSettlementDiscovery", () => {
       invoice: "inv-scan-unpaid",
     });
 
-    const summary = await runSettlementDiscovery({
+    const summary = await runDiscovery({
       limit: 100,
       tipIntentRepo,
       ledgerRepo,
@@ -70,6 +80,13 @@ describe("runSettlementDiscovery", () => {
       "NO_CHANGE",
       "SETTLED_CREDIT_APPLIED",
     ]);
+    const timelineEvents = tipIntentEventRepo.__listForTests?.() ?? [];
+    expect(timelineEvents).toHaveLength(3);
+    expect(timelineEvents.map((event) => event.type).sort()).toEqual([
+      "SETTLEMENT_FAILED_UPSTREAM_REPORTED",
+      "SETTLEMENT_NO_CHANGE",
+      "SETTLEMENT_SETTLED_CREDIT_APPLIED",
+    ]);
   });
 
   it("is idempotent for replays and marks settled when credit already exists", async () => {
@@ -92,7 +109,7 @@ describe("runSettlementDiscovery", () => {
       idempotencyKey: `settlement:tip_intent:${intent.id}`,
     });
 
-    const summary = await runSettlementDiscovery({
+    const summary = await runDiscovery({
       limit: 100,
       tipIntentRepo,
       ledgerRepo,
@@ -134,7 +151,7 @@ describe("runSettlementDiscovery", () => {
     });
 
     const auditContexts: Record<string, unknown>[] = [];
-    const summary = await runSettlementDiscovery({
+    const summary = await runDiscovery({
       limit: 100,
       tipIntentRepo,
       ledgerRepo,
@@ -202,7 +219,7 @@ describe("runSettlementDiscovery", () => {
     };
 
     const now = new Date("2026-02-11T14:05:00.000Z").getTime();
-    const first = await runSettlementDiscovery({
+    const first = await runDiscovery({
       limit: 100,
       tipIntentRepo,
       ledgerRepo,
@@ -222,7 +239,7 @@ describe("runSettlementDiscovery", () => {
     expect(afterFirst.settlementNextRetryAt?.toISOString()).toBe("2026-02-11T14:06:00.000Z");
     expect(afterFirst.settlementLastError).toContain("internal error");
 
-    const second = await runSettlementDiscovery({
+    const second = await runDiscovery({
       limit: 100,
       tipIntentRepo,
       ledgerRepo,
@@ -273,7 +290,7 @@ describe("runSettlementDiscovery", () => {
       },
     };
 
-    const first = await runSettlementDiscovery({
+    const first = await runDiscovery({
       limit: 100,
       tipIntentRepo,
       ledgerRepo,
@@ -285,7 +302,7 @@ describe("runSettlementDiscovery", () => {
     });
     expect(first.retryScheduled).toBe(1);
 
-    const second = await runSettlementDiscovery({
+    const second = await runDiscovery({
       limit: 100,
       tipIntentRepo,
       ledgerRepo,
@@ -326,7 +343,7 @@ describe("runSettlementDiscovery", () => {
       vi.useRealTimers();
     }
 
-    const summary = await runSettlementDiscovery({
+    const summary = await runDiscovery({
       limit: 100,
       tipIntentRepo,
       ledgerRepo,
@@ -371,7 +388,7 @@ describe("runSettlementDiscovery", () => {
       invoice: "inv-window-2",
     });
 
-    const summary = await runSettlementDiscovery({
+    const summary = await runDiscovery({
       limit: 100,
       appId: "app-a",
       createdAtFrom: new Date(inWindow.createdAt.getTime() - 1),
@@ -414,7 +431,7 @@ describe("runSettlementDiscovery", () => {
       },
     };
 
-    const summary = await runSettlementDiscovery({
+    const summary = await runDiscovery({
       limit: 100,
       tipIntentRepo,
       ledgerRepo,
@@ -439,7 +456,7 @@ describe("runSettlementDiscovery", () => {
       invoice: "inv-terminal-rpc",
     });
 
-    const summary = await runSettlementDiscovery({
+    const summary = await runDiscovery({
       limit: 100,
       tipIntentRepo,
       ledgerRepo,
@@ -510,7 +527,7 @@ describe("runSettlementDiscovery", () => {
       | undefined;
 
     for (let i = 0; i < 4; i += 1) {
-      const summary = await runSettlementDiscovery({
+      const summary = await runDiscovery({
         limit: 1,
         cursor,
         pendingTimeoutMs: 24 * 60 * 60_000,
@@ -574,7 +591,7 @@ describe("runSettlementDiscovery", () => {
     const seenInvoices: string[] = [];
     for (let i = 0; i < 3; i += 1) {
       const cursor = await cursorStore.load();
-      const summary = await runSettlementDiscovery({
+      const summary = await runDiscovery({
         limit: 1,
         cursor,
         pendingTimeoutMs: 24 * 60 * 60_000,
@@ -626,7 +643,7 @@ describe("runSettlementDiscovery", () => {
       vi.useRealTimers();
     }
 
-    const summary = await runSettlementDiscovery({
+    const summary = await runDiscovery({
       limit: 100,
       tipIntentRepo,
       ledgerRepo,

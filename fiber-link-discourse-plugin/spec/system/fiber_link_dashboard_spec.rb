@@ -133,6 +133,77 @@ RSpec.describe "Fiber Link Dashboard", type: :system do
     expect(page).to have_content("PENDING")
   end
 
+  it "renders lifecycle board with stage filters, csv export, and timeline placeholders" do
+    admin = Fabricate(:admin)
+    sign_in(admin)
+
+    stub_request(:post, "https://fiber-link.example/rpc")
+      .with { |request| JSON.parse(request.body).fetch("method") == "dashboard.summary" }
+      .to_return(
+        status: 200,
+        body: {
+          jsonrpc: "2.0",
+          id: "dash-admin-board",
+          result: {
+            balance: "5",
+            tips: [],
+            generatedAt: "2026-02-16T00:00:00.000Z",
+            admin: {
+              filtersApplied: { withdrawalState: "ALL", settlementState: "ALL" },
+              apps: [],
+              withdrawals: [],
+              settlements: [],
+              pipelineBoard: {
+                stageCounts: [
+                  { stage: "UNPAID", count: 1 },
+                  { stage: "SETTLED", count: 0 },
+                  { stage: "FAILED", count: 1 },
+                ],
+                invoiceRows: [
+                  {
+                    invoice: "inv-board-1",
+                    state: "UNPAID",
+                    amount: "1.5",
+                    asset: "CKB",
+                    fromUserId: "10",
+                    toUserId: "20",
+                    createdAt: "2026-02-16T00:00:00.000Z",
+                    timelineHref: "/fiber-link/timeline/inv-board-1",
+                  },
+                  {
+                    invoice: "inv-board-2",
+                    state: "FAILED",
+                    amount: "2.0",
+                    asset: "USDI",
+                    fromUserId: "11",
+                    toUserId: "22",
+                    createdAt: "2026-02-16T00:00:00.000Z",
+                    timelineHref: "/fiber-link/timeline/inv-board-2",
+                  },
+                ],
+              },
+            },
+          },
+        }.to_json,
+        headers: { "Content-Type" => "application/json" },
+      )
+
+    visit "/fiber-link"
+
+    expect(page).to have_content("Lifecycle Pipeline Board")
+    expect(page).to have_content("UNPAID: 1")
+    expect(page).to have_content("FAILED: 1")
+    expect(page).to have_content("inv-board-1")
+    expect(page).to have_content("inv-board-2")
+    expect(page).to have_link("Export CSV", href: %r{^data:text/csv})
+    expect(page).to have_css("a[href='/fiber-link/timeline/inv-board-1']", text: "Timeline")
+
+    select "FAILED", from: "Lifecycle stage"
+
+    expect(page).to have_content("inv-board-2")
+    expect(page).to have_no_content("inv-board-1")
+  end
+
   it "renders contextual empty-state guidance and avoids absolute admin filter form action" do
     admin = Fabricate(:admin)
     sign_in(admin)

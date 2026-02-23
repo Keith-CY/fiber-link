@@ -1,9 +1,10 @@
 import { runWithdrawalBatch as runWithdrawalBatchDefault } from "./withdrawal-batch";
+import { createComponentLogger, type WorkerLogContext } from "./logger";
 
 type WorkerLogger = {
-  info: (message: string, context?: Record<string, unknown>) => void;
-  warn: (message: string, context?: Record<string, unknown>) => void;
-  error: (message: string, error?: unknown) => void;
+  info: (event: string, context?: WorkerLogContext) => void;
+  warn: (event: string, context?: WorkerLogContext) => void;
+  error: (event: string, context?: WorkerLogContext) => void;
 };
 
 type RunWithdrawalBatchFn = (options: { maxRetries: number; retryDelayMs: number }) => Promise<unknown>;
@@ -32,15 +33,7 @@ export type WorkerRuntime = {
 };
 
 const defaultLogger: WorkerLogger = {
-  info(message, context) {
-    console.log(message, context ?? {});
-  },
-  warn(message, context) {
-    console.warn(message, context ?? {});
-  },
-  error(message, error) {
-    console.error(message, error);
-  },
+  ...createComponentLogger("worker-runtime"),
 };
 
 async function waitForDrain(batchPromise: Promise<void>, timeoutMs: number): Promise<boolean> {
@@ -85,7 +78,7 @@ export function createWorkerRuntime(options: CreateWorkerRuntimeOptions): Worker
       return;
     }
     if (inFlightBatch) {
-      logger.warn("[worker] previous worker cycle still running; skipping tick", {
+      logger.warn("worker.cycle.overlap", {
         intervalMs: options.intervalMs,
       });
       return;
@@ -113,11 +106,11 @@ export function createWorkerRuntime(options: CreateWorkerRuntimeOptions): Worker
               retryDelayMs: options.retryDelayMs,
             });
             lastWithdrawalRunAtMs = nowMs;
-            logger.info("[worker] withdrawal batch", {
+            logger.info("worker.withdrawal.batch.succeeded", {
               result,
             });
           } catch (error) {
-            logger.error("[worker] withdrawal batch failed", error);
+            logger.error("worker.withdrawal.batch.failed", { error });
           }
         }
 
@@ -125,12 +118,12 @@ export function createWorkerRuntime(options: CreateWorkerRuntimeOptions): Worker
           try {
             const result = await pollSettlements({ limit: settlementBatchSize });
             lastSettlementRunAtMs = nowMs;
-            logger.info("[worker] settlement polling batch", {
+            logger.info("worker.settlement.polling.succeeded", {
               result,
               limit: settlementBatchSize,
             });
           } catch (error) {
-            logger.error("[worker] settlement polling batch failed", error);
+            logger.error("worker.settlement.polling.failed", { error });
           }
         }
       } finally {
@@ -149,7 +142,7 @@ export function createWorkerRuntime(options: CreateWorkerRuntimeOptions): Worker
     timer = setIntervalFn(() => {
       void processCycle();
     }, options.intervalMs);
-    logger.info("[worker] started", {
+    logger.info("worker.runtime.started", {
       tickIntervalMs: options.intervalMs,
       withdrawalIntervalMs,
       maxRetries: options.maxRetries,
@@ -177,14 +170,14 @@ export function createWorkerRuntime(options: CreateWorkerRuntimeOptions): Worker
         const drained = await waitForDrain(inFlightBatch, options.shutdownTimeoutMs);
         if (!drained) {
           exitCode = 1;
-          logger.error("[worker] shutdown drain timed out; exiting with in-flight work", {
+          logger.error("worker.runtime.shutdown.drain_timeout", {
             signal,
             shutdownTimeoutMs: options.shutdownTimeoutMs,
           });
         }
       }
 
-      logger.info("[worker] shutdown", { signal, exitCode });
+      logger.info("worker.runtime.shutdown", { signal, exitCode });
       exitFn(exitCode);
     })();
 
