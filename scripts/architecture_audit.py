@@ -25,6 +25,14 @@ SUPERSEDED_RE = re.compile(r"^Status:\s*(superseded|diverged)\b", re.IGNORECASE 
 MAX_STATE_RUNS = 200
 DEFAULT_STATE_FILE = ".github/architecture-audit-state.json"
 DEFAULT_SNAPSHOT_FILE = "docs/audit-snapshot.md"
+TOKEN_SCAN_EXCLUDED_PATHS = {
+    "docs/audit-snapshot.md",
+    ".github/architecture-audit-state.json",
+    "scripts/architecture_audit.py",
+    "scripts/test_architecture_audit.py",
+}
+SUPERSEDED_EXCLUDED_PATHS = {"docs/current-architecture.md", "docs/audit-snapshot.md"}
+SUPERSEDED_FALLBACK_TEXT = "superseded historical snapshot"
 
 
 def now_utc_iso() -> str:
@@ -125,10 +133,16 @@ def is_test_file(path: str) -> bool:
     )
 
 
+def is_token_scan_excluded(path: str) -> bool:
+    return normalize_path(path) in TOKEN_SCAN_EXCLUDED_PATHS
+
+
 def collect_token_hits(paths: list[str], max_hits: int) -> tuple[list[dict[str, Any]], int]:
     hits: list[dict[str, Any]] = []
     total = 0
     for path in paths:
+        if is_token_scan_excluded(path):
+            continue
         if not is_text_path(path):
             continue
         try:
@@ -153,9 +167,8 @@ def collect_token_hits(paths: list[str], max_hits: int) -> tuple[list[dict[str, 
 def collect_superseded_docs(paths: list[str], max_hits: int) -> tuple[list[dict[str, str]], int]:
     records: list[dict[str, str]] = []
     total = 0
-    excluded = {"docs/current-architecture.md", "docs/audit-snapshot.md"}
     for path in paths:
-        if normalize_path(path) in excluded:
+        if normalize_path(path) in SUPERSEDED_EXCLUDED_PATHS:
             continue
         if not path.endswith(".md"):
             continue
@@ -165,7 +178,7 @@ def collect_superseded_docs(paths: list[str], max_hits: int) -> tuple[list[dict[
             continue
         status_match = SUPERSEDED_RE.search(text)
         status = status_match.group(1).lower() if status_match else ""
-        if not status and "superseded historical snapshot" in text.lower():
+        if not status and SUPERSEDED_FALLBACK_TEXT in text.lower():
             status = "superseded"
         if not status:
             continue

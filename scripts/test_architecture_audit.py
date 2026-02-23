@@ -26,11 +26,15 @@ class ArchitectureAuditScriptTest(unittest.TestCase):
 
         (self.root / "README.md").write_text("test repository\n", encoding="utf-8")
         (self.root / ".github" / "architecture-audit-state.json").write_text(
-            "{\n  \"version\": 1,\n  \"runs\": [],\n  \"latest\": null\n}\n",
+            "{\n  \"version\": 1,\n  \"runs\": [],\n  \"latest\": null,\n  \"note\": \"TODO: ignore state token\"\n}\n",
             encoding="utf-8",
         )
         (self.root / "docs" / "current-architecture.md").write_text(
             "# Canonical\n\nThis is canonical.\n",
+            encoding="utf-8",
+        )
+        (self.root / "docs" / "audit-snapshot.md").write_text(
+            "# Generated\n\nTODO/TBD/FIXME markers in this generated doc must be ignored.\n",
             encoding="utf-8",
         )
         (self.root / "docs" / "legacy-plan.md").write_text(
@@ -39,6 +43,15 @@ class ArchitectureAuditScriptTest(unittest.TestCase):
         )
         (self.root / "docs" / "notes.md").write_text(
             "TODO: capture migration references.\nFIXME: resolve link targets.\n",
+            encoding="utf-8",
+        )
+        (self.root / "scripts").mkdir(parents=True, exist_ok=True)
+        (self.root / "scripts" / "architecture_audit.py").write_text(
+            "print('TODO: this internal script marker must be ignored')\n",
+            encoding="utf-8",
+        )
+        (self.root / "scripts" / "test_architecture_audit.py").write_text(
+            "print('FIXME: this internal test marker must be ignored')\n",
             encoding="utf-8",
         )
         (self.root / "src" / "app.ts").write_text(
@@ -100,6 +113,20 @@ class ArchitectureAuditScriptTest(unittest.TestCase):
         self.assertIn(
             {"path": "docs/notes.md", "line": 2, "token": "FIXME"},
             docs_hits,
+        )
+        self.assertNotIn(
+            {"path": "docs/audit-snapshot.md", "line": 3, "token": "TODO"},
+            docs_hits,
+        )
+
+        core_hits = report["todo_hits"]["core"]["items"]
+        self.assertNotIn(
+            {"path": "scripts/architecture_audit.py", "line": 1, "token": "TODO"},
+            core_hits,
+        )
+        self.assertNotIn(
+            {"path": "scripts/test_architecture_audit.py", "line": 1, "token": "FIXME"},
+            core_hits,
         )
 
         snapshot_text = (self.root / "docs" / "audit-snapshot.md").read_text(encoding="utf-8")
