@@ -2,14 +2,16 @@ import { FiberRpcError, createAdapter } from "@fiber-link/fiber-adapter";
 import {
   createDbClient,
   createDbLedgerRepo,
+  createDbTipIntentEventRepo,
   createDbTipIntentRepo,
   type DbClient,
   type LedgerRepo,
   type SettlementFailureReason,
+  type TipIntentEventRepo,
   type TipIntentListCursor,
   type TipIntentRepo,
 } from "@fiber-link/db";
-import { createSettlementUpdateEvent, type SettlementUpdateEvent } from "./contracts";
+import { createSettlementUpdateEvent, type SettlementUpdateEvent, type SettlementUpdateOutcome } from "./contracts";
 import { createComponentLogger, type WorkerLogContext } from "./logger";
 import { markSettled } from "./settlement";
 
@@ -55,6 +57,7 @@ export type SettlementDiscoveryOptions = {
   adapter?: SettlementAdapter;
   tipIntentRepo?: TipIntentRepo;
   ledgerRepo?: LedgerRepo;
+  tipIntentEventRepo?: TipIntentEventRepo;
   nowMsFn?: () => number;
   logger?: SettlementLogger;
 };
@@ -83,6 +86,7 @@ const defaultLogger: SettlementLogger = {
 let defaultDb: DbClient | null = null;
 let defaultTipIntentRepo: TipIntentRepo | null = null;
 let defaultLedgerRepo: LedgerRepo | null = null;
+let defaultTipIntentEventRepo: TipIntentEventRepo | null | undefined;
 let defaultAdapter: SettlementAdapter | null = null;
 
 function getDefaultDb(): DbClient {
@@ -104,6 +108,21 @@ function getDefaultLedgerRepo(): LedgerRepo {
     defaultLedgerRepo = createDbLedgerRepo(getDefaultDb());
   }
   return defaultLedgerRepo;
+}
+
+function getDefaultTipIntentEventRepo(): TipIntentEventRepo | null {
+  if (defaultTipIntentEventRepo !== undefined) {
+    return defaultTipIntentEventRepo;
+  }
+
+  try {
+    defaultTipIntentEventRepo = createDbTipIntentEventRepo(getDefaultDb());
+  } catch (error) {
+    console.error("Failed to initialize default TipIntentEventRepo.", error);
+    defaultTipIntentEventRepo = null;
+  }
+
+  return defaultTipIntentEventRepo;
 }
 
 function getDefaultAdapter(): SettlementAdapter {
@@ -146,6 +165,29 @@ function parseSettlementState(invoice: string, state: unknown): SettlementState 
     return state as SettlementState;
   }
   throw new SettlementStatusContractError(invoice, state);
+}
+
+function settlementOutcomeToTimelineType(
+  outcome: SettlementUpdateOutcome,
+):
+  | "SETTLEMENT_NO_CHANGE"
+  | "SETTLEMENT_SETTLED_CREDIT_APPLIED"
+  | "SETTLEMENT_SETTLED_DUPLICATE"
+  | "SETTLEMENT_FAILED_UPSTREAM_REPORTED"
+  | "SETTLEMENT_RETRY_SCHEDULED"
+  | "SETTLEMENT_FAILED_PENDING_TIMEOUT"
+  | "SETTLEMENT_FAILED_CONTRACT_MISMATCH"
+  | "SETTLEMENT_FAILED_RETRY_EXHAUSTED"
+  | "SETTLEMENT_FAILED_TERMINAL_ERROR" {
+  if (outcome === "NO_CHANGE") return "SETTLEMENT_NO_CHANGE";
+  if (outcome === "SETTLED_CREDIT_APPLIED") return "SETTLEMENT_SETTLED_CREDIT_APPLIED";
+  if (outcome === "SETTLED_DUPLICATE") return "SETTLEMENT_SETTLED_DUPLICATE";
+  if (outcome === "FAILED_UPSTREAM_REPORTED") return "SETTLEMENT_FAILED_UPSTREAM_REPORTED";
+  if (outcome === "RETRY_SCHEDULED_TRANSIENT") return "SETTLEMENT_RETRY_SCHEDULED";
+  if (outcome === "FAILED_PENDING_TIMEOUT") return "SETTLEMENT_FAILED_PENDING_TIMEOUT";
+  if (outcome === "FAILED_CONTRACT_MISMATCH") return "SETTLEMENT_FAILED_CONTRACT_MISMATCH";
+  if (outcome === "FAILED_RETRY_EXHAUSTED") return "SETTLEMENT_FAILED_RETRY_EXHAUSTED";
+  return "SETTLEMENT_FAILED_TERMINAL_ERROR";
 }
 
 const TERMINAL_RPC_ERROR_CODES = new Set([-32600, -32601, -32602]);
@@ -229,6 +271,7 @@ function classifySettlementError(error: unknown): SettlementErrorDecision {
 export async function runSettlementDiscovery(options: SettlementDiscoveryOptions): Promise<SettlementDiscoverySummary> {
   const tipIntentRepo = options.tipIntentRepo ?? getDefaultTipIntentRepo();
   const ledgerRepo = options.ledgerRepo ?? getDefaultLedgerRepo();
+  const tipIntentEventRepo = options.tipIntentEventRepo ?? getDefaultTipIntentEventRepo();
   const adapter = options.adapter ?? getDefaultAdapter();
   const nowMsFn = options.nowMsFn ?? Date.now;
   const maxRetries = options.maxRetries ?? 3;
@@ -276,6 +319,42 @@ export async function runSettlementDiscovery(options: SettlementDiscoveryOptions
   };
   const settledLatenciesMs: number[] = [];
 
+  const appendTimelineEvent = async (
+    intent: { id: string; invoice: string; appId: string },
+    event: SettlementUpdateEvent,
+  ): Promise<void> => {
+    if (!tipIntentEventRepo) {
+      return;
+    }
+
+    try {
+      await tipIntentEventRepo.append({
+        tipIntentId: intent.id,
+        invoice: intent.invoice,
+        source: "SETTLEMENT_DISCOVERY",
+        type: settlementOutcomeToTimelineType(event.outcome),
+        previousInvoiceState: event.previousState,
+        nextInvoiceState: event.nextState,
+        metadata: {
+          observedState: event.observedState,
+          ledgerCreditApplied: event.ledgerCreditApplied,
+          failureClass: event.failureClass ?? null,
+          retryCount: event.retryCount ?? null,
+          nextRetryAt: event.nextRetryAt ?? null,
+          error: event.error ?? null,
+        },
+      });
+    } catch (error) {
+      summary.errors += 1;
+      logger.error("settlement.discovery.timeline_event_failed", {
+        invoice: intent.invoice,
+        appId: intent.appId,
+        requestId: `settlement:${intent.invoice}`,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  };
+
   for (const intent of intents) {
     const previousState = intent.invoiceState as SettlementState;
     const nowMs = nowMsFn();
@@ -304,16 +383,16 @@ export async function runSettlementDiscovery(options: SettlementDiscoveryOptions
         } else {
           summary.settledDuplicates += 1;
         }
-        summary.events.push(
-          createSettlementUpdateEvent({
-            invoice: intent.invoice,
-            previousState,
-            observedState,
-            nextState: "SETTLED",
-            outcome: result.credited ? "SETTLED_CREDIT_APPLIED" : "SETTLED_DUPLICATE",
-            ledgerCreditApplied: result.credited,
-          }),
-        );
+        const event = createSettlementUpdateEvent({
+          invoice: intent.invoice,
+          previousState,
+          observedState,
+          nextState: "SETTLED",
+          outcome: result.credited ? "SETTLED_CREDIT_APPLIED" : "SETTLED_DUPLICATE",
+          ledgerCreditApplied: result.credited,
+        });
+        summary.events.push(event);
+        await appendTimelineEvent(intent, event);
         settledLatenciesMs.push(Math.max(0, nowMs - intent.createdAt.getTime()));
         continue;
       }
@@ -337,6 +416,7 @@ export async function runSettlementDiscovery(options: SettlementDiscoveryOptions
           error: "upstream invoice state reported FAILED",
         });
         summary.events.push(event);
+        await appendTimelineEvent(intent, event);
         logger.info("settlement.discovery.audit", {
           ...event,
           appId: intent.appId,
@@ -365,6 +445,7 @@ export async function runSettlementDiscovery(options: SettlementDiscoveryOptions
           error: timeoutMessage,
         });
         summary.events.push(event);
+        await appendTimelineEvent(intent, event);
         logger.info("settlement.discovery.audit", {
           ...event,
           appId: intent.appId,
@@ -375,16 +456,16 @@ export async function runSettlementDiscovery(options: SettlementDiscoveryOptions
 
       await tipIntentRepo.clearSettlementFailure(intent.invoice, { now });
       summary.stillUnpaid += 1;
-      summary.events.push(
-        createSettlementUpdateEvent({
-          invoice: intent.invoice,
-          previousState,
-          observedState,
-          nextState: "UNPAID",
-          outcome: "NO_CHANGE",
-          ledgerCreditApplied: false,
-        }),
-      );
+      const event = createSettlementUpdateEvent({
+        invoice: intent.invoice,
+        previousState,
+        observedState,
+        nextState: "UNPAID",
+        outcome: "NO_CHANGE",
+        ledgerCreditApplied: false,
+      });
+      summary.events.push(event);
+      await appendTimelineEvent(intent, event);
     } catch (error) {
       const decision = classifySettlementError(error);
       try {
@@ -410,6 +491,7 @@ export async function runSettlementDiscovery(options: SettlementDiscoveryOptions
               error: decision.message,
             });
             summary.events.push(event);
+            await appendTimelineEvent(intent, event);
             logger.info("settlement.discovery.audit", {
               ...event,
               appId: intent.appId,
@@ -438,6 +520,7 @@ export async function runSettlementDiscovery(options: SettlementDiscoveryOptions
             error: decision.message,
           });
           summary.events.push(event);
+          await appendTimelineEvent(intent, event);
           logger.info("settlement.discovery.audit", {
             ...event,
             appId: intent.appId,
@@ -464,6 +547,7 @@ export async function runSettlementDiscovery(options: SettlementDiscoveryOptions
           error: decision.message,
         });
         summary.events.push(event);
+        await appendTimelineEvent(intent, event);
         logger.info("settlement.discovery.audit", {
           ...event,
           appId: intent.appId,
