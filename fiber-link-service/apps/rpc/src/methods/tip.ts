@@ -1,4 +1,4 @@
-import { createAdapter } from "@fiber-link/fiber-adapter";
+import { createAdapter, createAdapterProvider } from "@fiber-link/fiber-adapter";
 import {
   createDbClient,
   createDbLedgerRepo,
@@ -10,7 +10,7 @@ import type { InvoiceState } from "@fiber-link/fiber-adapter";
 
 let defaultTipIntentRepo: TipIntentRepo | null | undefined;
 let defaultLedgerRepo: LedgerRepo | null | undefined;
-let defaultAdapter: ReturnType<typeof createAdapter> | null | undefined;
+let defaultAdapter: ReturnType<typeof createAdapterProvider> | null | undefined;
 
 function isInvoiceStateConflictError(error: unknown): boolean {
   if (!error || typeof error !== "object") {
@@ -61,11 +61,9 @@ function getDefaultAdapter() {
     return defaultAdapter;
   }
 
-  const fiberRpcUrl = process.env.FIBER_RPC_URL;
-  if (!fiberRpcUrl) {
-    throw new Error("FIBER_RPC_URL environment variable is not set.");
-  }
-  defaultAdapter = createAdapter({ endpoint: fiberRpcUrl });
+  defaultAdapter = createAdapterProvider({
+    rpcFactory: createAdapter,
+  });
   return defaultAdapter;
 }
 
@@ -101,14 +99,7 @@ export async function handleTipCreate(
   input: HandleTipCreateInput,
   options: HandleTipCreateOptions = {},
 ) {
-  let adapter = options.adapter;
-  if (!adapter) {
-    const fiberRpcUrl = process.env.FIBER_RPC_URL;
-    if (!fiberRpcUrl) {
-      throw new Error("FIBER_RPC_URL environment variable is not set.");
-    }
-    adapter = createAdapter({ endpoint: fiberRpcUrl });
-  }
+  const adapter = options.adapter ?? getDefaultAdapter();
   const invoice = await adapter.createInvoice({ amount: input.amount, asset: input.asset });
   const repo = options.tipIntentRepo ?? getDefaultTipIntentRepo();
   await repo.create({
