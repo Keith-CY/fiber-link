@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   WithdrawalTransitionConflictError,
   createInMemoryLedgerRepo,
@@ -206,6 +206,144 @@ describe("runWithdrawalBatch", () => {
     expect(entries).toHaveLength(1);
     expect(entries[0].type).toBe("debit");
     expect(entries[0].idempotencyKey).toBe(`withdrawal:debit:${created.id}`);
+  });
+
+  it("dispatches a completion notification after successful execution", async () => {
+    const ledger = createInMemoryLedgerRepo();
+    const created = await repo.create({
+      appId: "app1",
+      userId: "u1",
+      asset: "USDI",
+      amount: "10",
+      toAddress: "fiber:invoice:ok-notify",
+    });
+    const dispatchWithdrawalEvent = vi.fn(async () => ({
+      matched: 0,
+      attempted: 0,
+      delivered: 0,
+      failed: 0,
+    }));
+
+    const res = await runWithdrawalBatch({
+      now: new Date("2026-02-07T12:15:00.000Z"),
+      executeWithdrawal: async () => ({ ok: true, txHash: "0xnotifyok" }),
+      repo,
+      ledgerRepo: ledger,
+      notificationDispatcher: { dispatchWithdrawalEvent },
+    });
+
+    expect(res.completed).toBe(1);
+    expect(dispatchWithdrawalEvent).toHaveBeenCalledTimes(1);
+    expect(dispatchWithdrawalEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "WITHDRAWAL_COMPLETED",
+        appId: "app1",
+        userId: "u1",
+        withdrawalId: created.id,
+        txHash: "0xnotifyok",
+      }),
+    );
+  });
+
+  it("dispatches a retry notification when transient failures are retriable", async () => {
+    await repo.create({
+      appId: "app1",
+      userId: "u1",
+      asset: "USDI",
+      amount: "10",
+      toAddress: "fiber:invoice:retry-notify",
+    });
+    const dispatchWithdrawalEvent = vi.fn(async () => ({
+      matched: 0,
+      attempted: 0,
+      delivered: 0,
+      failed: 0,
+    }));
+
+    const res = await runWithdrawalBatch({
+      now: new Date("2026-02-07T12:20:00.000Z"),
+      retryDelayMs: 60_000,
+      executeWithdrawal: async () => ({
+        ok: false,
+        kind: "transient",
+        reason: "rpc overloaded",
+      }),
+      repo,
+      notificationDispatcher: { dispatchWithdrawalEvent },
+    });
+
+    expect(res.retryPending).toBe(1);
+    expect(dispatchWithdrawalEvent).toHaveBeenCalledTimes(1);
+    const [event] = dispatchWithdrawalEvent.mock.calls[0];
+    expect(event.type).toBe("WITHDRAWAL_RETRY_PENDING");
+    expect(event.error).toContain("rpc overloaded");
+    expect(event.retryCount).toBe(1);
+    expect(event.nextRetryAt?.toISOString()).toBe("2026-02-07T12:21:00.000Z");
+  });
+
+  it("dispatches a failed notification for terminal failure outcomes", async () => {
+    const created = await repo.create({
+      appId: "app1",
+      userId: "u1",
+      asset: "USDI",
+      amount: "10",
+      toAddress: "fiber:invoice:failed-notify",
+    });
+    const dispatchWithdrawalEvent = vi.fn(async () => ({
+      matched: 0,
+      attempted: 0,
+      delivered: 0,
+      failed: 0,
+    }));
+
+    const res = await runWithdrawalBatch({
+      now: new Date("2026-02-07T12:25:00.000Z"),
+      executeWithdrawal: async () => ({
+        ok: false,
+        kind: "permanent",
+        reason: "bad address format",
+      }),
+      repo,
+      notificationDispatcher: { dispatchWithdrawalEvent },
+    });
+
+    expect(res.failed).toBe(1);
+    expect(dispatchWithdrawalEvent).toHaveBeenCalledTimes(1);
+    expect(dispatchWithdrawalEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "WITHDRAWAL_FAILED",
+        withdrawalId: created.id,
+        error: "bad address format",
+      }),
+    );
+  });
+
+  it("keeps withdrawal transitions successful when notification dispatch fails", async () => {
+    const ledger = createInMemoryLedgerRepo();
+    const created = await repo.create({
+      appId: "app1",
+      userId: "u1",
+      asset: "USDI",
+      amount: "10",
+      toAddress: "fiber:invoice:notify-error",
+    });
+
+    const res = await runWithdrawalBatch({
+      now: new Date("2026-02-07T12:50:00.000Z"),
+      executeWithdrawal: async () => ({ ok: true, txHash: "0xstillok" }),
+      repo,
+      ledgerRepo: ledger,
+      notificationDispatcher: {
+        dispatchWithdrawalEvent: vi.fn(async () => {
+          throw new Error("notification provider unavailable");
+        }),
+      },
+    });
+
+    expect(res.completed).toBe(1);
+    const saved = await repo.findByIdOrThrow(created.id);
+    expect(saved.state).toBe("COMPLETED");
+    expect(saved.txHash).toBe("0xstillok");
   });
 
   it("treats Fiber internal rpc error as transient and schedules retry", async () => {
