@@ -1,4 +1,4 @@
-import { index, integer, numeric, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { boolean, index, integer, numeric, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 
 export const userRoleEnum = pgEnum("user_role", ["SUPER_ADMIN", "COMMUNITY_ADMIN"]);
 export type UserRole = (typeof userRoleEnum.enumValues)[number];
@@ -19,6 +19,16 @@ export const withdrawalStateEnum = pgEnum("withdrawal_state", [
   "FAILED",
 ]);
 export type WithdrawalState = (typeof withdrawalStateEnum.enumValues)[number];
+
+export const notificationChannelKindEnum = pgEnum("notification_channel_kind", ["WEBHOOK"]);
+export type NotificationChannelKind = (typeof notificationChannelKindEnum.enumValues)[number];
+
+export const notificationEventEnum = pgEnum("notification_event", [
+  "WITHDRAWAL_RETRY_PENDING",
+  "WITHDRAWAL_FAILED",
+  "WITHDRAWAL_COMPLETED",
+]);
+export type NotificationEvent = (typeof notificationEventEnum.enumValues)[number];
 
 export const apps = pgTable(
   "apps",
@@ -131,5 +141,42 @@ export const withdrawals = pgTable(
   (table) => ({
     byStateRetryAt: index("withdrawals_state_next_retry_at_idx").on(table.state, table.nextRetryAt, table.createdAt),
     byAccountAssetState: index("withdrawals_account_asset_state_idx").on(table.appId, table.userId, table.asset, table.state),
+  }),
+);
+
+export const notificationChannels = pgTable(
+  "notification_channels",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    appId: text("app_id").notNull(),
+    name: text("name").notNull(),
+    kind: notificationChannelKindEnum("kind").notNull(),
+    target: text("target").notNull(),
+    secret: text("secret"),
+    enabled: boolean("enabled").notNull().default(true),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    appNameUnique: uniqueIndex("notification_channels_app_name_unique").on(table.appId, table.name),
+    byAppEnabled: index("notification_channels_app_enabled_idx").on(table.appId, table.enabled, table.id),
+  }),
+);
+
+export const notificationRules = pgTable(
+  "notification_rules",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    appId: text("app_id").notNull(),
+    channelId: uuid("channel_id").notNull(),
+    event: notificationEventEnum("event").notNull(),
+    enabled: boolean("enabled").notNull().default(true),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    channelEventUnique: uniqueIndex("notification_rules_channel_event_unique").on(table.channelId, table.event),
+    byAppEventEnabled: index("notification_rules_app_event_enabled_idx").on(table.appId, table.event, table.enabled, table.id),
+    byChannelEnabled: index("notification_rules_channel_enabled_idx").on(table.channelId, table.enabled, table.id),
   }),
 );
