@@ -80,7 +80,7 @@ TASK1_APPROVED_BUT_UNMERGED_ESCALATION_HOURS = parse_positive_float_env_value("T
 
 # Repo noise budget thresholds.
 TEST_FILES_DRIFT_ALERT_THRESHOLD = parse_positive_int_env_value("TASK1_TEST_FILES_DRIFT_ALERT_THRESHOLD", 5)
-# Empty-queue optimization and notification tuning.
+# Idle-queue optimization and notification tuning.
 TASK1_IDLE_LIGHTWEIGHT_STREAK_THRESHOLD = parse_positive_int_env_value("TASK1_IDLE_LIGHTWEIGHT_STREAK_THRESHOLD", 1)
 TASK1_IDLE_DIGEST_STREAK_THRESHOLD = parse_positive_int_env_value("TASK1_IDLE_DIGEST_STREAK_THRESHOLD", 3)
 TASK1_IDLE_DIGEST_INTERVAL_RUNS = parse_positive_int_env_value("TASK1_IDLE_DIGEST_INTERVAL_RUNS", 3)
@@ -412,10 +412,21 @@ def classify_with_source_pr(
     allow_pr_state_lookup: bool = True,
 ) -> Tuple[List[dict], List[dict], List[dict]]:
     """
+    Classify issues by Source PR binding state.
+
+    Behavior:
+      - If issue body has no Source PR link, mark actionable with reason `missing-source-pr`.
+      - If `open_pr_numbers` is provided, only use that set for OPEN checks:
+        - PR number in set -> bound issue.
+        - PR number not in set -> actionable with reason `source-pr-not-open`.
+      - If `open_pr_numbers` is not provided and `allow_pr_state_lookup` is True, use `pr_state`.
+      - If `open_pr_numbers` is not provided and `allow_pr_state_lookup` is False,
+        mark actionable with reason `source-pr-lookup-skipped`.
+
     Returns:
-      actionable_issues: no source PR or source PR is not OPEN
+      actionable_issues: no source PR, source PR not OPEN, or lookup skipped
       bound_issues: source PR exists and is OPEN (skip handling)
-      unbound_issues: actionable list with reason
+      unbound_issues: actionable list with reason code
     """
     actionable: List[dict] = []
     bound: List[dict] = []
@@ -457,6 +468,14 @@ def classify_with_source_pr(
 
 
 def apply_idle_queue_state(snapshot: dict, state: dict) -> None:
+    """Compute idle-queue runtime fields and persist them on the snapshot.
+
+    Updates:
+      - `idleStreak`: consecutive runs where open PR queue is empty
+      - `lastNonEmptyRunAt`: timestamp of most recent run with open PRs
+      - `idleDigestMode`: enabled after idle streak passes configured threshold
+      - idle metrics (`idleStreak`, `queryMode`, `hoursSinceLastNonEmptyRun`)
+    """
     prior_idle_streak = int(state.get("idleStreak", 0))
     prior_last_non_empty = state.get("lastNonEmptyRunAt")
     current_run_at = snapshot.get("runAt")
@@ -607,6 +626,7 @@ def analyze(state: dict | None = None) -> dict:
 
     raw_open_prs = list_json("pr")
     open_pr_numbers = {pr.get("number") for pr in raw_open_prs if isinstance(pr.get("number"), int)}
+    # After sustained empty-queue runs, skip per-issue PR lookups and classify using in-memory open PR set.
     use_lightweight_query = len(open_pr_numbers) == 0 and prior_idle_streak >= TASK1_IDLE_LIGHTWEIGHT_STREAK_THRESHOLD
 
     open_issues = list_json("issue")
