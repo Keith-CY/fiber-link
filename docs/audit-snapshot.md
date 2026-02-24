@@ -4,15 +4,36 @@
 > Contract: this generator writes only `docs/audit-snapshot.md` and `.github/architecture-audit-state.json`.
 > Canonical architecture index: `docs/current-architecture.md`.
 
-This branch has not recorded a generated run yet.
+Run timestamp (UTC): `2026-02-24T04:48:15Z`
 
-The generator writes one of two shapes:
+## Metric Summary
 
-- Full summary mode:
-  - `docs_superseded`, `docs_todo`, `core_todo`, `test_files` with signed deltas
-  - TODO/FIXME hit details (`path`, `line`, `token`) with truncation (`+N more`)
-  - test-file added/removed path lists and deterministic set hashes
-  - dirty-tree diagnostics (`dirty_count`, `dirty_fingerprint`, representative paths)
-- Compact no-change mode:
-  - used when run-to-run metric deltas are all zero
-  - keeps output minimal to reduce noise
+| Metric | Current | Delta |
+| --- | ---: | ---: |
+| `docs_superseded` | 3 | +0 |
+| `docs_todo` | 0 | +0 |
+| `core_todo` | 0 | +0 |
+| `test_files` | 54 | +0 |
+
+## Superseded/Diverged Docs
+- `docs/plans/2026-02-03-fiber-link-mvp-design.md` (`superseded`)
+- `docs/plans/2026-02-03-fiber-link-mvp-plan.md` (`superseded`)
+- `docs/plans/2026-02-17-issue-32-epic-execution-status-tracker.md` (`superseded`)
+
+### TODO/TBD/FIXME Hits (Docs)
+- none
+
+### TODO/TBD/FIXME Hits (Core)
+- none
+
+## Test File Delta
+
+- previous: `54`
+- current: `54`
+- signed delta: `+0`
+- previous hash: `a38c79fe822384e8`
+- current hash: `a38c79fe822384e8`
+
+## Diagnostics
+
+- `scan-prewrite` `SCAN_PREWRITE_CLEAN` (dirty_count=0, fingerprint=0)
