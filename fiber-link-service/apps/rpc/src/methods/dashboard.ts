@@ -1,4 +1,4 @@
-import { and, desc, eq, or } from "drizzle-orm";
+import { and, desc, eq, or, sql } from "drizzle-orm";
 import { apps, createDbClient, createDbLedgerRepo, tipIntents, withdrawals } from "@fiber-link/db";
 import type {
   DashboardSummaryResult,
@@ -13,6 +13,9 @@ type DashboardAdminResult = NonNullable<DashboardSummaryResult["admin"]>;
 const ADMIN_APPS_LIMIT = 25;
 const ADMIN_WITHDRAWALS_LIMIT = 40;
 const ADMIN_SETTLEMENTS_LIMIT = 40;
+const ADMIN_PIPELINE_INVOICE_ROWS_LIMIT = 40;
+const PIPELINE_STAGES = ["UNPAID", "SETTLED", "FAILED"] as const;
+type DashboardPipelineStage = (typeof PIPELINE_STAGES)[number];
 
 type HandleDashboardSummaryInput = {
   appId: string;
@@ -74,7 +77,7 @@ export async function handleDashboardSummary(input: HandleDashboardSummaryInput)
       settlementPredicates.push(eq(tipIntents.invoiceState, settlementState));
     }
 
-    const [appRows, withdrawalRows, settlementRows] = await Promise.all([
+    const [appRows, withdrawalRows, settlementRows, pipelineStageCounts, pipelineInvoiceRows] = await Promise.all([
       db
         .select({ appId: apps.appId, createdAt: apps.createdAt })
         .from(apps)
@@ -117,7 +120,40 @@ export async function handleDashboardSummary(input: HandleDashboardSummaryInput)
         .where(and(...settlementPredicates))
         .orderBy(desc(tipIntents.createdAt), desc(tipIntents.id))
         .limit(ADMIN_SETTLEMENTS_LIMIT),
+      db
+        .select({
+          state: tipIntents.invoiceState,
+          count: sql<number>`count(*)::int`,
+        })
+        .from(tipIntents)
+        .where(eq(tipIntents.appId, input.appId))
+        .groupBy(tipIntents.invoiceState),
+      db
+        .select({
+          invoice: tipIntents.invoice,
+          state: tipIntents.invoiceState,
+          amount: tipIntents.amount,
+          asset: tipIntents.asset,
+          fromUserId: tipIntents.fromUserId,
+          toUserId: tipIntents.toUserId,
+          createdAt: tipIntents.createdAt,
+        })
+        .from(tipIntents)
+        .where(eq(tipIntents.appId, input.appId))
+        .orderBy(desc(tipIntents.createdAt), desc(tipIntents.id))
+        .limit(ADMIN_PIPELINE_INVOICE_ROWS_LIMIT),
     ]);
+
+    const pipelineCountByStage: Record<DashboardPipelineStage, number> = {
+      UNPAID: 0,
+      SETTLED: 0,
+      FAILED: 0,
+    };
+    for (const row of pipelineStageCounts) {
+      if (row.state === "UNPAID" || row.state === "SETTLED" || row.state === "FAILED") {
+        pipelineCountByStage[row.state] = Number(row.count) || 0;
+      }
+    }
 
     admin = {
       filtersApplied: {
@@ -155,6 +191,22 @@ export async function handleDashboardSummary(input: HandleDashboardSummaryInput)
         lastError: row.lastError,
         failureReason: row.failureReason,
       })),
+      pipelineBoard: {
+        stageCounts: PIPELINE_STAGES.map((stage) => ({
+          stage,
+          count: pipelineCountByStage[stage],
+        })),
+        invoiceRows: pipelineInvoiceRows.map((row) => ({
+          invoice: row.invoice,
+          state: row.state,
+          amount: String(row.amount),
+          asset: row.asset,
+          fromUserId: row.fromUserId,
+          toUserId: row.toUserId,
+          createdAt: row.createdAt.toISOString(),
+          timelineHref: `/fiber-link/timeline/${encodeURIComponent(row.invoice)}`,
+        })),
+      },
     };
   }
 

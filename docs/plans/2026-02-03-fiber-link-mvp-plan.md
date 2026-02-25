@@ -1,5 +1,12 @@
 # Fiber Link MVP Implementation Plan
 
+Status: Superseded historical implementation-plan snapshot.
+Canonical references:
+- `docs/current-architecture.md` (canonical index)
+- `docs/02-architecture.md` (system architecture baseline)
+- `docs/06-development-progress.md` (current implementation status)
+- `docs/plans/2026-02-21-issue-32-epic-closeout.md` (latest epic closeout mapping)
+
 **Goal:** Build an MVP that enables Discourse tipping via CKB Fiber with a custodial hub, internal ledger, and batched UDT withdrawals, plus an Admin Web console.
 
 **Architecture:** Split into two repos. `fiber-link-service` hosts a Fastify JSON-RPC API for the Discourse plugin, a Next.js Admin Web (tRPC), a Drizzle/Postgres data layer, a Fiber Adapter wrapper, and background workers for settlement/reconciliation/withdrawals. Admin Web uses role-based access with **super admin + community admin**. `fiber-link-discourse-plugin` delivers the UI, polling, and HMAC-authenticated RPC calls.

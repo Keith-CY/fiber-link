@@ -1,6 +1,6 @@
 # Current Architecture (Canonical Index)
 
-Last updated: 2026-02-21
+Last updated: 2026-02-23
 
 This file is the source-of-truth index for architecture, operational boundaries, and active
 implementation references.
@@ -22,6 +22,7 @@ implementation references.
 - Current implementation status:
   - `docs/06-development-progress.md`
   - `docs/plans/2026-02-21-issue-32-epic-closeout.md`
+  - `docs/audit-snapshot.md` (generated operational snapshot, non-canonical)
 - Decision records:
   - `docs/decisions/2026-02-10-settlement-discovery-strategy.md`
   - `docs/decisions/2026-02-10-custody-ops-controls.md`
@@ -44,8 +45,29 @@ guidance.
   - Status: superseded historical snapshot.
   - Canonical replacement: `docs/plans/2026-02-21-issue-32-epic-closeout.md`.
   - Canonical index: `docs/current-architecture.md`.
+- `docs/plans/2026-02-03-fiber-link-mvp-design.md`
+  - Status: superseded design snapshot.
+  - Canonical replacements: `docs/00-overview.md`, `docs/01-scope-mvp.md`, `docs/02-architecture.md`.
+  - Canonical index: `docs/current-architecture.md`.
+- `docs/plans/2026-02-03-fiber-link-mvp-plan.md`
+  - Status: superseded implementation-plan snapshot.
+  - Canonical replacements: `docs/02-architecture.md`, `docs/06-development-progress.md`.
+  - Canonical index: `docs/current-architecture.md`.
+
+## Audit Generator Contract
+
+- The hourly architecture-audit generator may update only:
+  - `docs/audit-snapshot.md`
+  - `.github/architecture-audit-state.json`
+- Any generator mutation of `docs/current-architecture.md` is invalid and CI-blocked.
 
 ## Freshness Snapshot
 
-- Historical/superseded docs tracked with explicit redirect: 1
+- Historical/superseded docs tracked with explicit redirect: 3
 - Planning placeholder marker count in `docs/`: 0
+- Audit snapshot path (non-canonical): `docs/audit-snapshot.md`
+
+## Open Improvement Tracks
+
+- https://github.com/Keith-CY/fiber-link/issues/255
+- https://github.com/Keith-CY/fiber-link/issues/256

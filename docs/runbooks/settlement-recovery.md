@@ -9,12 +9,23 @@ Use this runbook when settlement credits are delayed or missed (for example work
   - `DATABASE_URL` pointing to target environment
   - `FIBER_RPC_URL` for the Fiber node RPC endpoint
   - `WORKER_SETTLEMENT_CURSOR_FILE` pointing to persistent storage (compose default: `/var/lib/fiber-link/settlement-cursor.json`)
+  - (subscription mode) queue knobs:
+    - `WORKER_SETTLEMENT_SUBSCRIPTION_CONCURRENCY` (default `1`)
+    - `WORKER_SETTLEMENT_SUBSCRIPTION_MAX_PENDING_EVENTS` (default `1000`)
+    - `WORKER_SETTLEMENT_SUBSCRIPTION_RECENT_INVOICE_DEDUPE_SIZE` (default `256`)
 
 ## Worker restart cursor behavior
 
 - Worker polling stores and reloads the settlement cursor using `WORKER_SETTLEMENT_CURSOR_FILE`.
 - Cursor writes are atomic (`.tmp` + rename) to avoid partial state on crash.
 - If cursor points past the newest `UNPAID` record, polling wraps once to the oldest matching window (catch-up mode), so long outages do not permanently skip windows.
+
+## Subscription overflow behavior
+
+- Subscription mode now uses a bounded async queue.
+- If queue capacity is exceeded, new events are dropped (`drop_new`) and logged as overflow.
+- Dropped events are expected to be recovered by the next polling discovery cycle (fallback path).
+- `settlement-subscription-runner` shutdown waits for in-flight queued events to drain before exit.
 
 ## 1) Run settlement replay/backfill
 

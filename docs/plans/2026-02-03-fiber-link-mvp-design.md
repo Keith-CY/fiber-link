@@ -1,6 +1,17 @@
 # Fiber Link MVP Design
 
+Status: Superseded historical design snapshot.
+Canonical replacements: `docs/00-overview.md`, `docs/01-scope-mvp.md`, `docs/02-architecture.md`.
+Canonical index: `docs/current-architecture.md`.
+
 **Date:** 2026-02-03
+**Status:** Historical design snapshot (superseded)
+
+Canonical references:
+- `docs/current-architecture.md` (canonical index)
+- `docs/01-scope-mvp.md` (product scope baseline)
+- `docs/02-architecture.md` (current architecture and boundaries)
+- `docs/06-development-progress.md` (implementation status)
 
 ## Goal
 Deliver an end-to-end tipping and withdrawal flow for Discourse communities on CKB Fiber, with a custodial hub, internal ledger, and on-chain UDT withdrawals.

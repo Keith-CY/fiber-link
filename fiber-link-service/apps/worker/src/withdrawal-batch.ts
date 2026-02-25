@@ -9,6 +9,13 @@ import {
   type WithdrawalRepo,
 } from "@fiber-link/db";
 import { FiberRpcError, createAdapter } from "@fiber-link/fiber-adapter";
+import {
+  createDbNotificationRepo,
+  createNoopNotificationDispatcher,
+  createNotificationDispatcher,
+  type NotificationDispatcher,
+  type WithdrawalNotificationEvent,
+} from "@fiber-link/notifications";
 
 export type WithdrawalExecutionResult =
   | { ok: true; txHash: string }
@@ -21,6 +28,7 @@ export type RunWithdrawalBatchOptions = {
   executeWithdrawal?: (withdrawal: WithdrawalRecord) => Promise<WithdrawalExecutionResult>;
   ledgerRepo?: LedgerRepo;
   repo?: WithdrawalRepo;
+  notificationDispatcher?: NotificationDispatcher;
 };
 
 async function defaultExecuteWithdrawal(withdrawal: WithdrawalRecord): Promise<WithdrawalExecutionResult> {
@@ -47,6 +55,7 @@ let defaultLedgerRepo: LedgerRepo | null = null;
 let defaultFiberAdapter:
   | ReturnType<typeof createAdapter>
   | null = null;
+let defaultNotificationDispatcher: NotificationDispatcher | null = null;
 
 function getDefaultRepo(): WithdrawalRepo {
   if (!defaultRepo) {
@@ -67,6 +76,25 @@ function getDefaultFiberAdapter(endpoint: string) {
     defaultFiberAdapter = createAdapter({ endpoint });
   }
   return defaultFiberAdapter;
+}
+
+function getDefaultNotificationDispatcher(): NotificationDispatcher {
+  if (defaultNotificationDispatcher) {
+    return defaultNotificationDispatcher;
+  }
+
+  if (!process.env.DATABASE_URL) {
+    defaultNotificationDispatcher = createNoopNotificationDispatcher();
+    return defaultNotificationDispatcher;
+  }
+
+  try {
+    const repo = createDbNotificationRepo(createDbClient());
+    defaultNotificationDispatcher = createNotificationDispatcher({ repo });
+  } catch {
+    defaultNotificationDispatcher = createNoopNotificationDispatcher();
+  }
+  return defaultNotificationDispatcher;
 }
 
 type ExecutionFailureKind = "transient" | "permanent";
@@ -140,6 +168,17 @@ function classifyExecutionError(error: unknown): { kind: "transient" | "permanen
   return { kind: FIBER_WITHDRAWAL_ERROR_CONTRACT.defaultUnknownKind, reason: message };
 }
 
+async function dispatchWithdrawalEvent(
+  dispatcher: NotificationDispatcher,
+  event: WithdrawalNotificationEvent,
+): Promise<void> {
+  try {
+    await dispatcher.dispatchWithdrawalEvent(event);
+  } catch {
+    // Notifications are best-effort and must not block withdrawal state transitions.
+  }
+}
+
 export async function runWithdrawalBatch(options: RunWithdrawalBatchOptions = {}) {
   const now = options.now ?? new Date();
   // maxRetries counts retry attempts after the initial processing attempt.
@@ -147,6 +186,7 @@ export async function runWithdrawalBatch(options: RunWithdrawalBatchOptions = {}
   const retryDelayMs = options.retryDelayMs ?? 60_000;
   const executeWithdrawal = options.executeWithdrawal ?? defaultExecuteWithdrawal;
   const repo = options.repo ?? getDefaultRepo();
+  const notificationDispatcher = options.notificationDispatcher ?? getDefaultNotificationDispatcher();
 
   const ready = await repo.listReadyForProcessing(now);
   let processed = 0;
@@ -179,31 +219,75 @@ export async function runWithdrawalBatch(options: RunWithdrawalBatchOptions = {}
     processed += 1;
     if (result.ok) {
       const ledgerRepo = options.ledgerRepo ?? getDefaultLedgerRepo();
-      await repo.markCompletedWithDebit(item.id, { now, txHash: result.txHash }, { ledgerRepo });
+      const completedRecord = await repo.markCompletedWithDebit(item.id, { now, txHash: result.txHash }, { ledgerRepo });
       completed += 1;
+      await dispatchWithdrawalEvent(notificationDispatcher, {
+        type: "WITHDRAWAL_COMPLETED",
+        occurredAt: now,
+        appId: completedRecord.appId,
+        userId: completedRecord.userId,
+        withdrawalId: completedRecord.id,
+        asset: completedRecord.asset,
+        amount: completedRecord.amount,
+        txHash: completedRecord.txHash ?? result.txHash,
+      });
       continue;
     }
 
     if (result.kind === "transient") {
       if (current.retryCount >= maxRetries) {
-        await repo.markFailed(item.id, {
+        const failedRecord = await repo.markFailed(item.id, {
           now,
           error: result.reason,
         });
         failed += 1;
+        await dispatchWithdrawalEvent(notificationDispatcher, {
+          type: "WITHDRAWAL_FAILED",
+          occurredAt: now,
+          appId: failedRecord.appId,
+          userId: failedRecord.userId,
+          withdrawalId: failedRecord.id,
+          asset: failedRecord.asset,
+          amount: failedRecord.amount,
+          retryCount: failedRecord.retryCount,
+          error: result.reason,
+        });
       } else {
-        await repo.markRetryPending(item.id, {
+        const retryRecord = await repo.markRetryPending(item.id, {
           now,
           nextRetryAt: new Date(now.getTime() + retryDelayMs),
           error: result.reason,
         });
         retryPending += 1;
+        await dispatchWithdrawalEvent(notificationDispatcher, {
+          type: "WITHDRAWAL_RETRY_PENDING",
+          occurredAt: now,
+          appId: retryRecord.appId,
+          userId: retryRecord.userId,
+          withdrawalId: retryRecord.id,
+          asset: retryRecord.asset,
+          amount: retryRecord.amount,
+          retryCount: retryRecord.retryCount,
+          nextRetryAt: retryRecord.nextRetryAt ?? new Date(now.getTime() + retryDelayMs),
+          error: result.reason,
+        });
       }
       continue;
     }
 
-    await repo.markFailed(item.id, { now, error: result.reason });
+    const failedRecord = await repo.markFailed(item.id, { now, error: result.reason });
     failed += 1;
+    await dispatchWithdrawalEvent(notificationDispatcher, {
+      type: "WITHDRAWAL_FAILED",
+      occurredAt: now,
+      appId: failedRecord.appId,
+      userId: failedRecord.userId,
+      withdrawalId: failedRecord.id,
+      asset: failedRecord.asset,
+      amount: failedRecord.amount,
+      retryCount: failedRecord.retryCount,
+      error: result.reason,
+    });
   }
 
   return { processed, completed, retryPending, failed, skipped };

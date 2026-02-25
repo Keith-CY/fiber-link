@@ -171,7 +171,7 @@ describe("createWorkerRuntime", () => {
     ticks[0]?.();
     await Promise.resolve();
 
-    expect(warnings).toContain("[worker] previous worker cycle still running; skipping tick");
+    expect(warnings).toContain("worker.cycle.overlap");
 
     deferred.resolve();
     await runtime.shutdown("manual");

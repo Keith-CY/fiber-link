@@ -3,8 +3,25 @@
 ## Roadmap tracking
 
 - `docs/current-architecture.md` — canonical source-of-truth index for architecture, current status, and historical redirects.
+- `docs/audit-snapshot.md` — generated architecture-audit snapshot (operational metrics and deltas). This is non-canonical.
 - `docs/plans/2026-02-21-issue-32-epic-closeout.md` — latest closeout mapping for epic `#32`.
 - `docs/plans/2026-02-17-issue-32-epic-execution-status-tracker.md` — superseded historical status snapshot retained for traceability.
+- `docs/plans/2026-02-03-fiber-link-mvp-design.md` — historical early design snapshot; use canonical links at the top of the file.
+- `docs/plans/2026-02-03-fiber-link-mvp-plan.md` — historical implementation draft; use canonical links at the top of the file.
+
+## Architecture audit contract
+
+- Generator entrypoint: `scripts/architecture_audit.py`
+- Workflow: `.github/workflows/architecture-audit.yml`
+- Allowed generated outputs:
+  - `docs/audit-snapshot.md`
+  - `.github/architecture-audit-state.json`
+- `docs/current-architecture.md` is canonical and must never be overwritten by automation.
+
+## Placeholder marker policy
+
+- Do not leave unresolved `TODO`/`TBD`/`FIXME` markers in user-facing docs.
+- Track unresolved doc work as GitHub issues and link issue IDs in the relevant docs.
 
 ## Plugin testing
 
@@ -14,6 +31,7 @@
 ## W4 integration tracking
 
 - `docs/runbooks/w4-integration-status-2026-02-17.md` — issue #36 W4 subtask matrix, completion snapshot, and verification/operations checks as of 2026-02-17.
+- `docs/runbooks/w4-integration-closeout-2026-02-21.md` — final W4 closeout summary showing all #36 scope items and legacy supporting tasks closed as of 2026-02-21.
 
 ## Admin installation
 
@@ -37,12 +55,6 @@
 - `scripts/testnet-smoke.sh` — one-command local testnet sanity check with machine-readable PASS/FAIL output.
 - `docs/runbooks/fiber-adapter-e2e.md` — end-to-end validation for `fiber-adapter -> fnn rpc` in docker network.
 - `scripts/e2e-fiber-adapter-docker.sh` — runnable entrypoint for the `fiber-adapter` docker e2e probe.
-
-## Invoice payment e2e
-
-- `docs/runbooks/e2e-invoice-payment-accounting.md` — dual-FNN (`fnn` + `fnn2`) faucet + channel bootstrap + invoice/payment/settled flow for `CKB` and `USDI`.
-- `scripts/e2e-invoice-payment-accounting.sh` — full docker-backed e2e entrypoint.
-- `scripts/local-dual-fnn-env.sh` — prepare-only helper for local manual testing (starts stack + establishes `fnn2 -> fnn` channel).
 
 ## Deployment evidence
 

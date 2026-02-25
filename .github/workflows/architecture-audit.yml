@@ -1,0 +1,213 @@
+name: architecture-audit
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "12 * * * *"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  architecture-audit:
+    runs-on: ubuntu-latest
+    env:
+      AUDIT_BRANCH: codex/architecture-audit
+      AUDIT_WARN_HOURS: "6"
+      AUDIT_CRITICAL_HOURS: "24"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run architecture audit scan
+        run: |
+          set -euo pipefail
+          python3 scripts/architecture_audit.py run \
+            --state-file .github/architecture-audit-state.json \
+            --snapshot-file docs/audit-snapshot.md \
+            --report-file "$RUNNER_TEMP/architecture-audit-report.json" \
+            --pr-body-file "$RUNNER_TEMP/architecture-audit-pr-body.md" \
+            --compact-no-change \
+            > "$RUNNER_TEMP/architecture-audit-run.json"
+
+      - name: Guardrail - canonical index must not be modified
+        run: |
+          set -euo pipefail
+          if ! git diff --exit-code -- docs/current-architecture.md; then
+            echo "DIRTY_TREE_BLOCKED: docs/current-architecture.md was mutated by audit pipeline."
+            exit 1
+          fi
+
+      - name: Detect audit artifact changes
+        id: audit_changes
+        run: |
+          set -euo pipefail
+          changed="$(git status --porcelain -- docs/audit-snapshot.md .github/architecture-audit-state.json || true)"
+          if [[ -n "${changed}" ]]; then
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Clean-tree gate before PR creation
+        if: steps.audit_changes.outputs.has_changes == 'true'
+        id: clean_gate
+        run: |
+          set -euo pipefail
+          python3 scripts/architecture_audit.py dirty-gate \
+            --state-file .github/architecture-audit-state.json \
+            --stage pre-pr-create \
+            --expected-path docs/audit-snapshot.md \
+            --expected-path .github/architecture-audit-state.json \
+            --auto-stash-env ARCH_AUDIT_AUTOSTASH_DIRTY \
+            --write-json "$RUNNER_TEMP/architecture-audit-pre-pr-gate.json" \
+            > "$RUNNER_TEMP/architecture-audit-pre-pr-gate.stdout.json"
+
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          data = json.loads(
+              Path(os.environ["RUNNER_TEMP"], "architecture-audit-pre-pr-gate.stdout.json").read_text(encoding="utf-8")
+          )
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+              out.write(f"blocked={'true' if data.get('blocked') else 'false'}\n")
+              out.write(f"reason_code={data.get('reason_code', '')}\n")
+              out.write(f"dirty_count={data.get('dirty_count', 0)}\n")
+              out.write("representative_paths=" + ",".join(data.get("representative_paths", [])) + "\n")
+          PY
+
+      - name: Summarize dirty-tree block
+        if: steps.audit_changes.outputs.has_changes == 'true' && steps.clean_gate.outputs.blocked == 'true'
+        run: |
+          {
+            echo "### Architecture Audit"
+            echo ""
+            echo "- reason_code: \`${{ steps.clean_gate.outputs.reason_code }}\`"
+            echo "- dirty_count: \`${{ steps.clean_gate.outputs.dirty_count }}\`"
+            echo "- representative_paths: \`${{ steps.clean_gate.outputs.representative_paths }}\`"
+            echo "- PR creation was skipped due to dirty-tree gate."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Check for existing open audit PR
+        if: steps.audit_changes.outputs.has_changes == 'true' && steps.clean_gate.outputs.blocked != 'true'
+        id: open_pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh pr list \
+            --head "$AUDIT_BRANCH" \
+            --state open \
+            --json number,url,author,createdAt,title \
+            --limit 1 \
+            > "$RUNNER_TEMP/architecture-audit-open-pr.json"
+
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          rows = json.loads(Path(os.environ["RUNNER_TEMP"], "architecture-audit-open-pr.json").read_text(encoding="utf-8"))
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+              if not rows:
+                  out.write("has_open_pr=false\n")
+              else:
+                  item = rows[0]
+                  out.write("has_open_pr=true\n")
+                  out.write(f"pr_url={item.get('url','')}\n")
+                  out.write(f"pr_owner={item.get('author',{}).get('login','unknown')}\n")
+                  out.write(f"pr_created_at={item.get('createdAt','')}\n")
+          PY
+
+      - name: Record blocked-by-open-pr escalation
+        if: steps.audit_changes.outputs.has_changes == 'true' && steps.clean_gate.outputs.blocked != 'true' && steps.open_pr.outputs.has_open_pr == 'true'
+        id: blocked_open_pr
+        run: |
+          set -euo pipefail
+          python3 scripts/architecture_audit.py record-open-pr-block \
+            --state-file .github/architecture-audit-state.json \
+            --pr-url "${{ steps.open_pr.outputs.pr_url }}" \
+            --pr-owner "${{ steps.open_pr.outputs.pr_owner }}" \
+            --pr-created-at "${{ steps.open_pr.outputs.pr_created_at }}" \
+            --warning-hours "$AUDIT_WARN_HOURS" \
+            --critical-hours "$AUDIT_CRITICAL_HOURS" \
+            --required-next-action "Review and merge or close the existing architecture-audit PR." \
+            --write-json "$RUNNER_TEMP/architecture-audit-open-pr-block.json" \
+            > "$RUNNER_TEMP/architecture-audit-open-pr-block.stdout.json"
+
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          payload = json.loads(
+              Path(os.environ["RUNNER_TEMP"], "architecture-audit-open-pr-block.stdout.json").read_text(encoding="utf-8")
+          )
+          message = payload.get("message", "")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+              out.write("message=" + message.replace("\n", " ").strip() + "\n")
+          PY
+
+      - name: Summarize open-PR block
+        if: steps.audit_changes.outputs.has_changes == 'true' && steps.clean_gate.outputs.blocked != 'true' && steps.open_pr.outputs.has_open_pr == 'true'
+        run: |
+          {
+            echo "### Architecture Audit"
+            echo ""
+            echo "- reason_code: \`OPEN_PR_BLOCKED\`"
+            echo "- existing_pr: ${{ steps.open_pr.outputs.pr_url }}"
+            echo "- message: ${{ steps.blocked_open_pr.outputs.message }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Commit and open PR
+        if: steps.audit_changes.outputs.has_changes == 'true' && steps.clean_gate.outputs.blocked != 'true' && steps.open_pr.outputs.has_open_pr != 'true'
+        id: create_pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          git checkout -B "$AUDIT_BRANCH"
+          git add docs/audit-snapshot.md .github/architecture-audit-state.json
+          if git diff --cached --quiet; then
+            echo "created=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git -c user.name="github-actions[bot]" \
+              -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit -m "docs(audit): refresh architecture audit snapshot"
+
+          git push --force-with-lease origin "$AUDIT_BRANCH"
+
+          pr_url="$(gh pr create \
+            --base main \
+            --head "$AUDIT_BRANCH" \
+            --title "docs(audit): refresh architecture audit snapshot" \
+            --body-file "$RUNNER_TEMP/architecture-audit-pr-body.md")"
+
+          echo "created=true" >> "$GITHUB_OUTPUT"
+          echo "pr_url=${pr_url}" >> "$GITHUB_OUTPUT"
+
+      - name: Final summary
+        run: |
+          {
+            echo "### Architecture Audit"
+            echo ""
+            echo "- has_changes: \`${{ steps.audit_changes.outputs.has_changes }}\`"
+            if [[ "${{ steps.create_pr.outputs.created || 'false' }}" == "true" ]]; then
+              echo "- opened_pr: ${{ steps.create_pr.outputs.pr_url }}"
+            elif [[ "${{ steps.audit_changes.outputs.has_changes }}" == "false" ]]; then
+              echo "- no snapshot/state changes; PR not created."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

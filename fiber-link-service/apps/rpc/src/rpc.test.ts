@@ -504,6 +504,34 @@ describe("json-rpc", () => {
           createdAt: "2026-02-16T00:00:00.000Z",
         },
       ],
+      admin: {
+        filtersApplied: {
+          withdrawalState: "ALL",
+          settlementState: "ALL",
+        },
+        apps: [],
+        withdrawals: [],
+        settlements: [],
+        pipelineBoard: {
+          stageCounts: [
+            { stage: "UNPAID", count: 1 },
+            { stage: "SETTLED", count: 0 },
+            { stage: "FAILED", count: 0 },
+          ],
+          invoiceRows: [
+            {
+              invoice: "inv-1",
+              state: "UNPAID",
+              amount: "1",
+              asset: "CKB",
+              fromUserId: "u1",
+              toUserId: "u2",
+              createdAt: "2026-02-16T00:00:00.000Z",
+              timelineHref: "/fiber-link/timeline/inv-1",
+            },
+          ],
+        },
+      },
       generatedAt: "2026-02-16T00:00:00.000Z",
     });
     try {
@@ -554,6 +582,34 @@ describe("json-rpc", () => {
               createdAt: "2026-02-16T00:00:00.000Z",
             },
           ],
+          admin: {
+            filtersApplied: {
+              withdrawalState: "ALL",
+              settlementState: "ALL",
+            },
+            apps: [],
+            withdrawals: [],
+            settlements: [],
+            pipelineBoard: {
+              stageCounts: [
+                { stage: "UNPAID", count: 1 },
+                { stage: "SETTLED", count: 0 },
+                { stage: "FAILED", count: 0 },
+              ],
+              invoiceRows: [
+                {
+                  invoice: "inv-1",
+                  state: "UNPAID",
+                  amount: "1",
+                  asset: "CKB",
+                  fromUserId: "u1",
+                  toUserId: "u2",
+                  createdAt: "2026-02-16T00:00:00.000Z",
+                  timelineHref: "/fiber-link/timeline/inv-1",
+                },
+              ],
+            },
+          },
           generatedAt: "2026-02-16T00:00:00.000Z",
         },
       });
