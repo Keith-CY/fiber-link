@@ -1,5 +1,7 @@
 .worktrees
 node_modules
 /tmp/
+.tmp/
+.playwright-cli/
 deploy/compose/.env
 deploy/compose/evidence/
