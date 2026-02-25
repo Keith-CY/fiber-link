@@ -10,26 +10,31 @@ COMPLETE_LOG="${ARTIFACT_DIR}/workflow.complete.log"
 SKIP_SERVICES=0
 SKIP_DISCOURSE=0
 HEADED=1
+BROWSER_WITHDRAWAL=1
 
 usage() {
   cat <<'EOF'
-Usage: scripts/playwright-demo-local-workflow.sh [--skip-services] [--skip-discourse] [--headless]
+Usage: scripts/playwright-demo-local-workflow.sh [--skip-services] [--skip-discourse] [--headless] [--backend-withdrawal]
 
 Runs an end-to-end local demo:
 1) launch discourse + fiber services (unless skipped)
 2) run local-workflow with --pause-at-step4
-3) at pause, execute Playwright login + tip modal flow automatically
-4) continue workflow until withdrawal completes
-5) execute Playwright post-check for author balance and withdrawal row
+3) at pause, execute Playwright sequence: author checks balance -> tipper pays
+4) continue backend workflow for settlement + author balance validation
+5) login author again, check balance, initiate withdrawal, then login admin to observe status
 
 Options:
   --skip-services   Skip service rebuild/bootstrap.
   --skip-discourse  Skip discourse bootstrap/seeding.
   --headless        Run Playwright browser in headless mode.
+  --backend-withdrawal  Keep legacy behavior: backend step6 initiates withdrawal.
   -h, --help        Show this help text.
 
 Required env:
-  FIBER_WITHDRAWAL_CKB_PRIVATE_KEY=0x...
+  (none in default browser-withdrawal mode)
+
+Required env with --backend-withdrawal:
+  FIBER_WITHDRAWAL_CKB_PRIVATE_KEY=0x... (or legacy alias FIBER_WITHDRAW_CKB_PRIVATE_KEY)
 
 Required env when --skip-discourse is set:
   WORKFLOW_TIPPER_USER_ID
@@ -61,6 +66,9 @@ while [[ $# -gt 0 ]]; do
     --headless)
       HEADED=0
       ;;
+    --backend-withdrawal)
+      BROWSER_WITHDRAWAL=0
+      ;;
     -h|--help)
       usage
       exit 0
@@ -74,10 +82,16 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 
-[[ -n "${FIBER_WITHDRAWAL_CKB_PRIVATE_KEY:-}" ]] || {
-  echo "[playwright-demo] FIBER_WITHDRAWAL_CKB_PRIVATE_KEY is required" >&2
-  exit 10
-}
+if [[ -z "${FIBER_WITHDRAWAL_CKB_PRIVATE_KEY:-}" && -n "${FIBER_WITHDRAW_CKB_PRIVATE_KEY:-}" ]]; then
+  export FIBER_WITHDRAWAL_CKB_PRIVATE_KEY="${FIBER_WITHDRAW_CKB_PRIVATE_KEY}"
+fi
+
+if [[ "${BROWSER_WITHDRAWAL}" -eq 0 ]]; then
+  [[ -n "${FIBER_WITHDRAWAL_CKB_PRIVATE_KEY:-}" ]] || {
+    echo "[playwright-demo] FIBER_WITHDRAWAL_CKB_PRIVATE_KEY is required with --backend-withdrawal" >&2
+    exit 10
+  }
+fi
 
 if [[ "${SKIP_DISCOURSE}" -eq 1 ]]; then
   for required in WORKFLOW_TIPPER_USER_ID WORKFLOW_AUTHOR_USER_ID WORKFLOW_TOPIC_POST_ID WORKFLOW_REPLY_POST_ID; do
@@ -92,6 +106,11 @@ mkdir -p "${ARTIFACT_DIR}"
 
 WORKFLOW_PAUSE_CMD=(scripts/local-workflow-automation.sh --verbose --with-ember-cli --pause-at-step4)
 WORKFLOW_COMPLETE_CMD=(scripts/local-workflow-automation.sh --verbose --with-ember-cli)
+WORKFLOW_PAUSE_CMD+=(--skip-withdrawal)
+if [[ "${BROWSER_WITHDRAWAL}" -eq 1 ]]; then
+  WORKFLOW_COMPLETE_CMD+=(--skip-withdrawal)
+fi
+WORKFLOW_COMPLETE_CMD+=(--skip-discourse)
 if [[ "${SKIP_SERVICES}" -eq 1 ]]; then
   WORKFLOW_PAUSE_CMD+=(--skip-services)
   WORKFLOW_COMPLETE_CMD+=(--skip-services)
@@ -101,6 +120,11 @@ if [[ "${SKIP_DISCOURSE}" -eq 1 ]]; then
   WORKFLOW_COMPLETE_CMD+=(--skip-discourse)
 fi
 
+if [[ "${SKIP_DISCOURSE}" -eq 0 && -z "${FIBER_LINK_APP_ID:-}" ]]; then
+  export FIBER_LINK_APP_ID="local-dev-${TIMESTAMP}"
+  echo "[playwright-demo] using isolated app id: ${FIBER_LINK_APP_ID}"
+fi
+
 WORKFLOW_PAUSE_CMD_ESCAPED="$(printf '%q ' "${WORKFLOW_PAUSE_CMD[@]}")"
 WORKFLOW_COMPLETE_CMD_ESCAPED="$(printf '%q ' "${WORKFLOW_COMPLETE_CMD[@]}")"
 
@@ -108,11 +132,11 @@ export ROOT_DIR
 export WORKFLOW_PAUSE_CMD_ESCAPED
 export ARTIFACT_DIR
 export PW_DEMO_HEADED="${HEADED}"
-export PW_DEMO_STEP4_SESSION="${PW_DEMO_STEP4_SESSION:-fiber-workflow-step4}"
+export PW_DEMO_STEP4_SESSION="${PW_DEMO_STEP4_SESSION:-fiber-workflow-step4-${TIMESTAMP}}"
 
 echo "[playwright-demo] artifacts: ${ARTIFACT_DIR}"
 echo "[playwright-demo] phase1 (playwright tip demo): ${WORKFLOW_PAUSE_CMD_ESCAPED}"
-echo "[playwright-demo] phase2 (backend completion): ${WORKFLOW_COMPLETE_CMD_ESCAPED}"
+echo "[playwright-demo] phase2 (backend settlement/checks): ${WORKFLOW_COMPLETE_CMD_ESCAPED}"
 
 set +e
 expect <<'EXPECT' | tee "${PAUSE_LOG}"
@@ -158,6 +182,43 @@ if [[ "${pause_status}" -ne 0 ]]; then
   exit "${pause_status}"
 fi
 
+phase1_workflow_artifact_dir="$(
+  tr -d '\r' < "${PAUSE_LOG}" | sed -n 's/^\[local-workflow\] artifacts: //p' | head -n1
+)"
+
+if [[ "${SKIP_DISCOURSE}" -eq 0 ]]; then
+  [[ -n "${phase1_workflow_artifact_dir}" ]] || {
+    echo "[playwright-demo] unable to locate phase1 local-workflow artifact dir from ${PAUSE_LOG}" >&2
+    exit 11
+  }
+  seed_json_path="${phase1_workflow_artifact_dir}/discourse-seed.json"
+  [[ -f "${seed_json_path}" ]] || {
+    echo "[playwright-demo] missing discourse seed output: ${seed_json_path}" >&2
+    exit 11
+  }
+
+  export WORKFLOW_TIPPER_USER_ID="$(jq -r '.tipper.id // empty' "${seed_json_path}")"
+  export WORKFLOW_AUTHOR_USER_ID="$(jq -r '.author.id // empty' "${seed_json_path}")"
+  export WORKFLOW_TOPIC_POST_ID="$(jq -r '.topic.first_post_id // empty' "${seed_json_path}")"
+  export WORKFLOW_REPLY_POST_ID="$(jq -r '.reply.post_id // empty' "${seed_json_path}")"
+
+  for required in WORKFLOW_TIPPER_USER_ID WORKFLOW_AUTHOR_USER_ID WORKFLOW_TOPIC_POST_ID WORKFLOW_REPLY_POST_ID; do
+    [[ -n "${!required:-}" ]] || {
+      echo "[playwright-demo] failed to parse ${required} from ${seed_json_path}" >&2
+      exit 11
+    }
+  done
+fi
+
+author_balance_before=""
+step4_result_log="${ARTIFACT_DIR}/playwright-step4-result.log"
+if [[ -f "${step4_result_log}" ]]; then
+  step4_result_json="$(awk '/^### Result/{getline; print; exit}' "${step4_result_log}" || true)"
+  if [[ -n "${step4_result_json}" ]]; then
+    author_balance_before="$(printf '%s\n' "${step4_result_json}" | jq -r '.authorBalanceBefore // empty' 2>/dev/null || true)"
+  fi
+fi
+
 set +e
 (cd "${ROOT_DIR}" && "${WORKFLOW_COMPLETE_CMD[@]}") | tee "${COMPLETE_LOG}"
 workflow_status=${PIPESTATUS[0]}
@@ -183,10 +244,16 @@ fi
 
 withdrawal_id=""
 withdrawal_state=""
+withdrawal_destination_address="${WORKFLOW_WITHDRAW_TO_ADDRESS:-}"
+author_balance_after=""
 
 if [[ -n "${summary_path}" && -f "${summary_path}" ]]; then
   withdrawal_id="$(jq -r '.withdrawal.id // empty' "${summary_path}")"
   withdrawal_state="$(jq -r '.withdrawal.state // empty' "${summary_path}")"
+  parsed_destination_address="$(jq -r '.withdrawal.destinationAddress // empty' "${summary_path}")"
+  if [[ -z "${withdrawal_destination_address}" && -n "${parsed_destination_address}" ]]; then
+    withdrawal_destination_address="${parsed_destination_address}"
+  fi
 fi
 
 if [[ -z "${withdrawal_id}" && -f "${workflow_artifact_dir}/withdrawal/withdrawal.response.json" ]]; then
@@ -215,10 +282,34 @@ postcheck_dir="${ARTIFACT_DIR}/postcheck"
 mkdir -p "${postcheck_dir}"
 
 PW_DEMO_HEADED="${HEADED}" \
-PW_DEMO_SESSION="${PW_DEMO_POSTCHECK_SESSION:-fiber-workflow-postcheck}" \
+PW_DEMO_SESSION="${PW_DEMO_POSTCHECK_SESSION:-fiber-workflow-postcheck-${TIMESTAMP}}" \
 PW_DEMO_ARTIFACT_DIR="${postcheck_dir}" \
 PW_DEMO_WITHDRAWAL_ID="${withdrawal_id}" \
+PW_DEMO_WITHDRAW_AMOUNT="${WORKFLOW_WITHDRAW_AMOUNT:-61}" \
+PW_DEMO_WITHDRAW_TO_ADDRESS="${withdrawal_destination_address}" \
+PW_DEMO_INITIATE_WITHDRAWAL="$([[ "${BROWSER_WITHDRAWAL}" -eq 1 && -z "${withdrawal_id}" ]] && echo 1 || echo 0)" \
   "${ROOT_DIR}/scripts/playwright-workflow-postcheck.sh"
+
+postcheck_result_log="${postcheck_dir}/playwright-postcheck-result.log"
+postcheck_error=""
+if [[ -f "${postcheck_result_log}" ]]; then
+  postcheck_result_json="$(awk '/^### Result/{getline; print; exit}' "${postcheck_result_log}" || true)"
+  if [[ -n "${postcheck_result_json}" ]]; then
+    postcheck_withdrawal_id="$(printf '%s\n' "${postcheck_result_json}" | jq -r '.withdrawalId // empty' 2>/dev/null || true)"
+    postcheck_withdrawal_state="$(printf '%s\n' "${postcheck_result_json}" | jq -r '.adminExtractedState // .withdrawalRequestedState // empty' 2>/dev/null || true)"
+    postcheck_author_balance="$(printf '%s\n' "${postcheck_result_json}" | jq -r '.authorBalance // empty' 2>/dev/null || true)"
+    postcheck_error="$(printf '%s\n' "${postcheck_result_json}" | jq -r '.error // empty' 2>/dev/null || true)"
+    if [[ -z "${withdrawal_id}" && -n "${postcheck_withdrawal_id}" ]]; then
+      withdrawal_id="${postcheck_withdrawal_id}"
+    fi
+    if [[ ( -z "${withdrawal_state}" || "${withdrawal_state}" == "SKIPPED" ) && -n "${postcheck_withdrawal_state}" ]]; then
+      withdrawal_state="${postcheck_withdrawal_state}"
+    fi
+    if [[ -n "${postcheck_author_balance}" ]]; then
+      author_balance_after="${postcheck_author_balance}"
+    fi
+  fi
+fi
 
 echo "[playwright-demo] workflow artifact dir: ${workflow_artifact_dir}"
 if [[ -n "${summary_path}" ]]; then
@@ -226,8 +317,15 @@ if [[ -n "${summary_path}" ]]; then
 else
   echo "[playwright-demo] workflow summary: <none>"
 fi
+echo "[playwright-demo] author balance before tip: ${author_balance_before:-<unknown>}"
+echo "[playwright-demo] author balance after tip: ${author_balance_after:-<unknown>}"
 echo "[playwright-demo] withdrawal id/state: ${withdrawal_id} / ${withdrawal_state}"
 echo "[playwright-demo] playwright artifacts: ${ARTIFACT_DIR}"
+
+if [[ -n "${postcheck_error}" ]]; then
+  echo "[playwright-demo] postcheck failed: ${postcheck_error}" >&2
+  exit 12
+fi
 
 if [[ "${soft_failure}" -eq 1 ]]; then
   exit 0

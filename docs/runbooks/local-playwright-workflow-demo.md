@@ -3,9 +3,10 @@
 This runbook packages the local end-to-end demo flow into repeatable scripts:
 
 1. launch Discourse + Fiber Link services
-2. open browser flow (login + tip modal invoice) at step 4
-3. continue backend workflow (tip settlement, balance check, withdrawal request)
-4. open browser post-check for author/admin dashboard
+2. open browser flow at step 4: author checks balance, then tipper pays
+3. continue backend workflow for tip settlement + balance verification
+4. open browser flow: author checks balance again and initiates withdrawal
+5. switch to admin view and observe withdrawal state
 
 ## Scripts
 
@@ -24,8 +25,14 @@ This runbook packages the local end-to-end demo flow into repeatable scripts:
 
 ## Required env
 
+Default mode (`browser` initiates withdrawal) does not require a private key.
+
+If you use backend withdrawal mode:
+
 ```bash
 export FIBER_WITHDRAWAL_CKB_PRIVATE_KEY=0x<ckb_private_key_hex>
+# legacy alias is also accepted:
+export FIBER_WITHDRAW_CKB_PRIVATE_KEY=0x<ckb_private_key_hex>
 ```
 
 If you skip discourse bootstrap, these IDs are required:
@@ -37,7 +44,7 @@ export WORKFLOW_TOPIC_POST_ID=11
 export WORKFLOW_REPLY_POST_ID=12
 ```
 
-## One-command demo (recommended)
+## One-command demo (recommended, browser initiates withdrawal)
 
 Fresh environment:
 
@@ -55,6 +62,12 @@ Run browser in headless mode:
 
 ```bash
 scripts/playwright-demo-local-workflow.sh --headless --skip-services --skip-discourse
+```
+
+Legacy mode (backend step6 initiates withdrawal):
+
+```bash
+scripts/playwright-demo-local-workflow.sh --backend-withdrawal --skip-services --skip-discourse
 ```
 
 ## Credentials and topic defaults
@@ -89,18 +102,22 @@ Artifacts are written to:
 
 Typical files:
 
-- `playwright-step4-tip-modal.png`
+- `playwright-step4-author-balance-before.png`
+- `playwright-step4-tipper-tip-modal.png`
 - `workflow.pause.log`
 - `workflow.complete.log`
 - `postcheck/playwright-step5-author-dashboard.png`
-- `postcheck/playwright-step6-admin-withdrawal.png`
+- `postcheck/playwright-step6-author-withdrawal.png`
+- `postcheck/playwright-step7-admin-withdrawal.png`
 
 ## Behavior notes
 
 - The wrapper runs in two phases:
-  - phase 1 pauses at step 4 and performs browser demo
-  - phase 2 reruns backend workflow without pause for full completion
-- If withdrawal does not complete within timeout, the script still reports current `withdrawal id/state` and continues with post-check.
+  - phase 1 pauses at step 4 and performs browser demo (author balance -> tipper pay)
+  - phase 2 reruns backend workflow without pause for settlement + author balance checks
+- By default, browser post-check initiates withdrawal as author.
+- Use `--backend-withdrawal` to keep the previous backend step6 withdrawal behavior.
+- When discourse bootstrap is enabled, wrapper auto-generates an isolated `FIBER_LINK_APP_ID` if not provided, so stale historical withdrawals from other demo runs do not pollute current run.
 - Post-check returns structured output even when dashboard route has local rendering issues.
 
 ## Troubleshooting

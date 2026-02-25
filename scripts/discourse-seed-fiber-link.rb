@@ -9,15 +9,12 @@ def env_fetch_or_default(name, fallback)
 end
 
 def ensure_user(username:, email:, password:)
-  user = User.find_by(username: username)
-  return user if user
-
-  user = User.new(
-    username: username,
-    name: username,
-    email: email,
-    password: password,
-  )
+  user = User.find_by(username: username) || User.new(username: username)
+  user.name = username if user.name.blank?
+  user.email = email
+  password_matches =
+    user.persisted? && user.respond_to?(:confirm_password?) && user.confirm_password?(password)
+  user.password = password unless password_matches
   user.active = true if user.respond_to?(:active=)
   user.approved = true if user.respond_to?(:approved=)
   user.save!
@@ -64,9 +61,21 @@ raise "FIBER_LINK_APP_SECRET must be provided" if app_secret.empty?
 if SiteSetting.respond_to?(:allow_uncategorized_topics=)
   SiteSetting.allow_uncategorized_topics = true
 end
+if SiteSetting.respond_to?(:max_logins_per_ip_per_hour=)
+  SiteSetting.max_logins_per_ip_per_hour = 10_000
+end
+if SiteSetting.respond_to?(:max_logins_per_ip_per_minute=)
+  SiteSetting.max_logins_per_ip_per_minute = 10_000
+end
 
 tipper = ensure_user(username: tipper_username, email: tipper_email, password: tipper_password)
 author = ensure_user(username: author_username, email: author_email, password: author_password)
+
+if tipper.respond_to?(:admin=) && !tipper.admin?
+  tipper.admin = true
+  tipper.save!
+end
+
 topic = ensure_topic(owner: tipper, title: topic_title, raw: topic_raw)
 first_post = topic.first_post
 reply = ensure_reply(author: author, topic: topic, raw: reply_raw)

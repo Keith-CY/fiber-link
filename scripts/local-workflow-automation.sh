@@ -19,6 +19,7 @@ ARTIFACT_DIR="${ROOT_DIR}/.tmp/local-workflow-automation/$(date -u +%Y%m%dT%H%M%
 VERBOSE=0
 SKIP_SERVICES=0
 SKIP_DISCOURSE=0
+SKIP_WITHDRAWAL=0
 PAUSE_AT_STEP4=0
 START_EMBER_CLI=0
 
@@ -36,7 +37,7 @@ REPLY_BODY="${WORKFLOW_REPLY_BODY:-This reply is created by local workflow autom
 
 usage() {
   cat <<'EOF'
-Usage: scripts/local-workflow-automation.sh [--verbose] [--skip-services] [--skip-discourse] [--pause-at-step4] [--with-ember-cli]
+Usage: scripts/local-workflow-automation.sh [--verbose] [--skip-services] [--skip-discourse] [--skip-withdrawal] [--pause-at-step4] [--with-ember-cli]
 
 Automates local workflow:
 1) launch discourse
@@ -50,6 +51,7 @@ Options:
   --verbose         Print detailed logs.
   --skip-services   Skip services/bootstrap step (assume already running and ready).
   --skip-discourse  Skip discourse bootstrap/seeding step (assume IDs provided through env).
+  --skip-withdrawal Skip step 6 backend withdrawal request (useful when browser will initiate it).
   --pause-at-step4  Pause before tip actions and wait for Enter.
   --with-ember-cli  Start Ember CLI proxy and expose interactive UI at http://127.0.0.1:4200/login.
   -h, --help        Show this help message.
@@ -525,6 +527,9 @@ while [[ $# -gt 0 ]]; do
     --skip-discourse)
       SKIP_DISCOURSE=1
       ;;
+    --skip-withdrawal)
+      SKIP_WITHDRAWAL=1
+      ;;
     --pause-at-step4)
       PAUSE_AT_STEP4=1
       ;;
@@ -572,11 +577,13 @@ if [[ -z "${APP_SECRET}" ]]; then
 fi
 [[ -n "${APP_SECRET}" ]] || fatal "${EXIT_PRECHECK}" "FIBER_LINK_HMAC_SECRET/FIBER_LINK_APP_SECRET is required"
 
-WITHDRAWAL_PRIVATE_KEY="${FIBER_WITHDRAWAL_CKB_PRIVATE_KEY:-}"
+WITHDRAWAL_PRIVATE_KEY="${FIBER_WITHDRAWAL_CKB_PRIVATE_KEY:-${FIBER_WITHDRAW_CKB_PRIVATE_KEY:-}}"
 if [[ -z "${WITHDRAWAL_PRIVATE_KEY}" ]]; then
   WITHDRAWAL_PRIVATE_KEY="$(get_env_value FIBER_WITHDRAWAL_CKB_PRIVATE_KEY)"
 fi
-[[ -n "${WITHDRAWAL_PRIVATE_KEY}" ]] || fatal "${EXIT_PRECHECK}" "FIBER_WITHDRAWAL_CKB_PRIVATE_KEY is required for on-chain withdrawal"
+if [[ "${SKIP_WITHDRAWAL}" -eq 0 ]]; then
+  [[ -n "${WITHDRAWAL_PRIVATE_KEY}" ]] || fatal "${EXIT_PRECHECK}" "FIBER_WITHDRAWAL_CKB_PRIVATE_KEY is required for on-chain withdrawal"
+fi
 
 APP_ID="${FIBER_LINK_APP_ID:-${E2E_APP_ID:-local-dev}}"
 RPC_PORT="${RPC_PORT:-$(get_env_value RPC_PORT)}"
@@ -696,11 +703,20 @@ if [[ "${AUTHOR_BALANCE_INTEGER}" -lt "${WITHDRAW_AMOUNT}" ]]; then
   fatal "${EXIT_BALANCE}" "author balance ${AUTHOR_BALANCE} is smaller than withdrawal amount ${WITHDRAW_AMOUNT}"
 fi
 
-log "step 6/6: withdraw to CKB on-chain address"
 WITHDRAW_TO_ADDRESS_RESOLVED="$(resolve_withdraw_to_address)"
 vlog "withdraw_to_address=${WITHDRAW_TO_ADDRESS_RESOLVED}"
-WITHDRAWAL_ID="$(request_withdrawal "${AUTHOR_USER_ID}" "${WITHDRAW_TO_ADDRESS_RESOLVED}")"
-WITHDRAWAL_STATE="$(wait_withdrawal_completed "${AUTHOR_USER_ID}" "${WITHDRAWAL_ID}")"
+
+WITHDRAWAL_ID=""
+WITHDRAWAL_STATE="SKIPPED"
+WITHDRAWAL_REQUESTED="false"
+if [[ "${SKIP_WITHDRAWAL}" -eq 0 ]]; then
+  log "step 6/6: withdraw to CKB on-chain address"
+  WITHDRAWAL_ID="$(request_withdrawal "${AUTHOR_USER_ID}" "${WITHDRAW_TO_ADDRESS_RESOLVED}")"
+  WITHDRAWAL_STATE="$(wait_withdrawal_completed "${AUTHOR_USER_ID}" "${WITHDRAWAL_ID}")"
+  WITHDRAWAL_REQUESTED="true"
+else
+  log "step 6/6: skipping backend withdrawal request (--skip-withdrawal)"
+fi
 
 jq -n \
   --arg artifactDir "${ARTIFACT_DIR}" \
@@ -716,6 +732,7 @@ jq -n \
   --arg balance "${AUTHOR_BALANCE}" \
   --arg withdrawalId "${WITHDRAWAL_ID}" \
   --arg withdrawalState "${WITHDRAWAL_STATE}" \
+  --argjson withdrawalRequested "${WITHDRAWAL_REQUESTED}" \
   --arg withdrawalDestinationAddress "${WITHDRAW_TO_ADDRESS_RESOLVED}" \
   '{
     artifactDir: $artifactDir,
@@ -730,6 +747,7 @@ jq -n \
     ],
     balanceAfterTips: $balance,
     withdrawal: {
+      requested: $withdrawalRequested,
       id: $withdrawalId,
       state: $withdrawalState,
       destinationAddress: $withdrawalDestinationAddress
