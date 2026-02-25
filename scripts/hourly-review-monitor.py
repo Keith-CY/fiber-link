@@ -14,6 +14,7 @@ import re
 import subprocess
 import time
 from typing import Dict, List, Tuple
+from datetime import datetime, timezone, timedelta
 
 REPO = "Keith-CY/fiber-link"
 STATE_FILE = "/root/.openclaw/workspace/memory/fiber-link-task1-state.json"
@@ -47,7 +48,7 @@ def list_json(resource: str, assignee: str | None = None, label: str | None = No
 
 
 def source_pr_from_issue_body(body: str) -> int | None:
-    m = re.search(r"Source PR:\\s*https://github.com/[^/]+/[^/]+/pull/(\\d+)", body or "")
+    m = re.search(r"Source PR:\s*https://github.com/[^/]+/[^/]+/pull/(\d+)", body or "")
     if not m:
         return None
     return int(m.group(1))
@@ -106,12 +107,26 @@ def pr_mentions_issue_text(pr: dict, issue_number: int) -> bool:
     return False
 
 
-def classify_nbs_by_development(issues: List[dict], all_prs: List[dict]) -> Tuple[List[dict], List[dict], List[dict]]:
+def classify_nbs_by_development(
+    issues: List[dict], all_prs: List[dict], pr_state_cache: Dict[int, str]
+) -> Tuple[List[dict], List[dict], List[dict]]:
     actionable: List[dict] = []
     bound: List[dict] = []
     unbound: List[dict] = []
 
     for issue in issues:
+        pr_num = source_pr_from_issue_body(issue.get("body", "") or "")
+        if pr_num:
+            state = pr_state(pr_num, pr_state_cache)
+            if state == "OPEN":
+                bound.append(issue)
+                continue
+
+            reason = {"issue": issue, "reason": f"source-pr-{state.lower()}", "sourcePr": pr_num}
+            actionable.append(reason)
+            unbound.append(reason)
+            continue
+
         num = int(issue.get("number"))
         linked_prs = [pr for pr in all_prs if pr_mentions_issue_text(pr, num)]
 
@@ -119,7 +134,7 @@ def classify_nbs_by_development(issues: List[dict], all_prs: List[dict]) -> Tupl
             bound.append(issue)
             continue
 
-        reason = {"issue": issue, "reason": "no-linked-pr", "linkedPRs": []}
+        reason = {"issue": issue, "reason": "no-source-pr", "linkedPRs": []}
         actionable.append(reason)
         unbound.append(reason)
 
@@ -134,7 +149,7 @@ def analyze() -> dict:
     all_prs = load_all_pr_cache(state="all")
 
     actionable_assigned_with_reason, _, _ = classify_with_source_pr(assigned_issues, state_cache)
-    actionable_nbs_with_reason, _, unbound_nbs = classify_nbs_by_development(nbs_issues, all_prs)
+    actionable_nbs_with_reason, _, unbound_nbs = classify_nbs_by_development(nbs_issues, all_prs, state_cache)
 
     change_requests = [
         item for item in list_json("pr") if item.get("reviewDecision") == "CHANGES_REQUESTED"
@@ -225,6 +240,17 @@ def has_actionable(snapshot: dict) -> bool:
     return any(snapshot["counts"][key] > 0 for key in ["assigned", "nbsUnbound", "changeRequests"])
 
 
+
+
+def in_jst_quiet_window(now: float | None = None) -> bool:
+    """Return True when current local time is 20:00-10:00 JST."""
+    current = datetime.fromtimestamp(now or time.time(), tz=timezone.utc) + timedelta(hours=9)
+    hour = current.hour
+    minute = current.minute
+    # 20:00 -> 10:00 (next day), inclusive at start, exclusive at end
+    return hour >= 20 or hour < 10
+
+
 def run_report(hours: int = 1) -> str:
     state = load_state()
     runs = state.get("runs", [])
@@ -245,6 +271,10 @@ def run_report(hours: int = 1) -> str:
         "windowFrom": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(cutoff)),
         "windowTo": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)),
     }
+
+    if in_jst_quiet_window():
+        # Keep task execution but suppress announcement window for JP quiet hours.
+        return ""
 
     if not recent:
         return f"No task-1 scans in the last {hours}h."
