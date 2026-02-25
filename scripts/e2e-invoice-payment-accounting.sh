@@ -37,6 +37,8 @@ CKB_FAUCET_API_BASE="${CKB_FAUCET_API_BASE:-https://faucet-api.nervos.org}"
 CKB_FAUCET_AMOUNT="${CKB_FAUCET_AMOUNT:-100000}"
 CKB_FAUCET_WAIT_SECONDS="${CKB_FAUCET_WAIT_SECONDS:-20}"
 CKB_PAYMENT_FAUCET_ON_FLOW="${E2E_CKB_PAYMENT_FAUCET_ON_FLOW:-0}"
+CKB_RPC_URL="${E2E_CKB_RPC_URL:-https://testnet.ckbapp.dev/}"
+USDI_BALANCE_CHECK_LIMIT_PAGES="${E2E_USDI_BALANCE_CHECK_LIMIT_PAGES:-20}"
 
 USDI_FAUCET_COMMAND="${E2E_USDI_FAUCET_COMMAND:-}"
 USDI_FAUCET_AMOUNT="${USDI_FAUCET_AMOUNT:-20}"
@@ -64,6 +66,8 @@ INVOICE_NODE_ID=""
 PAYER_NODE_ID=""
 INVOICE_PEER_ID=""
 PAYER_PEER_ID=""
+PAYER_LOCK_SCRIPT_JSON=""
+USDI_TYPE_SCRIPT_JSON=""
 
 NODE_INFO_RESULT=""
 OPEN_CHANNEL_TEMPORARY_ID=""
@@ -103,6 +107,8 @@ Optional env:
   CKB_FAUCET_AMOUNT=100000
   CKB_FAUCET_WAIT_SECONDS=20
   E2E_CKB_PAYMENT_FAUCET_ON_FLOW=0
+  E2E_CKB_RPC_URL=https://testnet.ckbapp.dev/
+  E2E_USDI_BALANCE_CHECK_LIMIT_PAGES=20
   USDI_FAUCET_AMOUNT=20
   USDI_FAUCET_WAIT_SECONDS=20
   E2E_CHANNEL_FUNDING_AMOUNT=10000000000
@@ -298,6 +304,61 @@ fnn_invoice_rpc_call() {
 fnn_payer_rpc_call() {
   local payload="$1"
   fnn_rpc_call_on_port "${FNN_PAYER_RPC_PORT}" "${payload}"
+}
+
+ckb_rpc_call() {
+  local payload="$1"
+  curl -fsS "${CKB_RPC_URL}" \
+    -H "content-type: application/json" \
+    -d "${payload}"
+}
+
+bigint_gte() {
+  local left="$1"
+  local right="$2"
+  python3 - "${left}" "${right}" <<'PY'
+import sys
+
+left = int(sys.argv[1])
+right = int(sys.argv[2])
+raise SystemExit(0 if left >= right else 1)
+PY
+}
+
+extract_usdi_type_script_from_node_info() {
+  local node_info_payload="$1"
+  printf '%s' "${node_info_payload}" | jq -c '
+    ([
+      .result.udt_cfg_infos[]?
+      | select((((.name // "") | ascii_downcase) == "usdi") or (((.name // "") | ascii_downcase) == "rusd"))
+      | .script
+    ] | .[0]) // (.result.udt_cfg_infos[0].script // empty)
+  '
+}
+
+sum_xudt_amount_from_get_cells_response() {
+  local response_payload="$1"
+  python3 - "${response_payload}" <<'PY'
+import json
+import sys
+
+resp = json.loads(sys.argv[1])
+objs = (resp.get("result") or {}).get("objects") or []
+total = 0
+for obj in objs:
+    data = obj.get("output_data") or obj.get("outputData") or ""
+    if not isinstance(data, str) or not data.startswith("0x"):
+        continue
+    hex_data = data[2:]
+    if len(hex_data) < 32:
+        continue
+    try:
+        first16 = bytes.fromhex(hex_data[:32])
+    except ValueError:
+        continue
+    total += int.from_bytes(first16, "little")
+print(total)
+PY
 }
 
 contains_jsonrpc_error() {
@@ -576,8 +637,115 @@ request_ckb_faucet() {
   sleep "${CKB_FAUCET_WAIT_SECONDS}"
 }
 
+query_usdi_balance_for_payer() {
+  local target_dir="$1"
+  local cursor="0x"
+  local page=0
+  local total=0
+  local log_file="${target_dir}/usdi-balance.query.log"
+  : > "${log_file}"
+
+  while true; do
+    page=$((page + 1))
+    if [[ "${page}" -gt "${USDI_BALANCE_CHECK_LIMIT_PAGES}" ]]; then
+      log "USDI balance query reached page limit=${USDI_BALANCE_CHECK_LIMIT_PAGES}, partial_total=${total}"
+      break
+    fi
+
+    local payload
+    payload="$(jq -cn \
+      --arg id "usdi-balance-${page}" \
+      --argjson lock_script "${PAYER_LOCK_SCRIPT_JSON}" \
+      --argjson type_script "${USDI_TYPE_SCRIPT_JSON}" \
+      --arg cursor "${cursor}" \
+      '
+      if $cursor == "0x" then
+        {
+          jsonrpc:"2.0",
+          id:$id,
+          method:"get_cells",
+          params:[
+            {script:$lock_script,script_type:"lock",filter:{script:$type_script}},
+            "asc",
+            "0x64"
+          ]
+        }
+      else
+        {
+          jsonrpc:"2.0",
+          id:$id,
+          method:"get_cells",
+          params:[
+            {script:$lock_script,script_type:"lock",filter:{script:$type_script}},
+            "asc",
+            "0x64",
+            $cursor
+          ]
+        }
+      end
+      '
+    )"
+
+    local response
+    set +e
+    response="$(ckb_rpc_call "${payload}")"
+    local rc=$?
+    set -e
+    if [[ "${rc}" -ne 0 ]]; then
+      return 1
+    fi
+    printf '%s\n' "${response}" > "${target_dir}/usdi-balance.page.${page}.json"
+    if contains_jsonrpc_error "${response}"; then
+      return 1
+    fi
+
+    local page_sum
+    page_sum="$(sum_xudt_amount_from_get_cells_response "${response}")"
+    total="$(python3 - "${total}" "${page_sum}" <<'PY'
+import sys
+print(int(sys.argv[1]) + int(sys.argv[2]))
+PY
+)"
+
+    local count next_cursor
+    count="$(printf '%s' "${response}" | jq -r '.result.objects | length')"
+    next_cursor="$(printf '%s' "${response}" | jq -r '.result.last_cursor // "0x"')"
+    printf 'page=%s count=%s page_sum=%s total=%s cursor=%s next=%s\n' \
+      "${page}" "${count}" "${page_sum}" "${total}" "${cursor}" "${next_cursor}" >> "${log_file}"
+
+    if [[ "${count}" -eq 0 || -z "${next_cursor}" || "${next_cursor}" == "${cursor}" ]]; then
+      break
+    fi
+    cursor="${next_cursor}"
+  done
+
+  printf '%s' "${total}"
+}
+
 request_usdi_faucet() {
   local target_dir="$1"
+  local required_amount="$2"
+
+  if [[ -n "${PAYER_LOCK_SCRIPT_JSON}" && -n "${USDI_TYPE_SCRIPT_JSON}" ]]; then
+    local before_balance
+    set +e
+    before_balance="$(query_usdi_balance_for_payer "${target_dir}")"
+    local balance_rc=$?
+    set -e
+    if [[ "${balance_rc}" -eq 0 && -n "${before_balance}" ]]; then
+      printf '%s\n' "${before_balance}" > "${target_dir}/usdi-balance.before.txt"
+      if bigint_gte "${before_balance}" "${required_amount}"; then
+        log "USDI balance precheck passed (balance=${before_balance}, required=${required_amount}), skip faucet"
+        return 0
+      fi
+      log "USDI balance precheck insufficient (balance=${before_balance}, required=${required_amount}), requesting faucet"
+    else
+      log "USDI balance precheck failed, falling back to faucet request"
+    fi
+  else
+    log "USDI balance precheck skipped (missing payer lock script or USDI type script)"
+  fi
+
   printf '%s\n' "${USDI_FAUCET_COMMAND}" > "${target_dir}/usdi-faucet.command.txt"
   set +e
   E2E_FAUCET_ASSET="USDI" \
@@ -594,6 +762,18 @@ request_usdi_faucet() {
 
   log "USDI faucet succeeded; waiting ${USDI_FAUCET_WAIT_SECONDS}s"
   sleep "${USDI_FAUCET_WAIT_SECONDS}"
+
+  if [[ -n "${PAYER_LOCK_SCRIPT_JSON}" && -n "${USDI_TYPE_SCRIPT_JSON}" ]]; then
+    local after_balance
+    set +e
+    after_balance="$(query_usdi_balance_for_payer "${target_dir}")"
+    local balance_rc=$?
+    set -e
+    if [[ "${balance_rc}" -eq 0 && -n "${after_balance}" ]]; then
+      printf '%s\n' "${after_balance}" > "${target_dir}/usdi-balance.after.txt"
+      log "USDI balance after faucet: ${after_balance}"
+    fi
+  fi
 }
 
 get_container_ip() {
@@ -858,6 +1038,9 @@ bootstrap_dual_fnn_channel() {
   invoice_info="${NODE_INFO_RESULT}"
   fetch_node_info "${FNN_PAYER_RPC_PORT}" "${target_dir}/node-info-payer.response.json"
   payer_info="${NODE_INFO_RESULT}"
+
+  PAYER_LOCK_SCRIPT_JSON="$(printf '%s' "${payer_info}" | jq -c '.result.default_funding_lock_script // empty')"
+  USDI_TYPE_SCRIPT_JSON="$(extract_usdi_type_script_from_node_info "${payer_info}")"
 
   INVOICE_NODE_ID="$(printf '%s' "${invoice_info}" | jq -r '.result.node_id // empty')"
   PAYER_NODE_ID="$(printf '%s' "${payer_info}" | jq -r '.result.node_id // empty')"
@@ -1124,7 +1307,7 @@ run_asset_flow() {
       log "CKB faucet skipped for payment flow (E2E_CKB_PAYMENT_FAUCET_ON_FLOW=0)"
     fi
   else
-    request_usdi_faucet "${target_dir}"
+    request_usdi_faucet "${target_dir}" "${amount}"
   fi
 
   local invoice=""
@@ -1171,7 +1354,7 @@ done
 mkdir -p "${ARTIFACT_DIR}"
 printf 'asset\tinvoice\ttx_hash\tfinal_state\n' > "${SUMMARY_FILE}"
 
-for binary in docker curl openssl awk jq grep; do
+for binary in docker curl openssl awk jq grep python3; do
   if ! command -v "${binary}" >/dev/null 2>&1; then
     fatal "${EXIT_PRECHECK}" "missing required binary: ${binary}"
   fi
@@ -1240,6 +1423,9 @@ if ! is_positive_integer "${CHANNEL_READY_TIMEOUT_SECONDS}"; then
 fi
 if ! is_positive_integer "${CHANNEL_POLL_INTERVAL_SECONDS}"; then
   fatal "${EXIT_PRECHECK}" "CHANNEL_POLL_INTERVAL_SECONDS must be a positive integer"
+fi
+if ! is_positive_integer "${USDI_BALANCE_CHECK_LIMIT_PAGES}"; then
+  fatal "${EXIT_PRECHECK}" "E2E_USDI_BALANCE_CHECK_LIMIT_PAGES must be a positive integer"
 fi
 if ! is_positive_integer "${CHANNEL_FUNDING_AMOUNT}"; then
   fatal "${EXIT_PRECHECK}" "E2E_CHANNEL_FUNDING_AMOUNT must be a positive integer"

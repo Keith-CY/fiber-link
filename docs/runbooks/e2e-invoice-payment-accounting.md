@@ -24,7 +24,7 @@ scripts/e2e-invoice-payment-accounting.sh
 ## Required prerequisites
 
 - `docker` + `docker compose` v2
-- `curl`, `openssl`, `awk`, `jq`
+- `curl`, `openssl`, `awk`, `jq`, `python3`
 - `deploy/compose/.env` created and required secrets filled
 
 ## Required environment variables
@@ -41,8 +41,8 @@ export E2E_CKB_INVOICE_TOPUP_ADDRESS="<ckb testnet address>"
 # payer node USDI top-up address, optional (defaults to E2E_CKB_TOPUP_ADDRESS)
 export E2E_USDI_TOPUP_ADDRESS="<usdi topup address>"
 
-# required for full e2e (CKB+USDI)
-export E2E_USDI_FAUCET_COMMAND='curl -fsS -X POST https://<your-usdi-faucet-endpoint> -H "content-type: application/json" -d "{\"address\":\"${E2E_FAUCET_ADDRESS}\",\"amount\":\"${E2E_FAUCET_AMOUNT}\"}"'
+# required for full e2e (CKB+USDI), example using the provided faucet endpoint
+export E2E_USDI_FAUCET_COMMAND='curl -fsS -X POST https://ckb-utilities.random-walk.co.jp/api/faucet -H "content-type: application/json" -d "{\"address\":\"${E2E_FAUCET_ADDRESS}\",\"token\":\"usdi\"}"'
 ```
 
 `E2E_USDI_FAUCET_COMMAND` receives:
@@ -59,8 +59,10 @@ export E2E_CKB_PAYMENT_AMOUNT=1
 export E2E_USDI_PAYMENT_AMOUNT=1
 export CKB_FAUCET_AMOUNT=100000
 export CKB_FAUCET_WAIT_SECONDS=20
+export E2E_CKB_RPC_URL=https://testnet.ckbapp.dev/
 export USDI_FAUCET_AMOUNT=20
 export USDI_FAUCET_WAIT_SECONDS=20
+export E2E_USDI_BALANCE_CHECK_LIMIT_PAGES=20
 
 # channel bootstrap
 export E2E_CHANNEL_FUNDING_AMOUNT=10000000000
@@ -109,6 +111,7 @@ Notes:
 - default `E2E_TOPUP_INVOICE_NODE_CKB=0` skips invoice-node faucet request to avoid CKB faucet IP/day quota conflicts.
 - set `E2E_SKIP_CKB_FAUCET=1` when payer already has enough CKB and public faucet is rate-limited.
 - default `E2E_CKB_PAYMENT_FAUCET_ON_FLOW=0` avoids a second CKB faucet request in the same run.
+- USDI flow does a pre-check via CKB indexer (`get_cells`) and skips faucet when payer balance already meets payment amount.
 - set `E2E_TOPUP_INVOICE_NODE_CKB=1` only when you explicitly need auto-topup on invoice node.
 - `E2E_ACCEPT_CHANNEL_FUNDING_AMOUNT_HEX` defaults to `fnn node_info.auto_accept_channel_ckb_funding_amount` when not set.
 
