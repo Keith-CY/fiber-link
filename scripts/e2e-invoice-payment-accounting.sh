@@ -38,11 +38,13 @@ CKB_FAUCET_AMOUNT="${CKB_FAUCET_AMOUNT:-100000}"
 CKB_FAUCET_WAIT_SECONDS="${CKB_FAUCET_WAIT_SECONDS:-20}"
 CKB_PAYMENT_FAUCET_ON_FLOW="${E2E_CKB_PAYMENT_FAUCET_ON_FLOW:-0}"
 CKB_RPC_URL="${E2E_CKB_RPC_URL:-https://testnet.ckbapp.dev/}"
+CKB_BALANCE_CHECK_LIMIT_PAGES="${E2E_CKB_BALANCE_CHECK_LIMIT_PAGES:-20}"
 USDI_BALANCE_CHECK_LIMIT_PAGES="${E2E_USDI_BALANCE_CHECK_LIMIT_PAGES:-20}"
 
 USDI_FAUCET_COMMAND="${E2E_USDI_FAUCET_COMMAND:-}"
 USDI_FAUCET_AMOUNT="${USDI_FAUCET_AMOUNT:-20}"
 USDI_FAUCET_WAIT_SECONDS="${USDI_FAUCET_WAIT_SECONDS:-20}"
+USDI_CHANNEL_FUNDING_AMOUNT="${E2E_USDI_CHANNEL_FUNDING_AMOUNT:-}"
 
 CHANNEL_FUNDING_AMOUNT="${E2E_CHANNEL_FUNDING_AMOUNT:-10000000000}"
 CHANNEL_TLC_FEE_PROPORTIONAL_MILLIONTHS="${E2E_CHANNEL_TLC_FEE_PROPORTIONAL_MILLIONTHS:-0x4B0}"
@@ -67,7 +69,10 @@ PAYER_NODE_ID=""
 INVOICE_PEER_ID=""
 PAYER_PEER_ID=""
 PAYER_LOCK_SCRIPT_JSON=""
+INVOICE_LOCK_SCRIPT_JSON=""
 USDI_TYPE_SCRIPT_JSON=""
+DETECTED_USDI_CURRENCY=""
+USDI_AUTO_ACCEPT_AMOUNT_HEX=""
 
 NODE_INFO_RESULT=""
 OPEN_CHANNEL_TEMPORARY_ID=""
@@ -82,7 +87,7 @@ Usage: scripts/e2e-invoice-payment-accounting.sh [--keep-up] [--prepare-only] [-
 Flow (full e2e):
 1) docker compose start services (includes 2 FNN nodes)
 2) derive/confirm top-up addresses
-3) CKB faucet top-up + establish channel between fnn2(payer) -> fnn(invoice)
+3) CKB balance precheck + faucet top-up when needed + establish channel between fnn2(payer) -> fnn(invoice)
 4) create invoice (CKB + USDI)
 5) pay invoice from fnn2
 6) poll tip.status until SETTLED
@@ -90,7 +95,7 @@ Flow (full e2e):
 Flow (--prepare-only):
 1) docker compose start services
 2) derive/confirm top-up addresses
-3) CKB faucet top-up + establish channel between fnn2 and fnn
+3) CKB balance precheck + faucet top-up when needed + establish channel between fnn2 and fnn
 4) keep stack up for manual testing (use with --keep-up)
 
 Required env:
@@ -103,12 +108,15 @@ Optional env:
   E2E_APP_ID=local-dev
   E2E_CKB_PAYMENT_AMOUNT=1
   E2E_USDI_PAYMENT_AMOUNT=1
+  FIBER_INVOICE_CURRENCY_CKB=Fibt
   CKB_FAUCET_API_BASE=https://faucet-api.nervos.org
   CKB_FAUCET_AMOUNT=100000
   CKB_FAUCET_WAIT_SECONDS=20
-  E2E_CKB_PAYMENT_FAUCET_ON_FLOW=0
+  E2E_CKB_PAYMENT_FAUCET_ON_FLOW=0  # 0=precheck and topup only when needed, 1=always request faucet on CKB payment flow
   E2E_CKB_RPC_URL=https://testnet.ckbapp.dev/
+  E2E_CKB_BALANCE_CHECK_LIMIT_PAGES=20
   E2E_USDI_BALANCE_CHECK_LIMIT_PAGES=20
+  E2E_USDI_CHANNEL_FUNDING_AMOUNT=<auto from fnn node_info.udt_cfg_infos[].auto_accept_amount>
   # default when E2E_USDI_FAUCET_COMMAND is unset:
   # curl -fsS -X POST https://ckb-utilities.random-walk.co.jp/api/faucet \
   #   -H "content-type: application/json" \
@@ -247,6 +255,19 @@ to_hex_quantity() {
   printf '0x%x' "${amount}"
 }
 
+hex_quantity_to_decimal() {
+  local quantity="$1"
+  python3 - "${quantity}" <<'PY'
+import sys
+
+q = sys.argv[1].strip()
+if q.startswith("0x") or q.startswith("0X"):
+    print(int(q, 16))
+else:
+    print(int(q))
+PY
+}
+
 currency_for_asset() {
   local asset="$1"
   local scoped_var="FIBER_INVOICE_CURRENCY_${asset}"
@@ -264,7 +285,12 @@ currency_for_asset() {
   if [[ "${asset}" == "CKB" ]]; then
     printf 'Fibt'
   else
-    printf 'USDI'
+    local ckb_scoped="${FIBER_INVOICE_CURRENCY_CKB:-}"
+    if [[ -n "${ckb_scoped}" ]]; then
+      printf '%s' "${ckb_scoped}"
+    else
+      printf 'Fibt'
+    fi
   fi
 }
 
@@ -340,6 +366,41 @@ extract_usdi_type_script_from_node_info() {
   '
 }
 
+extract_usdi_currency_from_node_info() {
+  local node_info_payload="$1"
+  printf '%s' "${node_info_payload}" | jq -r '
+    (
+      [
+        .result.udt_cfg_infos[]?
+        | .name
+        | select(type == "string" and length > 0)
+        | select((ascii_downcase == "usdi") or (ascii_downcase == "rusd"))
+      ] | .[0]
+    ) // (
+      .result.udt_cfg_infos[0].name
+      | select(type == "string" and length > 0)
+    ) // empty
+  '
+}
+
+extract_usdi_auto_accept_amount_from_node_info() {
+  local node_info_payload="$1"
+  printf '%s' "${node_info_payload}" | jq -r '
+    (
+      [
+        .result.udt_cfg_infos[]?
+        | select(
+            (((.name // "") | ascii_downcase) == "usdi")
+            or (((.name // "") | ascii_downcase) == "rusd")
+          )
+        | .auto_accept_amount
+      ] | .[0]
+    ) // (
+      .result.udt_cfg_infos[0].auto_accept_amount
+    ) // empty
+  '
+}
+
 sum_xudt_amount_from_get_cells_response() {
   local response_payload="$1"
   python3 - "${response_payload}" <<'PY'
@@ -381,9 +442,11 @@ contains_insufficient_balance() {
   normalized="$(printf '%s' "${text}" | tr '[:upper:]' '[:lower:]')"
   [[ "${normalized}" == *"insufficient"* ]] \
     || [[ "${normalized}" == *"not enough"* ]] \
+    || [[ "${normalized}" == *"can not find enough"* ]] \
     || [[ "${normalized}" == *"lack"* ]] \
     || [[ "${normalized}" == *"balance"* ]] \
-    || [[ "${normalized}" == *"capacity"* ]]
+    || [[ "${normalized}" == *"capacity"* ]] \
+    || [[ "${normalized}" == *"owner cells"* ]]
 }
 
 contains_no_route() {
@@ -411,6 +474,8 @@ contains_accept_channel_ignorable_error() {
   normalized="$(printf '%s' "${text}" | tr '[:upper:]' '[:lower:]')"
   [[ "${normalized}" == *"already"* ]] \
     || [[ "${normalized}" == *"not found"* ]] \
+    || [[ "${normalized}" == *"no channel with temp id"* ]] \
+    || [[ "${normalized}" == *"no channel"* ]] \
     || [[ "${normalized}" == *"unknown channel"* ]]
 }
 
@@ -438,6 +503,7 @@ fail_with_topup_hint() {
       log "  faucet=https://faucet.nervos.org/"
     else
       log "  usdi_faucet_command=${USDI_FAUCET_COMMAND}"
+      log "  note=USDI route/channel funding requires UDT owner cells for fnn2"
     fi
   } | tee -a "${ARTIFACT_DIR}/insufficient-balance.log"
 
@@ -641,6 +707,155 @@ request_ckb_faucet() {
   sleep "${CKB_FAUCET_WAIT_SECONDS}"
 }
 
+sum_ckb_capacity_from_get_cells_response() {
+  local response_payload="$1"
+  python3 - "${response_payload}" <<'PY'
+import json
+import sys
+
+resp = json.loads(sys.argv[1])
+objs = (resp.get("result") or {}).get("objects") or []
+total = 0
+for obj in objs:
+    cap = ((obj.get("output") or {}).get("capacity")) or ""
+    if not isinstance(cap, str) or not cap:
+        continue
+    try:
+        total += int(cap, 16) if cap.startswith("0x") else int(cap)
+    except ValueError:
+        continue
+print(total)
+PY
+}
+
+query_ckb_balance_for_lock_script() {
+  local lock_script_json="$1"
+  local target_dir="$2"
+  local label="$3"
+  local cursor="0x"
+  local page=0
+  local total=0
+  local log_file="${target_dir}/ckb-balance-${label}.query.log"
+  : > "${log_file}"
+
+  while true; do
+    page=$((page + 1))
+    if [[ "${page}" -gt "${CKB_BALANCE_CHECK_LIMIT_PAGES}" ]]; then
+      log "CKB balance query reached page limit=${CKB_BALANCE_CHECK_LIMIT_PAGES}, partial_total=${total}, label=${label}"
+      break
+    fi
+
+    local payload
+    payload="$(jq -cn \
+      --arg id "ckb-balance-${label}-${page}" \
+      --argjson lock_script "${lock_script_json}" \
+      --arg cursor "${cursor}" \
+      '
+      if $cursor == "0x" then
+        {
+          jsonrpc:"2.0",
+          id:$id,
+          method:"get_cells",
+          params:[
+            {script:$lock_script,script_type:"lock"},
+            "asc",
+            "0x64"
+          ]
+        }
+      else
+        {
+          jsonrpc:"2.0",
+          id:$id,
+          method:"get_cells",
+          params:[
+            {script:$lock_script,script_type:"lock"},
+            "asc",
+            "0x64",
+            $cursor
+          ]
+        }
+      end
+      '
+    )"
+
+    local response
+    set +e
+    response="$(ckb_rpc_call "${payload}")"
+    local rc=$?
+    set -e
+    if [[ "${rc}" -ne 0 ]]; then
+      return 1
+    fi
+    printf '%s\n' "${response}" > "${target_dir}/ckb-balance-${label}.page.${page}.json"
+    if contains_jsonrpc_error "${response}"; then
+      return 1
+    fi
+
+    local page_sum
+    page_sum="$(sum_ckb_capacity_from_get_cells_response "${response}")"
+    total="$(python3 - "${total}" "${page_sum}" <<'PY'
+import sys
+print(int(sys.argv[1]) + int(sys.argv[2]))
+PY
+)"
+
+    local count next_cursor
+    count="$(printf '%s' "${response}" | jq -r '.result.objects | length')"
+    next_cursor="$(printf '%s' "${response}" | jq -r '.result.last_cursor // "0x"')"
+    printf 'page=%s count=%s page_sum=%s total=%s cursor=%s next=%s\n' \
+      "${page}" "${count}" "${page_sum}" "${total}" "${cursor}" "${next_cursor}" >> "${log_file}"
+
+    if [[ "${count}" -eq 0 || -z "${next_cursor}" || "${next_cursor}" == "${cursor}" ]]; then
+      break
+    fi
+    cursor="${next_cursor}"
+  done
+
+  printf '%s' "${total}"
+}
+
+ensure_ckb_balance_or_request_faucet() {
+  local address="$1"
+  local label="$2"
+  local target_dir="$3"
+  local required_amount="$4"
+  local lock_script_json="${5:-}"
+
+  if [[ -n "${lock_script_json}" ]]; then
+    local before_balance
+    set +e
+    before_balance="$(query_ckb_balance_for_lock_script "${lock_script_json}" "${target_dir}" "${label}-before")"
+    local balance_rc=$?
+    set -e
+    if [[ "${balance_rc}" -eq 0 && -n "${before_balance}" ]]; then
+      printf '%s\n' "${before_balance}" > "${target_dir}/ckb-balance-${label}.before.txt"
+      if bigint_gte "${before_balance}" "${required_amount}"; then
+        log "CKB balance precheck passed (label=${label}, balance=${before_balance}, required=${required_amount}), skip faucet"
+        return 0
+      fi
+      log "CKB balance precheck insufficient (label=${label}, balance=${before_balance}, required=${required_amount}), requesting faucet"
+    else
+      log "CKB balance precheck failed (label=${label}), falling back to faucet request"
+    fi
+  else
+    log "CKB balance precheck skipped (label=${label}, missing lock script), requesting faucet"
+  fi
+
+  request_ckb_faucet "${address}" "${label}" "${target_dir}"
+
+  if [[ -n "${lock_script_json}" ]]; then
+    local after_balance
+    set +e
+    after_balance="$(query_ckb_balance_for_lock_script "${lock_script_json}" "${target_dir}" "${label}-after")"
+    local after_rc=$?
+    set -e
+    if [[ "${after_rc}" -eq 0 && -n "${after_balance}" ]]; then
+      printf '%s\n' "${after_balance}" > "${target_dir}/ckb-balance-${label}.after.txt"
+      log "CKB balance after faucet (label=${label}): ${after_balance}"
+    fi
+  fi
+}
+
 query_usdi_balance_for_payer() {
   local target_dir="$1"
   local cursor="0x"
@@ -806,6 +1021,31 @@ fetch_node_info() {
   NODE_INFO_RESULT="${response}"
 }
 
+hydrate_lock_scripts_for_balance_precheck() {
+  local target_dir="$1"
+  mkdir -p "${target_dir}"
+
+  local payer_info invoice_info
+  fetch_node_info "${FNN_PAYER_RPC_PORT}" "${target_dir}/node-info-payer.precheck.response.json"
+  payer_info="${NODE_INFO_RESULT}"
+  fetch_node_info "${FNN_INVOICE_RPC_PORT}" "${target_dir}/node-info-invoice.precheck.response.json"
+  invoice_info="${NODE_INFO_RESULT}"
+
+  PAYER_LOCK_SCRIPT_JSON="$(printf '%s' "${payer_info}" | jq -c '.result.default_funding_lock_script // empty')"
+  INVOICE_LOCK_SCRIPT_JSON="$(printf '%s' "${invoice_info}" | jq -c '.result.default_funding_lock_script // empty')"
+  DETECTED_USDI_CURRENCY="$(extract_usdi_currency_from_node_info "${payer_info}")"
+  USDI_AUTO_ACCEPT_AMOUNT_HEX="$(extract_usdi_auto_accept_amount_from_node_info "${payer_info}")"
+  if [[ -z "${USDI_TYPE_SCRIPT_JSON}" ]]; then
+    USDI_TYPE_SCRIPT_JSON="$(extract_usdi_type_script_from_node_info "${payer_info}")"
+  fi
+  if [[ -z "${ACCEPT_CHANNEL_FUNDING_AMOUNT_HEX}" ]]; then
+    ACCEPT_CHANNEL_FUNDING_AMOUNT_HEX="$(printf '%s' "${invoice_info}" | jq -r '.result.auto_accept_channel_ckb_funding_amount // empty')"
+  fi
+  if [[ -n "${DETECTED_USDI_CURRENCY}" ]]; then
+    log "detected USDI invoice currency from node_info: ${DETECTED_USDI_CURRENCY}"
+  fi
+}
+
 connect_peer_on_port() {
   local from_port="$1"
   local remote_addr="$2"
@@ -843,15 +1083,27 @@ open_channel_from_payer() {
   local peer_id="$1"
   local funding_amount_hex="$2"
   local target_dir="$3"
+  local funding_udt_type_script_json="${4:-}"
 
   local payload
-  payload="$(jq -cn \
-    --arg id "open-channel-$(date +%s)-$RANDOM" \
-    --arg peer_id "${peer_id}" \
-    --arg funding_amount "${funding_amount_hex}" \
-    --arg tlc_fee_proportional_millionths "${CHANNEL_TLC_FEE_PROPORTIONAL_MILLIONTHS}" \
-    '{jsonrpc:"2.0",id:$id,method:"open_channel",params:[{peer_id:$peer_id,funding_amount:$funding_amount,tlc_fee_proportional_millionths:$tlc_fee_proportional_millionths}]}'
-  )"
+  if [[ -n "${funding_udt_type_script_json}" ]]; then
+    payload="$(jq -cn \
+      --arg id "open-channel-$(date +%s)-$RANDOM" \
+      --arg peer_id "${peer_id}" \
+      --arg funding_amount "${funding_amount_hex}" \
+      --arg tlc_fee_proportional_millionths "${CHANNEL_TLC_FEE_PROPORTIONAL_MILLIONTHS}" \
+      --argjson funding_udt_type_script "${funding_udt_type_script_json}" \
+      '{jsonrpc:"2.0",id:$id,method:"open_channel",params:[{peer_id:$peer_id,funding_amount:$funding_amount,funding_udt_type_script:$funding_udt_type_script,tlc_fee_proportional_millionths:$tlc_fee_proportional_millionths}]}'
+    )"
+  else
+    payload="$(jq -cn \
+      --arg id "open-channel-$(date +%s)-$RANDOM" \
+      --arg peer_id "${peer_id}" \
+      --arg funding_amount "${funding_amount_hex}" \
+      --arg tlc_fee_proportional_millionths "${CHANNEL_TLC_FEE_PROPORTIONAL_MILLIONTHS}" \
+      '{jsonrpc:"2.0",id:$id,method:"open_channel",params:[{peer_id:$peer_id,funding_amount:$funding_amount,tlc_fee_proportional_millionths:$tlc_fee_proportional_millionths}]}'
+    )"
+  fi
   printf '%s\n' "${payload}" > "${target_dir}/open-channel.request.json"
 
   local response
@@ -881,6 +1133,7 @@ open_channel_from_payer() {
 accept_channel_on_invoice_node() {
   local temporary_channel_id="$1"
   local target_dir="$2"
+  local funding_amount_hex="${3:-${ACCEPT_CHANNEL_FUNDING_AMOUNT_HEX}}"
 
   if [[ -z "${temporary_channel_id}" ]]; then
     return 0
@@ -890,7 +1143,7 @@ accept_channel_on_invoice_node() {
   payload="$(jq -cn \
     --arg id "accept-channel-$(date +%s)-$RANDOM" \
     --arg temporary_channel_id "${temporary_channel_id}" \
-    --arg funding_amount "${ACCEPT_CHANNEL_FUNDING_AMOUNT_HEX}" \
+    --arg funding_amount "${funding_amount_hex}" \
     '{jsonrpc:"2.0",id:$id,method:"accept_channel",params:[{temporary_channel_id:$temporary_channel_id,funding_amount:$funding_amount}]}'
   )"
   printf '%s\n' "${payload}" > "${target_dir}/accept-channel.request.json"
@@ -1031,6 +1284,132 @@ wait_until_channel_ready() {
   done
 }
 
+has_ready_usdi_channel_on_port() {
+  local rpc_port="$1"
+  local peer_id="$2"
+
+  if [[ -z "${USDI_TYPE_SCRIPT_JSON}" ]]; then
+    return 1
+  fi
+
+  local response
+  set +e
+  response="$(list_channels_by_peer "${rpc_port}" "${peer_id}")"
+  local rc=$?
+  set -e
+  if [[ "${rc}" -ne 0 ]]; then
+    return 1
+  fi
+  if contains_jsonrpc_error "${response}"; then
+    return 1
+  fi
+
+  if printf '%s' "${response}" | jq -e --argjson script "${USDI_TYPE_SCRIPT_JSON}" '
+    .result.channels // []
+    | any(
+        ((.state.state_name // .state) | tostring) as $state
+        | ($state == "CHANNEL_READY" or $state == "ChannelReady")
+        and (.funding_udt_type_script != null)
+        and ((.funding_udt_type_script.code_hash // "") == ($script.code_hash // ""))
+        and ((.funding_udt_type_script.hash_type // "") == ($script.hash_type // ""))
+        and ((.funding_udt_type_script.args // "") == ($script.args // ""))
+      )
+  ' >/dev/null 2>&1; then
+    return 0
+  fi
+
+  return 1
+}
+
+wait_until_usdi_channel_ready() {
+  local target_dir="$1"
+  local poll_log="${target_dir}/usdi-channel-ready.poll.log"
+  : > "${poll_log}"
+
+  local deadline
+  deadline=$(( $(date +%s) + CHANNEL_READY_TIMEOUT_SECONDS ))
+  local attempt=0
+
+  while true; do
+    attempt=$((attempt + 1))
+    local payer_ready invoice_ready
+    if has_ready_usdi_channel_on_port "${FNN_PAYER_RPC_PORT}" "${INVOICE_PEER_ID}"; then
+      payer_ready=1
+    else
+      payer_ready=0
+    fi
+    if has_ready_usdi_channel_on_port "${FNN_INVOICE_RPC_PORT}" "${PAYER_PEER_ID}"; then
+      invoice_ready=1
+    else
+      invoice_ready=0
+    fi
+
+    printf 'attempt=%s payer_ready=%s invoice_ready=%s at=%s\n' \
+      "${attempt}" "${payer_ready}" "${invoice_ready}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "${poll_log}"
+    vlog "usdi channel poll attempt=${attempt} payer_ready=${payer_ready} invoice_ready=${invoice_ready}"
+
+    if [[ "${payer_ready}" -eq 1 && "${invoice_ready}" -eq 1 ]]; then
+      return 0
+    fi
+
+    if [[ "$(date +%s)" -ge "${deadline}" ]]; then
+      return 1
+    fi
+    sleep "${CHANNEL_POLL_INTERVAL_SECONDS}"
+  done
+}
+
+resolve_usdi_channel_funding_amount() {
+  local amount="${USDI_CHANNEL_FUNDING_AMOUNT}"
+  if [[ -z "${amount}" && -n "${USDI_AUTO_ACCEPT_AMOUNT_HEX}" ]]; then
+    set +e
+    amount="$(hex_quantity_to_decimal "${USDI_AUTO_ACCEPT_AMOUNT_HEX}")"
+    local rc=$?
+    set -e
+    if [[ "${rc}" -ne 0 ]]; then
+      amount=""
+    fi
+  fi
+  if [[ -z "${amount}" ]]; then
+    amount="${USDI_PAYMENT_AMOUNT}"
+  fi
+  if ! is_positive_integer "${amount}"; then
+    amount="1"
+  fi
+  printf '%s' "${amount}"
+}
+
+bootstrap_usdi_channel() {
+  local target_dir="$1"
+  mkdir -p "${target_dir}"
+
+  if [[ -z "${USDI_TYPE_SCRIPT_JSON}" ]]; then
+    fatal "${EXIT_PRECHECK}" "node_info missing USDI udt script; cannot bootstrap USDI channel"
+  fi
+
+  if has_ready_usdi_channel_on_port "${FNN_PAYER_RPC_PORT}" "${INVOICE_PEER_ID}" \
+    && has_ready_usdi_channel_on_port "${FNN_INVOICE_RPC_PORT}" "${PAYER_PEER_ID}"; then
+    log "USDI channel already ready (fnn2 <-> fnn)"
+    return 0
+  fi
+
+  local funding_amount funding_amount_hex temporary_channel_id accept_funding_hex
+  funding_amount="$(resolve_usdi_channel_funding_amount)"
+  funding_amount_hex="$(to_hex_quantity "${funding_amount}")"
+  accept_funding_hex="${USDI_AUTO_ACCEPT_AMOUNT_HEX:-${funding_amount_hex}}"
+
+  log "bootstrapping USDI channel (payer=fnn2 -> invoice=fnn, funding_amount=${funding_amount_hex})"
+  open_channel_from_payer "${INVOICE_PEER_ID}" "${funding_amount_hex}" "${target_dir}" "${USDI_TYPE_SCRIPT_JSON}"
+  temporary_channel_id="${OPEN_CHANNEL_TEMPORARY_ID}"
+  printf '%s\n' "${temporary_channel_id}" > "${target_dir}/temporary-channel-id"
+
+  accept_channel_on_invoice_node "${temporary_channel_id}" "${target_dir}" "${accept_funding_hex}"
+  if ! wait_until_usdi_channel_ready "${target_dir}"; then
+    fail_with_topup_hint "USDI" "timeout waiting fnn2<->fnn USDI channel to reach ChannelReady (likely missing UDT owner cells)"
+  fi
+  log "USDI channel is ready (fnn2 <-> fnn)"
+}
+
 bootstrap_dual_fnn_channel() {
   local target_dir="$1"
   mkdir -p "${target_dir}"
@@ -1044,6 +1423,9 @@ bootstrap_dual_fnn_channel() {
   payer_info="${NODE_INFO_RESULT}"
 
   PAYER_LOCK_SCRIPT_JSON="$(printf '%s' "${payer_info}" | jq -c '.result.default_funding_lock_script // empty')"
+  INVOICE_LOCK_SCRIPT_JSON="$(printf '%s' "${invoice_info}" | jq -c '.result.default_funding_lock_script // empty')"
+  DETECTED_USDI_CURRENCY="$(extract_usdi_currency_from_node_info "${payer_info}")"
+  USDI_AUTO_ACCEPT_AMOUNT_HEX="$(extract_usdi_auto_accept_amount_from_node_info "${payer_info}")"
   USDI_TYPE_SCRIPT_JSON="$(extract_usdi_type_script_from_node_info "${payer_info}")"
 
   INVOICE_NODE_ID="$(printf '%s' "${invoice_info}" | jq -r '.result.node_id // empty')"
@@ -1308,10 +1690,11 @@ run_asset_flow() {
     elif [[ "${CKB_PAYMENT_FAUCET_ON_FLOW}" == "1" ]]; then
       request_ckb_faucet "${CKB_TOPUP_ADDRESS}" "payer-payment" "${target_dir}"
     else
-      log "CKB faucet skipped for payment flow (E2E_CKB_PAYMENT_FAUCET_ON_FLOW=0)"
+      ensure_ckb_balance_or_request_faucet "${CKB_TOPUP_ADDRESS}" "payer-payment" "${target_dir}" "${amount}" "${PAYER_LOCK_SCRIPT_JSON}"
     fi
   else
     request_usdi_faucet "${target_dir}" "${amount}"
+    bootstrap_usdi_channel "${target_dir}/usdi-channel-bootstrap"
   fi
 
   local invoice=""
@@ -1413,6 +1796,9 @@ fi
 if ! is_positive_integer "${USDI_FAUCET_WAIT_SECONDS}"; then
   fatal "${EXIT_PRECHECK}" "USDI_FAUCET_WAIT_SECONDS must be a positive integer"
 fi
+if [[ -n "${USDI_CHANNEL_FUNDING_AMOUNT}" ]] && ! is_positive_integer "${USDI_CHANNEL_FUNDING_AMOUNT}"; then
+  fatal "${EXIT_PRECHECK}" "E2E_USDI_CHANNEL_FUNDING_AMOUNT must be a positive integer"
+fi
 if ! is_positive_integer "${WAIT_TIMEOUT_SECONDS}"; then
   fatal "${EXIT_PRECHECK}" "WAIT_TIMEOUT_SECONDS must be a positive integer"
 fi
@@ -1427,6 +1813,9 @@ if ! is_positive_integer "${CHANNEL_READY_TIMEOUT_SECONDS}"; then
 fi
 if ! is_positive_integer "${CHANNEL_POLL_INTERVAL_SECONDS}"; then
   fatal "${EXIT_PRECHECK}" "CHANNEL_POLL_INTERVAL_SECONDS must be a positive integer"
+fi
+if ! is_positive_integer "${CKB_BALANCE_CHECK_LIMIT_PAGES}"; then
+  fatal "${EXIT_PRECHECK}" "E2E_CKB_BALANCE_CHECK_LIMIT_PAGES must be a positive integer"
 fi
 if ! is_positive_integer "${USDI_BALANCE_CHECK_LIMIT_PAGES}"; then
   fatal "${EXIT_PRECHECK}" "E2E_USDI_BALANCE_CHECK_LIMIT_PAGES must be a positive integer"
@@ -1491,14 +1880,29 @@ fi
 
 bootstrap_dir="${ARTIFACT_DIR}/bootstrap"
 mkdir -p "${bootstrap_dir}"
+hydrate_lock_scripts_for_balance_precheck "${bootstrap_dir}"
+
+payer_bootstrap_required_amount="${CHANNEL_FUNDING_AMOUNT}"
+invoice_bootstrap_required_amount="1"
+if [[ -n "${ACCEPT_CHANNEL_FUNDING_AMOUNT_HEX}" ]]; then
+  set +e
+  invoice_bootstrap_required_amount="$(hex_quantity_to_decimal "${ACCEPT_CHANNEL_FUNDING_AMOUNT_HEX}")"
+  local_rc=$?
+  set -e
+  if [[ "${local_rc}" -ne 0 ]]; then
+    invoice_bootstrap_required_amount="1"
+  elif ! is_positive_integer "${invoice_bootstrap_required_amount}"; then
+    invoice_bootstrap_required_amount="1"
+  fi
+fi
 
 # Ensure both sides have enough CKB to establish/accept channels.
 if [[ "${SKIP_CKB_FAUCET}" == "1" ]]; then
   log "CKB faucet skipped for bootstrap (E2E_SKIP_CKB_FAUCET=1)"
 else
-  request_ckb_faucet "${CKB_TOPUP_ADDRESS}" "payer-bootstrap" "${bootstrap_dir}"
+  ensure_ckb_balance_or_request_faucet "${CKB_TOPUP_ADDRESS}" "payer-bootstrap" "${bootstrap_dir}" "${payer_bootstrap_required_amount}" "${PAYER_LOCK_SCRIPT_JSON}"
   if [[ "${TOPUP_INVOICE_NODE_CKB}" == "1" && "${CKB_INVOICE_NODE_TOPUP_ADDRESS}" != "${CKB_TOPUP_ADDRESS}" ]]; then
-    request_ckb_faucet "${CKB_INVOICE_NODE_TOPUP_ADDRESS}" "invoice-bootstrap" "${bootstrap_dir}"
+    ensure_ckb_balance_or_request_faucet "${CKB_INVOICE_NODE_TOPUP_ADDRESS}" "invoice-bootstrap" "${bootstrap_dir}" "${invoice_bootstrap_required_amount}" "${INVOICE_LOCK_SCRIPT_JSON}"
   else
     log "invoice bootstrap CKB faucet skipped (E2E_TOPUP_INVOICE_NODE_CKB=${TOPUP_INVOICE_NODE_CKB})"
   fi
