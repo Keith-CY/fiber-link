@@ -97,7 +97,7 @@ Required env:
   E2E_CKB_TOPUP_ADDRESS       payer(FNN2) CKB top-up address (optional if derivable from node_info)
   E2E_CKB_INVOICE_TOPUP_ADDRESS  invoice node(FNN1) CKB top-up address (optional if derivable)
   E2E_USDI_TOPUP_ADDRESS      payer(FNN2) USDI top-up address (optional, defaults to E2E_CKB_TOPUP_ADDRESS)
-  E2E_USDI_FAUCET_COMMAND     Command to request USDI faucet funds (required for full e2e)
+  E2E_USDI_FAUCET_COMMAND     Optional override command for USDI faucet request
 
 Optional env:
   E2E_APP_ID=local-dev
@@ -109,6 +109,10 @@ Optional env:
   E2E_CKB_PAYMENT_FAUCET_ON_FLOW=0
   E2E_CKB_RPC_URL=https://testnet.ckbapp.dev/
   E2E_USDI_BALANCE_CHECK_LIMIT_PAGES=20
+  # default when E2E_USDI_FAUCET_COMMAND is unset:
+  # curl -fsS -X POST https://ckb-utilities.random-walk.co.jp/api/faucet \
+  #   -H "content-type: application/json" \
+  #   -d "{\"address\":\"${E2E_FAUCET_ADDRESS}\",\"token\":\"usdi\"}"
   USDI_FAUCET_AMOUNT=20
   USDI_FAUCET_WAIT_SECONDS=20
   E2E_CHANNEL_FUNDING_AMOUNT=10000000000
@@ -1444,7 +1448,8 @@ if [[ -n "${ACCEPT_CHANNEL_FUNDING_AMOUNT_HEX}" && ! "${ACCEPT_CHANNEL_FUNDING_A
 fi
 
 if [[ "${PREPARE_ONLY}" -ne 1 && -z "${USDI_FAUCET_COMMAND}" ]]; then
-  fatal "${EXIT_PRECHECK}" "E2E_USDI_FAUCET_COMMAND is required"
+  USDI_FAUCET_COMMAND='curl -fsS -X POST https://ckb-utilities.random-walk.co.jp/api/faucet -H "content-type: application/json" -d "{\"address\":\"${E2E_FAUCET_ADDRESS}\",\"token\":\"usdi\"}"'
+  log "E2E_USDI_FAUCET_COMMAND is unset; using built-in default faucet command"
 fi
 
 log "starting compose services"

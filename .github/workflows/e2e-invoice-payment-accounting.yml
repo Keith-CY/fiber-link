@@ -40,10 +40,6 @@ jobs:
           E2E_USDI_FAUCET_COMMAND: ${{ secrets.E2E_USDI_FAUCET_COMMAND }}
         run: |
           set -euo pipefail
-          if [[ -z "${E2E_USDI_FAUCET_COMMAND:-}" ]]; then
-            echo "E2E_USDI_FAUCET_COMMAND secret is required"
-            exit 1
-          fi
           scripts/e2e-invoice-payment-accounting.sh --verbose
 
       - name: Upload E2E Artifacts

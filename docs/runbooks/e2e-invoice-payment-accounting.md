@@ -41,7 +41,7 @@ export E2E_CKB_INVOICE_TOPUP_ADDRESS="<ckb testnet address>"
 # payer node USDI top-up address, optional (defaults to E2E_CKB_TOPUP_ADDRESS)
 export E2E_USDI_TOPUP_ADDRESS="<usdi topup address>"
 
-# required for full e2e (CKB+USDI), example using the provided faucet endpoint
+# optional override for full e2e (CKB+USDI), script has built-in default
 export E2E_USDI_FAUCET_COMMAND='curl -fsS -X POST https://ckb-utilities.random-walk.co.jp/api/faucet -H "content-type: application/json" -d "{\"address\":\"${E2E_FAUCET_ADDRESS}\",\"token\":\"usdi\"}"'
 ```
 
@@ -121,15 +121,12 @@ Workflow:
 
 - `.github/workflows/e2e-invoice-payment-accounting.yml`
 
-Required repository secret:
-
-- `E2E_USDI_FAUCET_COMMAND`
-
 Optional repository secrets:
 
 - `E2E_CKB_TOPUP_ADDRESS` (if omitted, workflow run tries auto-derive from `fnn2 node_info`)
 - `E2E_CKB_INVOICE_TOPUP_ADDRESS` (if omitted, workflow run tries auto-derive from `fnn node_info`)
 - `E2E_USDI_TOPUP_ADDRESS` (defaults to `E2E_CKB_TOPUP_ADDRESS`)
+- `E2E_USDI_FAUCET_COMMAND` (optional override; if omitted, workflow uses built-in faucet command)
 
 After setting secrets, trigger workflow manually from Actions tab:
 
