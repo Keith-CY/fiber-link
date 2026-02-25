@@ -55,6 +55,31 @@ services:
       retries: 12
       start_period: 20s
 
+  fnn2:
+    container_name: fiber-link-fnn2
+    platform: ${FNN_PLATFORM:-linux/amd64}
+    build:
+      context: ../..
+      dockerfile: deploy/compose/fnn/Dockerfile
+      args:
+        FNN_VERSION: ${FNN_VERSION:-v0.6.1}
+        FNN_ASSET: ${FNN_ASSET:-fnn_v0.6.1-x86_64-linux-portable.tar.gz}
+        FNN_ASSET_SHA256: ${FNN_ASSET_SHA256:?Set FNN_ASSET_SHA256 in .env}
+    restart: unless-stopped
+    environment:
+      FIBER_SECRET_KEY_PASSWORD: ${FIBER_SECRET_KEY_PASSWORD:?Set FIBER_SECRET_KEY_PASSWORD in .env}
+    ports:
+      - "${FNN2_RPC_PORT:-9227}:8227"
+      - "${FNN2_P2P_PORT:-9228}:8228"
+    volumes:
+      - fnn2-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "FNN_HOST_IP=$$(hostname -i | awk '{print $$1}'); curl -sS --max-time 3 \"http://$${FNN_HOST_IP}:8227\" >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
   rpc:
     container_name: fiber-link-rpc
     build:
@@ -122,4 +147,5 @@ services:
 volumes:
   postgres-data:
   fnn-data:
+  fnn2-data:
   worker-data:

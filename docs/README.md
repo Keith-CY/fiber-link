@@ -38,6 +38,12 @@
 - `docs/runbooks/fiber-adapter-e2e.md` — end-to-end validation for `fiber-adapter -> fnn rpc` in docker network.
 - `scripts/e2e-fiber-adapter-docker.sh` — runnable entrypoint for the `fiber-adapter` docker e2e probe.
 
+## Invoice payment e2e
+
+- `docs/runbooks/e2e-invoice-payment-accounting.md` — dual-FNN (`fnn` + `fnn2`) faucet + channel bootstrap + invoice/payment/settled flow for `CKB` and `USDI`.
+- `scripts/e2e-invoice-payment-accounting.sh` — full docker-backed e2e entrypoint.
+- `scripts/local-dual-fnn-env.sh` — prepare-only helper for local manual testing (starts stack + establishes `fnn2 -> fnn` channel).
+
 ## Deployment evidence
 
 - `docs/runbooks/deployment-evidence.md` — deployment evidence artifacts, checklist, and retention policy.
