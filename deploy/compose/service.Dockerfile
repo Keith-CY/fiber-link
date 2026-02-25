@@ -1,4 +1,4 @@
-FROM oven/bun:1.2.19
+FROM oven/bun:1.2.19 AS base
 
 WORKDIR /app
 
@@ -11,5 +11,9 @@ COPY fiber-link-service/packages ./packages
 
 RUN bun install --frozen-lockfile
 
+FROM base AS rpc
 EXPOSE 3000
 CMD ["bun", "run", "apps/rpc/src/entry.ts"]
+
+FROM base AS worker
+CMD ["bun", "run", "apps/worker/src/entry.ts"]
