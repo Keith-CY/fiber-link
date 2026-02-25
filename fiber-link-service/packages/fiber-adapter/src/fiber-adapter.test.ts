@@ -17,6 +17,8 @@ describe("fiber adapter", () => {
     delete process.env.FIBER_INVOICE_CURRENCY;
     delete process.env.FIBER_INVOICE_CURRENCY_CKB;
     delete process.env.FIBER_INVOICE_CURRENCY_USDI;
+    delete process.env.FIBER_USDI_UDT_NAME;
+    delete process.env.FIBER_USDI_UDT_TYPE_SCRIPT_JSON;
     delete process.env.FIBER_SETTLEMENT_SUBSCRIPTION_ENABLED;
     delete process.env.FIBER_SETTLEMENT_SUBSCRIPTION_URL;
     delete process.env.FIBER_SETTLEMENT_SUBSCRIPTION_RECONNECT_DELAY_MS;
@@ -24,15 +26,37 @@ describe("fiber adapter", () => {
   });
 
   it("createInvoice calls node rpc and returns invoice string", async () => {
-    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue({
-      ok: true,
-      json: async () => ({ jsonrpc: "2.0", id: 1, result: { invoice_address: "fiber:USDI:10:real" } }),
-    } as Response);
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          jsonrpc: "2.0",
+          id: 1,
+          result: {
+            udt_cfg_infos: [
+              {
+                name: "RUSD",
+                script: {
+                  code_hash: "0x01",
+                  hash_type: "type",
+                  args: "0x02",
+                },
+              },
+            ],
+          },
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ jsonrpc: "2.0", id: 1, result: { invoice_address: "fiber:USDI:10:real" } }),
+      } as Response);
 
     const adapter = createAdapter({ endpoint: "http://localhost:8119" });
     const result = await adapter.createInvoice({ amount: "10", asset: "USDI" });
 
     expect(result.invoice).toBe("fiber:USDI:10:real");
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
     expect(fetchSpy).toHaveBeenCalledWith(
       "http://localhost:8119",
       expect.objectContaining({
@@ -41,9 +65,14 @@ describe("fiber adapter", () => {
         body: expect.stringContaining("\"method\":\"new_invoice\""),
       }),
     );
-    expect(fetchSpy.mock.calls[0]?.[1]).toEqual(
+    expect(fetchSpy.mock.calls[1]?.[1]).toEqual(
       expect.objectContaining({
-        body: expect.stringContaining("\"currency\":\"USDI\""),
+        body: expect.stringContaining("\"currency\":\"Fibt\""),
+      }),
+    );
+    expect(fetchSpy.mock.calls[1]?.[1]).toEqual(
+      expect.objectContaining({
+        body: expect.stringContaining("\"udt_type_script\""),
       }),
     );
   });
@@ -66,10 +95,31 @@ describe("fiber adapter", () => {
   });
 
   it("createInvoice throws when invoice is missing in rpc result", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue({
-      ok: true,
-      json: async () => ({ jsonrpc: "2.0", id: 1, result: {} }),
-    } as Response);
+    vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          jsonrpc: "2.0",
+          id: 1,
+          result: {
+            udt_cfg_infos: [
+              {
+                name: "RUSD",
+                script: {
+                  code_hash: "0x01",
+                  hash_type: "type",
+                  args: "0x02",
+                },
+              },
+            ],
+          },
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ jsonrpc: "2.0", id: 1, result: {} }),
+      } as Response);
 
     const adapter = createAdapter({ endpoint: "http://localhost:8119" });
 
@@ -177,7 +227,10 @@ describe("fiber adapter", () => {
   });
 
   it("subscribeSettlements remains no-op when subscription config is disabled", async () => {
-    const fetchSpy = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("must not call fetch"));
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({ jsonrpc: "2.0", id: 1, result: {} }),
+    } as Response);
     const adapter = createAdapter({
       endpoint: "http://localhost:8119",
       settlementSubscription: {
@@ -226,7 +279,7 @@ describe("fiber adapter", () => {
     );
     expect(fetchSpy.mock.calls[1]?.[1]).toEqual(
       expect.objectContaining({
-        body: expect.stringContaining("\"currency\":\"USDI\""),
+        body: expect.stringContaining("\"currency\":\"Fibt\""),
       }),
     );
   });

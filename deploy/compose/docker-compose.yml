@@ -55,6 +55,31 @@ services:
       retries: 12
       start_period: 20s
 
+  fnn2:
+    container_name: fiber-link-fnn2
+    platform: ${FNN_PLATFORM:-linux/amd64}
+    build:
+      context: ../..
+      dockerfile: deploy/compose/fnn/Dockerfile
+      args:
+        FNN_VERSION: ${FNN_VERSION:-v0.6.1}
+        FNN_ASSET: ${FNN_ASSET:-fnn_v0.6.1-x86_64-linux-portable.tar.gz}
+        FNN_ASSET_SHA256: ${FNN_ASSET_SHA256:?Set FNN_ASSET_SHA256 in .env}
+    restart: unless-stopped
+    environment:
+      FIBER_SECRET_KEY_PASSWORD: ${FIBER_SECRET_KEY_PASSWORD:?Set FIBER_SECRET_KEY_PASSWORD in .env}
+    ports:
+      - "${FNN2_RPC_PORT:-9227}:8227"
+      - "${FNN2_P2P_PORT:-9228}:8228"
+    volumes:
+      - fnn2-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "FNN_HOST_IP=$$(hostname -i | awk '{print $$1}'); curl -sS --max-time 3 \"http://$${FNN_HOST_IP}:8227\" >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
   rpc:
     container_name: fiber-link-rpc
     build:
@@ -73,6 +98,7 @@ services:
       FIBER_LINK_NONCE_REDIS_URL: redis://redis:6379/0
       FIBER_LINK_HMAC_SECRET: ${FIBER_LINK_HMAC_SECRET:?Set FIBER_LINK_HMAC_SECRET in .env}
       FIBER_RPC_URL: ${FIBER_RPC_URL:-http://fnn:8227}
+      FIBER_INVOICE_CURRENCY_CKB: ${FIBER_INVOICE_CURRENCY_CKB:-Fibt}
       RPC_HOST: 0.0.0.0
       RPC_PORT: 3000
       RPC_HEALTHCHECK_TIMEOUT_MS: ${RPC_HEALTHCHECK_TIMEOUT_MS:-3000}
@@ -99,6 +125,7 @@ services:
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-fiber}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-fiber_link}
       FIBER_RPC_URL: ${FIBER_RPC_URL:-http://fnn:8227}
+      FIBER_INVOICE_CURRENCY_CKB: ${FIBER_INVOICE_CURRENCY_CKB:-Fibt}
       WORKER_WITHDRAWAL_INTERVAL_MS: ${WORKER_WITHDRAWAL_INTERVAL_MS:-30000}
       WORKER_SETTLEMENT_INTERVAL_MS: ${WORKER_SETTLEMENT_INTERVAL_MS:-30000}
       WORKER_SETTLEMENT_BATCH_SIZE: ${WORKER_SETTLEMENT_BATCH_SIZE:-200}
@@ -122,4 +149,5 @@ services:
 volumes:
   postgres-data:
   fnn-data:
+  fnn2-data:
   worker-data:

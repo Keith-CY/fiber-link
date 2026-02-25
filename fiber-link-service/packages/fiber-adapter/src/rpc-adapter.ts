@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { rpcCall } from "./fiber-client";
+import { FiberRpcError, rpcCall } from "./fiber-client";
 import type {
   Asset,
   CreateAdapterArgs,
@@ -11,6 +11,12 @@ import type {
   SettlementSubscriptionHandle,
   SubscribeSettlementsArgs,
 } from "./types";
+
+type UdtTypeScript = {
+  code_hash: string;
+  hash_type: string;
+  args: string;
+};
 
 function mapInvoiceState(value: string): InvoiceState {
   const normalized = value.trim().toLowerCase();
@@ -35,15 +41,10 @@ function generateFallbackRequestId({ invoice, amount, asset }: { invoice: string
   return `fiber:${createHash("sha256").update(`${invoice}|${amount}|${asset}`).digest("hex").slice(0, 20)}`;
 }
 
-const DEFAULT_INVOICE_CURRENCY_BY_ASSET: Record<Asset, string> = {
-  CKB: "Fibt",
-  USDI: "USDI",
-};
-
-function mapAssetToCurrency(asset: Asset): string {
-  const assetScoped = process.env[`FIBER_INVOICE_CURRENCY_${asset}`];
-  if (typeof assetScoped === "string" && assetScoped) {
-    return assetScoped;
+function mapCkbCurrency(): string {
+  const ckbScoped = process.env.FIBER_INVOICE_CURRENCY_CKB;
+  if (typeof ckbScoped === "string" && ckbScoped) {
+    return ckbScoped;
   }
 
   const globalCurrency = process.env.FIBER_INVOICE_CURRENCY;
@@ -51,7 +52,116 @@ function mapAssetToCurrency(asset: Asset): string {
     return globalCurrency;
   }
 
-  return DEFAULT_INVOICE_CURRENCY_BY_ASSET[asset];
+  return "Fibt";
+}
+
+function mapAssetToCurrency(asset: Asset): string {
+  if (asset === "CKB") {
+    return mapCkbCurrency();
+  }
+
+  const usdiScoped = process.env.FIBER_INVOICE_CURRENCY_USDI;
+  if (typeof usdiScoped === "string" && usdiScoped) {
+    return usdiScoped;
+  }
+
+  // USDI invoices/payments in FNN use the chain currency enum (Fibb/Fibt/Fibd)
+  // and carry xUDT identity via udt_type_script.
+  return mapCkbCurrency();
+}
+
+function normalizeOptionalName(input: unknown): string {
+  if (typeof input !== "string") {
+    return "";
+  }
+  return input.trim().toLowerCase();
+}
+
+function isUdtTypeScript(value: unknown): value is UdtTypeScript {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate.code_hash === "string" &&
+    !!candidate.code_hash &&
+    typeof candidate.hash_type === "string" &&
+    !!candidate.hash_type &&
+    typeof candidate.args === "string" &&
+    !!candidate.args
+  );
+}
+
+async function rpcCallWithoutParams(endpoint: string, method: string): Promise<unknown> {
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params: [] }),
+  });
+
+  if (!response.ok) {
+    throw new FiberRpcError(`Fiber RPC HTTP ${response.status}`);
+  }
+
+  const payload = await response.json();
+  if (payload?.error) {
+    throw new FiberRpcError(payload.error.message ?? "Fiber RPC error", payload.error.code, payload.error.data);
+  }
+
+  return payload?.result;
+}
+
+function pickUsdiUdtScript(nodeInfo: unknown): UdtTypeScript | null {
+  if (!nodeInfo || typeof nodeInfo !== "object") {
+    return null;
+  }
+
+  const infosRaw = (nodeInfo as Record<string, unknown>).udt_cfg_infos;
+  if (!Array.isArray(infosRaw) || infosRaw.length === 0) {
+    return null;
+  }
+  const infos = infosRaw.filter((item) => item && typeof item === "object") as Array<Record<string, unknown>>;
+  if (infos.length === 0) {
+    return null;
+  }
+
+  const preferredName = normalizeOptionalName(process.env.FIBER_USDI_UDT_NAME);
+  const preferred = preferredName
+    ? infos.find((item) => normalizeOptionalName(item.name) === preferredName)
+    : infos.find((item) => {
+        const name = normalizeOptionalName(item.name);
+        return name === "usdi" || name === "rusd";
+      });
+
+  const selected = preferred ?? infos[0];
+  const script = selected?.script;
+  if (!isUdtTypeScript(script)) {
+    return null;
+  }
+  return script;
+}
+
+async function resolveUsdiUdtScript(endpoint: string): Promise<UdtTypeScript> {
+  const envJson = process.env.FIBER_USDI_UDT_TYPE_SCRIPT_JSON;
+  if (typeof envJson === "string" && envJson.trim()) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(envJson);
+    } catch {
+      throw new Error("FIBER_USDI_UDT_TYPE_SCRIPT_JSON must be valid JSON");
+    }
+    if (!isUdtTypeScript(parsed)) {
+      throw new Error("FIBER_USDI_UDT_TYPE_SCRIPT_JSON must include code_hash/hash_type/args");
+    }
+    return parsed;
+  }
+
+  const nodeInfo = await rpcCallWithoutParams(endpoint, "node_info");
+  const script = pickUsdiUdtScript(nodeInfo);
+  if (!script) {
+    throw new Error("node_info does not expose a usable USDI udt_type_script");
+  }
+  return script;
 }
 
 function pickPaymentHash(result: Record<string, unknown> | undefined): string | null {
@@ -355,10 +465,15 @@ export function createAdapter({ endpoint, settlementSubscription, fetchFn }: Cre
 
   return {
     async createInvoice({ amount, asset }: CreateInvoiceArgs) {
-      const result = (await rpcCall(endpoint, "new_invoice", {
+      const payload: Record<string, unknown> = {
         amount: toHexQuantity(amount),
         currency: mapAssetToCurrency(asset),
-      })) as Record<string, unknown> | undefined;
+      };
+      if (asset === "USDI") {
+        payload.udt_type_script = await resolveUsdiUdtScript(endpoint);
+      }
+
+      const result = (await rpcCall(endpoint, "new_invoice", payload)) as Record<string, unknown> | undefined;
       if (typeof result?.invoice_address !== "string" || !result.invoice_address) {
         throw new Error("new_invoice response is missing 'invoice_address' string");
       }
@@ -449,6 +564,7 @@ export function createAdapter({ endpoint, settlementSubscription, fetchFn }: Cre
         amount: toHexQuantity(amount),
         currency: mapAssetToCurrency(asset),
         request_id: resolvedRequestId,
+        invoice: toAddress,
       })) as Record<string, unknown> | undefined;
       const txHash = pickTxEvidence(result);
       if (!txHash) {

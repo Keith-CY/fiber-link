@@ -1,0 +1,51 @@
+name: E2E Invoice Payment Accounting
+
+on:
+  workflow_dispatch:
+
+jobs:
+  e2e-invoice-payment-accounting:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      FNN_ASSET_SHA256: 8f9a69361f662438fa1fc29ddc668192810b13021536ebd1101c84dc0cfa330f
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare Compose Env
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp deploy/compose/.env.example deploy/compose/.env
+          POSTGRES_PASSWORD="$(openssl rand -hex 16)"
+          FIBER_SECRET_KEY_PASSWORD="$(openssl rand -hex 16)"
+          FIBER_LINK_HMAC_SECRET="$(openssl rand -hex 16)"
+          awk -v pp="$POSTGRES_PASSWORD" -v sp="$FIBER_SECRET_KEY_PASSWORD" -v hs="$FIBER_LINK_HMAC_SECRET" -v sha="$FNN_ASSET_SHA256" '
+          BEGIN{OFS="="}
+          /^POSTGRES_PASSWORD=/{print "POSTGRES_PASSWORD",pp;next}
+          /^FIBER_SECRET_KEY_PASSWORD=/{print "FIBER_SECRET_KEY_PASSWORD",sp;next}
+          /^FIBER_LINK_HMAC_SECRET=/{print "FIBER_LINK_HMAC_SECRET",hs;next}
+          /^FNN_ASSET_SHA256=/{print "FNN_ASSET_SHA256",sha;next}
+          {print}
+          ' deploy/compose/.env > /tmp/fiber-env.tmp
+          mv /tmp/fiber-env.tmp deploy/compose/.env
+
+      - name: Run E2E
+        shell: bash
+        env:
+          E2E_CKB_TOPUP_ADDRESS: ${{ secrets.E2E_CKB_TOPUP_ADDRESS }}
+          E2E_CKB_INVOICE_TOPUP_ADDRESS: ${{ secrets.E2E_CKB_INVOICE_TOPUP_ADDRESS }}
+          E2E_USDI_TOPUP_ADDRESS: ${{ secrets.E2E_USDI_TOPUP_ADDRESS }}
+          E2E_USDI_FAUCET_COMMAND: ${{ secrets.E2E_USDI_FAUCET_COMMAND }}
+        run: |
+          set -euo pipefail
+          scripts/e2e-invoice-payment-accounting.sh --verbose
+
+      - name: Upload E2E Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-invoice-payment-accounting-artifacts
+          path: .tmp/e2e-invoice-payment-accounting
+          if-no-files-found: warn
