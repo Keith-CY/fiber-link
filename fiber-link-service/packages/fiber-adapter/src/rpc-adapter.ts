@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { FiberRpcError, rpcCall } from "./fiber-client";
+import { executeCkbOnchainWithdrawal } from "./ckb-onchain-withdrawal";
 import type {
   Asset,
   CreateAdapterArgs,
@@ -68,6 +69,11 @@ function mapAssetToCurrency(asset: Asset): string {
   // USDI invoices/payments in FNN use the chain currency enum (Fibb/Fibt/Fibd)
   // and carry xUDT identity via udt_type_script.
   return mapCkbCurrency();
+}
+
+function isCkbAddress(input: string): boolean {
+  const normalized = input.trim().toLowerCase();
+  return normalized.startsWith("ckt1") || normalized.startsWith("ckb1");
 }
 
 function normalizeOptionalName(input: unknown): string {
@@ -551,6 +557,10 @@ export function createAdapter({ endpoint, settlementSubscription, fetchFn }: Cre
       };
     },
     async executeWithdrawal({ amount, asset, toAddress, requestId }: ExecuteWithdrawalArgs) {
+      if (asset === "CKB" && isCkbAddress(toAddress)) {
+        return executeCkbOnchainWithdrawal({ amount, asset, toAddress, requestId });
+      }
+
       const parsed = (await rpcCall(endpoint, "parse_invoice", {
         invoice: toAddress,
       })) as Record<string, unknown> | undefined;

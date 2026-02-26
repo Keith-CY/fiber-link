@@ -178,11 +178,55 @@ wait_http_ready() {
   done
 }
 
+docker_host_port_for() {
+  local container="$1"
+  local internal_port="$2"
+  docker port "${container}" "${internal_port}/tcp" 2>/dev/null | awk -F: 'NR==1 {print $NF}' || true
+}
+
+resolve_runtime_ports() {
+  local rpc_probe_url="http://127.0.0.1:${RPC_PORT}/healthz/ready"
+  if ! wait_http_ready "${rpc_probe_url}" 8; then
+    local detected_rpc_port
+    detected_rpc_port="$(docker_host_port_for "fiber-link-rpc" "3000")"
+    if [[ -n "${detected_rpc_port}" && "${detected_rpc_port}" != "${RPC_PORT}" ]]; then
+      log "rpc port mismatch: configured=${RPC_PORT}, detected running container host port=${detected_rpc_port}; using detected value"
+      RPC_PORT="${detected_rpc_port}"
+    fi
+  fi
+
+  rpc_probe_url="http://127.0.0.1:${RPC_PORT}/healthz/ready"
+  wait_http_ready "${rpc_probe_url}" 30 \
+    || fatal "${EXIT_PRECHECK}" "rpc endpoint is not ready at ${rpc_probe_url}"
+
+  local fnn_probe_url="http://127.0.0.1:${FNN2_RPC_PORT}"
+  if ! wait_http_ready "${fnn_probe_url}" 8; then
+    local detected_fnn2_port
+    detected_fnn2_port="$(docker_host_port_for "fiber-link-fnn2" "8227")"
+    if [[ -n "${detected_fnn2_port}" && "${detected_fnn2_port}" != "${FNN2_RPC_PORT}" ]]; then
+      log "fnn2 rpc port mismatch: configured=${FNN2_RPC_PORT}, detected running container host port=${detected_fnn2_port}; using detected value"
+      FNN2_RPC_PORT="${detected_fnn2_port}"
+    fi
+  fi
+}
+
 ensure_ember_cli_proxy() {
   local ember_url="http://127.0.0.1:4200/login"
   local ember_log="${ARTIFACT_DIR}/discourse-ember-cli.log"
+  local ember_pattern='[e]mber server --proxy http://127.0.0.1:3000'
 
-  if docker exec discourse_dev sh -lc "pgrep -f 'ember server --proxy http://127.0.0.1:3000' >/dev/null 2>&1"; then
+  if docker exec discourse_dev sh -lc "pgrep -f '${ember_pattern}' >/dev/null 2>&1"; then
+    if wait_http_ready "${ember_url}" 20; then
+      log "ember-cli proxy already running (${ember_url})"
+      return 0
+    fi
+
+    log "ember-cli process exists but ${ember_url} is not ready; restarting proxy"
+    docker exec discourse_dev sh -lc "pkill -f '${ember_pattern}' >/dev/null 2>&1 || true"
+    sleep 2
+  fi
+
+  if docker exec discourse_dev sh -lc "pgrep -f '${ember_pattern}' >/dev/null 2>&1"; then
     log "ember-cli proxy already running (${ember_url})"
   else
     log "starting ember-cli proxy (first compile can take a few minutes)"
@@ -352,6 +396,9 @@ create_tip_invoice() {
   local response
   response="$(rpc_call_signed "${payload}" "tip-${label}-nonce-$(date +%s)-$RANDOM")"
   printf '%s\n' "${response}" > "${dir}/tip-create.response.json"
+  if [[ -z "${response}" ]]; then
+    fatal "${EXIT_TIP}" "tip.create returned empty HTTP body for ${label} (rpc_port=${RPC_PORT})"
+  fi
   if contains_jsonrpc_error "${response}"; then
     fatal "${EXIT_TIP}" "tip.create failed for ${label}: $(jsonrpc_error_message "${response}")"
   fi
@@ -615,7 +662,6 @@ FNN2_RPC_PORT="${FNN2_RPC_PORT:-$(get_env_value FNN2_RPC_PORT)}"
 RPC_PORT="${RPC_PORT:-3000}"
 FNN2_RPC_PORT="${FNN2_RPC_PORT:-9227}"
 CURRENCY="$(currency_for_asset "${WORKFLOW_ASSET}")"
-DISCOURSE_SERVICE_URL="${FIBER_LINK_DISCOURSE_SERVICE_URL:-http://host.docker.internal:${RPC_PORT}}"
 
 log "artifacts: ${ARTIFACT_DIR}"
 vlog "rpc_port=${RPC_PORT} fnn2_rpc_port=${FNN2_RPC_PORT} app_id=${APP_ID} asset=${WORKFLOW_ASSET}"
@@ -630,6 +676,10 @@ if [[ "${SKIP_SERVICES}" -eq 0 ]]; then
 else
   log "skipping services bootstrap (--skip-services)"
 fi
+
+resolve_runtime_ports
+DISCOURSE_SERVICE_URL="${FIBER_LINK_DISCOURSE_SERVICE_URL:-http://host.docker.internal:${RPC_PORT}}"
+vlog "resolved rpc_port=${RPC_PORT} fnn2_rpc_port=${FNN2_RPC_PORT} discourse_service_url=${DISCOURSE_SERVICE_URL}"
 
 TIPPER_USER_ID="${WORKFLOW_TIPPER_USER_ID:-}"
 AUTHOR_USER_ID="${WORKFLOW_AUTHOR_USER_ID:-}"

@@ -241,16 +241,14 @@ export function createDbWithdrawalRepo(db: DbClient): WithdrawalRepo {
     },
 
     async listReadyForProcessing(now) {
-      const rows = await db
-        .select()
-        .from(withdrawals)
-        .where(
-          or(
-            eq(withdrawals.state, "PENDING"),
-            and(eq(withdrawals.state, "RETRY_PENDING"), lte(withdrawals.nextRetryAt, now)),
-          ),
-        );
-      return rows.map(toRecord);
+      const [pendingRows, retryReadyRows] = await Promise.all([
+        db.select().from(withdrawals).where(eq(withdrawals.state, "PENDING")),
+        db
+          .select()
+          .from(withdrawals)
+          .where(and(eq(withdrawals.state, "RETRY_PENDING"), lte(withdrawals.nextRetryAt, now))),
+      ]);
+      return [...pendingRows, ...retryReadyRows].map(toRecord);
     },
 
     async markProcessing(id, now) {
@@ -343,7 +341,7 @@ export function createDbWithdrawalRepo(db: DbClient): WithdrawalRepo {
     async markFailed(id, params) {
       const nextRetryCount = params.incrementRetryCount
         ? sql`${withdrawals.retryCount} + 1`
-        : withdrawals.retryCount;
+        : sql`${withdrawals.retryCount}`;
       const [row] = await db
         .update(withdrawals)
         .set({
