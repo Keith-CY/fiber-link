@@ -46,11 +46,32 @@ async (page) => {
   await page.getByRole("button", { name: /generate invoice/i }).first().click();
   await page.getByText(/pending/i).first().waitFor({ timeout: 30_000 });
 
-  const invoice = await page.evaluate(() => {
-    const text = document.body.innerText || "";
-    const match = text.match(/\bfib[a-z0-9]{40,}\b/i);
-    return match ? match[0] : null;
-  });
+  let invoice = null;
+
+  // Prefer a scoped, stable locator from the tip modal instead of scanning the full page.
+  const invoiceLocator = page.locator(".fiber-link-tip-invoice").first();
+  const invoiceFromLocator = await invoiceLocator
+    .waitFor({ timeout: 15_000 })
+    .then(async () => {
+      const text = (await invoiceLocator.innerText()).trim();
+      const match = text.match(/\bfib[a-z0-9]{40,}\b/i);
+      return match ? match[0] : null;
+    })
+    .catch(() => null);
+
+  if (invoiceFromLocator) {
+    invoice = invoiceFromLocator;
+  } else {
+    // Backward-compatible fallback if modal markup changes but invoice still renders in dialog text.
+    invoice = await page.evaluate(() => {
+      const modal =
+        document.querySelector(".fiber-link-tip-modal") ||
+        document.querySelector(".d-modal");
+      const text = modal?.textContent || "";
+      const match = text.match(/\bfib[a-z0-9]{40,}\b/i);
+      return match ? match[0] : null;
+    });
+  }
 
   await page.screenshot({ path: screenshotPath, fullPage: false });
 

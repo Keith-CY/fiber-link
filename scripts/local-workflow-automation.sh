@@ -14,7 +14,9 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPOSE_ENV_FILE="${ROOT_DIR}/deploy/compose/.env"
 DISCOURSE_DEV_ROOT="${DISCOURSE_DEV_ROOT:-/tmp/discourse-dev}"
 DISCOURSE_REF="${DISCOURSE_REF:-26f3e2aa87a3abb35849183e0740fe7ab84cec67}"
-ARTIFACT_DIR="${ROOT_DIR}/.tmp/local-workflow-automation/$(date -u +%Y%m%dT%H%M%SZ)"
+DEFAULT_ARTIFACT_DIR="${ROOT_DIR}/.tmp/local-workflow-automation/$(date -u +%Y%m%dT%H%M%SZ)"
+ARTIFACT_DIR="${WORKFLOW_ARTIFACT_DIR:-${DEFAULT_ARTIFACT_DIR}}"
+RESULT_METADATA_PATH="${WORKFLOW_RESULT_METADATA_PATH:-${ARTIFACT_DIR}/result.env}"
 
 VERBOSE=0
 SKIP_SERVICES=0
@@ -57,6 +59,8 @@ Options:
   -h, --help        Show this help message.
 
 Environment knobs:
+  WORKFLOW_ARTIFACT_DIR=/abs/path/to/artifacts
+  WORKFLOW_RESULT_METADATA_PATH=/abs/path/to/result.env
   WORKFLOW_ASSET=CKB
   WORKFLOW_TIP_AMOUNT=31
   WORKFLOW_WITHDRAW_AMOUNT=61
@@ -85,9 +89,28 @@ vlog() {
   fi
 }
 
+write_result_metadata() {
+  local status="$1"
+  local code="$2"
+  local message="${3:-}"
+  local summary_path="${4:-}"
+  local seed_json_path="${ARTIFACT_DIR}/discourse-seed.json"
+
+  mkdir -p "${ARTIFACT_DIR}" >/dev/null 2>&1 || true
+  {
+    printf 'WORKFLOW_RESULT_STATUS=%q\n' "${status}"
+    printf 'WORKFLOW_RESULT_CODE=%q\n' "${code}"
+    printf 'WORKFLOW_RESULT_MESSAGE=%q\n' "${message}"
+    printf 'WORKFLOW_RESULT_ARTIFACT_DIR=%q\n' "${ARTIFACT_DIR}"
+    printf 'WORKFLOW_RESULT_SUMMARY_PATH=%q\n' "${summary_path}"
+    printf 'WORKFLOW_RESULT_SEED_JSON_PATH=%q\n' "${seed_json_path}"
+  } > "${RESULT_METADATA_PATH}"
+}
+
 fatal() {
   local code="$1"
   shift
+  write_result_metadata "FAIL" "${code}" "$*" "" || true
   printf 'RESULT=FAIL CODE=%s MESSAGE=%s ARTIFACT_DIR=%s\n' "${code}" "$*" "${ARTIFACT_DIR}"
   exit "${code}"
 }
@@ -549,6 +572,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 mkdir -p "${ARTIFACT_DIR}"
+write_result_metadata "RUNNING" "" "" ""
 
 if [[ "${PAUSE_AT_STEP4}" -eq 1 ]]; then
   START_EMBER_CLI=1
@@ -632,12 +656,16 @@ if [[ "${SKIP_DISCOURSE}" -eq 0 ]]; then
   ) > "${ARTIFACT_DIR}/discourse-bootstrap.log" 2>&1 || fatal "${EXIT_DISCOURSE}" "failed to bootstrap discourse (see discourse-bootstrap.log)"
 
   cp "${ROOT_DIR}/scripts/discourse-seed-fiber-link.rb" "${DISCOURSE_DEV_ROOT}/tmp/fiber-link-seed.rb"
+  seed_output_rel_path="tmp/fiber-link-seed-output.json"
+  seed_output_host_path="${DISCOURSE_DEV_ROOT}/${seed_output_rel_path}"
+  rm -f "${seed_output_host_path}"
   (
     cd "${DISCOURSE_DEV_ROOT}"
     ./bin/docker/exec env \
       FLOW_TOPIC_TITLE="${TOPIC_LABEL}" \
       FLOW_TOPIC_RAW="${TOPIC_BODY}" \
       FLOW_REPLY_RAW="${REPLY_BODY}" \
+      FLOW_OUTPUT_JSON_PATH="${seed_output_rel_path}" \
       FIBER_LINK_DISCOURSE_SERVICE_URL="${DISCOURSE_SERVICE_URL}" \
       FIBER_LINK_APP_ID="${APP_ID}" \
       FIBER_LINK_APP_SECRET="${APP_SECRET}" \
@@ -646,8 +674,10 @@ if [[ "${SKIP_DISCOURSE}" -eq 0 ]]; then
       bin/rails runner tmp/fiber-link-seed.rb
   ) > "${ARTIFACT_DIR}/discourse-seed.log" 2>&1 || fatal "${EXIT_DISCOURSE}" "failed to seed discourse data (see discourse-seed.log)"
 
-  seed_json="$(tr -d '\r' < "${ARTIFACT_DIR}/discourse-seed.log" | awk '/^\{.*\}$/ {line=$0} END {print line}')"
-  [[ -n "${seed_json}" ]] || fatal "${EXIT_DISCOURSE}" "could not parse seed output JSON (see discourse-seed.log)"
+  [[ -s "${seed_output_host_path}" ]] || fatal "${EXIT_DISCOURSE}" "missing discourse seed output file: ${seed_output_host_path}"
+  cp "${seed_output_host_path}" "${ARTIFACT_DIR}/discourse-seed.json"
+  seed_json="$(tr -d '\r' < "${ARTIFACT_DIR}/discourse-seed.json")"
+  [[ -n "${seed_json}" ]] || fatal "${EXIT_DISCOURSE}" "discourse seed output file is empty (see ${seed_output_host_path})"
   printf '%s\n' "${seed_json}" > "${ARTIFACT_DIR}/discourse-seed.json"
 
   TIPPER_USER_ID="$(printf '%s' "${seed_json}" | jq -r '.tipper.id // empty')"
@@ -718,6 +748,7 @@ else
   log "step 6/6: skipping backend withdrawal request (--skip-withdrawal)"
 fi
 
+summary_path="${ARTIFACT_DIR}/summary.json"
 jq -n \
   --arg artifactDir "${ARTIFACT_DIR}" \
   --arg appId "${APP_ID}" \
@@ -752,6 +783,7 @@ jq -n \
       state: $withdrawalState,
       destinationAddress: $withdrawalDestinationAddress
     }
-  }' > "${ARTIFACT_DIR}/summary.json"
+  }' > "${summary_path}"
 
-printf 'RESULT=PASS CODE=0 ARTIFACT_DIR=%s SUMMARY=%s\n' "${ARTIFACT_DIR}" "${ARTIFACT_DIR}/summary.json"
+write_result_metadata "PASS" "0" "" "${summary_path}"
+printf 'RESULT=PASS CODE=0 ARTIFACT_DIR=%s SUMMARY=%s\n' "${ARTIFACT_DIR}" "${summary_path}"

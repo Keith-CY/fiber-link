@@ -104,8 +104,38 @@ fi
 
 mkdir -p "${ARTIFACT_DIR}"
 
-WORKFLOW_PAUSE_CMD=(scripts/local-workflow-automation.sh --verbose --with-ember-cli --pause-at-step4)
-WORKFLOW_COMPLETE_CMD=(scripts/local-workflow-automation.sh --verbose --with-ember-cli)
+PHASE1_WORKFLOW_ARTIFACT_DIR="${ARTIFACT_DIR}/workflow-phase1"
+PHASE1_RESULT_METADATA_PATH="${PHASE1_WORKFLOW_ARTIFACT_DIR}/result.env"
+PHASE2_WORKFLOW_ARTIFACT_DIR="${ARTIFACT_DIR}/workflow-phase2"
+PHASE2_RESULT_METADATA_PATH="${PHASE2_WORKFLOW_ARTIFACT_DIR}/result.env"
+
+load_workflow_result_metadata() {
+  local metadata_path="$1"
+  [[ -f "${metadata_path}" ]] || return 1
+  unset WORKFLOW_RESULT_STATUS WORKFLOW_RESULT_CODE WORKFLOW_RESULT_MESSAGE \
+    WORKFLOW_RESULT_ARTIFACT_DIR WORKFLOW_RESULT_SUMMARY_PATH WORKFLOW_RESULT_SEED_JSON_PATH
+  # shellcheck disable=SC1090
+  source "${metadata_path}"
+  return 0
+}
+
+WORKFLOW_PAUSE_CMD=(
+  env
+  WORKFLOW_ARTIFACT_DIR="${PHASE1_WORKFLOW_ARTIFACT_DIR}"
+  WORKFLOW_RESULT_METADATA_PATH="${PHASE1_RESULT_METADATA_PATH}"
+  scripts/local-workflow-automation.sh
+  --verbose
+  --with-ember-cli
+  --pause-at-step4
+)
+WORKFLOW_COMPLETE_CMD=(
+  env
+  WORKFLOW_ARTIFACT_DIR="${PHASE2_WORKFLOW_ARTIFACT_DIR}"
+  WORKFLOW_RESULT_METADATA_PATH="${PHASE2_RESULT_METADATA_PATH}"
+  scripts/local-workflow-automation.sh
+  --verbose
+  --with-ember-cli
+)
 WORKFLOW_PAUSE_CMD+=(--skip-withdrawal)
 if [[ "${BROWSER_WITHDRAWAL}" -eq 1 ]]; then
   WORKFLOW_COMPLETE_CMD+=(--skip-withdrawal)
@@ -182,16 +212,20 @@ if [[ "${pause_status}" -ne 0 ]]; then
   exit "${pause_status}"
 fi
 
-phase1_workflow_artifact_dir="$(
-  tr -d '\r' < "${PAUSE_LOG}" | sed -n 's/^\[local-workflow\] artifacts: //p' | head -n1
-)"
+load_workflow_result_metadata "${PHASE1_RESULT_METADATA_PATH}" || {
+  echo "[playwright-demo] missing phase1 workflow metadata: ${PHASE1_RESULT_METADATA_PATH}" >&2
+  exit 11
+}
+phase1_status="${WORKFLOW_RESULT_STATUS:-unknown}"
+if [[ "${phase1_status}" != "RUNNING" && "${phase1_status}" != "PASS" ]]; then
+  echo "[playwright-demo] phase1 workflow metadata status is unexpected (status=${phase1_status} code=${WORKFLOW_RESULT_CODE:-unknown})" >&2
+  exit 11
+fi
+
+phase1_workflow_artifact_dir="${WORKFLOW_RESULT_ARTIFACT_DIR:-${PHASE1_WORKFLOW_ARTIFACT_DIR}}"
 
 if [[ "${SKIP_DISCOURSE}" -eq 0 ]]; then
-  [[ -n "${phase1_workflow_artifact_dir}" ]] || {
-    echo "[playwright-demo] unable to locate phase1 local-workflow artifact dir from ${PAUSE_LOG}" >&2
-    exit 11
-  }
-  seed_json_path="${phase1_workflow_artifact_dir}/discourse-seed.json"
+  seed_json_path="${WORKFLOW_RESULT_SEED_JSON_PATH:-${phase1_workflow_artifact_dir}/discourse-seed.json}"
   [[ -f "${seed_json_path}" ]] || {
     echo "[playwright-demo] missing discourse seed output: ${seed_json_path}" >&2
     exit 11
@@ -224,17 +258,19 @@ set +e
 workflow_status=${PIPESTATUS[0]}
 set -e
 
-result_line="$(rg 'RESULT=(PASS|FAIL)' "${COMPLETE_LOG}" | tail -n1 || true)"
-workflow_artifact_dir=""
-summary_path=""
+load_workflow_result_metadata "${PHASE2_RESULT_METADATA_PATH}" || {
+  echo "[playwright-demo] missing phase2 workflow metadata: ${PHASE2_RESULT_METADATA_PATH}" >&2
+  exit 11
+}
+workflow_result_status="${WORKFLOW_RESULT_STATUS:-UNKNOWN}"
+workflow_result_code="${WORKFLOW_RESULT_CODE:-}"
+workflow_result_message="${WORKFLOW_RESULT_MESSAGE:-}"
+workflow_artifact_dir="${WORKFLOW_RESULT_ARTIFACT_DIR:-${PHASE2_WORKFLOW_ARTIFACT_DIR}}"
+summary_path="${WORKFLOW_RESULT_SUMMARY_PATH:-}"
 
-if [[ -n "${result_line}" ]]; then
-  echo "[playwright-demo] workflow result: ${result_line}"
-  workflow_artifact_dir="$(printf '%s\n' "${result_line}" | sed -n 's/.*ARTIFACT_DIR=\([^ ]*\).*/\1/p')"
-  summary_path="$(printf '%s\n' "${result_line}" | sed -n 's/.*SUMMARY=\([^ ]*\).*/\1/p')"
-else
-  workflow_artifact_dir="$(sed -n 's/^\[local-workflow\] artifacts: //p' "${COMPLETE_LOG}" | tail -n1)"
-  echo "[playwright-demo] RESULT line missing; fallback artifact dir: ${workflow_artifact_dir}"
+echo "[playwright-demo] workflow result: status=${workflow_result_status} code=${workflow_result_code} artifact=${workflow_artifact_dir}"
+if [[ -n "${workflow_result_message}" ]]; then
+  echo "[playwright-demo] workflow message: ${workflow_result_message}"
 fi
 
 [[ -n "${workflow_artifact_dir}" ]] || {
@@ -270,7 +306,7 @@ fi
 
 soft_failure=0
 if [[ "${workflow_status}" -ne 0 ]]; then
-  if [[ "${result_line}" == *"CODE=15"* || -z "${result_line}" ]] && [[ "${withdrawal_state}" == "PENDING" || "${withdrawal_state}" == "PROCESSING" || "${withdrawal_state}" == "RETRY_PENDING" || -n "${withdrawal_id}" ]]; then
+  if [[ "${workflow_result_code}" == "15" ]] && [[ "${withdrawal_state}" == "PENDING" || "${withdrawal_state}" == "PROCESSING" || "${withdrawal_state}" == "RETRY_PENDING" || -n "${withdrawal_id}" ]]; then
     soft_failure=1
     echo "[playwright-demo] workflow ended without PASS result; continuing demo with withdrawal id/state=${withdrawal_id}/${withdrawal_state}"
   else
