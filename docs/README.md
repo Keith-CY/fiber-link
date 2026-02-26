@@ -28,6 +28,14 @@
 - `docs/runbooks/phase2-verification.md` — end-to-end verification flow for service and plugin changes.
 - `scripts/plugin-smoke.sh` — local Discourse plugin smoke test entrypoint that runs in Docker (no local Ruby required).
 
+## Local workflow + Playwright demo
+
+- `docs/runbooks/local-playwright-workflow-demo.md` — one-command local demo flow (Discourse + tip modal + author/admin checks).
+- `scripts/local-workflow-automation.sh` — backend workflow automation for discourse seed, tip settlement, balance check, and withdrawal request.
+- `scripts/playwright-demo-local-workflow.sh` — two-phase demo wrapper: pause at step4 for browser demo, then backend completion + post-check.
+- `scripts/playwright-workflow-step4.sh` — browser automation for login + tip modal invoice generation.
+- `scripts/playwright-workflow-postcheck.sh` — browser automation for author/admin dashboard checks.
+
 ## W4 integration tracking
 
 - `docs/runbooks/w4-integration-status-2026-02-17.md` — issue #36 W4 subtask matrix, completion snapshot, and verification/operations checks as of 2026-02-17.

@@ -22,6 +22,7 @@ Primary reference thread:
 - `docs/README.md` — testing docs index and plugin smoke-entry troubleshooting
 - `docs/runbooks/compose-reference.md` — Docker Compose reference (service + FNN)
 - `docs/runbooks/settlement-recovery.md` — settlement replay/backfill recovery operations
+- `docs/runbooks/local-playwright-workflow-demo.md` — local end-to-end demo automation with Playwright (login, tip modal, balance/withdrawal checks)
 - `docs/plans/2026-02-11-phase3-sprint1-settlement-v1-plan.md` — historical Sprint 1 implementation plan (settlement v1 baseline)
 
 ## Milestone acceptance
