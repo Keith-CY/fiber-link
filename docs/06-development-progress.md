@@ -38,6 +38,22 @@ Recent Phase 3 baseline deliveries:
 - PR #17: Sprint 2 withdrawal execution via Fiber RPC + tx evidence
 - PR #289: withdrawal policy controls + RPC rate limiting + plugin dashboard/system-spec hardening
 
+## Milestone Checkpoint Verification (2026-02-27)
+
+Acceptance tracker sources:
+- `docs/acceptance/README.md`
+- `docs/acceptance/milestone-1/index.md`
+- `docs/acceptance/milestone-2/index.md`
+- `docs/acceptance/milestone-3/index.md`
+
+| Milestone | Total checkpoints | `DONE` checkpoints | Result |
+| --- | ---: | ---: | --- |
+| Milestone 1 | 6 | 6 | complete |
+| Milestone 2 | 5 | 5 | complete |
+| Milestone 3 | 5 | 5 | complete |
+
+All current milestone checkpoints are marked `DONE` and mapped to runbook evidence links.
+
 ### Phase 2 Delivered Capabilities
 
 Service:
