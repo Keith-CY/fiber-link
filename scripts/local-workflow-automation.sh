@@ -14,7 +14,9 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPOSE_ENV_FILE="${ROOT_DIR}/deploy/compose/.env"
 DISCOURSE_DEV_ROOT="${DISCOURSE_DEV_ROOT:-/tmp/discourse-dev}"
 DISCOURSE_REF="${DISCOURSE_REF:-26f3e2aa87a3abb35849183e0740fe7ab84cec67}"
-ARTIFACT_DIR="${ROOT_DIR}/.tmp/local-workflow-automation/$(date -u +%Y%m%dT%H%M%SZ)"
+DEFAULT_ARTIFACT_DIR="${ROOT_DIR}/.tmp/local-workflow-automation/$(date -u +%Y%m%dT%H%M%SZ)"
+ARTIFACT_DIR="${WORKFLOW_ARTIFACT_DIR:-${DEFAULT_ARTIFACT_DIR}}"
+RESULT_METADATA_PATH="${WORKFLOW_RESULT_METADATA_PATH:-${ARTIFACT_DIR}/result.env}"
 
 VERBOSE=0
 SKIP_SERVICES=0
@@ -57,6 +59,8 @@ Options:
   -h, --help        Show this help message.
 
 Environment knobs:
+  WORKFLOW_ARTIFACT_DIR=/abs/path/to/artifacts
+  WORKFLOW_RESULT_METADATA_PATH=/abs/path/to/result.env
   WORKFLOW_ASSET=CKB
   WORKFLOW_TIP_AMOUNT=31
   WORKFLOW_WITHDRAW_AMOUNT=61
@@ -85,9 +89,28 @@ vlog() {
   fi
 }
 
+write_result_metadata() {
+  local status="$1"
+  local code="$2"
+  local message="${3:-}"
+  local summary_path="${4:-}"
+  local seed_json_path="${ARTIFACT_DIR}/discourse-seed.json"
+
+  mkdir -p "${ARTIFACT_DIR}" >/dev/null 2>&1 || true
+  {
+    printf 'WORKFLOW_RESULT_STATUS=%q\n' "${status}"
+    printf 'WORKFLOW_RESULT_CODE=%q\n' "${code}"
+    printf 'WORKFLOW_RESULT_MESSAGE=%q\n' "${message}"
+    printf 'WORKFLOW_RESULT_ARTIFACT_DIR=%q\n' "${ARTIFACT_DIR}"
+    printf 'WORKFLOW_RESULT_SUMMARY_PATH=%q\n' "${summary_path}"
+    printf 'WORKFLOW_RESULT_SEED_JSON_PATH=%q\n' "${seed_json_path}"
+  } > "${RESULT_METADATA_PATH}"
+}
+
 fatal() {
   local code="$1"
   shift
+  write_result_metadata "FAIL" "${code}" "$*" "" || true
   printf 'RESULT=FAIL CODE=%s MESSAGE=%s ARTIFACT_DIR=%s\n' "${code}" "$*" "${ARTIFACT_DIR}"
   exit "${code}"
 }
@@ -155,11 +178,55 @@ wait_http_ready() {
   done
 }
 
+docker_host_port_for() {
+  local container="$1"
+  local internal_port="$2"
+  docker port "${container}" "${internal_port}/tcp" 2>/dev/null | awk -F: 'NR==1 {print $NF}' || true
+}
+
+resolve_runtime_ports() {
+  local rpc_probe_url="http://127.0.0.1:${RPC_PORT}/healthz/ready"
+  if ! wait_http_ready "${rpc_probe_url}" 8; then
+    local detected_rpc_port
+    detected_rpc_port="$(docker_host_port_for "fiber-link-rpc" "3000")"
+    if [[ -n "${detected_rpc_port}" && "${detected_rpc_port}" != "${RPC_PORT}" ]]; then
+      log "rpc port mismatch: configured=${RPC_PORT}, detected running container host port=${detected_rpc_port}; using detected value"
+      RPC_PORT="${detected_rpc_port}"
+    fi
+  fi
+
+  rpc_probe_url="http://127.0.0.1:${RPC_PORT}/healthz/ready"
+  wait_http_ready "${rpc_probe_url}" 30 \
+    || fatal "${EXIT_PRECHECK}" "rpc endpoint is not ready at ${rpc_probe_url}"
+
+  local fnn_probe_url="http://127.0.0.1:${FNN2_RPC_PORT}"
+  if ! wait_http_ready "${fnn_probe_url}" 8; then
+    local detected_fnn2_port
+    detected_fnn2_port="$(docker_host_port_for "fiber-link-fnn2" "8227")"
+    if [[ -n "${detected_fnn2_port}" && "${detected_fnn2_port}" != "${FNN2_RPC_PORT}" ]]; then
+      log "fnn2 rpc port mismatch: configured=${FNN2_RPC_PORT}, detected running container host port=${detected_fnn2_port}; using detected value"
+      FNN2_RPC_PORT="${detected_fnn2_port}"
+    fi
+  fi
+}
+
 ensure_ember_cli_proxy() {
   local ember_url="http://127.0.0.1:4200/login"
   local ember_log="${ARTIFACT_DIR}/discourse-ember-cli.log"
+  local ember_pattern='[e]mber server --proxy http://127.0.0.1:3000'
 
-  if docker exec discourse_dev sh -lc "pgrep -f 'ember server --proxy http://127.0.0.1:3000' >/dev/null 2>&1"; then
+  if docker exec discourse_dev sh -lc "pgrep -f '${ember_pattern}' >/dev/null 2>&1"; then
+    if wait_http_ready "${ember_url}" 20; then
+      log "ember-cli proxy already running (${ember_url})"
+      return 0
+    fi
+
+    log "ember-cli process exists but ${ember_url} is not ready; restarting proxy"
+    docker exec discourse_dev sh -lc "pkill -f '${ember_pattern}' >/dev/null 2>&1 || true"
+    sleep 2
+  fi
+
+  if docker exec discourse_dev sh -lc "pgrep -f '${ember_pattern}' >/dev/null 2>&1"; then
     log "ember-cli proxy already running (${ember_url})"
   else
     log "starting ember-cli proxy (first compile can take a few minutes)"
@@ -329,6 +396,9 @@ create_tip_invoice() {
   local response
   response="$(rpc_call_signed "${payload}" "tip-${label}-nonce-$(date +%s)-$RANDOM")"
   printf '%s\n' "${response}" > "${dir}/tip-create.response.json"
+  if [[ -z "${response}" ]]; then
+    fatal "${EXIT_TIP}" "tip.create returned empty HTTP body for ${label} (rpc_port=${RPC_PORT})"
+  fi
   if contains_jsonrpc_error "${response}"; then
     fatal "${EXIT_TIP}" "tip.create failed for ${label}: $(jsonrpc_error_message "${response}")"
   fi
@@ -549,6 +619,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 mkdir -p "${ARTIFACT_DIR}"
+write_result_metadata "RUNNING" "" "" ""
 
 if [[ "${PAUSE_AT_STEP4}" -eq 1 ]]; then
   START_EMBER_CLI=1
@@ -591,7 +662,6 @@ FNN2_RPC_PORT="${FNN2_RPC_PORT:-$(get_env_value FNN2_RPC_PORT)}"
 RPC_PORT="${RPC_PORT:-3000}"
 FNN2_RPC_PORT="${FNN2_RPC_PORT:-9227}"
 CURRENCY="$(currency_for_asset "${WORKFLOW_ASSET}")"
-DISCOURSE_SERVICE_URL="${FIBER_LINK_DISCOURSE_SERVICE_URL:-http://host.docker.internal:${RPC_PORT}}"
 
 log "artifacts: ${ARTIFACT_DIR}"
 vlog "rpc_port=${RPC_PORT} fnn2_rpc_port=${FNN2_RPC_PORT} app_id=${APP_ID} asset=${WORKFLOW_ASSET}"
@@ -606,6 +676,10 @@ if [[ "${SKIP_SERVICES}" -eq 0 ]]; then
 else
   log "skipping services bootstrap (--skip-services)"
 fi
+
+resolve_runtime_ports
+DISCOURSE_SERVICE_URL="${FIBER_LINK_DISCOURSE_SERVICE_URL:-http://host.docker.internal:${RPC_PORT}}"
+vlog "resolved rpc_port=${RPC_PORT} fnn2_rpc_port=${FNN2_RPC_PORT} discourse_service_url=${DISCOURSE_SERVICE_URL}"
 
 TIPPER_USER_ID="${WORKFLOW_TIPPER_USER_ID:-}"
 AUTHOR_USER_ID="${WORKFLOW_AUTHOR_USER_ID:-}"
@@ -632,12 +706,16 @@ if [[ "${SKIP_DISCOURSE}" -eq 0 ]]; then
   ) > "${ARTIFACT_DIR}/discourse-bootstrap.log" 2>&1 || fatal "${EXIT_DISCOURSE}" "failed to bootstrap discourse (see discourse-bootstrap.log)"
 
   cp "${ROOT_DIR}/scripts/discourse-seed-fiber-link.rb" "${DISCOURSE_DEV_ROOT}/tmp/fiber-link-seed.rb"
+  seed_output_rel_path="tmp/fiber-link-seed-output.json"
+  seed_output_host_path="${DISCOURSE_DEV_ROOT}/${seed_output_rel_path}"
+  rm -f "${seed_output_host_path}"
   (
     cd "${DISCOURSE_DEV_ROOT}"
     ./bin/docker/exec env \
       FLOW_TOPIC_TITLE="${TOPIC_LABEL}" \
       FLOW_TOPIC_RAW="${TOPIC_BODY}" \
       FLOW_REPLY_RAW="${REPLY_BODY}" \
+      FLOW_OUTPUT_JSON_PATH="${seed_output_rel_path}" \
       FIBER_LINK_DISCOURSE_SERVICE_URL="${DISCOURSE_SERVICE_URL}" \
       FIBER_LINK_APP_ID="${APP_ID}" \
       FIBER_LINK_APP_SECRET="${APP_SECRET}" \
@@ -646,8 +724,10 @@ if [[ "${SKIP_DISCOURSE}" -eq 0 ]]; then
       bin/rails runner tmp/fiber-link-seed.rb
   ) > "${ARTIFACT_DIR}/discourse-seed.log" 2>&1 || fatal "${EXIT_DISCOURSE}" "failed to seed discourse data (see discourse-seed.log)"
 
-  seed_json="$(tr -d '\r' < "${ARTIFACT_DIR}/discourse-seed.log" | awk '/^\{.*\}$/ {line=$0} END {print line}')"
-  [[ -n "${seed_json}" ]] || fatal "${EXIT_DISCOURSE}" "could not parse seed output JSON (see discourse-seed.log)"
+  [[ -s "${seed_output_host_path}" ]] || fatal "${EXIT_DISCOURSE}" "missing discourse seed output file: ${seed_output_host_path}"
+  cp "${seed_output_host_path}" "${ARTIFACT_DIR}/discourse-seed.json"
+  seed_json="$(tr -d '\r' < "${ARTIFACT_DIR}/discourse-seed.json")"
+  [[ -n "${seed_json}" ]] || fatal "${EXIT_DISCOURSE}" "discourse seed output file is empty (see ${seed_output_host_path})"
   printf '%s\n' "${seed_json}" > "${ARTIFACT_DIR}/discourse-seed.json"
 
   TIPPER_USER_ID="$(printf '%s' "${seed_json}" | jq -r '.tipper.id // empty')"
@@ -718,6 +798,7 @@ else
   log "step 6/6: skipping backend withdrawal request (--skip-withdrawal)"
 fi
 
+summary_path="${ARTIFACT_DIR}/summary.json"
 jq -n \
   --arg artifactDir "${ARTIFACT_DIR}" \
   --arg appId "${APP_ID}" \
@@ -752,6 +833,7 @@ jq -n \
       state: $withdrawalState,
       destinationAddress: $withdrawalDestinationAddress
     }
-  }' > "${ARTIFACT_DIR}/summary.json"
+  }' > "${summary_path}"
 
-printf 'RESULT=PASS CODE=0 ARTIFACT_DIR=%s SUMMARY=%s\n' "${ARTIFACT_DIR}" "${ARTIFACT_DIR}/summary.json"
+write_result_metadata "PASS" "0" "" "${summary_path}"
+printf 'RESULT=PASS CODE=0 ARTIFACT_DIR=%s SUMMARY=%s\n' "${ARTIFACT_DIR}" "${summary_path}"

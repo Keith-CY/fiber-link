@@ -37,6 +37,18 @@ export const TipStatusResultSchema = z.object({
   state: z.enum(["UNPAID", "SETTLED", "FAILED"]),
 });
 
+export const WithdrawalRequestParamsSchema = z.object({
+  userId: z.string().min(1),
+  asset: z.enum(["CKB", "USDI"]),
+  amount: PositiveAmountStringSchema,
+  toAddress: z.string().min(1),
+});
+
+export const WithdrawalRequestResultSchema = z.object({
+  id: z.string().min(1),
+  state: z.enum(["PENDING", "PROCESSING", "RETRY_PENDING", "COMPLETED", "FAILED"]),
+});
+
 export const DashboardWithdrawalStateFilterSchema = z.enum([
   "ALL",
   "PENDING",

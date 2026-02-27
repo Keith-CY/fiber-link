@@ -3,6 +3,9 @@
   "private": true,
   "main": "src/index.ts",
   "scripts": { "test": "vitest" },
+  "dependencies": {
+    "@ckb-lumos/lumos": "^0.22.2"
+  },
   "devDependencies": {
     "vitest": "^1.6.0",
     "typescript": "^5.6.0"

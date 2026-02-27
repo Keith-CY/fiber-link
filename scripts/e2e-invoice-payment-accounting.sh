@@ -24,6 +24,7 @@ SETTLEMENT_TIMEOUT_SECONDS="${SETTLEMENT_TIMEOUT_SECONDS:-180}"
 SETTLEMENT_POLL_INTERVAL_SECONDS="${SETTLEMENT_POLL_INTERVAL_SECONDS:-5}"
 CHANNEL_READY_TIMEOUT_SECONDS="${CHANNEL_READY_TIMEOUT_SECONDS:-600}"
 CHANNEL_POLL_INTERVAL_SECONDS="${CHANNEL_POLL_INTERVAL_SECONDS:-5}"
+COMPOSE_UP_TIMEOUT_SECONDS="${COMPOSE_UP_TIMEOUT_SECONDS:-600}"
 
 APP_ID="${E2E_APP_ID:-local-dev}"
 CKB_PAYMENT_AMOUNT="${E2E_CKB_PAYMENT_AMOUNT:-1}"
@@ -34,6 +35,8 @@ CKB_INVOICE_NODE_TOPUP_ADDRESS="${E2E_CKB_INVOICE_TOPUP_ADDRESS:-}"
 USDI_TOPUP_ADDRESS="${E2E_USDI_TOPUP_ADDRESS:-}"
 
 CKB_FAUCET_API_BASE="${CKB_FAUCET_API_BASE:-https://faucet-api.nervos.org}"
+CKB_FAUCET_FALLBACK_API_BASE="${CKB_FAUCET_FALLBACK_API_BASE:-https://ckb-utilities.random-walk.co.jp/api}"
+CKB_FAUCET_ENABLE_FALLBACK="${CKB_FAUCET_ENABLE_FALLBACK:-1}"
 CKB_FAUCET_AMOUNT="${CKB_FAUCET_AMOUNT:-100000}"
 CKB_FAUCET_WAIT_SECONDS="${CKB_FAUCET_WAIT_SECONDS:-20}"
 CKB_PAYMENT_FAUCET_ON_FLOW="${E2E_CKB_PAYMENT_FAUCET_ON_FLOW:-0}"
@@ -110,6 +113,8 @@ Optional env:
   E2E_USDI_PAYMENT_AMOUNT=1
   FIBER_INVOICE_CURRENCY_CKB=Fibt
   CKB_FAUCET_API_BASE=https://faucet-api.nervos.org
+  CKB_FAUCET_FALLBACK_API_BASE=https://ckb-utilities.random-walk.co.jp/api
+  CKB_FAUCET_ENABLE_FALLBACK=1
   CKB_FAUCET_AMOUNT=100000
   CKB_FAUCET_WAIT_SECONDS=20
   E2E_CKB_PAYMENT_FAUCET_ON_FLOW=0  # 0=precheck and topup only when needed, 1=always request faucet on CKB payment flow
@@ -131,6 +136,7 @@ Optional env:
   CHANNEL_READY_TIMEOUT_SECONDS=600
   CHANNEL_POLL_INTERVAL_SECONDS=5
   WAIT_TIMEOUT_SECONDS=600
+  COMPOSE_UP_TIMEOUT_SECONDS=600
   SETTLEMENT_TIMEOUT_SECONDS=180
   SETTLEMENT_POLL_INTERVAL_SECONDS=5
 
@@ -166,6 +172,109 @@ is_positive_integer() {
 
 compose() {
   (cd "${COMPOSE_DIR}" && docker compose "$@")
+}
+
+is_tcp_port_listening() {
+  local port="$1"
+  python3 - "${port}" <<'PY'
+import socket
+import sys
+
+port = int(sys.argv[1])
+sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+sock.settimeout(0.5)
+try:
+    sock.connect(("127.0.0.1", port))
+except OSError:
+    sys.exit(1)
+else:
+    sys.exit(0)
+finally:
+    sock.close()
+PY
+}
+
+listener_hint_for_port() {
+  local port="$1"
+  if ! command -v lsof >/dev/null 2>&1; then
+    printf ''
+    return
+  fi
+  lsof -nP -iTCP:"${port}" -sTCP:LISTEN 2>/dev/null | awk 'NR==2 {print $1 "/" $2 " " $9; exit}'
+}
+
+find_free_rpc_port() {
+  local candidate
+  local candidates=(3000 3001 3002 13001 13002 13003 13004 13005)
+  for candidate in "${candidates[@]}"; do
+    if [[ "${candidate}" == "${RPC_PORT}" ]]; then
+      continue
+    fi
+    if ! is_tcp_port_listening "${candidate}"; then
+      printf '%s' "${candidate}"
+      return 0
+    fi
+  done
+  return 1
+}
+
+ensure_rpc_port_available() {
+  local requested_port="${RPC_PORT}"
+  local existing_rpc_host_port
+  existing_rpc_host_port="$(
+    docker port fiber-link-rpc 3000/tcp 2>/dev/null | awk -F: 'NR==1 {print $NF}' || true
+  )"
+
+  if ! is_tcp_port_listening "${requested_port}"; then
+    export RPC_PORT
+    return 0
+  fi
+
+  if [[ -n "${existing_rpc_host_port}" && "${existing_rpc_host_port}" == "${requested_port}" ]]; then
+    vlog "RPC_PORT=${requested_port} already served by existing fiber-link-rpc container"
+    export RPC_PORT
+    return 0
+  fi
+
+  local fallback_port
+  fallback_port="$(find_free_rpc_port)" \
+    || fatal "${EXIT_PRECHECK}" "RPC_PORT=${requested_port} is occupied and no fallback port was found"
+
+  local listener_hint
+  listener_hint="$(listener_hint_for_port "${requested_port}")"
+  if [[ -n "${listener_hint}" ]]; then
+    log "RPC_PORT=${requested_port} is in use (${listener_hint}); using RPC_PORT=${fallback_port} for this run"
+  else
+    log "RPC_PORT=${requested_port} is in use; using RPC_PORT=${fallback_port} for this run"
+  fi
+  RPC_PORT="${fallback_port}"
+  export RPC_PORT
+}
+
+compose_up_with_timeout() {
+  local timeout_seconds="$1"
+  local log_path="$2"
+  local start_pid=""
+  local deadline=$(( $(date +%s) + timeout_seconds ))
+
+  (
+    cd "${COMPOSE_DIR}"
+    docker compose up -d --build postgres redis fnn fnn2 rpc worker
+  ) > "${log_path}" 2>&1 &
+  start_pid=$!
+
+  while kill -0 "${start_pid}" >/dev/null 2>&1; do
+    if [[ "$(date +%s)" -ge "${deadline}" ]]; then
+      kill "${start_pid}" >/dev/null 2>&1 || true
+      sleep 1
+      kill -9 "${start_pid}" >/dev/null 2>&1 || true
+      wait "${start_pid}" >/dev/null 2>&1 || true
+      return 124
+    fi
+    sleep 2
+  done
+
+  wait "${start_pid}"
 }
 
 cleanup_stack() {
@@ -681,10 +790,32 @@ request_ckb_faucet() {
   local rc=$?
   set -e
   if [[ "${rc}" -ne 0 ]]; then
-    fatal "${EXIT_FAUCET_FAILURE}" "CKB faucet request failed (${label})"
+    http_code="000"
   fi
 
   if [[ "${http_code}" -lt 200 || "${http_code}" -ge 300 ]]; then
+    if [[ "${CKB_FAUCET_ENABLE_FALLBACK}" == "1" ]]; then
+      local fallback_payload fallback_http_code fallback_response_file
+      fallback_payload="$(jq -cn --arg address "${address}" '{address:$address,token:"ckb"}')"
+      printf '%s\n' "${fallback_payload}" > "${target_dir}/ckb-faucet-fallback-${label}.request.json"
+
+      fallback_response_file="${target_dir}/ckb-faucet-fallback-${label}.response.json"
+      set +e
+      fallback_http_code="$(curl -sS -o "${fallback_response_file}" -w "%{http_code}" \
+        -H "content-type: application/json" \
+        -d "${fallback_payload}" \
+        "${CKB_FAUCET_FALLBACK_API_BASE%/}/faucet")"
+      rc=$?
+      set -e
+
+      if [[ "${rc}" -eq 0 && "${fallback_http_code}" -ge 200 && "${fallback_http_code}" -lt 300 ]] \
+        && ! jq -e '(.error != null) or ((.errors | type) == "array" and (.errors | length) > 0)' "${fallback_response_file}" >/dev/null 2>&1; then
+        log "CKB faucet(${label}) primary rejected (HTTP ${http_code}); fallback faucet accepted; waiting ${CKB_FAUCET_WAIT_SECONDS}s"
+        sleep "${CKB_FAUCET_WAIT_SECONDS}"
+        return 0
+      fi
+    fi
+
     if [[ "${http_code}" -eq 422 ]]; then
       local detail
       detail="$(jq -r '.errors[0].detail // empty' "${response_file}")"
@@ -1802,6 +1933,9 @@ fi
 if ! is_positive_integer "${WAIT_TIMEOUT_SECONDS}"; then
   fatal "${EXIT_PRECHECK}" "WAIT_TIMEOUT_SECONDS must be a positive integer"
 fi
+if ! is_positive_integer "${COMPOSE_UP_TIMEOUT_SECONDS}"; then
+  fatal "${EXIT_PRECHECK}" "COMPOSE_UP_TIMEOUT_SECONDS must be a positive integer"
+fi
 if ! is_positive_integer "${SETTLEMENT_TIMEOUT_SECONDS}"; then
   fatal "${EXIT_PRECHECK}" "SETTLEMENT_TIMEOUT_SECONDS must be a positive integer"
 fi
@@ -1832,6 +1966,9 @@ fi
 if [[ "${CKB_PAYMENT_FAUCET_ON_FLOW}" != "0" && "${CKB_PAYMENT_FAUCET_ON_FLOW}" != "1" ]]; then
   fatal "${EXIT_PRECHECK}" "E2E_CKB_PAYMENT_FAUCET_ON_FLOW must be 0 or 1"
 fi
+if [[ "${CKB_FAUCET_ENABLE_FALLBACK}" != "0" && "${CKB_FAUCET_ENABLE_FALLBACK}" != "1" ]]; then
+  fatal "${EXIT_PRECHECK}" "CKB_FAUCET_ENABLE_FALLBACK must be 0 or 1"
+fi
 if [[ -n "${ACCEPT_CHANNEL_FUNDING_AMOUNT_HEX}" && ! "${ACCEPT_CHANNEL_FUNDING_AMOUNT_HEX}" =~ ^0x[0-9a-fA-F]+$ ]]; then
   fatal "${EXIT_PRECHECK}" "E2E_ACCEPT_CHANNEL_FUNDING_AMOUNT_HEX must be hex quantity like 0x24e160300"
 fi
@@ -1842,7 +1979,23 @@ if [[ "${PREPARE_ONLY}" -ne 1 && -z "${USDI_FAUCET_COMMAND}" ]]; then
 fi
 
 log "starting compose services"
-compose up -d --build postgres redis fnn fnn2 rpc worker > "${ARTIFACT_DIR}/compose-up.log" 2>&1
+ensure_rpc_port_available
+vlog "effective rpc_port=${RPC_PORT}"
+set +e
+compose_up_with_timeout "${COMPOSE_UP_TIMEOUT_SECONDS}" "${ARTIFACT_DIR}/compose-up.log"
+compose_up_rc=$?
+set -e
+if [[ "${compose_up_rc}" -eq 124 ]]; then
+  compose ps > "${ARTIFACT_DIR}/compose-timeout.ps.log" 2>&1 || true
+  docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}' > "${ARTIFACT_DIR}/compose-timeout.docker-ps.log" 2>&1 || true
+  fatal "${EXIT_STARTUP_TIMEOUT}" "docker compose up exceeded ${COMPOSE_UP_TIMEOUT_SECONDS}s (see compose-up.log and compose-timeout.*.log)"
+fi
+if [[ "${compose_up_rc}" -ne 0 ]]; then
+  if grep -Eqi 'address already in use|port is already allocated|bind: address already in use' "${ARTIFACT_DIR}/compose-up.log"; then
+    fatal "${EXIT_STARTUP_TIMEOUT}" "docker compose failed due to host port conflict (see compose-up.log)"
+  fi
+  fatal "${EXIT_STARTUP_TIMEOUT}" "docker compose up failed (see compose-up.log)"
+fi
 STARTED_COMPOSE=1
 
 wait_for_state "fiber-link-postgres" "healthy" || fatal "${EXIT_STARTUP_TIMEOUT}" "postgres startup timeout"

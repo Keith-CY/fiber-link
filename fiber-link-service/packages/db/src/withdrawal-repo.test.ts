@@ -3,6 +3,7 @@ import type { DbClient } from "./client";
 import { InvalidAmountError } from "./amount";
 import { withdrawalDebitIdempotencyKey } from "./idempotency";
 import { createInMemoryLedgerRepo } from "./ledger-repo";
+import { withdrawals } from "./schema";
 import {
   InsufficientFundsError,
   WithdrawalNotFoundError,
@@ -116,6 +117,24 @@ describe("createDbWithdrawalRepo", () => {
     expect(saved.txHash).toBe("0xabc123");
     const setArg = mock.updateSet.mock.calls[0][0] as Record<string, unknown>;
     expect(setArg.txHash).toBe("0xabc123");
+  });
+
+  it("uses SQL expression to keep retryCount unchanged when markFailed does not increment", async () => {
+    const mock = createDbMock();
+    const repo = createDbWithdrawalRepo(mock.db);
+    const now = new Date("2026-02-07T00:03:00.000Z");
+
+    mock.updateReturning.mockResolvedValueOnce([
+      mockRow({ state: "FAILED", retryCount: 2, updatedAt: now, lastError: "permanent failure" }),
+    ]);
+
+    await repo.markFailed("w1", {
+      now,
+      error: "permanent failure",
+    });
+
+    const setArg = mock.updateSet.mock.calls[0][0] as Record<string, unknown>;
+    expect(setArg.retryCount).not.toBe(withdrawals.retryCount);
   });
 
   it("acquires advisory lock and rejects when balance is insufficient", async () => {

@@ -8,6 +8,7 @@ import { createInMemoryAppRepo } from "./repositories/app-repo";
 import { registerRpc } from "./rpc";
 import * as tipMethods from "./methods/tip";
 import * as dashboardMethods from "./methods/dashboard";
+import * as withdrawalMethods from "./methods/withdrawal";
 
 function ensureBunInjectHeaderCompat() {
   if (typeof Bun === "undefined") {
@@ -654,6 +655,67 @@ describe("json-rpc", () => {
       id: "dash-2",
       error: { code: -32602, message: "Invalid params" },
     });
+  });
+
+  it("returns withdrawal.request result from handler", async () => {
+    const app = buildServer();
+    const withdrawalSpy = vi.spyOn(withdrawalMethods, "requestWithdrawal").mockResolvedValue({
+      id: "wd-1",
+      state: "PENDING",
+    });
+    try {
+      const payload = {
+        jsonrpc: "2.0",
+        id: "wd-req-1",
+        method: "withdrawal.request",
+        params: {
+          userId: "u1",
+          asset: "CKB",
+          amount: "61",
+          toAddress: "ckt1qyqfth8m4fevfzh5hhd088s78qcdjjp8cehs7z8jhw",
+        },
+      };
+      const ts = String(Math.floor(Date.now() / 1000));
+      const nonce = "withdrawal-request-ok";
+      const signature = verifyHmac.sign({
+        secret: "replace-with-lookup",
+        payload: JSON.stringify(payload),
+        ts,
+        nonce,
+      });
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/rpc",
+        payload,
+        headers: {
+          "content-type": "application/json",
+          "x-app-id": "app1",
+          "x-ts": ts,
+          "x-nonce": nonce,
+          "x-signature": signature,
+        },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({
+        jsonrpc: "2.0",
+        id: "wd-req-1",
+        result: {
+          id: "wd-1",
+          state: "PENDING",
+        },
+      });
+      expect(withdrawalSpy).toHaveBeenCalledWith({
+        appId: "app1",
+        userId: "u1",
+        asset: "CKB",
+        amount: "61",
+        toAddress: "ckt1qyqfth8m4fevfzh5hhd088s78qcdjjp8cehs7z8jhw",
+      });
+    } finally {
+      withdrawalSpy.mockRestore();
+    }
   });
 
   it("returns standardized tip.status not-found error", async () => {

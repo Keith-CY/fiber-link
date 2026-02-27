@@ -6,6 +6,8 @@ import {
   TipCreateParamsSchema,
   TipCreateResultSchema,
   TipStatusResultSchema,
+  WithdrawalRequestParamsSchema,
+  WithdrawalRequestResultSchema,
 } from "./contracts";
 
 describe("rpc contracts", () => {
@@ -62,6 +64,20 @@ describe("rpc contracts", () => {
     expect(TipCreateResultSchema.safeParse({ invoice: "invoice-1" }).success).toBe(true);
     expect(TipStatusResultSchema.safeParse({ state: "SETTLED" }).success).toBe(true);
     expect(TipStatusResultSchema.safeParse({ state: "BROKEN" }).success).toBe(false);
+    expect(
+      WithdrawalRequestParamsSchema.safeParse({
+        userId: "u1",
+        asset: "CKB",
+        amount: "61",
+        toAddress: "ckt1qyqfth8m4fevfzh5hhd088s78qcdjjp8cehs7z8jhw",
+      }).success,
+    ).toBe(true);
+    expect(
+      WithdrawalRequestResultSchema.safeParse({
+        id: "wd-1",
+        state: "PENDING",
+      }).success,
+    ).toBe(true);
     expect(
       DashboardSummaryResultSchema.safeParse({
         balance: "10",

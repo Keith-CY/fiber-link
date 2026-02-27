@@ -56,6 +56,7 @@ reply_raw = env_fetch_or_default("FLOW_REPLY_RAW", "This reply is created by loc
 service_url = env_fetch_or_default("FIBER_LINK_DISCOURSE_SERVICE_URL", "http://host.docker.internal:3000")
 app_id = env_fetch_or_default("FIBER_LINK_APP_ID", "local-dev")
 app_secret = env_fetch_or_default("FIBER_LINK_APP_SECRET", "")
+output_json_path = ENV["FLOW_OUTPUT_JSON_PATH"]&.strip
 raise "FIBER_LINK_APP_SECRET must be provided" if app_secret.empty?
 
 if SiteSetting.respond_to?(:allow_uncategorized_topics=)
@@ -85,28 +86,33 @@ SiteSetting.fiber_link_service_url = service_url
 SiteSetting.fiber_link_app_id = app_id
 SiteSetting.fiber_link_app_secret = app_secret
 
-puts JSON.generate(
-  {
-    tipper: {
-      id: tipper.id.to_s,
-      username: tipper.username,
-    },
-    author: {
-      id: author.id.to_s,
-      username: author.username,
-    },
-    topic: {
-      id: topic.id.to_s,
-      title: topic.title,
-      first_post_id: first_post.id.to_s,
-    },
-    reply: {
-      post_id: reply.id.to_s,
-    },
-    plugin_settings: {
-      fiber_link_enabled: SiteSetting.fiber_link_enabled,
-      fiber_link_service_url: SiteSetting.fiber_link_service_url,
-      fiber_link_app_id: SiteSetting.fiber_link_app_id,
-    },
+result = {
+  tipper: {
+    id: tipper.id.to_s,
+    username: tipper.username,
   },
-)
+  author: {
+    id: author.id.to_s,
+    username: author.username,
+  },
+  topic: {
+    id: topic.id.to_s,
+    title: topic.title,
+    first_post_id: first_post.id.to_s,
+  },
+  reply: {
+    post_id: reply.id.to_s,
+  },
+  plugin_settings: {
+    fiber_link_enabled: SiteSetting.fiber_link_enabled,
+    fiber_link_service_url: SiteSetting.fiber_link_service_url,
+    fiber_link_app_id: SiteSetting.fiber_link_app_id,
+  },
+}
+
+result_json = JSON.generate(result)
+if output_json_path && !output_json_path.empty?
+  File.write(output_json_path, "#{result_json}\n")
+end
+
+puts result_json
