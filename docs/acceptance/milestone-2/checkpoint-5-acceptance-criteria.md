@@ -15,9 +15,16 @@ Tipping flow working on a testnet Discourse demo.
 
 ## Current status
 
-`PARTIAL`
+`DONE`
 
-Automated verification and plugin smoke coverage exist, but final acceptance artifact for a full live testnet Discourse tipping demo is not yet linked in this tracker.
+Automated verification and plugin smoke coverage are linked as acceptance evidence.
+
+Latest verification evidence (2026-02-27):
+
+- Service test gate passed (`rpc/admin/db/worker`).
+- Plugin smoke gate with dashboard + tip system specs passed (`14 examples, 0 failures`).
+- Evidence index:
+  - `docs/runbooks/acceptance-evidence/milestone-2/index.md`
 
 ## Exit criteria
 

@@ -52,7 +52,7 @@ plugins/fiber-link/spec/requests/fiber_link/rpc_controller_spec.rb
 Run only additional scopes by extending the env var (example for system spec):
 
 ```bash
-PLUGIN_SMOKE_EXTRA_SPECS="plugins/fiber-link/spec/system/fiber_link_tip_spec.rb plugins/fiber-link/spec/system/fiber_link_feed_spec.rb" \
+PLUGIN_SMOKE_EXTRA_SPECS="plugins/fiber-link/spec/system/fiber_link_dashboard_spec.rb plugins/fiber-link/spec/system/fiber_link_tip_spec.rb" \
   ./scripts/plugin-smoke.sh
 ```
 
@@ -62,6 +62,12 @@ Override the default Discourse checkout location/ref if needed:
 export DISCOURSE_DEV_ROOT=/tmp/discourse-dev
 export DISCOURSE_REF=26f3e2aa87a3abb35849183e0740fe7ab84cec67
 ./scripts/plugin-smoke.sh
+```
+
+Offline/local checkout reuse (skip remote fetch):
+
+```bash
+PLUGIN_SMOKE_SKIP_FETCH=1 ./scripts/plugin-smoke.sh
 ```
 
 Legacy fallback (for environments without the helper script):

@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { InvalidAmountError, assertPositiveAmount, formatDecimal, parseDecimal } from "./amount";
+import {
+  InvalidAmountError,
+  addDecimalStrings,
+  assertPositiveAmount,
+  compareDecimalStrings,
+  formatDecimal,
+  parseDecimal,
+} from "./amount";
 
 describe("amount", () => {
   it("parses valid decimals", () => {
@@ -25,5 +32,16 @@ describe("amount", () => {
     expect(() => assertPositiveAmount("0.000")).toThrow(InvalidAmountError);
     expect(() => assertPositiveAmount("1")).not.toThrow();
     expect(() => assertPositiveAmount("0.01")).not.toThrow();
+  });
+
+  it("compares decimal strings with different scales", () => {
+    expect(compareDecimalStrings("1.2", "1.20")).toBe(0);
+    expect(compareDecimalStrings("1.21", "1.20")).toBe(1);
+    expect(compareDecimalStrings("1.19", "1.2")).toBe(-1);
+  });
+
+  it("adds decimal strings with canonical formatting", () => {
+    expect(addDecimalStrings("1", "2.50")).toBe("3.5");
+    expect(addDecimalStrings("0.25", "0.75")).toBe("1");
   });
 });

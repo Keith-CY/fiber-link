@@ -20,9 +20,17 @@ Provide a reproducible minimal demonstration for invoice -> payment -> ledger cr
 
 ## Current status
 
-`PARTIAL`
+`DONE`
 
-Demo capture pipeline is documented and scriptable, but latest acceptance-ready demo artifact references still need to be updated in the milestone acceptance path.
+Demo capture pipeline is documented, scriptable, and linked through acceptance evidence indexes.
+
+Latest verification evidence (2026-02-27):
+
+- Demo/evidence runbook is active: `docs/runbooks/w5-demo-evidence.md`.
+- Integration verification command set passed:
+  - `cd fiber-link-service && (cd apps/rpc && bun run test -- --run --silent) && (cd apps/worker && bun run test -- --run --silent)`
+- Published acceptance index:
+  - `docs/runbooks/acceptance-evidence/milestone-1/index.md`
 
 ## Exit criteria
 

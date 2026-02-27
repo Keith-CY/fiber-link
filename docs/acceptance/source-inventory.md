@@ -1,6 +1,6 @@
 # Acceptance Source Inventory
 
-Last updated: 2026-02-16
+Last updated: 2026-02-27
 
 This file records the docs sweep used to collect acceptance content into `docs/acceptance/`.
 
@@ -47,6 +47,9 @@ All markdown files currently under `docs/` were reviewed as source inputs for mi
 - `docs/runbooks/acceptance-evidence/milestone-1/index.md`
 - `docs/runbooks/acceptance-evidence/milestone-1/settlement-backfill.md`
 - `docs/runbooks/acceptance-evidence/milestone-1/testnet-bootstrap.md`
+- `docs/runbooks/acceptance-evidence/milestone-2/index.md`
+- `docs/runbooks/acceptance-evidence/milestone-3/index.md`
+- `docs/runbooks/admin-membership-sop.md`
 - `docs/runbooks/compose-reference.md`
 - `docs/runbooks/deployment-evidence.md`
 - `docs/runbooks/evidence-template/deployment/README.md`
@@ -54,6 +57,7 @@ All markdown files currently under `docs/` were reviewed as source inputs for mi
 - `docs/runbooks/evidence-template/deployment/retention-policy.md`
 - `docs/runbooks/fiber-adapter-e2e.md`
 - `docs/runbooks/kanban-project-id.md`
+- `docs/runbooks/mainnet-deployment-checklist.md`
 - `docs/runbooks/phase2-verification.md`
 - `docs/runbooks/secret-cutover.md`
 - `docs/runbooks/security-assumptions.md`

@@ -1,6 +1,6 @@
 # Research & Planning Checklist
 
-Last updated: 2026-02-12
+Last updated: 2026-02-27
 
 This checklist is now a live action board after Phase 2 completion.
 
@@ -50,15 +50,15 @@ Target: 2026-02-25
 Owner: `@Keith-CY`  
 Target: 2026-03-03
 
-- [ ] Implement balance read model: credits - debits by user/app/asset
-- [ ] Enforce insufficient-funds rejection on withdrawal request
-- [ ] Couple debit idempotency to successful withdrawal completion
+- [x] Implement balance read model: credits - debits by user/app/asset
+- [x] Enforce insufficient-funds rejection on withdrawal request
+- [x] Couple debit idempotency to successful withdrawal completion
 
 ### Cross-Cutting Ops/Docs
 
 Owner: `@Keith-CY`  
 Target: 2026-02-20
 
-- [ ] Align `docs/runbooks/phase2-verification.md` with CI request-spec scope (`plugins/fiber-link/spec/requests`)
-- [ ] Decide whether plugin system specs are part of CI default gate
-- [ ] Document Year 1 admin membership SOP (`app_admins` grant/revoke + audit trail)
+- [x] Align `docs/runbooks/phase2-verification.md` with CI request-spec scope (`plugins/fiber-link/spec/requests`)
+- [x] Decide whether plugin system specs are part of CI default gate
+- [x] Document Year 1 admin membership SOP (`app_admins` grant/revoke + audit trail)

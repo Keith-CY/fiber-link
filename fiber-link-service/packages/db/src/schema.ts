@@ -87,6 +87,25 @@ export const appAdmins = pgTable("app_admins", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+export const withdrawalPolicies = pgTable(
+  "withdrawal_policies",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    appId: text("app_id").notNull(),
+    allowedAssets: jsonb("allowed_assets").$type<Asset[]>().notNull(),
+    maxPerRequest: numeric("max_per_request").notNull(),
+    perUserDailyMax: numeric("per_user_daily_max").notNull(),
+    perAppDailyMax: numeric("per_app_daily_max").notNull(),
+    cooldownSeconds: integer("cooldown_seconds").notNull().default(0),
+    updatedBy: text("updated_by"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    appIdUnique: uniqueIndex("withdrawal_policies_app_id_unique").on(table.appId),
+  }),
+);
+
 export const tipIntents = pgTable(
   "tip_intents",
   {

@@ -139,6 +139,7 @@ describe("rpc contracts", () => {
     expect(RpcErrorCode.INVALID_REQUEST).toBe(-32600);
     expect(RpcErrorCode.INVALID_PARAMS).toBe(-32602);
     expect(RpcErrorCode.UNAUTHORIZED).toBe(-32001);
+    expect(RpcErrorCode.RATE_LIMITED).toBe(-32005);
     expect(RpcErrorCode.TIP_NOT_FOUND).toBe(-32004);
   });
 });

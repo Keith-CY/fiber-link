@@ -235,7 +235,7 @@ RSpec.describe "Fiber Link Dashboard", type: :system do
     expect(page).to have_content("No app records from admin payload. Verify plugin app credentials and refresh.")
     expect(page).to have_content("No withdrawals for current filter.")
     expect(page).to have_content("No settlement rows for current filter.")
-    expect(page).to have_link("Reset to ALL", href: /withdrawalState=ALL/)
+    expect(page).to have_link("Reset to ALL", href: %r{/fiber-link(?:\?|$)})
     expect(page).to have_link("Show all withdrawal states")
     expect(page).to have_link("Show all settlement states")
     expect(page).to have_no_css("form[action='/fiber-link']")

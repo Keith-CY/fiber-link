@@ -6,6 +6,7 @@ import { buildServer } from "./server";
 import { verifyHmac } from "./auth/hmac";
 import { createInMemoryAppRepo } from "./repositories/app-repo";
 import { registerRpc } from "./rpc";
+import { InMemoryRateLimitStore } from "./rate-limit";
 import * as tipMethods from "./methods/tip";
 import * as dashboardMethods from "./methods/dashboard";
 import * as withdrawalMethods from "./methods/withdrawal";
@@ -716,6 +717,137 @@ describe("json-rpc", () => {
     } finally {
       withdrawalSpy.mockRestore();
     }
+  });
+
+  it("returns invalid params when withdrawal policy rejects request", async () => {
+    const app = buildServer();
+    const withdrawalSpy = vi
+      .spyOn(withdrawalMethods, "requestWithdrawal")
+      .mockRejectedValue(
+        new withdrawalMethods.WithdrawalPolicyViolationError(
+          "MAX_PER_REQUEST_EXCEEDED",
+          "withdrawal amount 999 exceeds per-request limit 5000",
+        ),
+      );
+    try {
+      const payload = {
+        jsonrpc: "2.0",
+        id: "wd-req-policy",
+        method: "withdrawal.request",
+        params: {
+          userId: "u1",
+          asset: "CKB",
+          amount: "999",
+          toAddress: "ckt1qyqfth8m4fevfzh5hhd088s78qcdjjp8cehs7z8jhw",
+        },
+      };
+      const ts = String(Math.floor(Date.now() / 1000));
+      const nonce = "withdrawal-policy-reject";
+      const signature = verifyHmac.sign({
+        secret: "replace-with-lookup",
+        payload: JSON.stringify(payload),
+        ts,
+        nonce,
+      });
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/rpc",
+        payload,
+        headers: {
+          "content-type": "application/json",
+          "x-app-id": "app1",
+          "x-ts": ts,
+          "x-nonce": nonce,
+          "x-signature": signature,
+        },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({
+        jsonrpc: "2.0",
+        id: "wd-req-policy",
+        error: { code: -32602, message: "withdrawal amount 999 exceeds per-request limit 5000" },
+      });
+    } finally {
+      withdrawalSpy.mockRestore();
+    }
+  });
+
+  it("returns rate-limited error after limit is exhausted", async () => {
+    const app = Fastify({ logger: false });
+    app.decorateRequest("rawBody", "");
+    app.addContentTypeParser("application/json", { parseAs: "string" }, (req, body, done) => {
+      const rawBody = body as string;
+      req.rawBody = rawBody;
+      try {
+        done(null, JSON.parse(rawBody));
+      } catch (error) {
+        (error as Error & { statusCode?: number }).statusCode = 400;
+        done(error as Error, undefined);
+      }
+    });
+    registerRpc(app, {
+      appRepo: createInMemoryAppRepo([{ appId: "app1", hmacSecret: "db-secret" }]),
+      rateLimitStore: new InMemoryRateLimitStore(),
+      rateLimitConfig: {
+        enabled: true,
+        windowMs: 60_000,
+        maxRequests: 1,
+      },
+    });
+
+    const payload = { jsonrpc: "2.0", id: "rate-1", method: "health.ping", params: {} };
+    const ts = String(Math.floor(Date.now() / 1000));
+
+    const signatureA = verifyHmac.sign({
+      secret: "db-secret",
+      payload: JSON.stringify(payload),
+      ts,
+      nonce: "rate-limit-a",
+    });
+    const first = await app.inject({
+      method: "POST",
+      url: "/rpc",
+      payload,
+      headers: {
+        "content-type": "application/json",
+        "x-app-id": "app1",
+        "x-ts": ts,
+        "x-nonce": "rate-limit-a",
+        "x-signature": signatureA,
+      },
+    });
+
+    const signatureB = verifyHmac.sign({
+      secret: "db-secret",
+      payload: JSON.stringify(payload),
+      ts,
+      nonce: "rate-limit-b",
+    });
+    const second = await app.inject({
+      method: "POST",
+      url: "/rpc",
+      payload,
+      headers: {
+        "content-type": "application/json",
+        "x-app-id": "app1",
+        "x-ts": ts,
+        "x-nonce": "rate-limit-b",
+        "x-signature": signatureB,
+      },
+    });
+
+    expect(first.statusCode).toBe(200);
+    expect(first.json()).toEqual({ jsonrpc: "2.0", id: "rate-1", result: { status: "ok" } });
+    expect(second.statusCode).toBe(200);
+    expect(second.json()).toEqual({
+      jsonrpc: "2.0",
+      id: "rate-1",
+      error: { code: -32005, message: "Rate limit exceeded" },
+    });
+    expect(second.headers["x-ratelimit-limit"]).toBe("1");
+    expect(second.headers["x-ratelimit-remaining"]).toBe("0");
   });
 
   it("returns standardized tip.status not-found error", async () => {

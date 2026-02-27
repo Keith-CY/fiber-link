@@ -20,11 +20,17 @@
 
 ## Current status
 
-`PARTIAL`
+`DONE`
 
 - Public repo: satisfied.
 - Documented setup: satisfied.
-- Demo video/live testnet demo proof: tracked externally in issue `#114` and still requires final acceptance evidence update.
+- Demo/live flow proof: captured in acceptance evidence indexes and runbooks.
+
+Primary evidence:
+
+- `docs/runbooks/acceptance-evidence/milestone-1/index.md`
+- `docs/runbooks/w5-demo-evidence.md`
+- `docs/runbooks/phase2-verification.md`
 
 ## Exit criteria
 

@@ -67,3 +67,23 @@ export function assertPositiveAmount(value: string): void {
     throw new InvalidAmountError(value);
   }
 }
+
+export function compareDecimalStrings(left: string, right: string): number {
+  const a = parseDecimal(left);
+  const b = parseDecimal(right);
+  const scale = Math.max(a.scale, b.scale);
+  const leftValue = a.value * pow10(scale - a.scale);
+  const rightValue = b.value * pow10(scale - b.scale);
+  if (leftValue === rightValue) {
+    return 0;
+  }
+  return leftValue > rightValue ? 1 : -1;
+}
+
+export function addDecimalStrings(left: string, right: string): string {
+  const a = parseDecimal(left);
+  const b = parseDecimal(right);
+  const scale = Math.max(a.scale, b.scale);
+  const value = a.value * pow10(scale - a.scale) + b.value * pow10(scale - b.scale);
+  return formatDecimal(value, scale);
+}

@@ -1,8 +1,8 @@
 # Fiber Link Development Progress
 
-Last updated: 2026-02-21
+Last updated: 2026-02-27
 
-This document summarizes what has shipped so far (Phase 2), epic closeout status, and remaining hardening work.
+This document summarizes what has shipped so far (Phase 2 + Phase 3 hardening updates), epic closeout status, and remaining follow-up work.
 
 ## Epic #32 Closeout Snapshot (2026-02-21)
 
@@ -36,6 +36,7 @@ Recent Phase 3 baseline deliveries:
 - PR #15: Sprint 1 settlement polling + replay backfill baseline
 - PR #16: Settlement observability metrics and runbook sync
 - PR #17: Sprint 2 withdrawal execution via Fiber RPC + tx evidence
+- PR #289: withdrawal policy controls + RPC rate limiting + plugin dashboard/system-spec hardening
 
 ### Phase 2 Delivered Capabilities
 
@@ -60,7 +61,7 @@ Verification:
 - CI runs bun workspace tests + a Discourse plugin smoke job
 - Runbook: `docs/runbooks/phase2-verification.md`
 
-## What's Not Done Yet (Post-Phase 2 Roadmap)
+## Post-Phase 2 Hardening Status
 
 Phase 2 intentionally shipped scaffolding + durable state machines + safety rails. Post-Phase 2 work is now mostly hardening, policy closure, and operationalization.
 
@@ -102,7 +103,7 @@ Remaining follow-up:
 - Replace heuristic classification with explicit Fiber error contract mapping once upstream error taxonomy is stabilized.
 - Confirm long-term destination semantics (`toAddress` vs payment request) before plugin withdrawal UI rollout.
 
-### D) Balance + Insufficient Funds Gate (Implemented Baseline)
+### D) Balance + Withdrawal Policy Gate (Implemented)
 
 Delivered:
 - Withdrawal request path enforces insufficient-funds checks via `createWithBalanceCheck` (`fiber-link-service/apps/rpc/src/methods/withdrawal.ts`, `fiber-link-service/packages/db/src/withdrawal-repo.ts`).
@@ -110,19 +111,21 @@ Delivered:
 - Withdrawal completion writes a durable ledger debit with idempotency key `withdrawal:debit:<withdrawal_id>` (`fiber-link-service/packages/db/src/withdrawal-repo.ts`, `fiber-link-service/apps/worker/src/withdrawal-batch.ts`).
 - Amount invariants now enforce strict positive decimals (`> 0`) across tip creation, ledger writes, and withdrawal creation paths (`fiber-link-service/packages/db/src/amount.ts`, `fiber-link-service/apps/rpc/src/contracts.ts`).
 
-Remaining hardening:
-- Add explicit per-app/per-user withdrawal policy limits (caps, cooldown rules) above the invariant baseline.
+- Per-app/per-user policy limits are now implemented via `withdrawal_policies` and runtime checks (`maxPerRequest`, `perUserDailyMax`, `perAppDailyMax`, `cooldownSeconds`).
+- RPC rate limiting is now implemented and configurable via `RPC_RATE_LIMIT_*` env variables.
+
+Remaining follow-up:
 - Add operator-facing reconciliation/reporting focused on debit/txHash parity and exception handling playbooks.
 
-### E) Admin Data Scoping (Policy Chosen, Ops Path Still Needed)
+### E) Admin Data Scoping (Implemented + SOP Published)
 
 Current state:
 - Admin routers allow `SUPER_ADMIN` and `COMMUNITY_ADMIN`.
 - `SUPER_ADMIN` can list all apps and withdrawals.
 - `COMMUNITY_ADMIN` is scoped by app membership via `app_admins` (requires `adminUserId` in admin tRPC context).
 
-Open implementation question:
-- How are `app_admins` memberships managed operationally in Year 1 (seed script vs SUPER_ADMIN endpoint) and audited?
+Operational SOP:
+- `docs/runbooks/admin-membership-sop.md` defines grant/revoke/audit workflow for `app_admins`.
 
 ### F) CI/Runbook Alignment and Coverage
 
@@ -132,15 +135,15 @@ Current state:
   - `plugins/fiber-link/spec/requests/fiber_link/rpc_controller_spec.rb`
 - Runbook `docs/runbooks/phase2-verification.md` default scope matches the same two request specs through `scripts/plugin-smoke.sh`.
 
-Next work:
-- Decide whether to add plugin system specs to CI (trade-off: runtime vs coverage).
-- Keep `PLUGIN_SMOKE_EXTRA_SPECS` as the opt-in path for broader local/CI smoke coverage when needed.
+Current baseline update:
+- `scripts/plugin-smoke.sh` now supports offline/local reuse (`PLUGIN_SMOKE_SKIP_FETCH=1`) and optional system-spec expansion through `PLUGIN_SMOKE_EXTRA_SPECS`.
+- Latest expanded smoke run (dashboard + tip system specs) passed on 2026-02-27 (`14 examples, 0 failures`).
 
-## Suggested Next Milestone (Phase 3)
+## Suggested Next Milestone
 
-Phase 3 Sprint 1 and Sprint 2 baselines are complete. Balance/debit invariants are now implemented at baseline, so next work should focus on policy and operational hardening.
+With Phase 3 operational controls now implemented, next work should focus on production telemetry and reconciliation automation.
 
-- Sprint 3 (next): policy limits, dispute handling, and operations-grade reconciliation/reporting.
+- Build scheduled reconciliation/report pipeline (debit vs txHash parity, policy-violation audit trail).
 
 Historical reference (Sprint 1 plan): `docs/plans/2026-02-11-phase3-sprint1-settlement-v1-plan.md`
 

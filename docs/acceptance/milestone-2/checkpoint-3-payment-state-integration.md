@@ -19,7 +19,7 @@ Ensure payment state can be consumed by user-facing flow using reliable synchron
 
 ## Current status
 
-`COMPLETED`
+`DONE`
 
 Polling, replay, and event-subscription baseline paths are implemented and documented.
 Status synchronized on 2026-02-21: W4 child tasks and listed legacy scope are all closed (`#43`, `#50`, `#55`, `#60`, `#64`, `#26`, `#24`, `#28`, `#29`).

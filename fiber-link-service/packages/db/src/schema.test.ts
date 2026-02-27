@@ -11,6 +11,7 @@ import {
   tipIntentEventTypeEnum,
   tipIntentEvents,
   tipIntents,
+  withdrawalPolicies,
   withdrawalStateEnum,
   withdrawals,
 } from "./schema";
@@ -21,6 +22,7 @@ describe("schema", () => {
     expect(tipIntentEvents).toBeDefined();
     expect(ledgerEntries).toBeDefined();
     expect(withdrawals).toBeDefined();
+    expect(withdrawalPolicies).toBeDefined();
     expect(notificationChannels).toBeDefined();
     expect(notificationRules).toBeDefined();
   });
@@ -61,6 +63,10 @@ describe("schema", () => {
     expect(ledgerEntries.idempotencyKey.name).toBe("idempotency_key");
     expect(withdrawals.state.name).toBe("state");
     expect(withdrawals.nextRetryAt.name).toBe("next_retry_at");
+    expect(withdrawalPolicies.allowedAssets.name).toBe("allowed_assets");
+    expect(withdrawalPolicies.maxPerRequest.name).toBe("max_per_request");
+    expect(withdrawalPolicies.perUserDailyMax.name).toBe("per_user_daily_max");
+    expect(withdrawalPolicies.perAppDailyMax.name).toBe("per_app_daily_max");
     expect(notificationChannels.kind.name).toBe("kind");
     expect(notificationChannels.enabled.name).toBe("enabled");
     expect(notificationRules.event.name).toBe("event");

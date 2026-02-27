@@ -165,6 +165,7 @@ export const RpcErrorCode = {
   INVALID_PARAMS: -32602,
   INTERNAL_ERROR: -32603,
   UNAUTHORIZED: -32001,
+  RATE_LIMITED: -32005,
   TIP_NOT_FOUND: -32004,
 } as const;
 

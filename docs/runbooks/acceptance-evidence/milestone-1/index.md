@@ -27,5 +27,7 @@ This file is the published verification artifact for Milestone 1 acceptance.
 - Deployment evidence bundle: **pass** (`RESULT=PASS`) - artifact: `deploy/compose/evidence/20260216T184149Z/` (`20260216T184149Z.tar.gz`)
 - Settlement backfill summary: **pass** (`ok=true`, `errors=0`) - command: `bun run apps/worker/src/scripts/backfill-settlements.ts -- --limit=20`
 - Compose verification logs: **pass** (`summary.status=pass`) - artifact: `deploy/compose/evidence/20260216T184504Z/summary.json`
+- Service regression verification: **pass** (2026-02-27)
+  - `rpc: 56`, `admin: 58`, `db: 55`, `worker: 84` tests passed via `bun run test -- --run --silent`
 
 Update each row with artifact links when verification evidence is attached.

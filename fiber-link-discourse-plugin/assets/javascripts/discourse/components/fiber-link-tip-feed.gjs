@@ -193,4 +193,46 @@ export default class FiberLinkTipFeed extends Component {
   get isEmpty() {
     return !this.isLoading && !this.errorMessage && this.tips.length === 0;
   }
+
+  <template>
+    {{#if this.isLoading}}
+      <p class="fiber-link-tip-feed-loading">Loading tip feed...</p>
+    {{else}}
+      {{#if this.errorMessage}}
+        <p class="fiber-link-tip-feed-error">Failed to load tip feed: {{this.errorMessage}}</p>
+      {{else}}
+        {{#if this.isEmpty}}
+          <p class="fiber-link-tip-feed-empty">No tips available for this account yet.</p>
+        {{else}}
+          <table class="fiber-link-tip-feed-table">
+            <thead>
+              <tr>
+                <th>Direction</th>
+                <th>Amount</th>
+                <th>Invoice</th>
+                <th>Status</th>
+                <th>Counterparty</th>
+                <th>Created</th>
+              </tr>
+            </thead>
+            <tbody>
+              {{#each this.tips as |tip|}}
+                <tr data-tip-id={{tip.id}}>
+                  <td>{{tip.directionLabel}}</td>
+                  <td>{{tip.amount}} {{tip.asset}}</td>
+                  <td>{{tip.invoice}}</td>
+                  <td>{{tip.state}}</td>
+                  <td>{{tip.counterpartyUserId}}</td>
+                  <td>{{tip.createdAtLabel}}</td>
+                </tr>
+                <tr class="fiber-link-tip-feed-row-summary">
+                  <td colspan="6">{{tip.lifecycleSummary}}</td>
+                </tr>
+              {{/each}}
+            </tbody>
+          </table>
+        {{/if}}
+      {{/if}}
+    {{/if}}
+  </template>
 }

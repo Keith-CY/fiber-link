@@ -68,13 +68,16 @@
 
 - `docs/runbooks/deployment-evidence.md` — deployment evidence artifacts, checklist, and retention policy.
 - `scripts/capture-deployment-evidence.sh` — one-command evidence and log capture bundle.
+- `docs/runbooks/mainnet-deployment-checklist.md` — mainnet preflight, rollback, and post-deploy verification gate.
 
 ## Security assumptions
 
 - `docs/runbooks/security-assumptions.md` — versioned trust assumptions, operational limits, fallback boundaries, and ownership contacts.
 - `docs/runbooks/threat-model-evidence-checklist.md` — W1 threat-control verification checklist, acceptance matrix, and evidence retention/sign-off rules.
-- `#114` (`Milestone 1 proof`): external public proof issue for non-repo evidence tracking.
-- Final Milestone 1 acceptance references should use the latest public evidence update posted in `#114`.
+- `docs/runbooks/admin-membership-sop.md` — operational grant/revoke + audit SOP for `app_admins`.
+- `docs/runbooks/acceptance-evidence/milestone-1/index.md` — milestone 1 proof index.
+- `docs/runbooks/acceptance-evidence/milestone-2/index.md` — milestone 2 proof index.
+- `docs/runbooks/acceptance-evidence/milestone-3/index.md` — milestone 3 proof index.
 
 ## Kanban operations
 

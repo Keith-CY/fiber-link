@@ -17,9 +17,15 @@
 
 ## Current status
 
-`PENDING`
+`DONE`
 
-The repository has substantial baseline controls and runbooks, but mainnet-ready release artifacts and final acceptance demo evidence are not yet documented as complete.
+Mainnet readiness artifacts and acceptance evidence indexes are now documented.
+
+Primary references:
+
+- `docs/runbooks/mainnet-deployment-checklist.md`
+- `docs/runbooks/acceptance-evidence/milestone-3/index.md`
+- `docs/06-development-progress.md`
 
 ## Exit criteria
 

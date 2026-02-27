@@ -16,9 +16,15 @@ Provide end-to-end creator withdrawal flow with durable state transitions and ex
 
 ## Current status
 
-`PARTIAL`
+`DONE`
 
-Core withdrawal execution path is implemented with retry and tx evidence. Remaining items include policy hardening and plugin-side withdrawal UX finalization.
+Creator withdrawal workflow is implemented and verified end-to-end at service/worker level with policy and tx-evidence coverage.
+
+Latest verification evidence (2026-02-27):
+
+- `cd fiber-link-service/apps/rpc && bun run test -- --run --silent src/methods/withdrawal.test.ts src/rpc.test.ts`
+- `cd fiber-link-service/apps/worker && bun run test -- --run --silent src/withdrawal-batch.test.ts`
+- `docs/runbooks/acceptance-evidence/milestone-3/index.md`
 
 ## Exit criteria
 

@@ -6,11 +6,11 @@ Milestone title: Withdrawals + Mainnet Readiness
 
 | Checkpoint | Status | Checkpoint doc |
 | --- | --- | --- |
-| Creator withdrawal workflow | `PARTIAL` | [`checkpoint-1-creator-withdrawal-workflow.md`](./checkpoint-1-creator-withdrawal-workflow.md) |
-| Admin controls (asset config, thresholds, limits) | `PARTIAL` | [`checkpoint-2-admin-controls.md`](./checkpoint-2-admin-controls.md) |
-| Production hardening (monitoring, rate limiting, backups, docs polish) | `PARTIAL` | [`checkpoint-3-production-hardening.md`](./checkpoint-3-production-hardening.md) |
-| Mainnet deployment checklist | `PENDING` | [`checkpoint-4-mainnet-deployment-checklist.md`](./checkpoint-4-mainnet-deployment-checklist.md) |
-| Acceptance criteria (mainnet-ready release + full docs + demo instance) | `PENDING` | [`checkpoint-5-acceptance-criteria.md`](./checkpoint-5-acceptance-criteria.md) |
+| Creator withdrawal workflow | `DONE` | [`checkpoint-1-creator-withdrawal-workflow.md`](./checkpoint-1-creator-withdrawal-workflow.md) |
+| Admin controls (asset config, thresholds, limits) | `DONE` | [`checkpoint-2-admin-controls.md`](./checkpoint-2-admin-controls.md) |
+| Production hardening (monitoring, rate limiting, backups, docs polish) | `DONE` | [`checkpoint-3-production-hardening.md`](./checkpoint-3-production-hardening.md) |
+| Mainnet deployment checklist | `DONE` | [`checkpoint-4-mainnet-deployment-checklist.md`](./checkpoint-4-mainnet-deployment-checklist.md) |
+| Acceptance criteria (mainnet-ready release + full docs + demo instance) | `DONE` | [`checkpoint-5-acceptance-criteria.md`](./checkpoint-5-acceptance-criteria.md) |
 
 ## Acceptance criteria
 
@@ -26,3 +26,5 @@ Milestone title: Withdrawals + Mainnet Readiness
 - `docs/runbooks/security-controls-evidence-map.md`
 - `docs/runbooks/compose-reference.md`
 - `docs/runbooks/deployment-evidence.md`
+- `docs/runbooks/mainnet-deployment-checklist.md`
+- `docs/runbooks/acceptance-evidence/milestone-3/index.md`
