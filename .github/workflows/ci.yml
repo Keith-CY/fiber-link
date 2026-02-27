@@ -158,7 +158,13 @@ jobs:
           run_base_pkg apps/worker worker
           run_base_pkg packages/db db
           mkdir -p ../base-coverage-reports
-          cp -R "$base_dir/base-coverage-reports/" ../base-coverage-reports
+          cp -R "$base_dir/base-coverage-reports/." ../base-coverage-reports/
+          for module in rpc admin worker db; do
+            if [ ! -f "../base-coverage-reports/${module}/coverage-summary.json" ] && [ ! -f "../base-coverage-reports/${module}/.status" ]; then
+              echo "::error title=base-coverage-layout-mismatch::Expected base coverage outputs for ${module} were not copied to ../base-coverage-reports."
+              exit 1
+            fi
+          done
 
       - name: Build markdown summary
         working-directory: fiber-link-service
