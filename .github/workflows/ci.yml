@@ -236,6 +236,16 @@ jobs:
             return icons.join('<br>');
           }
 
+          function statusPriority(status) {
+            if (status === 'failed') {
+              return 0;
+            }
+            if (status === 'missing') {
+              return 1;
+            }
+            return 2;
+          }
+
           function buildDeltaDisplay(pct, basePct, headCoverage, baseCoverage) {
             if (Number.isFinite(pct) && Number.isFinite(basePct)) {
               const delta = pct - basePct;
@@ -298,11 +308,36 @@ jobs:
             }
 
             if (headCoverage.status !== 'ok' || baseCoverage.status !== 'ok') {
-              actionItems.push(`${label}: ${buildStatus(headCoverage, baseCoverage)}`);
+              actionItems.push({
+                module: label,
+                headStatus: headCoverage.status,
+                baseStatus: baseCoverage.status,
+                statusLabel: buildStatus(headCoverage, baseCoverage),
+                priority: Math.min(statusPriority(headCoverage.status), statusPriority(baseCoverage.status)),
+              });
             }
 
             rows.push(`| ${label} | ${headCoverage.status === 'ok' ? formatPct(pct) : headStr} | ${deltaDisplay} | ${buildStatus(headCoverage, baseCoverage)} |`);
           }
+
+          actionItems.sort((a, b) => {
+            if (a.priority !== b.priority) {
+              return a.priority - b.priority;
+            }
+            return a.module.localeCompare(b.module);
+          });
+
+          const actionableLines = actionItems.length > 0
+            ? actionItems.map((item) => {
+                const failureLabel = [item.headStatus !== 'ok' ? `head:${item.headStatus}` : '', item.baseStatus !== 'ok' ? `base:${item.baseStatus}` : '']
+                  .filter(Boolean)
+                  .join(', ');
+                const action = item.priority === 0
+                  ? `⚠️ fix coverage run errors and retry this job`
+                  : `⚠️ verify module exists and is available on both branches`;
+                return `- **${item.module}**: ${item.statusLabel} (${failureLabel}) — ${action}`;
+              }).join('\n')
+            : '- ✅ No action needed.';
 
           const avg = headCount > 0 ? sum / headCount : null;
           const baseAvg = baseCount > 0 ? baseSum / baseCount : null;
@@ -323,9 +358,9 @@ jobs:
             `**Compared modules:** ${effectiveModules}`,
             '',
             '### Action needed',
-            actionItems.length > 0
-              ? `${actionItems.map((item) => `- ${item}`).join('\n')}`
-              : '- ✅ No action needed.',
+            actionableLines,
+            '',
+            '- To recalc the report after fixes: open this workflow run and rerun **Coverage Comment** job.',
             '',
             '_Status legend: ✅ OK, ⚠️ module missing, ❌ module coverage run failed._',
           ].join('\n');
