@@ -176,6 +176,27 @@ describe("withdrawal policy router", () => {
     expect(String(result.maxPerRequest)).toBe("5000");
   });
 
+  it("ignores client-provided updatedBy and uses trusted admin identity", async () => {
+    const db = createDbMock({ policiesRows: [], appAdminsRows: [] });
+    const caller = withdrawalPolicyRouter.createCaller({
+      role: "SUPER_ADMIN",
+      adminUserId: "trusted-admin",
+      db,
+    } satisfies TrpcContext);
+
+    const result = await caller.upsert({
+      appId: "app1",
+      allowedAssets: ["CKB"],
+      maxPerRequest: "5000",
+      perUserDailyMax: "20000",
+      perAppDailyMax: "200000",
+      cooldownSeconds: 0,
+      updatedBy: "spoofed-admin",
+    });
+
+    expect(result.updatedBy).toBe("trusted-admin");
+  });
+
   it("rejects COMMUNITY_ADMIN upsert for unmanaged app", async () => {
     const db = createDbMock({
       policiesRows: [],

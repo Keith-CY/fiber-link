@@ -10,7 +10,6 @@ type WithdrawalPolicyInput = {
   perUserDailyMax: string;
   perAppDailyMax: string;
   cooldownSeconds: number;
-  updatedBy?: string | null;
 };
 
 function isSupportedAsset(value: unknown): value is Asset {
@@ -70,13 +69,6 @@ function parseUpsertInput(raw: unknown): WithdrawalPolicyInput {
     throw new TRPCError({ code: "BAD_REQUEST", message: "cooldownSeconds must be an integer >= 0" });
   }
 
-  const updatedBy =
-    input.updatedBy === undefined || input.updatedBy === null
-      ? null
-      : typeof input.updatedBy === "string"
-        ? input.updatedBy
-        : null;
-
   return {
     appId,
     allowedAssets: normalizedAssets,
@@ -84,7 +76,6 @@ function parseUpsertInput(raw: unknown): WithdrawalPolicyInput {
     perUserDailyMax,
     perAppDailyMax,
     cooldownSeconds,
-    updatedBy,
   };
 }
 
@@ -163,6 +154,7 @@ export const withdrawalPolicyRouter = t.router({
     }
 
     const now = new Date();
+    const updatedBy = ctx.adminUserId ?? null;
     await ctx.db
       .insert(withdrawalPolicies)
       .values({
@@ -172,7 +164,7 @@ export const withdrawalPolicyRouter = t.router({
         perUserDailyMax: parsed.perUserDailyMax,
         perAppDailyMax: parsed.perAppDailyMax,
         cooldownSeconds: parsed.cooldownSeconds,
-        updatedBy: parsed.updatedBy ?? ctx.adminUserId ?? null,
+        updatedBy,
         createdAt: now,
         updatedAt: now,
       })
@@ -184,7 +176,7 @@ export const withdrawalPolicyRouter = t.router({
           perUserDailyMax: parsed.perUserDailyMax,
           perAppDailyMax: parsed.perAppDailyMax,
           cooldownSeconds: parsed.cooldownSeconds,
-          updatedBy: parsed.updatedBy ?? ctx.adminUserId ?? null,
+          updatedBy,
           updatedAt: now,
         },
       });
