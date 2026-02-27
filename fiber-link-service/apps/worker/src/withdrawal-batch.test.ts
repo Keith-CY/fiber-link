@@ -4,7 +4,7 @@ import {
   createInMemoryLedgerRepo,
   createInMemoryWithdrawalRepo,
 } from "@fiber-link/db";
-import { FiberRpcError } from "@fiber-link/fiber-adapter";
+import { FiberRpcError, WithdrawalExecutionError } from "@fiber-link/fiber-adapter";
 import { runWithdrawalBatch } from "./withdrawal-batch";
 
 describe("runWithdrawalBatch", () => {
@@ -368,6 +368,30 @@ describe("runWithdrawalBatch", () => {
     const saved = await repo.findByIdOrThrow(created.id);
     expect(saved.state).toBe("RETRY_PENDING");
     expect(saved.lastError).toContain("internal error");
+  });
+
+  it("respects adapter withdrawal execution error contract kind", async () => {
+    const created = await repo.create({
+      appId: "app1",
+      userId: "u1",
+      asset: "CKB",
+      amount: "10",
+      toAddress: "ckt1qcontractkind",
+    });
+
+    const res = await runWithdrawalBatch({
+      now: new Date("2026-02-07T12:35:00.000Z"),
+      retryDelayMs: 60_000,
+      executeWithdrawal: async () => {
+        throw new WithdrawalExecutionError("upstream transient", "transient");
+      },
+      repo,
+    });
+
+    expect(res.retryPending).toBe(1);
+    const saved = await repo.findByIdOrThrow(created.id);
+    expect(saved.state).toBe("RETRY_PENDING");
+    expect(saved.retryCount).toBe(1);
   });
 
   it("treats Fiber invalid params rpc error as permanent failure", async () => {

@@ -44,6 +44,12 @@ export const withdrawalStateEnum = pgEnum("withdrawal_state", [
 ]);
 export type WithdrawalState = (typeof withdrawalStateEnum.enumValues)[number];
 
+export const withdrawalDestinationKindEnum = pgEnum("withdrawal_destination_kind", [
+  "CKB_ADDRESS",
+  "PAYMENT_REQUEST",
+]);
+export type WithdrawalDestinationKind = (typeof withdrawalDestinationKindEnum.enumValues)[number];
+
 export const notificationChannelKindEnum = pgEnum("notification_channel_kind", ["WEBHOOK"]);
 export type NotificationChannelKind = (typeof notificationChannelKindEnum.enumValues)[number];
 
@@ -193,6 +199,7 @@ export const withdrawals = pgTable(
     userId: text("user_id").notNull(),
     asset: assetEnum("asset").notNull(),
     amount: numeric("amount").notNull(),
+    destinationKind: withdrawalDestinationKindEnum("destination_kind").notNull().default("PAYMENT_REQUEST"),
     toAddress: text("to_address").notNull(),
     state: withdrawalStateEnum("state").notNull(),
     retryCount: integer("retry_count").notNull().default(0),

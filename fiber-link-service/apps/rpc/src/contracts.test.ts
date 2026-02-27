@@ -69,7 +69,21 @@ describe("rpc contracts", () => {
         userId: "u1",
         asset: "CKB",
         amount: "61",
-        toAddress: "ckt1qyqfth8m4fevfzh5hhd088s78qcdjjp8cehs7z8jhw",
+        destination: {
+          kind: "CKB_ADDRESS",
+          address: "ckt1qyqfth8m4fevfzh5hhd088s78qcdjjp8cehs7z8jhw",
+        },
+      }).success,
+    ).toBe(true);
+    expect(
+      WithdrawalRequestParamsSchema.safeParse({
+        userId: "u1",
+        asset: "USDI",
+        amount: "1",
+        destination: {
+          kind: "PAYMENT_REQUEST",
+          paymentRequest: "fiber:invoice:example",
+        },
       }).success,
     ).toBe(true);
     expect(

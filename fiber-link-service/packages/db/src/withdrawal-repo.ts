@@ -4,7 +4,7 @@ import type { DbClient } from "./client";
 import { assertPositiveAmount, formatDecimal, parseDecimal, pow10 } from "./amount";
 import { withdrawalDebitIdempotencyKey } from "./idempotency";
 import { createDbLedgerRepo, type LedgerRepo } from "./ledger-repo";
-import { withdrawals, type Asset, type WithdrawalState } from "./schema";
+import { withdrawals, type Asset, type WithdrawalDestinationKind, type WithdrawalState } from "./schema";
 
 export type WithdrawalAsset = Asset;
 
@@ -14,10 +14,12 @@ export type CreateWithdrawalInput = {
   asset: WithdrawalAsset;
   amount: string;
   toAddress: string;
+  destinationKind?: WithdrawalDestinationKind;
 };
 
 export type WithdrawalRecord = CreateWithdrawalInput & {
   id: string;
+  destinationKind: WithdrawalDestinationKind;
   state: WithdrawalState;
   retryCount: number;
   nextRetryAt: Date | null;
@@ -95,6 +97,7 @@ function toRecord(row: WithdrawalRow): WithdrawalRecord {
     userId: row.userId,
     asset: row.asset as WithdrawalAsset,
     amount: typeof row.amount === "string" ? row.amount : String(row.amount),
+    destinationKind: row.destinationKind as WithdrawalDestinationKind,
     toAddress: row.toAddress,
     state: row.state as WithdrawalState,
     retryCount: row.retryCount,
@@ -105,6 +108,14 @@ function toRecord(row: WithdrawalRow): WithdrawalRecord {
     completedAt: row.completedAt,
     txHash: row.txHash,
   };
+}
+
+function inferDestinationKind(toAddress: string): WithdrawalDestinationKind {
+  const normalized = toAddress.trim().toLowerCase();
+  if (normalized.startsWith("ckt1") || normalized.startsWith("ckb1")) {
+    return "CKB_ADDRESS";
+  }
+  return "PAYMENT_REQUEST";
 }
 
 function sumAmounts(amounts: string[]): string {
@@ -169,6 +180,7 @@ export function createDbWithdrawalRepo(db: DbClient): WithdrawalRepo {
           userId: input.userId,
           asset: input.asset,
           amount: input.amount,
+          destinationKind: input.destinationKind ?? inferDestinationKind(input.toAddress),
           toAddress: input.toAddress,
           state: "PENDING",
           retryCount: 0,
@@ -212,6 +224,7 @@ export function createDbWithdrawalRepo(db: DbClient): WithdrawalRepo {
             userId: input.userId,
             asset: input.asset,
             amount: input.amount,
+            destinationKind: input.destinationKind ?? inferDestinationKind(input.toAddress),
             toAddress: input.toAddress,
             state: "PENDING",
             retryCount: 0,
@@ -381,6 +394,7 @@ export function createInMemoryWithdrawalRepo(): WithdrawalRepo {
       const now = new Date();
       const record: WithdrawalRecord = {
         ...input,
+        destinationKind: input.destinationKind ?? inferDestinationKind(input.toAddress),
         id: randomUUID(),
         state: "PENDING",
         retryCount: 0,

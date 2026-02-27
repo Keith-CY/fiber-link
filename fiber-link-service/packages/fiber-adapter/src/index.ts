@@ -32,6 +32,8 @@ export type {
   SettlementSubscriptionConfig,
   SettlementSubscriptionHandle,
   SubscribeSettlementsArgs,
+  WithdrawalDestination,
+  WithdrawalExecutionKind,
 } from "./types";
 
 export type {

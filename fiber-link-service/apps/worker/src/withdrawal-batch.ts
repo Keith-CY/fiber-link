@@ -8,7 +8,7 @@ import {
   type WithdrawalRecord,
   type WithdrawalRepo,
 } from "@fiber-link/db";
-import { FiberRpcError, createAdapter } from "@fiber-link/fiber-adapter";
+import { FiberRpcError, WithdrawalExecutionError, createAdapter } from "@fiber-link/fiber-adapter";
 import {
   createDbNotificationRepo,
   createNoopNotificationDispatcher,
@@ -43,7 +43,10 @@ async function defaultExecuteWithdrawal(withdrawal: WithdrawalRecord): Promise<W
       await adapter.executeWithdrawal({
         amount: withdrawal.amount,
         asset: withdrawal.asset,
-        toAddress: withdrawal.toAddress,
+        destination:
+          withdrawal.destinationKind === "CKB_ADDRESS"
+            ? { kind: "CKB_ADDRESS", address: withdrawal.toAddress }
+            : { kind: "PAYMENT_REQUEST", paymentRequest: withdrawal.toAddress },
         requestId: withdrawal.id,
       })
     ).txHash,
@@ -162,6 +165,9 @@ function classifyFiberRpcError(error: FiberRpcError): ExecutionFailureKind {
 
 function classifyExecutionError(error: unknown): { kind: "transient" | "permanent"; reason: string } {
   const message = error instanceof Error ? error.message : String(error);
+  if (error instanceof WithdrawalExecutionError) {
+    return { kind: error.kind, reason: message };
+  }
   if (error instanceof FiberRpcError) {
     return { kind: classifyFiberRpcError(error), reason: message };
   }

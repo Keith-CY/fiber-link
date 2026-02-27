@@ -37,12 +37,56 @@ export const TipStatusResultSchema = z.object({
   state: z.enum(["UNPAID", "SETTLED", "FAILED"]),
 });
 
-export const WithdrawalRequestParamsSchema = z.object({
+const WithdrawalRequestBaseParamsSchema = z.object({
   userId: z.string().min(1),
   asset: z.enum(["CKB", "USDI"]),
   amount: PositiveAmountStringSchema,
+});
+export const WithdrawalDestinationSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("CKB_ADDRESS"),
+    address: z.string().min(1),
+  }),
+  z.object({
+    kind: z.literal("PAYMENT_REQUEST"),
+    paymentRequest: z.string().min(1),
+  }),
+]);
+
+function inferWithdrawalDestinationFromLegacyToAddress(toAddress: string): z.infer<typeof WithdrawalDestinationSchema> {
+  const normalized = toAddress.trim().toLowerCase();
+  if (normalized.startsWith("ckt1") || normalized.startsWith("ckb1")) {
+    return {
+      kind: "CKB_ADDRESS",
+      address: toAddress,
+    };
+  }
+  return {
+    kind: "PAYMENT_REQUEST",
+    paymentRequest: toAddress,
+  };
+}
+
+const WithdrawalRequestParamsV2Schema = WithdrawalRequestBaseParamsSchema.extend({
+  destination: WithdrawalDestinationSchema,
+});
+const WithdrawalRequestParamsLegacySchema = WithdrawalRequestBaseParamsSchema.extend({
   toAddress: z.string().min(1),
 });
+
+export const WithdrawalRequestParamsSchema = z
+  .union([WithdrawalRequestParamsV2Schema, WithdrawalRequestParamsLegacySchema])
+  .transform((value) => {
+    if ("destination" in value) {
+      return value;
+    }
+    return {
+      userId: value.userId,
+      asset: value.asset,
+      amount: value.amount,
+      destination: inferWithdrawalDestinationFromLegacyToAddress(value.toAddress),
+    };
+  });
 
 export const WithdrawalRequestResultSchema = z.object({
   id: z.string().min(1),

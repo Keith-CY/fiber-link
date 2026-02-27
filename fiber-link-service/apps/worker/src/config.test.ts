@@ -16,7 +16,7 @@ describe("parseWorkerConfig", () => {
     expect(config.settlementMaxRetries).toBe(3);
     expect(config.retryDelayMs).toBe(60_000);
     expect(config.settlementRetryDelayMs).toBe(60_000);
-    expect(config.settlementStrategy).toBe("polling");
+    expect(config.settlementStrategy).toBe("subscription");
     expect(config.subscriptionConcurrency).toBe(1);
     expect(config.subscriptionMaxPendingEvents).toBe(1000);
     expect(config.subscriptionRecentInvoiceDedupeSize).toBe(256);

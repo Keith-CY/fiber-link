@@ -39,6 +39,8 @@ Edit `.env` minimally:
 - Set `FNN_ASSET_SHA256` to the SHA256 digest for `${FNN_ASSET}` from the corresponding Fiber release page.
 - Optional: tune `WORKER_SHUTDOWN_TIMEOUT_MS` (graceful drain timeout for in-flight withdrawal batch).
 - Optional: tune settlement polling knobs:
+  - `WORKER_SETTLEMENT_STRATEGY` (`subscription` default; set `polling` for polling-only mode)
+  - `FIBER_SETTLEMENT_SUBSCRIPTION_URL` (when unset, worker logs fallback and uses polling/backfill path only)
   - `WORKER_SETTLEMENT_INTERVAL_MS`
   - `WORKER_SETTLEMENT_BATCH_SIZE`
   - `WORKER_SETTLEMENT_MAX_RETRIES`
@@ -156,7 +158,7 @@ Expected: JSON-RPC unauthorized error (this confirms endpoint is up and signatur
 You can customize by editing `deploy/compose/fnn/config/testnet.yml` before build, or by updating `/data/config.yml` inside the volume.
 
 ## Current Limitations
-- Settlement detection currently uses polling + replay, not event subscription.
+- Settlement subscription URL still depends on upstream deployment interface and must be configured explicitly (`FIBER_SETTLEMENT_SUBSCRIPTION_URL`) for low-latency event path.
 - Admin panel server is not included in this compose reference.
 - This setup does not include production controls (TLS, secrets manager, backup, network isolation, observability stack).
 

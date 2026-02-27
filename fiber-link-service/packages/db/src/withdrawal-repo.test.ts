@@ -26,6 +26,7 @@ function mockRow(overrides: Record<string, unknown> = {}) {
     userId: "u1",
     asset: "USDI",
     amount: "10",
+    destinationKind: "PAYMENT_REQUEST",
     toAddress: "ckt1q...",
     state: "PENDING",
     retryCount: 0,

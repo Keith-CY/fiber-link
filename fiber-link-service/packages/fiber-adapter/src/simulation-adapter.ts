@@ -60,11 +60,15 @@ function makeWithdrawalTxHash(params: {
   scenarioName: string;
   amount: string;
   asset: ExecuteWithdrawalArgs["asset"];
-  toAddress: string;
+  destination: ExecuteWithdrawalArgs["destination"];
   requestId: string;
 }): string {
+  const destinationTag =
+    params.destination.kind === "CKB_ADDRESS"
+      ? `ckb:${params.destination.address}`
+      : `payment:${params.destination.paymentRequest}`;
   return `0x${stableHex(
-    `${params.seed}|withdrawal|${params.scenarioName}|${params.amount}|${params.asset}|${params.toAddress}|${params.requestId}`,
+    `${params.seed}|withdrawal|${params.scenarioName}|${params.amount}|${params.asset}|${destinationTag}|${params.requestId}`,
     64,
   )}`;
 }
@@ -126,7 +130,7 @@ export function createSimulationAdapter(args: CreateSimulationAdapterArgs = {}):
 
     subscribeSettlements,
 
-    async executeWithdrawal({ amount, asset, toAddress, requestId }: ExecuteWithdrawalArgs) {
+    async executeWithdrawal({ amount, asset, destination, requestId }: ExecuteWithdrawalArgs) {
       if (scenario.withdrawalBehavior.kind === "error") {
         throw new Error(`${scenario.withdrawalBehavior.message} (scenario=${scenario.name})`);
       }
@@ -138,7 +142,7 @@ export function createSimulationAdapter(args: CreateSimulationAdapterArgs = {}):
           scenarioName: scenario.name,
           amount,
           asset,
-          toAddress,
+          destination,
           requestId: resolvedRequestId,
         }),
       };

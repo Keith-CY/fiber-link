@@ -21,7 +21,10 @@ async function main() {
     const withdrawal = await adapter.executeWithdrawal({
       amount: "1",
       asset: "CKB",
-      toAddress: created.invoice,
+      destination: {
+        kind: "PAYMENT_REQUEST",
+        paymentRequest: created.invoice,
+      },
       requestId: `e2e-${Date.now()}`,
     });
     withdrawalProbe = `ok:${withdrawal.txHash}`;
