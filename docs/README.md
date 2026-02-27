@@ -20,7 +20,7 @@
 
 ## Placeholder marker policy
 
-- Do not leave unresolved `TODO`/`TBD`/`FIXME` markers in user-facing docs.
+- Do not leave unresolved placeholder markers in user-facing docs.
 - Track unresolved doc work as GitHub issues and link issue IDs in the relevant docs.
 
 ## Plugin testing

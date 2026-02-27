@@ -388,9 +388,9 @@ def render_snapshot(report: dict[str, Any], compact_no_change: bool) -> str:
         lines.append("- none")
     lines.extend([""])
 
-    append_hits(lines, "TODO/TBD/FIXME Hits (Docs)", todo_docs["items"], todo_docs["truncated"])
+    append_hits(lines, "Placeholder Marker Hits (Docs)", todo_docs["items"], todo_docs["truncated"])
     lines.extend([""])
-    append_hits(lines, "TODO/TBD/FIXME Hits (Core)", todo_core["items"], todo_core["truncated"])
+    append_hits(lines, "Placeholder Marker Hits (Core)", todo_core["items"], todo_core["truncated"])
     lines.extend(["", "## Test File Delta", ""])
     lines.extend(
         [
@@ -458,7 +458,7 @@ def build_pr_body(report: dict[str, Any]) -> str:
     else:
         lines.append("- none")
 
-    lines.extend(["", "### TODO/TBD/FIXME Hit Details", ""])
+    lines.extend(["", "### Placeholder Marker Hit Details", ""])
     append_hits(lines, "Docs", docs_hits["items"], docs_hits["truncated"])
     lines.extend([""])
     append_hits(lines, "Core", core_hits["items"], core_hits["truncated"])

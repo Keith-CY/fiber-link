@@ -2,11 +2,16 @@ export type Asset = "CKB" | "USDI";
 
 export type CreateInvoiceArgs = { amount: string; asset: Asset };
 export type InvoiceState = "UNPAID" | "SETTLED" | "FAILED";
+export type WithdrawalExecutionKind = "transient" | "permanent";
+
+export type WithdrawalDestination =
+  | { kind: "CKB_ADDRESS"; address: string }
+  | { kind: "PAYMENT_REQUEST"; paymentRequest: string };
 
 export type ExecuteWithdrawalArgs = {
   amount: string;
   asset: Asset;
-  toAddress: string;
+  destination: WithdrawalDestination;
   requestId: string;
 };
 

@@ -12,7 +12,18 @@ import { createWorkerRuntime } from "./worker-runtime";
 
 async function main() {
   const config = parseWorkerConfig(process.env);
-  const fiberAdapter = createAdapterProvider({ endpoint: config.fiberRpcUrl });
+  const settlementSubscriptionUrl = (process.env.FIBER_SETTLEMENT_SUBSCRIPTION_URL ?? "").trim();
+  const hasSettlementSubscriptionUrl = settlementSubscriptionUrl.length > 0;
+  const fiberAdapter = createAdapterProvider({
+    endpoint: config.fiberRpcUrl,
+    settlementSubscription:
+      config.settlementStrategy === "subscription"
+        ? {
+            enabled: hasSettlementSubscriptionUrl,
+            url: hasSettlementSubscriptionUrl ? settlementSubscriptionUrl : undefined,
+          }
+        : { enabled: false },
+  });
   const cursorStore = createFileSettlementCursorStore(config.settlementCursorFile);
   let settlementCursor: TipIntentListCursor | undefined = await cursorStore.load();
   let subscriptionRunner: SettlementSubscriptionRunner | null = null;
@@ -33,7 +44,10 @@ async function main() {
           const withdrawalResult = await fiberAdapter.executeWithdrawal({
             amount: withdrawal.amount,
             asset: withdrawal.asset,
-            toAddress: withdrawal.toAddress,
+            destination:
+              withdrawal.destinationKind === "CKB_ADDRESS"
+                ? { kind: "CKB_ADDRESS", address: withdrawal.toAddress }
+                : { kind: "PAYMENT_REQUEST", paymentRequest: withdrawal.toAddress },
             requestId: withdrawal.id,
           });
           return {
@@ -58,16 +72,25 @@ async function main() {
   });
 
   if (config.settlementStrategy === "subscription") {
+    if (!hasSettlementSubscriptionUrl) {
+      console.warn(
+        "[worker] settlement subscription strategy requested but FIBER_SETTLEMENT_SUBSCRIPTION_URL is not set; using polling fallback only",
+      );
+    }
+
     try {
-      subscriptionRunner = await startSettlementSubscriptionRunner({
-        adapter: fiberAdapter,
-        concurrency: config.subscriptionConcurrency,
-        maxPendingEvents: config.subscriptionMaxPendingEvents,
-        recentInvoiceDedupeSize: config.subscriptionRecentInvoiceDedupeSize,
-      });
+      if (hasSettlementSubscriptionUrl) {
+        subscriptionRunner = await startSettlementSubscriptionRunner({
+          adapter: fiberAdapter,
+          concurrency: config.subscriptionConcurrency,
+          maxPendingEvents: config.subscriptionMaxPendingEvents,
+          recentInvoiceDedupeSize: config.subscriptionRecentInvoiceDedupeSize,
+        });
+      }
       console.info("[worker] settlement strategy enabled", {
         strategy: "subscription",
         pollingFallback: true,
+        subscriptionUrlConfigured: hasSettlementSubscriptionUrl,
         subscriptionConcurrency: config.subscriptionConcurrency,
         maxPendingEvents: config.subscriptionMaxPendingEvents,
         recentInvoiceDedupeSize: config.subscriptionRecentInvoiceDedupeSize,

@@ -14,7 +14,7 @@ describe("executeCkbOnchainWithdrawal", () => {
     delete process.env.FIBER_WITHDRAWAL_CKB_INDEXER_URL_TESTNET;
   });
 
-  it("submits signed tx with rpc.sendTransaction", async () => {
+  async function setupLumosMocks(transferImpl?: () => unknown) {
     const mocks = {
       sendTransaction: vi.fn(),
       transfer: vi.fn(),
@@ -74,8 +74,6 @@ describe("executeCkbOnchainWithdrawal", () => {
       };
     });
 
-    const { executeCkbOnchainWithdrawal } = await import("./ckb-onchain-withdrawal");
-
     process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY = `0x${"11".repeat(32)}`;
 
     const signingEntries = [{ message: "0xmessage" }];
@@ -87,7 +85,11 @@ describe("executeCkbOnchainWithdrawal", () => {
     const signedTx = { tx: "signed" };
 
     mocks.transactionSkeleton.mockReturnValue(txSkeleton);
-    mocks.transfer.mockResolvedValue(txSkeleton);
+    if (transferImpl) {
+      mocks.transfer.mockImplementation(async () => transferImpl());
+    } else {
+      mocks.transfer.mockResolvedValue(txSkeleton);
+    }
     mocks.payFeeByFeeRate.mockResolvedValue(txSkeleton);
     mocks.prepareSigningEntries.mockReturnValue(txSkeleton);
     mocks.parseAddress.mockReturnValue({ code_hash: "0x1", hash_type: "type", args: "0x2" });
@@ -98,14 +100,64 @@ describe("executeCkbOnchainWithdrawal", () => {
     mocks.sealTransaction.mockReturnValue(signedTx);
     mocks.sendTransaction.mockResolvedValue("0xtxhash");
 
+    const mod = await import("./ckb-onchain-withdrawal");
+    return { ...mod, mocks, signedTx };
+  }
+
+  it("submits signed tx with rpc.sendTransaction", async () => {
+    const { executeCkbOnchainWithdrawal, mocks, signedTx } = await setupLumosMocks();
+
     const result = await executeCkbOnchainWithdrawal({
       amount: "61",
       asset: "CKB",
-      toAddress: "ckt1qyqwyxfa75whssgkq9ukkdd30d8c7txct0gq5f9mxs",
+      destination: {
+        kind: "CKB_ADDRESS",
+        address: "ckt1qyqwyxfa75whssgkq9ukkdd30d8c7txct0gq5f9mxs",
+      },
       requestId: "w-ckb-1",
     });
 
     expect(result).toEqual({ txHash: "0xtxhash" });
     expect(mocks.sendTransaction).toHaveBeenCalledWith(signedTx, "passthrough");
+  });
+
+  it("maps upstream JSON-RPC internal errors to transient execution kind", async () => {
+    const { executeCkbOnchainWithdrawal } = await setupLumosMocks(() => {
+      throw { code: -32603, message: "internal error" };
+    });
+
+    await expect(
+      executeCkbOnchainWithdrawal({
+        amount: "61",
+        asset: "CKB",
+        destination: {
+          kind: "CKB_ADDRESS",
+          address: "ckt1qyqwyxfa75whssgkq9ukkdd30d8c7txct0gq5f9mxs",
+        },
+        requestId: "w-ckb-2",
+      }),
+    ).rejects.toMatchObject({
+      kind: "transient",
+    });
+  });
+
+  it("maps upstream JSON-RPC invalid params errors to permanent execution kind", async () => {
+    const { executeCkbOnchainWithdrawal } = await setupLumosMocks(() => {
+      throw { code: -32602, message: "invalid params" };
+    });
+
+    await expect(
+      executeCkbOnchainWithdrawal({
+        amount: "61",
+        asset: "CKB",
+        destination: {
+          kind: "CKB_ADDRESS",
+          address: "ckt1qyqwyxfa75whssgkq9ukkdd30d8c7txct0gq5f9mxs",
+        },
+        requestId: "w-ckb-3",
+      }),
+    ).rejects.toMatchObject({
+      kind: "permanent",
+    });
   });
 });

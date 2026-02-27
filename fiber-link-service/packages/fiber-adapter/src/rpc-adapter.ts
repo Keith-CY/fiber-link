@@ -71,11 +71,6 @@ function mapAssetToCurrency(asset: Asset): string {
   return mapCkbCurrency();
 }
 
-function isCkbAddress(input: string): boolean {
-  const normalized = input.trim().toLowerCase();
-  return normalized.startsWith("ckt1") || normalized.startsWith("ckb1");
-}
-
 function normalizeOptionalName(input: unknown): string {
   if (typeof input !== "string") {
     return "";
@@ -556,25 +551,27 @@ export function createAdapter({ endpoint, settlementSubscription, fetchFn }: Cre
         },
       };
     },
-    async executeWithdrawal({ amount, asset, toAddress, requestId }: ExecuteWithdrawalArgs) {
-      if (asset === "CKB" && isCkbAddress(toAddress)) {
-        return executeCkbOnchainWithdrawal({ amount, asset, toAddress, requestId });
+    async executeWithdrawal({ amount, asset, destination, requestId }: ExecuteWithdrawalArgs) {
+      if (destination.kind === "CKB_ADDRESS") {
+        return executeCkbOnchainWithdrawal({ amount, asset, destination, requestId });
       }
 
+      const paymentRequest = destination.paymentRequest;
       const parsed = (await rpcCall(endpoint, "parse_invoice", {
-        invoice: toAddress,
+        invoice: paymentRequest,
       })) as Record<string, unknown> | undefined;
       const paymentHash = pickPaymentHash(parsed);
       if (!paymentHash) {
         throw new Error("parse_invoice response is missing 'invoice.data.payment_hash' string");
       }
-      const resolvedRequestId = requestId?.trim() || generateFallbackRequestId({ invoice: toAddress, amount, asset });
+      const resolvedRequestId =
+        requestId?.trim() || generateFallbackRequestId({ invoice: paymentRequest, amount, asset });
       const result = (await rpcCall(endpoint, "send_payment", {
         payment_hash: paymentHash,
         amount: toHexQuantity(amount),
         currency: mapAssetToCurrency(asset),
         request_id: resolvedRequestId,
-        invoice: toAddress,
+        invoice: paymentRequest,
       })) as Record<string, unknown> | undefined;
       const txHash = pickTxEvidence(result);
       if (!txHash) {

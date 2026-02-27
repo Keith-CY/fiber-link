@@ -58,7 +58,10 @@ describe("simulation adapter", () => {
     const input = {
       amount: "5",
       asset: "USDI" as const,
-      toAddress: "sim-destination",
+      destination: {
+        kind: "PAYMENT_REQUEST" as const,
+        paymentRequest: "sim-destination",
+      },
       requestId: "withdrawal-1",
     };
 
@@ -93,7 +96,10 @@ describe("adapter provider", () => {
       adapter.executeWithdrawal({
         amount: "3",
         asset: "CKB",
-        toAddress: "sim-target",
+        destination: {
+          kind: "CKB_ADDRESS",
+          address: "ckt1qsimtarget",
+        },
         requestId: "req-1",
       }),
     ).rejects.toThrow("simulated withdrawal rejected");

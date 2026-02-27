@@ -266,7 +266,10 @@ describe("fiber adapter", () => {
     const result = await adapter.executeWithdrawal({
       amount: "10",
       asset: "USDI",
-      toAddress: "fiber:invoice:example",
+      destination: {
+        kind: "PAYMENT_REQUEST",
+        paymentRequest: "fiber:invoice:example",
+      },
       requestId: "w-1",
     });
 
@@ -304,7 +307,10 @@ describe("fiber adapter", () => {
     await adapter.executeWithdrawal({
       amount: "10",
       asset: "USDI",
-      toAddress: "fiber:invoice:example",
+      destination: {
+        kind: "PAYMENT_REQUEST",
+        paymentRequest: "fiber:invoice:example",
+      },
       requestId: "w-1",
     });
 
@@ -335,7 +341,10 @@ describe("fiber adapter", () => {
     await adapter.executeWithdrawal({
       amount: "10",
       asset: "USDI",
-      toAddress: "fiber:invoice:example",
+      destination: {
+        kind: "PAYMENT_REQUEST",
+        paymentRequest: "fiber:invoice:example",
+      },
       requestId: "",
     });
 
@@ -362,7 +371,10 @@ describe("fiber adapter", () => {
     await adapter.executeWithdrawal({
       amount: "10",
       asset: "USDI",
-      toAddress: "fiber:invoice:example",
+      destination: {
+        kind: "PAYMENT_REQUEST",
+        paymentRequest: "fiber:invoice:example",
+      },
       requestId: "",
     });
     const second = JSON.parse(fetchSpy2.mock.calls[1]?.[1]?.body as string);
@@ -391,7 +403,10 @@ describe("fiber adapter", () => {
       adapter.executeWithdrawal({
         amount: "10",
         asset: "USDI",
-        toAddress: "fiber:invoice:example",
+        destination: {
+          kind: "PAYMENT_REQUEST",
+          paymentRequest: "fiber:invoice:example",
+        },
         requestId: "w-1",
       }),
     ).rejects.toThrow("send_payment response is missing transaction evidence");

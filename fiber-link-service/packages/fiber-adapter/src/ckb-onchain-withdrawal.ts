@@ -151,13 +151,72 @@ function resolveFeeRateShannonsPerKb(): bigint {
 }
 
 function classifyUnknownRuntimeError(error: unknown): WithdrawalExecutionKind {
-  const message = normalizeErrorMessage(error);
+  const jsonRpcCodeKind = new Map<number, WithdrawalExecutionKind>([
+    [-32700, "permanent"],
+    [-32600, "permanent"],
+    [-32601, "permanent"],
+    [-32602, "permanent"],
+    [-32603, "transient"],
+  ]);
+  const transientNodeCodes = new Set([
+    "ECONNRESET",
+    "ECONNREFUSED",
+    "EHOSTUNREACH",
+    "ENETUNREACH",
+    "ETIMEDOUT",
+    "EAI_AGAIN",
+  ]);
+  const transientHttpStatus = new Set([408, 425, 429, 500, 502, 503, 504]);
+
   if (error instanceof TypeError) {
     return "transient";
   }
-  if (/ECONN|ETIMEDOUT|ENOTFOUND|network|fetch failed|timeout|temporar/i.test(message)) {
-    return "transient";
+
+  const queue: unknown[] = [error];
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current || typeof current !== "object") {
+      continue;
+    }
+
+    const record = current as Record<string, unknown>;
+    if (record.cause) {
+      queue.push(record.cause);
+    }
+
+    if (typeof record.code === "number") {
+      const mapped = jsonRpcCodeKind.get(record.code);
+      if (mapped) {
+        return mapped;
+      }
+      if (record.code >= -32099 && record.code <= -32000) {
+        return "transient";
+      }
+    }
+
+    if (typeof record.code === "string" && transientNodeCodes.has(record.code.toUpperCase())) {
+      return "transient";
+    }
+
+    const status =
+      typeof record.status === "number"
+        ? record.status
+        : typeof record.statusCode === "number"
+          ? record.statusCode
+          : null;
+    if (status !== null) {
+      if (transientHttpStatus.has(status)) {
+        return "transient";
+      }
+      if (status >= 500 && status <= 599) {
+        return "transient";
+      }
+      if (status >= 400 && status <= 499) {
+        return "permanent";
+      }
+    }
   }
+
   return "permanent";
 }
 
@@ -215,7 +274,15 @@ async function submitCkbTransfer(args: ExecuteWithdrawalArgs): Promise<{ txHash:
     );
   }
 
-  const { cfg, isTestnet } = resolveCkbNetworkConfig(args.toAddress);
+  if (args.destination.kind !== "CKB_ADDRESS") {
+    throw new WithdrawalExecutionError(
+      "on-chain withdrawal requires CKB_ADDRESS destination kind",
+      "permanent",
+    );
+  }
+
+  const toAddress = args.destination.address;
+  const { cfg, isTestnet } = resolveCkbNetworkConfig(toAddress);
   const amountShannons = parseCkbAmountToShannons(args.amount);
   const privateKey = resolvePrivateKey();
   const feeRateShannonsPerKb = resolveFeeRateShannonsPerKb();
@@ -224,7 +291,7 @@ async function submitCkbTransfer(args: ExecuteWithdrawalArgs): Promise<{ txHash:
 
   config.initializeConfig(cfg);
 
-  const recipientMinimumShannons = getCkbAddressMinCellCapacityShannons(args.toAddress);
+  const recipientMinimumShannons = getCkbAddressMinCellCapacityShannons(toAddress);
   const policyMinimumShannons = resolvePolicyMinimumShannons();
   const requiredMinimumShannons =
     policyMinimumShannons > recipientMinimumShannons ? policyMinimumShannons : recipientMinimumShannons;
@@ -247,7 +314,7 @@ async function submitCkbTransfer(args: ExecuteWithdrawalArgs): Promise<{ txHash:
   txSkeleton = await commons.common.transfer(
     txSkeleton,
     [fromAddress],
-    args.toAddress,
+    toAddress,
     BI.from(amountShannons),
     fromAddress,
   );

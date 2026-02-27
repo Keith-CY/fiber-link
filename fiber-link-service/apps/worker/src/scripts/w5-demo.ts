@@ -650,13 +650,16 @@ function createDryRunAdapter(options: DemoOptions): DemoAdapter {
       return { state: record.state };
     },
 
-    async executeWithdrawal({ amount, asset, toAddress, requestId }) {
+    async executeWithdrawal({ amount, asset, destination, requestId }) {
       paymentCounter += 1;
+      const destinationTag =
+        destination.kind === "CKB_ADDRESS" ? `ckb:${destination.address}` : `payment:${destination.paymentRequest}`;
       const txHash = `0x${stableHex(
-        `${options.dryRunSeed}|payment|${paymentCounter}|${requestId}|${asset}|${amount}|${toAddress}`,
+        `${options.dryRunSeed}|payment|${paymentCounter}|${requestId}|${asset}|${amount}|${destinationTag}`,
         64,
       )}`;
-      const invoiceRecord = states.get(toAddress);
+      const invoiceRecord =
+        destination.kind === "PAYMENT_REQUEST" ? states.get(destination.paymentRequest) : undefined;
       if (invoiceRecord) {
         invoiceRecord.paid = true;
       }
@@ -816,7 +819,10 @@ async function main() {
   const payment = await dependencies.adapter.executeWithdrawal({
     amount: options.invoiceAmount,
     asset: options.asset,
-    toAddress: tipIntent.invoice,
+    destination: {
+      kind: "PAYMENT_REQUEST",
+      paymentRequest: tipIntent.invoice,
+    },
     requestId: paymentRequestId,
   });
   tracer.log("payment.executed", {
@@ -898,7 +904,10 @@ async function main() {
       const result = await dependencies.adapter.executeWithdrawal({
         amount: item.amount,
         asset: item.asset,
-        toAddress: item.toAddress,
+        destination:
+          item.destinationKind === "CKB_ADDRESS"
+            ? { kind: "CKB_ADDRESS", address: item.toAddress }
+            : { kind: "PAYMENT_REQUEST", paymentRequest: item.toAddress },
         requestId: item.id,
       });
       return { ok: true, txHash: result.txHash };

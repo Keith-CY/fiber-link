@@ -33,7 +33,7 @@ function parseInteger(
 }
 
 function parseStrategy(env: NodeJS.ProcessEnv): WorkerSettlementStrategy {
-  const raw = (env.WORKER_SETTLEMENT_STRATEGY ?? "polling").trim().toLowerCase();
+  const raw = (env.WORKER_SETTLEMENT_STRATEGY ?? "subscription").trim().toLowerCase();
   if (raw === "polling" || raw === "subscription") {
     return raw;
   }

@@ -38,6 +38,22 @@ Recent Phase 3 baseline deliveries:
 - PR #17: Sprint 2 withdrawal execution via Fiber RPC + tx evidence
 - PR #289: withdrawal policy controls + RPC rate limiting + plugin dashboard/system-spec hardening
 
+## Milestone Checkpoint Verification (2026-02-27)
+
+Acceptance tracker sources:
+- `docs/acceptance/README.md`
+- `docs/acceptance/milestone-1/index.md`
+- `docs/acceptance/milestone-2/index.md`
+- `docs/acceptance/milestone-3/index.md`
+
+| Milestone | Total checkpoints | `DONE` checkpoints | Result |
+| --- | ---: | ---: | --- |
+| Milestone 1 | 6 | 6 | complete |
+| Milestone 2 | 5 | 5 | complete |
+| Milestone 3 | 5 | 5 | complete |
+
+All current milestone checkpoints are marked `DONE` and mapped to runbook evidence links.
+
 ### Phase 2 Delivered Capabilities
 
 Service:
@@ -80,6 +96,7 @@ Remaining policy item to finalize in implementation tickets:
 
 Delivered:
 - Polling-based settlement discovery loop in worker runtime (`fiber-link-service/apps/worker/src/worker-runtime.ts`, `fiber-link-service/apps/worker/src/settlement-discovery.ts`).
+- Event-subscription runner is now the default settlement strategy (`WORKER_SETTLEMENT_STRATEGY=subscription`) with polling/backfill fallback preserved for safety (`fiber-link-service/apps/worker/src/entry.ts`, `fiber-link-service/apps/worker/src/config.ts`).
 - Reconciliation/backfill command with app/time window filters (`fiber-link-service/apps/worker/src/scripts/backfill-settlements.ts`).
 - Idempotent replay behavior preserved through settlement credit invariants (`fiber-link-service/apps/worker/src/settlement.ts`).
 - Cursor-based scan progression to avoid fixed-limit starvation of newer unpaid invoices (`fiber-link-service/apps/worker/src/entry.ts`, `fiber-link-service/packages/db/src/tip-intent-repo.ts`).
@@ -88,20 +105,19 @@ Delivered:
   - detection latency (p50/p95/max)
   - replay/scan counts
 
-Remaining optimization (non-blocking):
-- Event-subscription path for lower latency once upstream interface stability is proven.
-
 ### C) Withdrawal Execution (Implemented Baseline in Sprint 2)
 
 Delivered:
 - Worker default executor now invokes Fiber node RPC via adapter (`send_payment`) instead of returning `ok: true` stub (`fiber-link-service/apps/worker/src/withdrawal-batch.ts`, `fiber-link-service/packages/fiber-adapter/src/index.ts`).
 - Completed withdrawals persist execution evidence via `tx_hash` / `txHash` (`fiber-link-service/packages/db/src/schema.ts`, `fiber-link-service/packages/db/src/withdrawal-repo.ts`).
-- Retry classification now distinguishes transient vs permanent execution failures using RPC code/message heuristics (`fiber-link-service/apps/worker/src/withdrawal-batch.ts`).
+- Retry classification now follows explicit upstream error contracts:
+  - Fiber JSON-RPC/HTTP contract mapping (`fiber-link-service/apps/worker/src/withdrawal-batch.ts`)
+  - adapter `WithdrawalExecutionError.kind` mapping for on-chain execution (`fiber-link-service/packages/fiber-adapter/src/ckb-onchain-withdrawal.ts`)
 - Admin withdrawal listing includes `txHash` for operational traceability (`fiber-link-service/apps/admin/src/server/api/routers/withdrawal.ts`).
-
-Remaining follow-up:
-- Replace heuristic classification with explicit Fiber error contract mapping once upstream error taxonomy is stabilized.
-- Confirm long-term destination semantics (`toAddress` vs payment request) before plugin withdrawal UI rollout.
+- Withdrawal destination semantics are now explicit and persisted:
+  - RPC contract supports typed `destination` (`CKB_ADDRESS` vs `PAYMENT_REQUEST`) with legacy compatibility transform (`fiber-link-service/apps/rpc/src/contracts.ts`)
+  - DB stores `withdrawals.destination_kind` for durable execution semantics (`fiber-link-service/packages/db/src/schema.ts`, `fiber-link-service/packages/db/drizzle/0003_withdrawal_destination_kind.sql`)
+  - worker/adapter execution path uses typed destination routing instead of `toAddress` heuristics (`fiber-link-service/apps/worker/src/withdrawal-batch.ts`, `fiber-link-service/packages/fiber-adapter/src/rpc-adapter.ts`)
 
 ### D) Balance + Withdrawal Policy Gate (Implemented)
 
@@ -113,9 +129,9 @@ Delivered:
 
 - Per-app/per-user policy limits are now implemented via `withdrawal_policies` and runtime checks (`maxPerRequest`, `perUserDailyMax`, `perAppDailyMax`, `cooldownSeconds`).
 - RPC rate limiting is now implemented and configurable via `RPC_RATE_LIMIT_*` env variables.
-
-Remaining follow-up:
-- Add operator-facing reconciliation/reporting focused on debit/txHash parity and exception handling playbooks.
+- Operator-facing reconciliation/reporting is now implemented:
+  - parity analyzer module (`fiber-link-service/apps/worker/src/withdrawal-reconciliation.ts`)
+  - CLI report command (`bun run --cwd fiber-link-service/apps/worker reconcile:withdrawals -- --app-id=<id> --from=<ISO> --to=<ISO>`)
 
 ### E) Admin Data Scoping (Implemented + SOP Published)
 
@@ -141,9 +157,7 @@ Current baseline update:
 
 ## Suggested Next Milestone
 
-With Phase 3 operational controls now implemented, next work should focus on production telemetry and reconciliation automation.
-
-- Build scheduled reconciliation/report pipeline (debit vs txHash parity, policy-violation audit trail).
+With Phase 3 operational controls now implemented, next work should focus on scheduled operation wiring (for example cron/orchestrator hooks that run the reconciliation command and route alerts).
 
 Historical reference (Sprint 1 plan): `docs/plans/2026-02-11-phase3-sprint1-settlement-v1-plan.md`
 

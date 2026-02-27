@@ -673,7 +673,10 @@ describe("json-rpc", () => {
           userId: "u1",
           asset: "CKB",
           amount: "61",
-          toAddress: "ckt1qyqfth8m4fevfzh5hhd088s78qcdjjp8cehs7z8jhw",
+          destination: {
+            kind: "CKB_ADDRESS",
+            address: "ckt1qyqfth8m4fevfzh5hhd088s78qcdjjp8cehs7z8jhw",
+          },
         },
       };
       const ts = String(Math.floor(Date.now() / 1000));
@@ -712,7 +715,10 @@ describe("json-rpc", () => {
         userId: "u1",
         asset: "CKB",
         amount: "61",
-        toAddress: "ckt1qyqfth8m4fevfzh5hhd088s78qcdjjp8cehs7z8jhw",
+        destination: {
+          kind: "CKB_ADDRESS",
+          address: "ckt1qyqfth8m4fevfzh5hhd088s78qcdjjp8cehs7z8jhw",
+        },
       });
     } finally {
       withdrawalSpy.mockRestore();
@@ -738,7 +744,10 @@ describe("json-rpc", () => {
           userId: "u1",
           asset: "CKB",
           amount: "999",
-          toAddress: "ckt1qyqfth8m4fevfzh5hhd088s78qcdjjp8cehs7z8jhw",
+          destination: {
+            kind: "CKB_ADDRESS",
+            address: "ckt1qyqfth8m4fevfzh5hhd088s78qcdjjp8cehs7z8jhw",
+          },
         },
       };
       const ts = String(Math.floor(Date.now() / 1000));

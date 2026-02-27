@@ -15,7 +15,7 @@ This document reflects the current code layout and runtime boundaries for the in
 | --- | --- | --- | --- |
 | Discourse integration boundary (external to this repo) | `plugins/fiber-link/*` (Discourse plugin repo) | Collect tip input, call backend RPC, show invoice and status to users | Calls `/rpc` in `apps/rpc` with signed headers |
 | API boundary (`apps/rpc`) | `fiber-link-service/apps/rpc/src/rpc.ts` `fiber-link-service/apps/rpc/src/methods/tip.ts` | Verify HMAC + timestamp + nonce replay, validate JSON-RPC payloads, dispatch `tip.create` and `tip.status` | Creates tip intents, reads/updates invoice state, returns stable JSON-RPC errors |
-| Worker boundary (`apps/worker`) | `fiber-link-service/apps/worker/src/entry.ts` `fiber-link-service/apps/worker/src/settlement-discovery.ts` `fiber-link-service/apps/worker/src/withdrawal-batch.ts` | Poll unpaid invoices, reconcile settlement state, execute withdrawal queue with retry policy | Writes tip settlement state, ledger credits/debits, withdrawal lifecycle transitions |
+| Worker boundary (`apps/worker`) | `fiber-link-service/apps/worker/src/entry.ts` `fiber-link-service/apps/worker/src/settlement-discovery.ts` `fiber-link-service/apps/worker/src/withdrawal-batch.ts` | Consume settlement subscription events with polling/backfill fallback, execute withdrawal queue with retry policy | Writes tip settlement state, ledger credits/debits, withdrawal lifecycle transitions |
 | Fiber adapter provider (`packages/fiber-adapter`) | `fiber-link-service/packages/fiber-adapter/src/provider.ts` `fiber-link-service/packages/fiber-adapter/src/rpc-adapter.ts` `fiber-link-service/packages/fiber-adapter/src/simulation-adapter.ts` | Selects adapter mode (`rpc` or deterministic `simulation`) and exposes a shared contract for invoice status + withdrawals | Enforces production guardrails for simulation mode and normalizes upstream response shapes to internal contracts (`InvoiceState`, `txHash`) |
 | Persistence boundary (`packages/db`) | `fiber-link-service/packages/db/src/schema.ts` `fiber-link-service/packages/db/src/*-repo.ts` | Define schema + repos + transition guards for tip intents, ledger, withdrawals, app secrets | Enforces uniqueness (`invoice`, `idempotencyKey`) and transition checks |
 | Deployment boundary (`deploy/compose`) | `deploy/compose/docker-compose.yml` `deploy/compose/.env.example` | Compose topology for postgres/redis/fnn/rpc/worker and runtime env wiring | Defines readiness/liveness probes and service dependency graph |
@@ -81,6 +81,7 @@ Traceable code path:
 2. `apps/worker/src/settlement-discovery.ts#runSettlementDiscovery` handles async reconciliation/backfill.
 3. `apps/worker/src/settlement.ts#markSettled` enforces one credit per tip intent via `settlement:tip_intent:<id>`.
 4. `packages/db/src/ledger-repo.ts#creditOnce` uses uniqueness on `ledger_entries.idempotency_key`.
+5. `apps/worker/src/entry.ts` enables subscription-first settlement strategy with polling fallback when stream config is unavailable.
 
 ### C) Withdrawal lifecycle path
 

@@ -1,6 +1,6 @@
 # Current Architecture (Canonical Index)
 
-Last updated: 2026-02-23
+Last updated: 2026-02-27
 
 This file is the source-of-truth index for architecture, operational boundaries, and active
 implementation references.
@@ -23,6 +23,11 @@ implementation references.
   - `docs/06-development-progress.md`
   - `docs/plans/2026-02-21-issue-32-epic-closeout.md`
   - `docs/audit-snapshot.md` (generated operational snapshot, non-canonical)
+- Milestone acceptance checkpoints:
+  - `docs/acceptance/README.md`
+  - `docs/acceptance/milestone-1/index.md`
+  - `docs/acceptance/milestone-2/index.md`
+  - `docs/acceptance/milestone-3/index.md`
 - Decision records:
   - `docs/decisions/2026-02-10-settlement-discovery-strategy.md`
   - `docs/decisions/2026-02-10-custody-ops-controls.md`

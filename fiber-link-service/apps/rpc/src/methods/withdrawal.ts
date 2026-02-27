@@ -19,9 +19,16 @@ import {
   WithdrawalExecutionError,
   getCkbAddressMinCellCapacityShannons,
   shannonsToCkbDecimal,
+  type WithdrawalDestination,
 } from "@fiber-link/fiber-adapter";
 
-export type RequestWithdrawalInput = CreateWithdrawalInput;
+export type RequestWithdrawalInput = {
+  appId: string;
+  userId: string;
+  asset: Asset;
+  amount: string;
+  destination: WithdrawalDestination;
+};
 
 export class WithdrawalPolicyViolationError extends Error {
   constructor(
@@ -155,12 +162,21 @@ function usageFallback(): WithdrawalPolicyUsage {
 }
 
 async function resolveMinimumRequiredAmount(input: RequestWithdrawalInput): Promise<string> {
-  if (input.asset !== "CKB") {
+  if (input.destination.kind !== "CKB_ADDRESS") {
     return "0";
   }
 
+  if (input.asset !== "CKB") {
+    throw new WithdrawalPolicyViolationError(
+      "INVALID_DESTINATION_ADDRESS",
+      "CKB address withdrawal destination currently supports only CKB asset",
+    );
+  }
+
+  const toAddress = input.destination.address;
+
   try {
-    const minShannons = getCkbAddressMinCellCapacityShannons(input.toAddress);
+    const minShannons = getCkbAddressMinCellCapacityShannons(toAddress);
     return shannonsToCkbDecimal(minShannons);
   } catch (error) {
     if (error instanceof WithdrawalExecutionError) {
@@ -168,6 +184,20 @@ async function resolveMinimumRequiredAmount(input: RequestWithdrawalInput): Prom
     }
     throw error;
   }
+}
+
+function mapDestinationForStorage(destination: WithdrawalDestination): Pick<CreateWithdrawalInput, "toAddress" | "destinationKind"> {
+  if (destination.kind === "CKB_ADDRESS") {
+    return {
+      toAddress: destination.address,
+      destinationKind: "CKB_ADDRESS",
+    };
+  }
+
+  return {
+    toAddress: destination.paymentRequest,
+    destinationKind: "PAYMENT_REQUEST",
+  };
 }
 
 function assertWithdrawalPolicy(
@@ -246,6 +276,15 @@ export async function requestWithdrawal(input: RequestWithdrawalInput, options: 
   const minimumRequiredAmount = await resolveMinimumRequiredAmount(input);
   assertWithdrawalPolicy(input, policy, usage, now, minimumRequiredAmount);
 
-  const record = await repo.createWithBalanceCheck(input, { ledgerRepo });
+  const record = await repo.createWithBalanceCheck(
+    {
+      appId: input.appId,
+      userId: input.userId,
+      asset: input.asset,
+      amount: input.amount,
+      ...mapDestinationForStorage(input.destination),
+    },
+    { ledgerRepo },
+  );
   return { id: record.id, state: record.state };
 }
