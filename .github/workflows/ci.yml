@@ -236,6 +236,23 @@ jobs:
             return icons.join('<br>');
           }
 
+          function buildDeltaDisplay(pct, basePct, headCoverage, baseCoverage) {
+            if (Number.isFinite(pct) && Number.isFinite(basePct)) {
+              const delta = pct - basePct;
+              return `${delta >= 0 ? '+' : ''}${delta.toFixed(2)}%`;
+            }
+
+            const headStatus = headCoverage.status;
+            const baseStatus = baseCoverage.status;
+            if (headStatus !== 'ok' && baseStatus !== 'ok') {
+              return `N/A (both failed: ${headStatus}/${baseStatus})`;
+            }
+            if (headStatus !== 'ok') {
+              return `N/A (head unavailable: ${headStatus})`;
+            }
+            return `N/A (base unavailable: ${baseStatus})`;
+          }
+
           const targets = [
             ['rpc','RPC'],
             ['admin','Admin'],
@@ -250,6 +267,7 @@ jobs:
           let baseCount = 0;
           let pairCount = 0;
           let pairDeltaSum = 0;
+          let actionItems = [];
 
           for (const [key,label] of targets) {
             const p = path.join('coverage-reports', key, 'coverage-summary.json');
@@ -269,17 +287,18 @@ jobs:
               baseSum += basePct;
               baseCount += 1;
             }
-
+            const headStr = statusLabel(headCoverage.status, pct);
             const delta = Number.isFinite(pct) && Number.isFinite(basePct)
               ? pct - basePct
               : null;
-            const headStr = statusLabel(headCoverage.status, pct);
-            const deltaDisplay = Number.isFinite(delta)
-              ? `${delta >= 0 ? '+' : ''}${delta.toFixed(2)}%`
-              : 'N/A';
-            if (Number.isFinite(delta)) {
+            const deltaDisplay = buildDeltaDisplay(pct, basePct, headCoverage, baseCoverage);
+            if (headCoverage.status === 'ok' && baseCoverage.status === 'ok' && Number.isFinite(delta)) {
               pairDeltaSum += delta;
               pairCount += 1;
+            }
+
+            if (headCoverage.status !== 'ok' || baseCoverage.status !== 'ok') {
+              actionItems.push(`${label}: ${buildStatus(headCoverage, baseCoverage)}`);
             }
 
             rows.push(`| ${label} | ${headCoverage.status === 'ok' ? formatPct(pct) : headStr} | ${deltaDisplay} | ${buildStatus(headCoverage, baseCoverage)} |`);
@@ -302,6 +321,11 @@ jobs:
             `**Base average line coverage:** ${formatPct(baseAvg)}`,
             `**Δ vs base:** ${Number.isFinite(avgDelta) ? `${avgDelta >= 0 ? '+' : ''}${avgDelta.toFixed(2)}%` : 'N/A'}`,
             `**Compared modules:** ${effectiveModules}`,
+            '',
+            '### Action needed',
+            actionItems.length > 0
+              ? `${actionItems.map((item) => `- ${item}`).join('\n')}`
+              : '- ✅ No action needed.',
             '',
             '_Status legend: ✅ OK, ⚠️ module missing, ❌ module coverage run failed._',
           ].join('\n');
