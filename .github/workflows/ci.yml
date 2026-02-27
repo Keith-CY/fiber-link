@@ -219,6 +219,20 @@ jobs:
             return 'N/A';
           }
 
+          function buildStatus(headCoverage, baseCoverage) {
+            const reasons = [];
+            if (headCoverage.status !== 'ok') {
+              reasons.push(`head:${headCoverage.status}`);
+            }
+            if (baseCoverage.status !== 'ok') {
+              reasons.push(`base:${baseCoverage.status}`);
+            }
+            if (reasons.length === 0) {
+              return 'ok';
+            }
+            return reasons.join('; ');
+          }
+
           const targets = [
             ['rpc','RPC'],
             ['admin','Admin'],
@@ -265,7 +279,7 @@ jobs:
               pairCount += 1;
             }
 
-            rows.push(`| ${label} | ${headCoverage.status === 'ok' ? formatPct(pct) : headStr} | ${deltaDisplay} |`);
+            rows.push(`| ${label} | ${headCoverage.status === 'ok' ? formatPct(pct) : headStr} | ${deltaDisplay} | ${buildStatus(headCoverage, baseCoverage)} |`);
           }
 
           const avg = headCount > 0 ? sum / headCount : null;
@@ -276,8 +290,8 @@ jobs:
             marker,
             '### 📊 Coverage Report',
             '',
-            '| Module | Line Coverage | Δ vs base |',
-            '|---|---:|---:|',
+            '| Module | Line Coverage | Δ vs base | Status |',
+            '|---|---:|---:|:---|',
             ...rows,
             '',
             `**Average line coverage:** ${formatPct(avg)}`,
