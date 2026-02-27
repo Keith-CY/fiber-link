@@ -84,7 +84,8 @@ services:
     container_name: fiber-link-rpc
     build:
       context: ../..
-      dockerfile: deploy/compose/service-rpc.Dockerfile
+      dockerfile: deploy/compose/service.Dockerfile
+      target: rpc
     restart: unless-stopped
     depends_on:
       postgres:
@@ -123,7 +124,8 @@ services:
     container_name: fiber-link-worker
     build:
       context: ../..
-      dockerfile: deploy/compose/service-worker.Dockerfile
+      dockerfile: deploy/compose/service.Dockerfile
+      target: worker
     restart: unless-stopped
     depends_on:
       postgres:

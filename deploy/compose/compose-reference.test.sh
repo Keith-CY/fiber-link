@@ -10,8 +10,7 @@ EVIDENCE_RUNBOOK_FILE="${ROOT_DIR}/docs/runbooks/deployment-evidence.md"
 EVIDENCE_TEMPLATE_DIR="${ROOT_DIR}/docs/runbooks/evidence-template/deployment"
 EVIDENCE_SCRIPT="${ROOT_DIR}/scripts/capture-deployment-evidence.sh"
 ENV_FILE="${ROOT_DIR}/deploy/compose/.env.example"
-RPC_DOCKERFILE="${ROOT_DIR}/deploy/compose/service-rpc.Dockerfile"
-WORKER_DOCKERFILE="${ROOT_DIR}/deploy/compose/service-worker.Dockerfile"
+SERVICE_DOCKERFILE="${ROOT_DIR}/deploy/compose/service.Dockerfile"
 RPC_HEALTHCHECK_SCRIPT="${ROOT_DIR}/fiber-link-service/apps/rpc/src/scripts/healthcheck-ready.ts"
 WORKER_HEALTHCHECK_SCRIPT="${ROOT_DIR}/fiber-link-service/apps/worker/src/scripts/healthcheck.ts"
 DB_INIT_SQL="${ROOT_DIR}/deploy/compose/postgres/init/001_schema.sql"
@@ -26,8 +25,7 @@ for required in \
   "${EVIDENCE_RUNBOOK_FILE}" \
   "${EVIDENCE_SCRIPT}" \
   "${ENV_FILE}" \
-  "${RPC_DOCKERFILE}" \
-  "${WORKER_DOCKERFILE}" \
+  "${SERVICE_DOCKERFILE}" \
   "${RPC_HEALTHCHECK_SCRIPT}" \
   "${WORKER_HEALTHCHECK_SCRIPT}" \
   "${DB_INIT_SQL}" \
@@ -133,6 +131,16 @@ fi
 
 if ! grep -q "FIBER_LINK_HMAC_SECRET: \${FIBER_LINK_HMAC_SECRET:?Set FIBER_LINK_HMAC_SECRET in .env}" "${COMPOSE_FILE}"; then
   echo "docker-compose missing required FIBER_LINK_HMAC_SECRET guard" >&2
+  exit 1
+fi
+
+if ! grep -q "deploy/compose/service.Dockerfile" "${COMPOSE_FILE}"; then
+  echo "docker-compose missing unified service Dockerfile reference" >&2
+  exit 1
+fi
+
+if ! grep -q "target: rpc" "${COMPOSE_FILE}" || ! grep -q "target: worker" "${COMPOSE_FILE}"; then
+  echo "docker-compose missing explicit rpc/worker build targets for unified service Dockerfile" >&2
   exit 1
 fi
 
