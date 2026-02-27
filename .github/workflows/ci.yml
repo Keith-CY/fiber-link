@@ -228,9 +228,12 @@ jobs:
               reasons.push(`base:${baseCoverage.status}`);
             }
             if (reasons.length === 0) {
-              return 'ok';
+              return '✅';
             }
-            return reasons.join('; ');
+            const icons = reasons.map((reason) =>
+              reason.includes('failed') ? `❌ ${reason}` : `⚠️ ${reason}`
+            );
+            return icons.join('<br>');
           }
 
           const targets = [
@@ -296,6 +299,8 @@ jobs:
             '',
             `**Average line coverage:** ${formatPct(avg)}`,
             `**Δ vs base:** ${Number.isFinite(avgDelta) ? `${avgDelta >= 0 ? '+' : ''}${avgDelta.toFixed(2)}%` : 'N/A'}`,
+            '',
+            '_Status legend: ✅ OK, ⚠️ module missing, ❌ module coverage run failed._',
           ].join('\n');
           fs.writeFileSync('../coverage-comment.md', body);
           NODE
