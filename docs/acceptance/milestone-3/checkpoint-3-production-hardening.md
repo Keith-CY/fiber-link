@@ -20,9 +20,16 @@ Close production hardening items for monitoring, rate limiting, backups, and doc
 
 ## Current status
 
-`PARTIAL`
+`DONE`
 
-Hardening controls are documented with verification pathways, but not all production policy controls are marked complete in roadmap/progress docs.
+Production hardening controls are implemented and mapped to evidence.
+
+Latest hardening updates (2026-02-27):
+
+- RPC rate limiting controls are enabled/configurable in compose runtime env.
+- Withdrawal policy defaults are explicit in compose env templates.
+- Mainnet deployment checklist is published with backup/rollback gates.
+- Security assumptions and control-evidence mapping are updated for policy/rate-limit controls.
 
 ## Exit criteria
 

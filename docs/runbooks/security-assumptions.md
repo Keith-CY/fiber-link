@@ -1,6 +1,6 @@
 # Security Assumptions and Operational Limits
 
-Version: `2026-02-15`
+Version: `2026-02-27`
 Status: Active
 Owner: Fiber Link security/ops (`@Keith-CY`)
 Review cadence: monthly or after any incident touching auth, settlement, or key handling
@@ -26,7 +26,9 @@ This runbook makes explicit where the system depends on external trust and what 
 | SA-004 | DB writes are durable enough to preserve ledger and withdrawal state between worker restarts. | Local compose provides single-node persistence (`postgres-data`) only; no built-in PITR/HA guarantee. | If DB corruption/loss is suspected, pause worker and recover from latest validated backup before resuming. | Data operations owner (`@Keith-CY`) | `docs/runbooks/compose-reference.md` data model + incident replay from `docs/runbooks/settlement-recovery.md`. |
 | SA-005 | Transient withdrawal RPC failures should not cause unbounded retries or duplicate debits. | Retry budget default is `WORKER_MAX_RETRIES=3` with `WORKER_RETRY_DELAY_MS=60000`; beyond budget transitions to `FAILED`. | If transient failures exceed budget, mark failed and require operator replay/manual action. | Wallet operations owner (`@Keith-CY`) | `fiber-link-service/apps/worker/src/withdrawal-batch.test.ts` retry/failure scenarios; env defaults in `deploy/compose/.env.example`. |
 | SA-006 | Settlement correctness relies on polling + backfill (subscription path is not required for correctness in current version). | Current production baseline is polling discovery; subscription is optional future optimization (see decision log). | If polling misses are detected, run bounded backfill window and verify idempotent convergence. | Node/operator owner (`@Keith-CY`) | `docs/decisions/2026-02-10-settlement-discovery-strategy.md` + `docs/runbooks/settlement-recovery.md`. |
+| SA-007 | Runtime abuse controls and withdrawal policy defaults must be present even before per-app policy rows are initialized. | RPC requests are bounded by `RPC_RATE_LIMIT_*`; withdrawal request path enforces `FIBER_WITHDRAWAL_POLICY_*` defaults when DB policy row is absent. | If rate-limited responses spike or policy violations spike unexpectedly, reduce effective limits and audit app traffic/policy assignments before restoring throughput. | Service owner (`@Keith-CY`) | `fiber-link-service/apps/rpc/src/rate-limit.test.ts`, `fiber-link-service/apps/rpc/src/methods/withdrawal.test.ts`, compose env keys in `deploy/compose/.env.example`. |
 
 ## Versioned Changes
 
+- `2026-02-27` (v2): added runtime abuse + withdrawal policy default-control assumption (`SA-007`).
 - `2026-02-15` (v1): initial published assumptions/limits matrix with owner contacts and runbook verification mapping.

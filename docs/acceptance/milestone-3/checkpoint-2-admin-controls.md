@@ -15,9 +15,19 @@ Establish operator/admin guardrails for supported assets, withdrawal thresholds,
 
 ## Current status
 
-`PARTIAL`
+`DONE`
 
-Role model baseline exists (`SUPER_ADMIN`, `COMMUNITY_ADMIN`), but explicit per-app/per-user policy limits are still listed as remaining hardening.
+Role model and runtime policy controls are implemented.
+
+Latest verification evidence (2026-02-27):
+
+- Admin policy router tests:
+  - `cd fiber-link-service/apps/admin && bun run test -- --run --silent src/server/api/routers/withdrawal-policy.test.ts`
+- DB policy repo and enforcement tests:
+  - `cd fiber-link-service/packages/db && bun run test -- --run --silent src/withdrawal-policy-repo.test.ts`
+  - `cd fiber-link-service/apps/rpc && bun run test -- --run --silent src/methods/withdrawal.test.ts`
+- Ops SOP:
+  - `docs/runbooks/admin-membership-sop.md`
 
 ## Exit criteria
 

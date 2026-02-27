@@ -19,11 +19,11 @@
 {{/if}}
 
 <h3>Recent Tips</h3>
-{{fiber-link-tip-feed
-  tips=this.model.tipFeedItems
-  isLoading=this.model.isFeedLoading
-  errorMessage=this.model.feedErrorMessage
-}}
+<FiberLinkTipFeed
+  @tips={{this.model.tipFeedItems}}
+  @isLoading={{this.model.isFeedLoading}}
+  @errorMessage={{this.model.feedErrorMessage}}
+/>
 
 {{#if this.model.refreshedAt}}
   <p><strong>Last refreshed:</strong> {{this.model.refreshedAt}}</p>
@@ -53,40 +53,17 @@
   <hr />
   <h3>Admin Inspection (Operational)</h3>
 
-  <form method="GET">
-    <label>
-      Withdrawal state:
-      <select name="withdrawalState">
-        {{#each this.model.withdrawalStateOptions as |option|}}
-          <option value={{option.value}} selected={{option.selected}}>{{option.value}}</option>
-        {{/each}}
-      </select>
-    </label>
-
-    <label>
-      Settlement state:
-      <select name="settlementState">
-        {{#each this.model.settlementStateOptions as |option|}}
-          <option value={{option.value}} selected={{option.selected}}>{{option.value}}</option>
-        {{/each}}
-      </select>
-    </label>
-
-    <button type="submit">Apply</button>
-  </form>
-
   <p>
     <strong>Active filters:</strong>
     withdrawals={{this.model.adminFiltersApplied.withdrawalState}},
     settlements={{this.model.adminFiltersApplied.settlementState}}
-    ({{#link-to
-      "fiber-link-dashboard"
-      (query-params withdrawalState="ALL" settlementState="ALL")
+    (<a
+      href="?withdrawalState=ALL&settlementState=ALL"
       title="Clear both filters and reload full admin inspection data."
-    }}Reset to ALL{{/link-to}})
+    >Reset to ALL</a>)
   </p>
 
-  {{fiber-link-lifecycle-board board=this.model.adminPipelineBoard}}
+  <FiberLinkLifecycleBoard @board={{this.model.adminPipelineBoard}} />
 
   <h4>Apps</h4>
   <table class="fiber-link-dashboard-admin-apps">
@@ -129,13 +106,9 @@
         <tr>
           <td colspan="7">
             No withdrawals for current filter.
-            {{#link-to
-              "fiber-link-dashboard"
-              (query-params
-                withdrawalState="ALL"
-                settlementState=this.model.adminFiltersApplied.settlementState
-              )
-            }}Show all withdrawal states{{/link-to}}.
+            <a
+              href="?withdrawalState=ALL&settlementState={{this.model.adminFiltersApplied.settlementState}}"
+            >Show all withdrawal states</a>.
           </td>
         </tr>
       {{/each}}
@@ -164,13 +137,9 @@
         <tr>
           <td colspan="7">
             No settlement rows for current filter.
-            {{#link-to
-              "fiber-link-dashboard"
-              (query-params
-                withdrawalState=this.model.adminFiltersApplied.withdrawalState
-                settlementState="ALL"
-              )
-            }}Show all settlement states{{/link-to}}.
+            <a
+              href="?withdrawalState={{this.model.adminFiltersApplied.withdrawalState}}&settlementState=ALL"
+            >Show all settlement states</a>.
           </td>
         </tr>
       {{/each}}

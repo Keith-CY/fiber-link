@@ -70,7 +70,7 @@ export default class FiberLinkDashboardRoute extends Route {
       refreshedAt: null,
       tipFeedItems: [],
       mappingRows: TIP_STATE_MAPPING,
-      isAdminViewEnabled: Boolean(this.currentUser?.admin),
+      isAdminViewEnabled: Boolean(this.currentUser?.admin || this.currentUser?.staff),
       adminApps: [],
       adminWithdrawals: [],
       adminSettlements: [],
@@ -119,20 +119,46 @@ export default class FiberLinkDashboardRoute extends Route {
     });
 
     try {
-      const result = await getDashboardSummary({
+      const baseParams = {
         limit: DASHBOARD_LIMIT,
-        includeAdmin: model.isAdminViewEnabled,
         filters: {
           withdrawalState: model.withdrawalStateFilter,
           settlementState: model.settlementStateFilter,
         },
-      });
+      };
+
+      let result;
+
+      try {
+        result = await getDashboardSummary({
+          ...baseParams,
+          includeAdmin: true,
+        });
+      } catch (error) {
+        if (!this._isAdminPermissionError(error)) {
+          throw error;
+        }
+
+        result = await getDashboardSummary({
+          ...baseParams,
+          includeAdmin: false,
+        });
+      }
+
       if (model !== this._activeModel) {
         return;
       }
 
       const tips = Array.isArray(result?.tips) ? result.tips : [];
       const hasUnpaid = tips.some((tip) => tip?.state === "UNPAID");
+      const hasAdminPayload = Boolean(result?.admin);
+      const isAdminViewEnabled = Boolean(
+        this.currentUser?.admin || this.currentUser?.staff || hasAdminPayload
+      );
+      const adminFallbackFilters = {
+        withdrawalState: model.withdrawalStateFilter,
+        settlementState: model.settlementStateFilter,
+      };
 
       model.setProperties({
         isSummaryLoading: false,
@@ -144,14 +170,22 @@ export default class FiberLinkDashboardRoute extends Route {
         generatedAt: formatTimestamp(result?.generatedAt),
         refreshedAt: new Date().toISOString(),
         tipFeedItems: tips,
-        adminApps: Array.isArray(result?.admin?.apps) ? result.admin.apps : [],
-        adminWithdrawals: Array.isArray(result?.admin?.withdrawals) ? result.admin.withdrawals : [],
-        adminSettlements: Array.isArray(result?.admin?.settlements) ? result.admin.settlements : [],
-        adminPipelineBoard: normalizePipelineBoard(result?.admin?.pipelineBoard),
-        adminFiltersApplied: result?.admin?.filtersApplied ?? {
-          withdrawalState: model.withdrawalStateFilter,
-          settlementState: model.settlementStateFilter,
-        },
+        isAdminViewEnabled,
+        adminApps: isAdminViewEnabled && Array.isArray(result?.admin?.apps) ? result.admin.apps : [],
+        adminWithdrawals:
+          isAdminViewEnabled && Array.isArray(result?.admin?.withdrawals)
+            ? result.admin.withdrawals
+            : [],
+        adminSettlements:
+          isAdminViewEnabled && Array.isArray(result?.admin?.settlements)
+            ? result.admin.settlements
+            : [],
+        adminPipelineBoard: isAdminViewEnabled
+          ? normalizePipelineBoard(result?.admin?.pipelineBoard)
+          : normalizePipelineBoard(),
+        adminFiltersApplied: isAdminViewEnabled
+          ? result?.admin?.filtersApplied ?? adminFallbackFilters
+          : adminFallbackFilters,
       });
 
       if (hasUnpaid) {
@@ -184,5 +218,33 @@ export default class FiberLinkDashboardRoute extends Route {
       clearTimeout(this._pollTimer);
       this._pollTimer = null;
     }
+  }
+
+  _isAdminPermissionError(error) {
+    const status = Number(error?.jqXHR?.status ?? error?.status);
+    if (status === 403) {
+      return true;
+    }
+
+    const rpcErrorCode = Number(error?.jqXHR?.responseJSON?.error?.code ?? error?.code);
+    if (rpcErrorCode === -32001 || rpcErrorCode === 403) {
+      return true;
+    }
+
+    const rpcMessage = error?.jqXHR?.responseJSON?.error?.message;
+    if (typeof rpcMessage === "string") {
+      const normalizedRpcMessage = rpcMessage.toLowerCase();
+      if (normalizedRpcMessage.includes("forbidden") || normalizedRpcMessage.includes("admin")) {
+        return true;
+      }
+    }
+
+    const code = Number(error?.code);
+    if (code === -32001 || code === 403) {
+      return true;
+    }
+
+    const message = typeof error?.message === "string" ? error.message.toLowerCase() : "";
+    return message.includes("forbidden") || message.includes("admin");
   }
 }

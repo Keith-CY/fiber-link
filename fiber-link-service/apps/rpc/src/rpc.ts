@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { TipIntentNotFoundError, createDbClient } from "@fiber-link/db";
+import { InsufficientFundsError, TipIntentNotFoundError, createDbClient } from "@fiber-link/db";
 import { verifyHmac } from "./auth/hmac";
 import {
   DashboardSummaryParamsSchema,
@@ -17,8 +17,15 @@ import {
 } from "./contracts";
 import { handleTipCreate, handleTipStatus } from "./methods/tip";
 import { handleDashboardSummary } from "./methods/dashboard";
-import { requestWithdrawal } from "./methods/withdrawal";
+import { WithdrawalPolicyViolationError, requestWithdrawal } from "./methods/withdrawal";
 import { createNonceStore } from "./nonce-store";
+import {
+  InMemoryRateLimitStore,
+  parseRpcRateLimitConfig,
+  rateLimitKey,
+  type RateLimitStore,
+  type RpcRateLimitConfig,
+} from "./rate-limit";
 import { type AppRepo, createDbAppRepo } from "./repositories/app-repo";
 import { rpcErrorResponse, rpcResultResponse } from "./rpc-error";
 import { loadSecretMap, resolveSecretForApp } from "./secret-map";
@@ -152,8 +159,16 @@ async function runDefaultReadinessProbe(appRepo: AppRepo | null): Promise<Readin
 
 export function registerRpc(
   app: FastifyInstance,
-  options: { appRepo?: AppRepo; readinessProbe?: ReadinessProbeFn } = {},
+  options: {
+    appRepo?: AppRepo;
+    readinessProbe?: ReadinessProbeFn;
+    rateLimitStore?: RateLimitStore;
+    rateLimitConfig?: RpcRateLimitConfig;
+  } = {},
 ) {
+  const rateLimitStore = options.rateLimitStore ?? new InMemoryRateLimitStore();
+  const rateLimitConfig = options.rateLimitConfig ?? parseRpcRateLimitConfig();
+
   app.get("/healthz/live", async () => {
     return { status: "alive" as const };
   });
@@ -248,6 +263,21 @@ export function registerRpc(
         return reply.send(rpcErrorResponse(rpc.id, RpcErrorCode.UNAUTHORIZED, "Unauthorized"));
       }
 
+      if (rateLimitConfig.enabled) {
+        const decision = await rateLimitStore.consume({
+          key: rateLimitKey(appId, rpc.method),
+          limit: rateLimitConfig.maxRequests,
+          windowMs: rateLimitConfig.windowMs,
+        });
+        reply.header("x-ratelimit-limit", String(decision.limit));
+        reply.header("x-ratelimit-remaining", String(decision.remaining));
+        reply.header("x-ratelimit-reset", String(Math.floor(decision.resetAtEpochMs / 1000)));
+
+        if (!decision.allowed) {
+          return reply.send(rpcErrorResponse(rpc.id, RpcErrorCode.RATE_LIMITED, "Rate limit exceeded"));
+        }
+      }
+
       if (rpc.method === "health.ping") {
         return reply.send(rpcResultResponse(rpc.id, { status: "ok" as const }));
       }
@@ -330,6 +360,14 @@ export function registerRpc(
           }
           return reply.send(rpcResultResponse(rpc.id, validated.data));
         } catch (error) {
+          if (error instanceof InsufficientFundsError) {
+            return reply.send(
+              rpcErrorResponse(rpc.id, RpcErrorCode.INVALID_PARAMS, "Insufficient balance for withdrawal"),
+            );
+          }
+          if (error instanceof WithdrawalPolicyViolationError) {
+            return reply.send(rpcErrorResponse(rpc.id, RpcErrorCode.INVALID_PARAMS, error.message));
+          }
           req.log.error(error);
           return reply.send(rpcErrorResponse(rpc.id, RpcErrorCode.INTERNAL_ERROR, "Internal error"));
         }

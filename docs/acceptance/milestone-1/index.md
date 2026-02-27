@@ -9,9 +9,9 @@ Milestone title: Technical Design + Fiber Integration Prototype
 | Architecture and threat model | `DONE` | [`checkpoint-1-architecture-threat-model.md`](./checkpoint-1-architecture-threat-model.md) |
 | Stand up Hub FNN on testnet | `DONE` | [`checkpoint-2-hub-fnn-testnet.md`](./checkpoint-2-hub-fnn-testnet.md) |
 | Backend skeleton and DB schema | `DONE` | [`checkpoint-3-backend-skeleton-db-schema.md`](./checkpoint-3-backend-skeleton-db-schema.md) |
-| Create invoices and verify settlement via Fiber interfaces | `PARTIAL` | [`checkpoint-4-fiber-invoice-settlement.md`](./checkpoint-4-fiber-invoice-settlement.md) |
-| Minimal demo (CLI or simple web page) for invoice -> payment -> ledger credit | `PARTIAL` | [`checkpoint-5-minimal-demo.md`](./checkpoint-5-minimal-demo.md) |
-| Acceptance criteria (public repo + setup docs + demo proof) | `PARTIAL` | [`checkpoint-6-acceptance-criteria.md`](./checkpoint-6-acceptance-criteria.md) |
+| Create invoices and verify settlement via Fiber interfaces | `DONE` | [`checkpoint-4-fiber-invoice-settlement.md`](./checkpoint-4-fiber-invoice-settlement.md) |
+| Minimal demo (CLI or simple web page) for invoice -> payment -> ledger credit | `DONE` | [`checkpoint-5-minimal-demo.md`](./checkpoint-5-minimal-demo.md) |
+| Acceptance criteria (public repo + setup docs + demo proof) | `DONE` | [`checkpoint-6-acceptance-criteria.md`](./checkpoint-6-acceptance-criteria.md) |
 
 ## Acceptance criteria
 

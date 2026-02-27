@@ -1,10 +1,10 @@
 # Milestone Acceptance Tracker
 
-Last updated: 2026-02-16
+Last updated: 2026-02-27
 
 This directory is the canonical acceptance workspace for milestone checkpoints and acceptance criteria.
 Each milestone has its own directory, an `index.md`, and one markdown file per checkpoint.
-This PR primarily restructures tracking artifacts; `PARTIAL` and `PENDING` checkpoints remain in-progress and are not treated as accepted.
+All milestone checkpoint states in this tracker are tied to versioned runbook evidence links.
 
 ## Milestone index
 
@@ -27,6 +27,8 @@ This PR primarily restructures tracking artifacts; `PARTIAL` and `PENDING` check
 - Legacy Milestone 1 public evidence bundle directory (still used for artifact publishing):
   - [`docs/runbooks/acceptance-evidence/`](../runbooks/acceptance-evidence/README.md)
 
-## Public proof ticket
+## Public proof indexes
 
-- Milestone 1 public proof tracking issue: [#114](https://github.com/Keith-CY/fiber-link/issues/114)
+- Milestone 1 evidence: [`docs/runbooks/acceptance-evidence/milestone-1/index.md`](../runbooks/acceptance-evidence/milestone-1/index.md)
+- Milestone 2 evidence: [`docs/runbooks/acceptance-evidence/milestone-2/index.md`](../runbooks/acceptance-evidence/milestone-2/index.md)
+- Milestone 3 evidence: [`docs/runbooks/acceptance-evidence/milestone-3/index.md`](../runbooks/acceptance-evidence/milestone-3/index.md)

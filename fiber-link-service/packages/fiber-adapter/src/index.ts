@@ -1,4 +1,10 @@
 export { FiberRpcError } from "./fiber-client";
+export {
+  getCkbAddressMinCellCapacityShannons,
+  resolveCkbNetworkConfig,
+  shannonsToCkbDecimal,
+  WithdrawalExecutionError,
+} from "./ckb-onchain-withdrawal";
 
 export { createAdapter } from "./rpc-adapter";
 export { createAdapterProvider } from "./provider";

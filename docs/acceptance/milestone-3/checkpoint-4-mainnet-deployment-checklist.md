@@ -14,9 +14,11 @@ Define and complete a dedicated mainnet deployment readiness checklist.
 
 ## Current status
 
-`PENDING`
+`DONE`
 
-Existing runbooks focus on local/staging and testnet validation. A dedicated mainnet checklist is not yet published.
+A dedicated mainnet checklist is now published:
+
+- `docs/runbooks/mainnet-deployment-checklist.md`
 
 ## Exit criteria
 

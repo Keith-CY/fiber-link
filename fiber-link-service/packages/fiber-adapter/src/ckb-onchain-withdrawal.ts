@@ -6,6 +6,7 @@ const DEFAULT_FEE_RATE_SHANNONS_PER_KB = 1_000n;
 const DEFAULT_TESTNET_CKB_RPC_URL = "https://testnet.ckbapp.dev/";
 
 type LumosConfig = typeof config.predefined.LINA;
+export type CkbNetworkConfig = { cfg: LumosConfig; isTestnet: boolean };
 
 export class WithdrawalExecutionError extends Error {
   constructor(
@@ -77,7 +78,7 @@ function resolvePrivateKey(): string {
   return normalizeHexPrivateKey(raw);
 }
 
-function resolveNetworkConfig(toAddress: string): { cfg: LumosConfig; isTestnet: boolean } {
+export function resolveCkbNetworkConfig(toAddress: string): CkbNetworkConfig {
   const normalized = toAddress.trim().toLowerCase();
   if (normalized.startsWith("ckt1")) {
     return { cfg: config.predefined.AGGRON4, isTestnet: true };
@@ -171,7 +172,7 @@ function resolvePolicyMinimumShannons(): bigint {
   return configured;
 }
 
-function shannonsToCkbDecimal(shannons: bigint): string {
+export function shannonsToCkbDecimal(shannons: bigint): string {
   const integerPart = shannons / SHANNONS_PER_CKB;
   const fractionPart = shannons % SHANNONS_PER_CKB;
   if (fractionPart === 0n) {
@@ -182,26 +183,13 @@ function shannonsToCkbDecimal(shannons: bigint): string {
   return `${integerPart}.${fractionRaw}`;
 }
 
-async function submitCkbTransfer(args: ExecuteWithdrawalArgs): Promise<{ txHash: string }> {
-  if (args.asset !== "CKB") {
-    throw new WithdrawalExecutionError(
-      "on-chain withdrawal supports only CKB asset currently",
-      "permanent",
-    );
-  }
-
-  const { cfg, isTestnet } = resolveNetworkConfig(args.toAddress);
-  const amountShannons = parseCkbAmountToShannons(args.amount);
-  const privateKey = resolvePrivateKey();
-  const feeRateShannonsPerKb = resolveFeeRateShannonsPerKb();
-  const rpcUrl = resolveCkbRpcUrl(isTestnet);
-  const indexerUrl = resolveIndexerUrl(rpcUrl, isTestnet);
-
+export function getCkbAddressMinCellCapacityShannons(toAddress: string): bigint {
+  const { cfg } = resolveCkbNetworkConfig(toAddress);
   config.initializeConfig(cfg);
 
   let recipientLock: ReturnType<typeof helpers.parseAddress>;
   try {
-    recipientLock = helpers.parseAddress(args.toAddress, { config: cfg });
+    recipientLock = helpers.parseAddress(toAddress, { config: cfg });
   } catch (error) {
     throw new WithdrawalExecutionError(
       `invalid CKB destination address: ${normalizeErrorMessage(error)}`,
@@ -210,13 +198,33 @@ async function submitCkbTransfer(args: ExecuteWithdrawalArgs): Promise<{ txHash:
     );
   }
 
-  const recipientMinimumShannons = helpers.minimalCellCapacity({
+  return helpers.minimalCellCapacity({
     cellOutput: {
       capacity: "0x0",
       lock: recipientLock,
     },
     data: "0x",
   });
+}
+
+async function submitCkbTransfer(args: ExecuteWithdrawalArgs): Promise<{ txHash: string }> {
+  if (args.asset !== "CKB") {
+    throw new WithdrawalExecutionError(
+      "on-chain withdrawal supports only CKB asset currently",
+      "permanent",
+    );
+  }
+
+  const { cfg, isTestnet } = resolveCkbNetworkConfig(args.toAddress);
+  const amountShannons = parseCkbAmountToShannons(args.amount);
+  const privateKey = resolvePrivateKey();
+  const feeRateShannonsPerKb = resolveFeeRateShannonsPerKb();
+  const rpcUrl = resolveCkbRpcUrl(isTestnet);
+  const indexerUrl = resolveIndexerUrl(rpcUrl, isTestnet);
+
+  config.initializeConfig(cfg);
+
+  const recipientMinimumShannons = getCkbAddressMinCellCapacityShannons(args.toAddress);
   const policyMinimumShannons = resolvePolicyMinimumShannons();
   const requiredMinimumShannons =
     policyMinimumShannons > recipientMinimumShannons ? policyMinimumShannons : recipientMinimumShannons;

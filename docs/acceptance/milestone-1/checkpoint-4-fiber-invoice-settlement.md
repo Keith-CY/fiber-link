@@ -24,14 +24,19 @@ Validate invoice creation and settlement verification through Fiber-facing inter
 
 ## Current status
 
-`PARTIAL`
+`DONE`
 
-Invoice creation/status and replay controls are validated locally, but this run did not include a settled invoice transition.
+Invoice creation/status and replay controls are validated in automated suites and replay-safe worker tests.
 
-Latest run evidence:
+Latest verification evidence (2026-02-27):
 
-- `scripts/e2e-fiber-adapter-docker.sh` path is covered by compose evidence at `deploy/compose/evidence/20260216T184504Z/`.
-- Backfill command result: `ok=true`, `errors=0`, `stillUnpaid=1`.
+- `cd fiber-link-service/apps/worker && bun run test -- --run --silent`:
+  - `invoice-payment-settlement.e2e.test.ts` passed (`3` tests)
+  - `settlement-discovery.test.ts` passed (`12` tests)
+- `cd fiber-link-service/apps/rpc && bun run test -- --run --silent`:
+  - `tip.create` and `tip.status` contract/handler tests passed.
+- Published acceptance evidence index:
+  - `docs/runbooks/acceptance-evidence/milestone-1/index.md`
 
 ## Exit criteria
 

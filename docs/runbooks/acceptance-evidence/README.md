@@ -16,6 +16,16 @@ Issue coverage: `#100` (`Milestone 1: add published acceptance evidence artifact
   public directory when sign-off is ready.
 - Recommended minimum retention: **30 days** for both raw and published copies, unless policy requires longer.
 
+## Milestone 2 Evidence Bundle
+
+- Public evidence index: [`milestone-2/index.md`](./milestone-2/index.md)
+- Focus: payment-state integration and recipient dashboard verification evidence.
+
+## Milestone 3 Evidence Bundle
+
+- Public evidence index: [`milestone-3/index.md`](./milestone-3/index.md)
+- Focus: withdrawal workflow, admin policy controls, and mainnet readiness checklist evidence.
+
 ## Evidence update rules
 
 - Keep this folder immutable during the retention window.
