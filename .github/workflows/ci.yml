@@ -2,18 +2,37 @@ name: CI
 
 on:
   pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
   push:
     branches:
       - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
 
 jobs:
   test-service:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.1.8
+      - name: Cache Bun install artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.bun/install/cache
+            fiber-link-service/node_modules
+          key: ${{ runner.os }}-bun-${{ hashFiles('fiber-link-service/bun.lockb') }}-service
+          restore-keys: |
+            ${{ runner.os }}-bun-
       - name: Install dependencies
         working-directory: fiber-link-service
         run: bun install --frozen-lockfile
@@ -38,14 +57,27 @@ jobs:
     name: Coverage Comment
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
       pull-requests: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.1.8
+      - name: Cache Bun install artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.bun/install/cache
+            fiber-link-service/node_modules
+          key: ${{ runner.os }}-bun-${{ hashFiles('fiber-link-service/bun.lockb') }}-coverage
+          restore-keys: |
+            ${{ runner.os }}-bun-
       - name: Install service dependencies
         working-directory: fiber-link-service
         run: bun install --frozen-lockfile
@@ -68,25 +100,29 @@ jobs:
         working-directory: fiber-link-service
         run: |
           set -euo pipefail
-          mkdir -p ../base-coverage-reports
+          base_dir="$(mktemp -d)"
+          base_ref="origin/${{ github.event.pull_request.base.ref }}"
+          mkdir -p "${base_dir}/base-coverage-reports"
           git fetch --no-tags origin "${{ github.event.pull_request.base.ref }}"
-          git worktree add ../_base_cov "origin/${{ github.event.pull_request.base.ref }}"
-          trap 'git worktree remove -f ../_base_cov || true' EXIT
+          git worktree add --detach "$base_dir/_base_cov" "$base_ref"
+          trap 'git worktree remove -f "$base_dir/_base_cov" || true; rm -rf "$base_dir"' EXIT
 
-          (cd ../_base_cov/fiber-link-service && bun install --frozen-lockfile)
+          (cd "$base_dir/_base_cov/fiber-link-service" && bun install --frozen-lockfile)
           # base branch may not include coverage provider dependency yet
-          (cd ../_base_cov/fiber-link-service && bun add -d @vitest/coverage-v8@1.6.0)
+          (cd "$base_dir/_base_cov/fiber-link-service" && bun add -d @vitest/coverage-v8@1.6.0)
 
           run_base_pkg() {
             local pkg="$1"
             local name="$2"
-            (cd "../_base_cov/fiber-link-service/$pkg" && bunx vitest run --silent --coverage.enabled --coverage.provider=v8 --coverage.reporter=json-summary --coverage.reportsDirectory="../../../../base-coverage-reports/$name")
+            (cd "$base_dir/_base_cov/fiber-link-service/$pkg" && bunx vitest run --silent --coverage.enabled --coverage.provider=v8 --coverage.reporter=json-summary --coverage.reportsDirectory="$base_dir/base-coverage-reports/$name")
           }
 
           run_base_pkg apps/rpc rpc
           run_base_pkg apps/admin admin
           run_base_pkg apps/worker worker
           run_base_pkg packages/db db
+          mkdir -p ../base-coverage-reports
+          cp -R "$base_dir/base-coverage-reports/" ../base-coverage-reports
       - name: Build markdown summary
         working-directory: fiber-link-service
         run: |
@@ -143,13 +179,12 @@ jobs:
           marker='<!-- fiber-link-pr-coverage-report -->'
           pr='${{ github.event.pull_request.number }}'
           body=$(cat coverage-comment.md)
-          ids=$(gh api "repos/${GITHUB_REPOSITORY}/issues/${pr}/comments" --paginate             | jq -r --arg m "$marker" '.[] | select(.body | contains($m)) | .id')
-          existing_id=$(printf '%s
-' "$ids" | sed '/^$/d' | head -n1)
+          ids=$(gh api "repos/${GITHUB_REPOSITORY}/issues/${pr}/comments" --paginate \
+            | jq -r --arg m "$marker" '.[] | select(.body | contains($m)) | .id')
+          existing_id=$(printf '%s\n' "$ids" | sed '/^$/d' | head -n1)
           if [ -n "${existing_id:-}" ]; then
             gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${existing_id}" -f body="$body" >/dev/null
-            printf '%s
-' "$ids" | sed '/^$/d' | tail -n +2 | while read -r extra_id; do
+            printf '%s\n' "$ids" | sed '/^$/d' | tail -n +2 | while read -r extra_id; do
               gh api -X DELETE "repos/${GITHUB_REPOSITORY}/issues/comments/${extra_id}" >/dev/null || true
             done
           else
