@@ -57,10 +57,11 @@
     <strong>Active filters:</strong>
     withdrawals={{this.model.adminFiltersApplied.withdrawalState}},
     settlements={{this.model.adminFiltersApplied.settlementState}}
-    (<a
-      href="?withdrawalState=ALL&settlementState=ALL"
+    (<LinkTo
+      @route="fiber-link-dashboard"
+      @query={{hash withdrawalState="ALL" settlementState="ALL"}}
       title="Clear both filters and reload full admin inspection data."
-    >Reset to ALL</a>)
+    >Reset to ALL</LinkTo>)
   </p>
 
   <FiberLinkLifecycleBoard @board={{this.model.adminPipelineBoard}} />
@@ -106,9 +107,13 @@
         <tr>
           <td colspan="7">
             No withdrawals for current filter.
-            <a
-              href="?withdrawalState=ALL&settlementState={{this.model.adminFiltersApplied.settlementState}}"
-            >Show all withdrawal states</a>.
+            <LinkTo
+              @route="fiber-link-dashboard"
+              @query={{hash
+                withdrawalState="ALL"
+                settlementState=this.model.adminFiltersApplied.settlementState
+              }}
+            >Show all withdrawal states</LinkTo>.
           </td>
         </tr>
       {{/each}}
@@ -137,9 +142,13 @@
         <tr>
           <td colspan="7">
             No settlement rows for current filter.
-            <a
-              href="?withdrawalState={{this.model.adminFiltersApplied.withdrawalState}}&settlementState=ALL"
-            >Show all settlement states</a>.
+            <LinkTo
+              @route="fiber-link-dashboard"
+              @query={{hash
+                withdrawalState=this.model.adminFiltersApplied.withdrawalState
+                settlementState="ALL"
+              }}
+            >Show all settlement states</LinkTo>.
           </td>
         </tr>
       {{/each}}

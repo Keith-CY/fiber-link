@@ -1,5 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import { withdrawalPolicies, type Asset } from "@fiber-link/db";
+import { assertPositiveAmount, compareDecimalStrings, withdrawalPolicies, type Asset } from "@fiber-link/db";
 import { requireRole } from "../../auth/roles";
 import { t } from "../trpc";
 
@@ -44,6 +44,24 @@ function parseUpsertInput(raw: unknown): WithdrawalPolicyInput {
     throw new TRPCError({
       code: "BAD_REQUEST",
       message: "maxPerRequest, perUserDailyMax, and perAppDailyMax are required",
+    });
+  }
+
+  try {
+    assertPositiveAmount(maxPerRequest);
+    assertPositiveAmount(perUserDailyMax);
+    assertPositiveAmount(perAppDailyMax);
+  } catch {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "maxPerRequest, perUserDailyMax, and perAppDailyMax must be positive decimals",
+    });
+  }
+
+  if (compareDecimalStrings(maxPerRequest, perUserDailyMax) > 0) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "maxPerRequest must be <= perUserDailyMax",
     });
   }
 

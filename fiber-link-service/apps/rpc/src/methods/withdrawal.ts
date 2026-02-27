@@ -1,11 +1,12 @@
 import {
+  addDecimalStrings,
+  compareDecimalStrings,
   createDbClient,
   createDbLedgerRepo,
   createDbWithdrawalPolicyRepo,
   createDbWithdrawalRepo,
   formatDecimal,
   parseDecimal,
-  pow10,
   type Asset,
   type CreateWithdrawalInput,
   type LedgerRepo,
@@ -145,24 +146,6 @@ function defaultPolicyForApp(appId: string): WithdrawalPolicyRecord {
   };
 }
 
-function compareDecimal(left: string, right: string): number {
-  const a = parseDecimal(left);
-  const b = parseDecimal(right);
-  const scale = Math.max(a.scale, b.scale);
-  const leftValue = a.value * pow10(scale - a.scale);
-  const rightValue = b.value * pow10(scale - b.scale);
-  if (leftValue === rightValue) return 0;
-  return leftValue > rightValue ? 1 : -1;
-}
-
-function addDecimal(left: string, right: string): string {
-  const a = parseDecimal(left);
-  const b = parseDecimal(right);
-  const scale = Math.max(a.scale, b.scale);
-  const value = a.value * pow10(scale - a.scale) + b.value * pow10(scale - b.scale);
-  return formatDecimal(value, scale);
-}
-
 function usageFallback(): WithdrawalPolicyUsage {
   return {
     appDailyTotal: "0",
@@ -201,30 +184,30 @@ function assertWithdrawalPolicy(
     );
   }
 
-  if (compareDecimal(input.amount, minimumRequiredAmount) < 0) {
+  if (compareDecimalStrings(input.amount, minimumRequiredAmount) < 0) {
     throw new WithdrawalPolicyViolationError(
       "AMOUNT_BELOW_MIN_CAPACITY",
       `withdrawal amount ${input.amount} is below minimum required ${minimumRequiredAmount} for destination address`,
     );
   }
 
-  if (compareDecimal(input.amount, policy.maxPerRequest) > 0) {
+  if (compareDecimalStrings(input.amount, policy.maxPerRequest) > 0) {
     throw new WithdrawalPolicyViolationError(
       "MAX_PER_REQUEST_EXCEEDED",
       `withdrawal amount ${input.amount} exceeds per-request limit ${policy.maxPerRequest}`,
     );
   }
 
-  const nextUserTotal = addDecimal(usage.userDailyTotal, input.amount);
-  if (compareDecimal(nextUserTotal, policy.perUserDailyMax) > 0) {
+  const nextUserTotal = addDecimalStrings(usage.userDailyTotal, input.amount);
+  if (compareDecimalStrings(nextUserTotal, policy.perUserDailyMax) > 0) {
     throw new WithdrawalPolicyViolationError(
       "PER_USER_DAILY_LIMIT_EXCEEDED",
       `daily user withdrawal limit exceeded: ${nextUserTotal} > ${policy.perUserDailyMax}`,
     );
   }
 
-  const nextAppTotal = addDecimal(usage.appDailyTotal, input.amount);
-  if (compareDecimal(nextAppTotal, policy.perAppDailyMax) > 0) {
+  const nextAppTotal = addDecimalStrings(usage.appDailyTotal, input.amount);
+  if (compareDecimalStrings(nextAppTotal, policy.perAppDailyMax) > 0) {
     throw new WithdrawalPolicyViolationError(
       "PER_APP_DAILY_LIMIT_EXCEEDED",
       `daily app withdrawal limit exceeded: ${nextAppTotal} > ${policy.perAppDailyMax}`,

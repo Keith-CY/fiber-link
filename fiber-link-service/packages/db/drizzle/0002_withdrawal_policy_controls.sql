@@ -13,6 +13,3 @@ CREATE TABLE IF NOT EXISTS "withdrawal_policies" (
 
 CREATE UNIQUE INDEX IF NOT EXISTS "withdrawal_policies_app_id_unique"
   ON "withdrawal_policies" ("app_id");
-
-CREATE INDEX IF NOT EXISTS "withdrawal_policies_app_id_idx"
-  ON "withdrawal_policies" ("app_id");

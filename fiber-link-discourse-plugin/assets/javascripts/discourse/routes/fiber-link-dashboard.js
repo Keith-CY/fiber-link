@@ -222,29 +222,17 @@ export default class FiberLinkDashboardRoute extends Route {
 
   _isAdminPermissionError(error) {
     const status = Number(error?.jqXHR?.status ?? error?.status);
-    if (status === 403) {
-      return true;
-    }
-
     const rpcErrorCode = Number(error?.jqXHR?.responseJSON?.error?.code ?? error?.code);
-    if (rpcErrorCode === -32001 || rpcErrorCode === 403) {
+    if (status === 403 || rpcErrorCode === -32001 || rpcErrorCode === 403) {
       return true;
     }
 
-    const rpcMessage = error?.jqXHR?.responseJSON?.error?.message;
-    if (typeof rpcMessage === "string") {
-      const normalizedRpcMessage = rpcMessage.toLowerCase();
-      if (normalizedRpcMessage.includes("forbidden") || normalizedRpcMessage.includes("admin")) {
-        return true;
-      }
-    }
-
-    const code = Number(error?.code);
-    if (code === -32001 || code === 403) {
+    const rpcMessage = (error?.jqXHR?.responseJSON?.error?.message ?? "").toLowerCase();
+    if (rpcMessage.includes("forbidden") || rpcMessage.includes("admin")) {
       return true;
     }
 
-    const message = typeof error?.message === "string" ? error.message.toLowerCase() : "";
-    return message.includes("forbidden") || message.includes("admin");
+    const errorMessage = (error?.message ?? "").toLowerCase();
+    return errorMessage.includes("forbidden") || errorMessage.includes("admin");
   }
 }

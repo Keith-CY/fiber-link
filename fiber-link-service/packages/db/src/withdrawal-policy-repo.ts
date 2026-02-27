@@ -1,6 +1,6 @@
 import { and, eq, gte, ne, sql } from "drizzle-orm";
 import type { DbClient } from "./client";
-import { assertPositiveAmount, formatDecimal, parseDecimal, pow10 } from "./amount";
+import { assertPositiveAmount, compareDecimalStrings, formatDecimal, parseDecimal } from "./amount";
 import { type Asset, withdrawalPolicies, withdrawals } from "./schema";
 
 export type WithdrawalPolicyRecord = {
@@ -108,6 +108,9 @@ export function createDbWithdrawalPolicyRepo(db: DbClient): WithdrawalPolicyRepo
       if (!Number.isInteger(input.cooldownSeconds) || input.cooldownSeconds < 0) {
         throw new Error("cooldownSeconds must be an integer >= 0");
       }
+      if (compareDecimalStrings(maxPerRequest, perUserDailyMax) > 0) {
+        throw new Error("maxPerRequest must be <= perUserDailyMax");
+      }
 
       const now = new Date();
       const [row] = await db
@@ -193,16 +196,6 @@ function normalizeUsage(usage: WithdrawalPolicyUsage): WithdrawalPolicyUsage {
   };
 }
 
-function compareDecimal(left: string, right: string): number {
-  const a = parseDecimal(left);
-  const b = parseDecimal(right);
-  const scale = Math.max(a.scale, b.scale);
-  const leftValue = a.value * pow10(scale - a.scale);
-  const rightValue = b.value * pow10(scale - b.scale);
-  if (leftValue === rightValue) return 0;
-  return leftValue > rightValue ? 1 : -1;
-}
-
 export function createInMemoryWithdrawalPolicyRepo(
   initial: WithdrawalPolicyRecord[] = [],
 ): WithdrawalPolicyRepo {
@@ -242,7 +235,7 @@ export function createInMemoryWithdrawalPolicyRepo(
       if (!Number.isInteger(input.cooldownSeconds) || input.cooldownSeconds < 0) {
         throw new Error("cooldownSeconds must be an integer >= 0");
       }
-      if (compareDecimal(maxPerRequest, perUserDailyMax) > 0) {
+      if (compareDecimalStrings(maxPerRequest, perUserDailyMax) > 0) {
         throw new Error("maxPerRequest must be <= perUserDailyMax");
       }
 

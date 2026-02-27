@@ -199,4 +199,23 @@ describe("withdrawal policy router", () => {
       }),
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
+
+  it("rejects upsert when maxPerRequest exceeds perUserDailyMax", async () => {
+    const db = createDbMock({ policiesRows: [], appAdminsRows: [] });
+    const caller = withdrawalPolicyRouter.createCaller({ role: "SUPER_ADMIN", db } satisfies TrpcContext);
+
+    await expect(
+      caller.upsert({
+        appId: "app1",
+        allowedAssets: ["CKB"],
+        maxPerRequest: "200",
+        perUserDailyMax: "100",
+        perAppDailyMax: "1000",
+        cooldownSeconds: 0,
+      }),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: "maxPerRequest must be <= perUserDailyMax",
+    });
+  });
 });

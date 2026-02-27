@@ -103,7 +103,6 @@ export const withdrawalPolicies = pgTable(
   },
   (table) => ({
     appIdUnique: uniqueIndex("withdrawal_policies_app_id_unique").on(table.appId),
-    byAppId: index("withdrawal_policies_app_id_idx").on(table.appId),
   }),
 );
 
