@@ -89,7 +89,25 @@ jobs:
           run_pkg() {
             local pkg="$1"
             local name="$2"
-            (cd "$pkg" && bunx vitest run --silent --coverage.enabled --coverage.provider=v8 --coverage.reporter=json-summary --coverage.reportsDirectory="../../coverage-reports/$name")
+            local report_dir="../../coverage-reports/$name"
+            local status_file="$report_dir/.status"
+
+            mkdir -p "$report_dir"
+            rm -f "$status_file"
+
+            if [ ! -d "$pkg" ]; then
+              echo "missing" > "$status_file"
+              echo "::warning title=head-coverage-missing::PR package not found: $pkg"
+              return 0
+            fi
+
+            if (cd "$pkg" && bunx vitest run --silent --coverage.enabled --coverage.provider=v8 --coverage.reporter=json-summary --coverage.reportsDirectory="$report_dir"); then
+              echo "ok" > "$status_file"
+              return 0
+            fi
+
+            echo "failed" > "$status_file"
+            echo "::warning title=head-coverage-failed::Head coverage collection failed for $pkg"
           }
           run_pkg apps/rpc rpc
           run_pkg apps/admin admin
@@ -117,17 +135,22 @@ jobs:
             local name="$2"
             local report_dir="$base_dir/base-coverage-reports/$name"
             local pkg_root="$base_root/fiber-link-service/$pkg"
+            local status_file="$report_dir/.status"
 
             mkdir -p "$report_dir"
+            rm -f "$status_file"
             if [ ! -d "$pkg_root" ]; then
+              echo "missing" > "$status_file"
               echo "::warning title=base-coverage-missing::Base package not found: $pkg"
               return 0
             fi
 
             if ! (cd "$pkg_root" && bunx vitest run --silent --coverage.enabled --coverage.provider=v8 --coverage.reporter=json-summary --coverage.reportsDirectory="$report_dir"); then
+              echo "failed" > "$status_file"
               echo "::warning title=base-coverage-failed::Base coverage collection failed for $pkg"
               return 0
             fi
+            echo "ok" > "$status_file"
           }
 
           run_base_pkg apps/rpc rpc
@@ -166,6 +189,36 @@ jobs:
             return `${value.toFixed(2)}%`;
           }
 
+          function formatCoverageValue(filePath, statusPath) {
+            const status = fs.existsSync(statusPath)
+              ? fs.readFileSync(statusPath, 'utf8').trim()
+              : 'unknown';
+            if (status === 'ok') {
+              const value = readCoveragePercent(filePath);
+              return { value, status };
+            }
+            if (status === 'missing') {
+              return { value: null, status: 'missing' };
+            }
+            if (status === 'failed') {
+              return { value: null, status: 'failed' };
+            }
+            return { value: readCoveragePercent(filePath), status: 'unknown' };
+          }
+
+          function statusLabel(status, value) {
+            if (status === 'ok') {
+              return formatPct(value);
+            }
+            if (status === 'missing') {
+              return 'N/A (missing)';
+            }
+            if (status === 'failed') {
+              return 'N/A (failed)';
+            }
+            return 'N/A';
+          }
+
           const targets = [
             ['rpc','RPC'],
             ['admin','Admin'],
@@ -184,14 +237,18 @@ jobs:
           for (const [key,label] of targets) {
             const p = path.join('coverage-reports', key, 'coverage-summary.json');
             const bp = path.join('..', 'base-coverage-reports', key, 'coverage-summary.json');
+            const ps = path.join('coverage-reports', key, '.status');
+            const bs = path.join('..', 'base-coverage-reports', key, '.status');
 
-            const pct = readCoveragePercent(p);
-            const basePct = readCoveragePercent(bp);
-            if (Number.isFinite(pct)) {
+            const headCoverage = formatCoverageValue(p, ps);
+            const baseCoverage = formatCoverageValue(bp, bs);
+            const pct = headCoverage.value;
+            const basePct = baseCoverage.value;
+            if (headCoverage.status === 'ok' && Number.isFinite(pct)) {
               sum += pct;
               headCount += 1;
             }
-            if (Number.isFinite(basePct)) {
+            if (baseCoverage.status === 'ok' && Number.isFinite(basePct)) {
               baseSum += basePct;
               baseCount += 1;
             }
@@ -199,7 +256,8 @@ jobs:
             const delta = Number.isFinite(pct) && Number.isFinite(basePct)
               ? pct - basePct
               : null;
-            const deltaStr = Number.isFinite(delta)
+            const headStr = statusLabel(headCoverage.status, pct);
+            const deltaDisplay = Number.isFinite(delta)
               ? `${delta >= 0 ? '+' : ''}${delta.toFixed(2)}%`
               : 'N/A';
             if (Number.isFinite(delta)) {
@@ -207,7 +265,7 @@ jobs:
               pairCount += 1;
             }
 
-            rows.push(`| ${label} | ${formatPct(pct)} | ${deltaStr} |`);
+            rows.push(`| ${label} | ${headCoverage.status === 'ok' ? formatPct(pct) : headStr} | ${deltaDisplay} |`);
           }
 
           const avg = headCount > 0 ? sum / headCount : null;
