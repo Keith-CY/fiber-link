@@ -2,18 +2,37 @@ name: CI
 
 on:
   pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
   push:
     branches:
       - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
 
 jobs:
   test-service:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.1.8
+      - name: Cache Bun install artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.bun/install/cache
+            fiber-link-service/node_modules
+          key: ${{ runner.os }}-bun-${{ hashFiles('fiber-link-service/bun.lockb') }}-service
+          restore-keys: |
+            ${{ runner.os }}-bun-
       - name: Install dependencies
         working-directory: fiber-link-service
         run: bun install --frozen-lockfile
@@ -38,14 +57,27 @@ jobs:
     name: Coverage Comment
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
       pull-requests: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.1.8
+      - name: Cache Bun install artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.bun/install/cache
+            fiber-link-service/node_modules
+          key: ${{ runner.os }}-bun-${{ hashFiles('fiber-link-service/bun.lockb') }}-coverage
+          restore-keys: |
+            ${{ runner.os }}-bun-
       - name: Install service dependencies
         working-directory: fiber-link-service
         run: bun install --frozen-lockfile
@@ -57,7 +89,26 @@ jobs:
           run_pkg() {
             local pkg="$1"
             local name="$2"
-            (cd "$pkg" && bunx vitest run --silent --coverage.enabled --coverage.provider=v8 --coverage.reporter=json-summary --coverage.reportsDirectory="../../coverage-reports/$name")
+            local report_dir="coverage-reports/$name"
+            local pkg_report_dir="../../$report_dir"
+            local status_file="$report_dir/.status"
+
+            mkdir -p "$report_dir"
+            rm -f "$status_file"
+
+            if [ ! -d "$pkg" ]; then
+              echo "missing" > "$status_file"
+              echo "::warning title=head-coverage-missing::PR package not found: $pkg"
+              return 0
+            fi
+
+            if (cd "$pkg" && bunx vitest run --silent --coverage.enabled --coverage.provider=v8 --coverage.reporter=json-summary --coverage.reportsDirectory="$pkg_report_dir"); then
+              echo "ok" > "$status_file"
+              return 0
+            fi
+
+            echo "failed" > "$status_file"
+            echo "::warning title=head-coverage-failed::Head coverage collection failed for $pkg"
           }
           run_pkg apps/rpc rpc
           run_pkg apps/admin admin
@@ -68,74 +119,262 @@ jobs:
         working-directory: fiber-link-service
         run: |
           set -euo pipefail
-          mkdir -p ../base-coverage-reports
+          base_dir="$(mktemp -d)"
+          trap 'git worktree remove -f "$base_dir/_base_cov" || true; rm -rf "$base_dir"' EXIT
+          base_ref="origin/${{ github.event.pull_request.base.ref }}"
+          base_root="${base_dir}/_base_cov"
+          mkdir -p "${base_dir}/base-coverage-reports"
           git fetch --no-tags origin "${{ github.event.pull_request.base.ref }}"
-          git worktree add ../_base_cov "origin/${{ github.event.pull_request.base.ref }}"
-          trap 'git worktree remove -f ../_base_cov || true' EXIT
+          git worktree add --detach "$base_root" "$base_ref"
 
-          (cd ../_base_cov/fiber-link-service && bun install --frozen-lockfile)
+          (cd "$base_root/fiber-link-service" && bun install --frozen-lockfile)
           # base branch may not include coverage provider dependency yet
-          (cd ../_base_cov/fiber-link-service && bun add -d @vitest/coverage-v8@1.6.0)
+          (cd "$base_root/fiber-link-service" && bun add -d @vitest/coverage-v8@1.6.0)
 
           run_base_pkg() {
             local pkg="$1"
             local name="$2"
-            (cd "../_base_cov/fiber-link-service/$pkg" && bunx vitest run --silent --coverage.enabled --coverage.provider=v8 --coverage.reporter=json-summary --coverage.reportsDirectory="../../../../base-coverage-reports/$name")
+            local report_dir="$base_dir/base-coverage-reports/$name"
+            local pkg_root="$base_root/fiber-link-service/$pkg"
+            local status_file="$report_dir/.status"
+
+            mkdir -p "$report_dir"
+            rm -f "$status_file"
+            if [ ! -d "$pkg_root" ]; then
+              echo "missing" > "$status_file"
+              echo "::warning title=base-coverage-missing::Base package not found: $pkg"
+              return 0
+            fi
+
+            if ! (cd "$pkg_root" && bunx vitest run --silent --coverage.enabled --coverage.provider=v8 --coverage.reporter=json-summary --coverage.reportsDirectory="$report_dir"); then
+              echo "failed" > "$status_file"
+              echo "::warning title=base-coverage-failed::Base coverage collection failed for $pkg"
+              return 0
+            fi
+            echo "ok" > "$status_file"
           }
 
           run_base_pkg apps/rpc rpc
           run_base_pkg apps/admin admin
           run_base_pkg apps/worker worker
           run_base_pkg packages/db db
+          mkdir -p ../base-coverage-reports
+          cp -R "$base_dir/base-coverage-reports/." ../base-coverage-reports/
+          for module in rpc admin worker db; do
+            if [ ! -f "../base-coverage-reports/${module}/coverage-summary.json" ] && [ ! -f "../base-coverage-reports/${module}/.status" ]; then
+              echo "::error title=base-coverage-layout-mismatch::Expected base coverage outputs for ${module} were not copied to ../base-coverage-reports."
+              exit 1
+            fi
+          done
+
       - name: Build markdown summary
         working-directory: fiber-link-service
         run: |
           node <<'NODE'
           const fs = require('fs');
           const path = require('path');
+
+          function readCoveragePercent(filePath) {
+            if (!fs.existsSync(filePath)) {
+              return null;
+            }
+            try {
+              const json = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+              const value = json?.total?.lines?.pct;
+              const num = Number(value);
+              return Number.isFinite(num) ? num : null;
+            } catch (error) {
+              console.error(`Failed to parse coverage file: ${filePath}`, error.message);
+              return null;
+            }
+          }
+
+          function formatPct(value) {
+            if (!Number.isFinite(value)) {
+              return 'N/A';
+            }
+            return `${value.toFixed(2)}%`;
+          }
+
+          function formatCoverageValue(filePath, statusPath) {
+            const status = fs.existsSync(statusPath)
+              ? fs.readFileSync(statusPath, 'utf8').trim()
+              : 'unknown';
+            if (status === 'ok') {
+              const value = readCoveragePercent(filePath);
+              return { value, status };
+            }
+            if (status === 'missing') {
+              return { value: null, status: 'missing' };
+            }
+            if (status === 'failed') {
+              return { value: null, status: 'failed' };
+            }
+            return { value: readCoveragePercent(filePath), status: 'unknown' };
+          }
+
+          function statusLabel(status, value) {
+            if (status === 'ok') {
+              return formatPct(value);
+            }
+            if (status === 'missing') {
+              return 'N/A (missing)';
+            }
+            if (status === 'failed') {
+              return 'N/A (failed)';
+            }
+            return 'N/A';
+          }
+
+          function buildStatus(headCoverage, baseCoverage) {
+            const reasons = [];
+            if (headCoverage.status !== 'ok') {
+              reasons.push(`head:${headCoverage.status}`);
+            }
+            if (baseCoverage.status !== 'ok') {
+              reasons.push(`base:${baseCoverage.status}`);
+            }
+            if (reasons.length === 0) {
+              return '✅';
+            }
+            const icons = reasons.map((reason) =>
+              reason.includes('failed') ? `❌ ${reason}` : `⚠️ ${reason}`
+            );
+            return icons.join('<br>');
+          }
+
+          function statusPriority(status) {
+            if (status === 'failed') {
+              return 0;
+            }
+            if (status === 'missing') {
+              return 1;
+            }
+            return 2;
+          }
+
+          function buildDeltaDisplay(pct, basePct, headCoverage, baseCoverage) {
+            if (Number.isFinite(pct) && Number.isFinite(basePct)) {
+              const delta = pct - basePct;
+              return `${delta >= 0 ? '+' : ''}${delta.toFixed(2)}%`;
+            }
+
+            const headStatus = headCoverage.status;
+            const baseStatus = baseCoverage.status;
+            if (headStatus !== 'ok' && baseStatus !== 'ok') {
+              return `N/A (both failed: ${headStatus}/${baseStatus})`;
+            }
+            if (headStatus !== 'ok') {
+              return `N/A (head unavailable: ${headStatus})`;
+            }
+            return `N/A (base unavailable: ${baseStatus})`;
+          }
+
           const targets = [
             ['rpc','RPC'],
             ['admin','Admin'],
             ['worker','Worker'],
             ['db','DB'],
           ];
+
           let rows = [];
           let sum = 0;
           let baseSum = 0;
+          let headCount = 0;
+          let baseCount = 0;
+          let pairCount = 0;
+          let pairDeltaSum = 0;
+          let actionItems = [];
+
           for (const [key,label] of targets) {
             const p = path.join('coverage-reports', key, 'coverage-summary.json');
-            const j = JSON.parse(fs.readFileSync(p, 'utf8'));
-            const pct = Number(j.total.lines.pct || 0);
-
             const bp = path.join('..', 'base-coverage-reports', key, 'coverage-summary.json');
-            const bj = JSON.parse(fs.readFileSync(bp, 'utf8'));
-            const basePct = Number(bj.total.lines.pct || 0);
+            const ps = path.join('coverage-reports', key, '.status');
+            const bs = path.join('..', 'base-coverage-reports', key, '.status');
 
-            const delta = pct - basePct;
-            const deltaStr = `${delta >= 0 ? '+' : ''}${delta.toFixed(2)}%`;
+            const headCoverage = formatCoverageValue(p, ps);
+            const baseCoverage = formatCoverageValue(bp, bs);
+            const pct = headCoverage.value;
+            const basePct = baseCoverage.value;
+            if (headCoverage.status === 'ok' && Number.isFinite(pct)) {
+              sum += pct;
+              headCount += 1;
+            }
+            if (baseCoverage.status === 'ok' && Number.isFinite(basePct)) {
+              baseSum += basePct;
+              baseCount += 1;
+            }
+            const headStr = statusLabel(headCoverage.status, pct);
+            const delta = Number.isFinite(pct) && Number.isFinite(basePct)
+              ? pct - basePct
+              : null;
+            const deltaDisplay = buildDeltaDisplay(pct, basePct, headCoverage, baseCoverage);
+            if (headCoverage.status === 'ok' && baseCoverage.status === 'ok' && Number.isFinite(delta)) {
+              pairDeltaSum += delta;
+              pairCount += 1;
+            }
 
-            sum += pct;
-            baseSum += basePct;
-            rows.push(`| ${label} | ${pct.toFixed(2)}% | ${deltaStr} |`);
+            if (headCoverage.status !== 'ok' || baseCoverage.status !== 'ok') {
+              actionItems.push({
+                module: label,
+                headStatus: headCoverage.status,
+                baseStatus: baseCoverage.status,
+                statusLabel: buildStatus(headCoverage, baseCoverage),
+                priority: Math.min(statusPriority(headCoverage.status), statusPriority(baseCoverage.status)),
+              });
+            }
+
+            rows.push(`| ${label} | ${headCoverage.status === 'ok' ? formatPct(pct) : headStr} | ${deltaDisplay} | ${buildStatus(headCoverage, baseCoverage)} |`);
           }
-          const avg = sum / targets.length;
-          const baseAvg = baseSum / targets.length;
-          const avgDelta = avg - baseAvg;
+
+          actionItems.sort((a, b) => {
+            if (a.priority !== b.priority) {
+              return a.priority - b.priority;
+            }
+            return a.module.localeCompare(b.module);
+          });
+
+          const actionableLines = actionItems.length > 0
+            ? actionItems.map((item) => {
+                const failureLabel = [item.headStatus !== 'ok' ? `head:${item.headStatus}` : '', item.baseStatus !== 'ok' ? `base:${item.baseStatus}` : '']
+                  .filter(Boolean)
+                  .join(', ');
+                const action = item.priority === 0
+                  ? `⚠️ fix coverage run errors and retry this job`
+                  : `⚠️ verify module exists and is available on both branches`;
+                return `- **${item.module}**: ${item.statusLabel} (${failureLabel}) — ${action}`;
+              }).join('\n')
+            : '- ✅ No action needed.';
+
+          const avg = headCount > 0 ? sum / headCount : null;
+          const baseAvg = baseCount > 0 ? baseSum / baseCount : null;
+          const avgDelta = pairCount > 0 ? pairDeltaSum / pairCount : null;
           const marker = '<!-- fiber-link-pr-coverage-report -->';
+          const effectiveModules = `Modules with head/base coverage: ${pairCount}/${targets.length}`;
           const body = [
             marker,
             '### 📊 Coverage Report',
             '',
-            '| Module | Line Coverage | Δ vs base |',
-            '|---|---:|---:|',
+            '| Module | Line Coverage | Δ vs base | Status |',
+            '|---|---:|---:|:---|',
             ...rows,
             '',
-            `**Average line coverage:** ${avg.toFixed(2)}%`,
-            `**Δ vs base:** ${avgDelta >= 0 ? '+' : ''}${avgDelta.toFixed(2)}%`,
+            `**Average line coverage:** ${formatPct(avg)}`,
+            `**Base average line coverage:** ${formatPct(baseAvg)}`,
+            `**Δ vs base:** ${Number.isFinite(avgDelta) ? `${avgDelta >= 0 ? '+' : ''}${avgDelta.toFixed(2)}%` : 'N/A'}`,
+            `**Compared modules:** ${effectiveModules}`,
+            '',
+            '### Action needed',
+            actionableLines,
+            '',
+            '- To recalc the report after fixes: open this workflow run and rerun **Coverage Comment** job.',
+            '',
+            '_Status legend: ✅ OK, ⚠️ module missing, ❌ module coverage run failed._',
           ].join('\n');
           fs.writeFileSync('../coverage-comment.md', body);
           NODE
       - name: Create or update PR comment
+        if: github.event.pull_request.head.repo.full_name == github.repository
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -143,18 +382,22 @@ jobs:
           marker='<!-- fiber-link-pr-coverage-report -->'
           pr='${{ github.event.pull_request.number }}'
           body=$(cat coverage-comment.md)
-          ids=$(gh api "repos/${GITHUB_REPOSITORY}/issues/${pr}/comments" --paginate             | jq -r --arg m "$marker" '.[] | select(.body | contains($m)) | .id')
-          existing_id=$(printf '%s
-' "$ids" | sed '/^$/d' | head -n1)
+          ids=$(gh api "repos/${GITHUB_REPOSITORY}/issues/${pr}/comments" --paginate \
+            | jq -r --arg m "$marker" '.[] | select(.body | contains($m)) | .id')
+          existing_id=$(printf '%s\n' "$ids" | sed '/^$/d' | head -n1)
           if [ -n "${existing_id:-}" ]; then
             gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${existing_id}" -f body="$body" >/dev/null
-            printf '%s
-' "$ids" | sed '/^$/d' | tail -n +2 | while read -r extra_id; do
+            printf '%s\n' "$ids" | sed '/^$/d' | tail -n +2 | while read -r extra_id; do
               gh api -X DELETE "repos/${GITHUB_REPOSITORY}/issues/comments/${extra_id}" >/dev/null || true
             done
           else
             gh api "repos/${GITHUB_REPOSITORY}/issues/${pr}/comments" -f body="$body" >/dev/null
           fi
+
+      - name: Skip comment for fork PR
+        if: github.event.pull_request.head.repo.full_name != github.repository
+        run: |
+          echo "Skipping coverage comment update for forked PR (${GITHUB_REPOSITORY})."
 
   fiber-adapter-e2e:
     runs-on: ubuntu-latest
