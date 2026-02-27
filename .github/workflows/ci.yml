@@ -289,6 +289,7 @@ jobs:
           const baseAvg = baseCount > 0 ? baseSum / baseCount : null;
           const avgDelta = pairCount > 0 ? pairDeltaSum / pairCount : null;
           const marker = '<!-- fiber-link-pr-coverage-report -->';
+          const effectiveModules = `Modules with head/base coverage: ${pairCount}/${targets.length}`;
           const body = [
             marker,
             '### 📊 Coverage Report',
@@ -298,7 +299,9 @@ jobs:
             ...rows,
             '',
             `**Average line coverage:** ${formatPct(avg)}`,
+            `**Base average line coverage:** ${formatPct(baseAvg)}`,
             `**Δ vs base:** ${Number.isFinite(avgDelta) ? `${avgDelta >= 0 ? '+' : ''}${avgDelta.toFixed(2)}%` : 'N/A'}`,
+            `**Compared modules:** ${effectiveModules}`,
             '',
             '_Status legend: ✅ OK, ⚠️ module missing, ❌ module coverage run failed._',
           ].join('\n');
