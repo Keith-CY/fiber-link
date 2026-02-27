@@ -89,7 +89,8 @@ jobs:
           run_pkg() {
             local pkg="$1"
             local name="$2"
-            local report_dir="../../coverage-reports/$name"
+            local report_dir="coverage-reports/$name"
+            local pkg_report_dir="../../$report_dir"
             local status_file="$report_dir/.status"
 
             mkdir -p "$report_dir"
@@ -101,7 +102,7 @@ jobs:
               return 0
             fi
 
-            if (cd "$pkg" && bunx vitest run --silent --coverage.enabled --coverage.provider=v8 --coverage.reporter=json-summary --coverage.reportsDirectory="$report_dir"); then
+            if (cd "$pkg" && bunx vitest run --silent --coverage.enabled --coverage.provider=v8 --coverage.reporter=json-summary --coverage.reportsDirectory="$pkg_report_dir"); then
               echo "ok" > "$status_file"
               return 0
             fi
