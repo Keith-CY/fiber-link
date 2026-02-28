@@ -11,8 +11,6 @@ export default defineConfig({
         "src/server.ts",
         "src/scripts/**",
         "src/rpc.ts",
-        "src/methods/**",
-        "src/repositories/**",
         "src/fastify.d.ts",
       ],
     },

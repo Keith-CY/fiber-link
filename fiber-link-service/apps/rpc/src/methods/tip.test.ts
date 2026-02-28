@@ -261,3 +261,71 @@ it("fails status when invoice is unknown", async () => {
     "tip intent not found",
   );
 });
+
+it("rethrows non-conflict errors while settling", async () => {
+  const response = await handleTipCreate(
+    {
+      appId: "app1",
+      postId: "p1",
+      fromUserId: "u1",
+      toUserId: "u2",
+      asset: "USDI",
+      amount: "10",
+    },
+    { tipIntentRepo, tipIntentEventRepo, adapter },
+  );
+  invoiceStatusByInvoice[response.invoice] = "SETTLED";
+
+  const repoWithUnexpectedFailure = {
+    ...tipIntentRepo,
+    async updateInvoiceState() {
+      throw new Error("db down");
+    },
+  };
+
+  await expect(
+    handleTipStatus(
+      { invoice: response.invoice },
+      {
+        tipIntentRepo: repoWithUnexpectedFailure,
+        ledgerRepo,
+        tipIntentEventRepo,
+        adapter,
+      },
+    ),
+  ).rejects.toThrow("db down");
+});
+
+it("rethrows non-conflict errors while failing", async () => {
+  const response = await handleTipCreate(
+    {
+      appId: "app1",
+      postId: "p1",
+      fromUserId: "u1",
+      toUserId: "u2",
+      asset: "USDI",
+      amount: "10",
+    },
+    { tipIntentRepo, tipIntentEventRepo, adapter },
+  );
+  invoiceStatusByInvoice[response.invoice] = "FAILED";
+
+  const repoWithUnexpectedFailure = {
+    ...tipIntentRepo,
+    async updateInvoiceState() {
+      throw new Error("db timeout");
+    },
+  };
+
+  await expect(
+    handleTipStatus(
+      { invoice: response.invoice },
+      {
+        tipIntentRepo: repoWithUnexpectedFailure,
+        ledgerRepo,
+        tipIntentEventRepo,
+        adapter,
+      },
+    ),
+  ).rejects.toThrow("db timeout");
+});
