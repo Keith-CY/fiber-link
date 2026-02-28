@@ -1,7 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { InvalidAmountError } from "./amount";
 import type { DbClient } from "./client";
-import { InvoiceStateTransitionError, createDbTipIntentRepo, createInMemoryTipIntentRepo } from "./tip-intent-repo";
+import {
+  InvoiceStateTransitionError,
+  TipIntentNotFoundError,
+  createDbTipIntentRepo,
+  createInMemoryTipIntentRepo,
+} from "./tip-intent-repo";
 
 function createDbRow(overrides: Record<string, unknown> = {}) {
   return {
@@ -78,6 +83,103 @@ describe("tipIntentRepo (db transition guards)", () => {
     await expect(repo.updateInvoiceState("inv-db-failed", "UNPAID")).rejects.toBeInstanceOf(
       InvoiceStateTransitionError,
     );
+  });
+
+  it("maps unique-violation insert to duplicate invoice error", async () => {
+    const insertReturning = vi.fn(async () => {
+      throw { code: "23505" };
+    });
+    const insertValues = vi.fn(() => ({ returning: insertReturning }));
+    const insert = vi.fn(() => ({ values: insertValues }));
+    const db = { insert } as unknown as DbClient;
+    const repo = createDbTipIntentRepo(db);
+
+    await expect(
+      repo.create({
+        appId: "app1",
+        postId: "p1",
+        fromUserId: "u1",
+        toUserId: "u2",
+        asset: "USDI",
+        amount: "10",
+        invoice: "inv-dup-db",
+      }),
+    ).rejects.toThrow("duplicate invoice");
+  });
+
+  it("throws TipIntentNotFoundError when invoice lookup misses", async () => {
+    const selectLimit = vi.fn().mockResolvedValue([]);
+    const selectWhere = vi.fn(() => ({ limit: selectLimit }));
+    const selectFrom = vi.fn(() => ({ where: selectWhere }));
+    const select = vi.fn(() => ({ from: selectFrom }));
+    const db = { select } as unknown as DbClient;
+    const repo = createDbTipIntentRepo(db);
+
+    await expect(repo.findByInvoiceOrThrow("inv-missing")).rejects.toBeInstanceOf(TipIntentNotFoundError);
+  });
+
+  it("returns fallback row when retry/terminal update affects no rows", async () => {
+    const updateReturning = vi.fn().mockResolvedValue([]);
+    const updateWhere = vi.fn(() => ({ returning: updateReturning }));
+    const updateSet = vi.fn(() => ({ where: updateWhere }));
+    const update = vi.fn(() => ({ set: updateSet }));
+
+    const fallback = createDbRow({
+      invoice: "inv-fallback-db",
+      invoiceState: "FAILED",
+      settlementFailureReason: "FAILED_TERMINAL_ERROR",
+    });
+    const selectLimit = vi.fn().mockResolvedValue([fallback]);
+    const selectWhere = vi.fn(() => ({ limit: selectLimit }));
+    const selectFrom = vi.fn(() => ({ where: selectWhere }));
+    const select = vi.fn(() => ({ from: selectFrom }));
+
+    const db = { update, select } as unknown as DbClient;
+    const repo = createDbTipIntentRepo(db);
+
+    const retry = await repo.markSettlementRetryPending("inv-fallback-db", {
+      now: new Date("2026-02-16T00:00:00.000Z"),
+      nextRetryAt: new Date("2026-02-16T00:01:00.000Z"),
+      error: "retry",
+    });
+    expect(retry.invoice).toBe("inv-fallback-db");
+
+    const terminal = await repo.markSettlementTerminalFailure("inv-fallback-db", {
+      now: new Date("2026-02-16T00:02:00.000Z"),
+      reason: "FAILED_TERMINAL_ERROR",
+      error: "terminal",
+    });
+    expect(terminal.invoiceState).toBe("FAILED");
+  });
+
+  it("builds list/count queries and supports limit path", async () => {
+    const listRows = [createDbRow({ invoice: "inv-list-db-1" }), createDbRow({ invoice: "inv-list-db-2" })];
+    const selectLimit = vi.fn().mockResolvedValue([listRows[0]]);
+    const selectWhere = vi
+      .fn()
+      .mockImplementationOnce(() => ({
+        orderBy: vi.fn(() => ({
+          limit: selectLimit,
+        })),
+      }))
+      .mockResolvedValueOnce([{ count: 2 }]);
+    const selectFrom = vi.fn(() => ({ where: selectWhere }));
+    const select = vi.fn(() => ({ from: selectFrom }));
+    const db = { select } as unknown as DbClient;
+    const repo = createDbTipIntentRepo(db);
+
+    const listed = await repo.listByInvoiceState("UNPAID", {
+      appId: "app1",
+      createdAtFrom: new Date("2026-02-15T00:00:00.000Z"),
+      createdAtTo: new Date("2026-02-16T00:00:00.000Z"),
+      after: { createdAt: new Date("2026-02-15T00:00:00.000Z"), id: "tip-1" },
+      limit: 1,
+    });
+    expect(listed).toHaveLength(1);
+    expect(listed[0]?.invoice).toBe("inv-list-db-1");
+
+    const count = await repo.countByInvoiceState("UNPAID", { appId: "app1" });
+    expect(count).toBe(2);
   });
 });
 
@@ -637,4 +739,3 @@ describe("tipIntentRepo (db error branches)", () => {
     expect(saved.settlementFailureReason).toBe("FAILED_UPSTREAM_REPORTED");
   });
 });
-
