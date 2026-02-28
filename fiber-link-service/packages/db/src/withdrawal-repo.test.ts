@@ -163,6 +163,139 @@ describe("createDbWithdrawalRepo", () => {
     expect((db as { transaction: ReturnType<typeof vi.fn> }).transaction).toHaveBeenCalledTimes(1);
     expect((tx as { execute: ReturnType<typeof vi.fn> }).execute).toHaveBeenCalledTimes(1);
   });
+
+  it("infers destination kind from CKB address in create()", async () => {
+    const insertReturning = vi.fn().mockResolvedValueOnce([
+      mockRow({
+        destinationKind: "CKB_ADDRESS",
+        toAddress: "ckt1qyqfth8m4fevfzh5hhd088s78qcdjjp8cehs7z8jhw",
+      }),
+    ]);
+    const insertValues = vi.fn(() => ({ returning: insertReturning }));
+    const insert = vi.fn(() => ({ values: insertValues }));
+    const db = { insert } as unknown as DbClient;
+    const repo = createDbWithdrawalRepo(db);
+
+    const created = await repo.create({
+      appId: "app1",
+      userId: "u1",
+      asset: "CKB",
+      amount: "61",
+      toAddress: "ckt1qyqfth8m4fevfzh5hhd088s78qcdjjp8cehs7z8jhw",
+    });
+
+    expect(created.destinationKind).toBe("CKB_ADDRESS");
+    const valuesArg = insertValues.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(valuesArg.destinationKind).toBe("CKB_ADDRESS");
+  });
+
+  it("uses explicit destination kind override in create()", async () => {
+    const insertReturning = vi.fn().mockResolvedValueOnce([
+      mockRow({
+        destinationKind: "PAYMENT_REQUEST",
+        toAddress: "fiber:invoice:abc",
+      }),
+    ]);
+    const insertValues = vi.fn(() => ({ returning: insertReturning }));
+    const insert = vi.fn(() => ({ values: insertValues }));
+    const db = { insert } as unknown as DbClient;
+    const repo = createDbWithdrawalRepo(db);
+
+    const created = await repo.create({
+      appId: "app1",
+      userId: "u1",
+      asset: "USDI",
+      amount: "10",
+      toAddress: "fiber:invoice:abc",
+      destinationKind: "PAYMENT_REQUEST",
+    });
+
+    expect(created.destinationKind).toBe("PAYMENT_REQUEST");
+    const valuesArg = insertValues.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(valuesArg.destinationKind).toBe("PAYMENT_REQUEST");
+  });
+
+  it("creates with balance check when funds are sufficient", async () => {
+    const txSelectWhere = vi
+      .fn()
+      .mockResolvedValueOnce([{ balance: "100" }])
+      .mockResolvedValueOnce([{ total: "20" }]);
+    const txSelectFrom = vi.fn(() => ({ where: txSelectWhere }));
+    const txSelect = vi.fn(() => ({ from: txSelectFrom }));
+
+    const txInsertReturning = vi.fn().mockResolvedValueOnce([
+      mockRow({
+        id: "w2",
+        amount: "10",
+        state: "PENDING",
+        destinationKind: "PAYMENT_REQUEST",
+        toAddress: "fiber:invoice:new",
+      }),
+    ]);
+    const txInsertValues = vi.fn(() => ({ returning: txInsertReturning }));
+    const txInsert = vi.fn(() => ({ values: txInsertValues }));
+
+    const tx = {
+      execute: vi.fn(),
+      select: txSelect,
+      insert: txInsert,
+    } as unknown as DbClient;
+
+    const db = {
+      transaction: vi.fn(async (fn: (client: DbClient) => Promise<unknown>) => fn(tx)),
+    } as unknown as DbClient;
+
+    const repo = createDbWithdrawalRepo(db);
+    const created = await repo.createWithBalanceCheck(
+      {
+        appId: "app1",
+        userId: "u1",
+        asset: "USDI",
+        amount: "10",
+        toAddress: "fiber:invoice:new",
+      },
+      { ledgerRepo: createInMemoryLedgerRepo() },
+    );
+
+    expect(created.id).toBe("w2");
+    expect((tx as { execute: ReturnType<typeof vi.fn> }).execute).toHaveBeenCalledTimes(1);
+    expect(txInsert).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns pending total and defaults to 0 when query is empty", async () => {
+    const selectWhere = vi.fn().mockResolvedValueOnce([{ total: "12.5" }]).mockResolvedValueOnce([]);
+    const selectFrom = vi.fn(() => ({ where: selectWhere }));
+    const select = vi.fn(() => ({ from: selectFrom }));
+    const db = { select } as unknown as DbClient;
+    const repo = createDbWithdrawalRepo(db);
+
+    const total = await repo.getPendingTotal({ appId: "app1", userId: "u1", asset: "USDI" });
+    expect(total).toBe("12.5");
+
+    const zero = await repo.getPendingTotal({ appId: "app1", userId: "u1", asset: "USDI" });
+    expect(zero).toBe("0");
+  });
+
+  it("finds rows by id and lists ready withdrawals", async () => {
+    const selectLimit = vi.fn().mockResolvedValueOnce([mockRow({ id: "wf" })]);
+    const selectWhere = vi
+      .fn()
+      .mockImplementationOnce(() => ({ limit: selectLimit }))
+      .mockResolvedValueOnce([mockRow({ id: "p1", state: "PENDING" })])
+      .mockResolvedValueOnce([
+        mockRow({ id: "r1", state: "RETRY_PENDING", nextRetryAt: new Date("2026-02-07T00:00:00.000Z") }),
+      ]);
+    const selectFrom = vi.fn(() => ({ where: selectWhere }));
+    const select = vi.fn(() => ({ from: selectFrom }));
+    const db = { select } as unknown as DbClient;
+    const repo = createDbWithdrawalRepo(db);
+
+    const found = await repo.findByIdOrThrow("wf");
+    expect(found.id).toBe("wf");
+
+    const ready = await repo.listReadyForProcessing(new Date("2026-02-07T00:01:00.000Z"));
+    expect(ready.map((item) => item.id)).toEqual(["p1", "r1"]);
+  });
 });
 
 describe("createInMemoryWithdrawalRepo balance gating", () => {

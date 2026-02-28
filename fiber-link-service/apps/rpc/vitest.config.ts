@@ -4,14 +4,6 @@ export default defineConfig({
   test: {
     coverage: {
       reporter: ["text", "json-summary"],
-      include: [
-        "src/contracts.ts",
-        "src/nonce-store.ts",
-        "src/rate-limit.ts",
-        "src/rpc-error.ts",
-        "src/secret-map.ts",
-        "src/auth/hmac.ts",
-      ],
       exclude: [
         "**/*.test.ts",
         "**/*.test.tsx",

@@ -9,8 +9,6 @@ export default defineConfig({
         "**/*.test.tsx",
         "src/server/auth.ts",
         "src/pages/index.tsx",
-        "src/pages/dashboard-model.ts",
-        "src/server/api/routers/withdrawal-policy.ts",
       ],
     },
   },

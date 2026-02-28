@@ -7,6 +7,7 @@ import {
 import { runSettlementDiscovery } from "./settlement-discovery";
 import { startSettlementSubscriptionRunner } from "./settlement-subscription-runner";
 import { createWorkerRuntime } from "./worker-runtime";
+import { createComponentLogger } from "./logger";
 
 describe("worker structured logging contract", () => {
   const tipIntentRepo = createInMemoryTipIntentRepo();
@@ -166,5 +167,62 @@ describe("worker structured logging contract", () => {
     });
     expect(summary?.scanned).toBe(1);
     expect(summary?.settledCredits).toBe(1);
+  });
+
+  it("serializes bigint/error context and supports warn/error severities", () => {
+    const logs: unknown[] = [];
+    const warns: unknown[] = [];
+    const errors: unknown[] = [];
+    vi.spyOn(console, "log").mockImplementation((...args) => logs.push(args[0]));
+    vi.spyOn(console, "warn").mockImplementation((...args) => warns.push(args[0]));
+    vi.spyOn(console, "error").mockImplementation((...args) => errors.push(args[0]));
+
+    const logger = createComponentLogger("logger-contract");
+    logger.info("info.event", {
+      count: 1n as unknown as number,
+      error: new Error("boom"),
+    } as Record<string, unknown>);
+    logger.warn("warn.event", { reason: "slow-path" });
+    logger.error("error.event", { reason: "failed-path" });
+
+    expect(logs[0]).toMatchObject({
+      component: "logger-contract",
+      event: "info.event",
+      severity: "info",
+      count: "1",
+      error: {
+        message: "boom",
+      },
+    });
+    expect(warns[0]).toMatchObject({
+      component: "logger-contract",
+      event: "warn.event",
+      severity: "warn",
+      reason: "slow-path",
+    });
+    expect(errors[0]).toMatchObject({
+      component: "logger-contract",
+      event: "error.event",
+      severity: "error",
+      reason: "failed-path",
+    });
+  });
+
+  it("falls back to details string when context cannot be JSON-serialized", () => {
+    const logs: unknown[] = [];
+    vi.spyOn(console, "log").mockImplementation((...args) => logs.push(args[0]));
+
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+
+    const logger = createComponentLogger("logger-contract");
+    logger.info("circular.event", circular as unknown as Record<string, unknown>);
+
+    expect(logs[0]).toMatchObject({
+      component: "logger-contract",
+      event: "circular.event",
+      severity: "info",
+      details: "[object Object]",
+    });
   });
 });

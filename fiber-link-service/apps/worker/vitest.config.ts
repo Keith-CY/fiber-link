@@ -9,7 +9,6 @@ export default defineConfig({
         "**/*.test.tsx",
         "src/entry.ts",
         "src/scripts/**",
-        "src/settlement.ts",
       ],
     },
   },
