@@ -8,6 +8,9 @@
 - `docs/plans/2026-02-17-issue-32-epic-execution-status-tracker.md` — superseded historical status snapshot retained for traceability.
 - `docs/plans/2026-02-03-fiber-link-mvp-design.md` — historical early design snapshot; use canonical links at the top of the file.
 - `docs/plans/2026-02-03-fiber-link-mvp-plan.md` — historical implementation draft; use canonical links at the top of the file.
+- `docs/plans/2026-02-07-phase2-delivery-plan.md` — diverged historical delivery plan; use canonical links at the top of the file.
+- `docs/plans/2026-02-11-phase3-sprint1-settlement-v1-plan.md` — diverged historical sprint plan; use canonical links at the top of the file.
+- `docs/plans/2026-02-13-phase3-priority3-balance-debit-design.md` — diverged historical design plan; use canonical links at the top of the file.
 
 ## Architecture audit contract
 

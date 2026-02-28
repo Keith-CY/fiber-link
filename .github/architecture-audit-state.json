@@ -130,25 +130,182 @@
           "unexpected_paths": []
         }
       ]
+    },
+    {
+      "runAt": "2026-02-28T00:36:48Z",
+      "ts": 1772239008,
+      "reason_code": "SCAN_OK",
+      "metrics": {
+        "docs_superseded": 6,
+        "docs_todo": 0,
+        "core_todo": 0,
+        "test_files": 62
+      },
+      "deltas": {
+        "docs_superseded": 3,
+        "docs_todo": 0,
+        "core_todo": 0,
+        "test_files": 4
+      },
+      "has_previous": true,
+      "no_change": false,
+      "superseded_docs": {
+        "items": [
+          {
+            "path": "docs/plans/2026-02-03-fiber-link-mvp-design.md",
+            "status": "superseded"
+          },
+          {
+            "path": "docs/plans/2026-02-03-fiber-link-mvp-plan.md",
+            "status": "superseded"
+          },
+          {
+            "path": "docs/plans/2026-02-07-phase2-delivery-plan.md",
+            "status": "diverged"
+          },
+          {
+            "path": "docs/plans/2026-02-11-phase3-sprint1-settlement-v1-plan.md",
+            "status": "diverged"
+          },
+          {
+            "path": "docs/plans/2026-02-13-phase3-priority3-balance-debit-design.md",
+            "status": "diverged"
+          },
+          {
+            "path": "docs/plans/2026-02-17-issue-32-epic-execution-status-tracker.md",
+            "status": "superseded"
+          }
+        ],
+        "truncated": 0
+      },
+      "todo_hits": {
+        "docs": {
+          "items": [],
+          "truncated": 0,
+          "total": 0
+        },
+        "core": {
+          "items": [],
+          "truncated": 0,
+          "total": 0
+        }
+      },
+      "test_files": {
+        "previous": 58,
+        "current": 62,
+        "delta": 4,
+        "added": [
+          "fiber-link-service/apps/rpc/src/methods/dashboard.test.ts",
+          "fiber-link-service/apps/rpc/src/methods/tip.defaults.test.ts",
+          "fiber-link-service/apps/rpc/src/rpc-error.test.ts",
+          "fiber-link-service/apps/worker/src/withdrawal-reconciliation.test.ts"
+        ],
+        "removed": [],
+        "current_hash": "4981eab6b7cc4c5b",
+        "previous_hash": "f9b8b6467ce8238a",
+        "paths": [
+          "deploy/compose/compose-reference.test.sh",
+          "fiber-link-discourse-plugin/spec/requests/fiber_link/rpc_controller_spec.rb",
+          "fiber-link-discourse-plugin/spec/requests/fiber_link_spec.rb",
+          "fiber-link-discourse-plugin/spec/system/fiber_link_dashboard_spec.rb",
+          "fiber-link-discourse-plugin/spec/system/fiber_link_feed_spec.rb",
+          "fiber-link-discourse-plugin/spec/system/fiber_link_tip_spec.rb",
+          "fiber-link-service/apps/admin/src/features/config/config-profiles.test.ts",
+          "fiber-link-service/apps/admin/src/features/errors/productized-errors.test.ts",
+          "fiber-link-service/apps/admin/src/features/healthcheck/health-check.test.ts",
+          "fiber-link-service/apps/admin/src/features/quickstart/wizard.test.ts",
+          "fiber-link-service/apps/admin/src/features/release/upgrade-flow.test.ts",
+          "fiber-link-service/apps/admin/src/features/runtime-dashboard/runtime-dashboard.test.ts",
+          "fiber-link-service/apps/admin/src/features/security/secure-defaults.test.ts",
+          "fiber-link-service/apps/admin/src/features/templates/starter-templates.test.ts",
+          "fiber-link-service/apps/admin/src/pages/dashboard-data.test.ts",
+          "fiber-link-service/apps/admin/src/pages/dashboard-model.type.test.ts",
+          "fiber-link-service/apps/admin/src/pages/dashboard-view.test.ts",
+          "fiber-link-service/apps/admin/src/server/api/routers/app.test.ts",
+          "fiber-link-service/apps/admin/src/server/api/routers/withdrawal-policy.test.ts",
+          "fiber-link-service/apps/admin/src/server/api/routers/withdrawal.test.ts",
+          "fiber-link-service/apps/admin/src/server/auth/roles.test.ts",
+          "fiber-link-service/apps/rpc/src/auth/hmac.test.ts",
+          "fiber-link-service/apps/rpc/src/contracts.test.ts",
+          "fiber-link-service/apps/rpc/src/methods/dashboard.test.ts",
+          "fiber-link-service/apps/rpc/src/methods/tip.defaults.test.ts",
+          "fiber-link-service/apps/rpc/src/methods/tip.test.ts",
+          "fiber-link-service/apps/rpc/src/methods/withdrawal.test.ts",
+          "fiber-link-service/apps/rpc/src/nonce-store.test.ts",
+          "fiber-link-service/apps/rpc/src/rate-limit.test.ts",
+          "fiber-link-service/apps/rpc/src/repositories/app-repo.test.ts",
+          "fiber-link-service/apps/rpc/src/rpc-error.test.ts",
+          "fiber-link-service/apps/rpc/src/rpc.test.ts",
+          "fiber-link-service/apps/rpc/src/secret-map.test.ts",
+          "fiber-link-service/apps/worker/src/config.test.ts",
+          "fiber-link-service/apps/worker/src/contracts.test.ts",
+          "fiber-link-service/apps/worker/src/invoice-payment-settlement.e2e.test.ts",
+          "fiber-link-service/apps/worker/src/logger-contract.test.ts",
+          "fiber-link-service/apps/worker/src/settlement-cursor-store.test.ts",
+          "fiber-link-service/apps/worker/src/settlement-discovery.test.ts",
+          "fiber-link-service/apps/worker/src/settlement-subscription-runner.integration.test.ts",
+          "fiber-link-service/apps/worker/src/settlement-subscription-runner.test.ts",
+          "fiber-link-service/apps/worker/src/settlement.test.ts",
+          "fiber-link-service/apps/worker/src/withdrawal-batch.test.ts",
+          "fiber-link-service/apps/worker/src/withdrawal-reconciliation.test.ts",
+          "fiber-link-service/apps/worker/src/worker-runtime.test.ts",
+          "fiber-link-service/packages/db/src/amount.test.ts",
+          "fiber-link-service/packages/db/src/client.test.ts",
+          "fiber-link-service/packages/db/src/idempotency.test.ts",
+          "fiber-link-service/packages/db/src/ledger-repo.test.ts",
+          "fiber-link-service/packages/db/src/schema.test.ts",
+          "fiber-link-service/packages/db/src/state-transitions-smoke.test.ts",
+          "fiber-link-service/packages/db/src/tip-intent-event-repo.test.ts",
+          "fiber-link-service/packages/db/src/tip-intent-repo.test.ts",
+          "fiber-link-service/packages/db/src/withdrawal-policy-repo.test.ts",
+          "fiber-link-service/packages/db/src/withdrawal-repo.test.ts",
+          "fiber-link-service/packages/fiber-adapter/src/ckb-onchain-withdrawal.test.ts",
+          "fiber-link-service/packages/fiber-adapter/src/fiber-adapter.test.ts",
+          "fiber-link-service/packages/fiber-adapter/src/fiber-client.test.ts",
+          "fiber-link-service/packages/fiber-adapter/src/provider.test.ts",
+          "fiber-link-service/packages/notifications/src/dispatcher.test.ts",
+          "fiber-link-service/packages/notifications/src/notification-repo.test.ts",
+          "scripts/hourly_review_monitor_test.py"
+        ]
+      },
+      "diagnostics": [
+        {
+          "runAt": "2026-02-28T00:36:48Z",
+          "stage": "scan-prewrite",
+          "source": "git_status_porcelain",
+          "reason_code": "SCAN_PREWRITE_DIRTY",
+          "blocked": true,
+          "dirty_count": 5,
+          "dirty_fingerprint": "b98688f3ab1a17d2",
+          "representative_paths": [
+            "docs/README.md",
+            "docs/current-architecture.md",
+            "docs/plans/2026-02-07-phase2-delivery-plan.md",
+            "docs/plans/2026-02-11-phase3-sprint1-settlement-v1-plan.md",
+            "docs/plans/2026-02-13-phase3-priority3-balance-debit-design.md"
+          ],
+          "unexpected_paths": []
+        }
+      ]
     }
   ],
   "latest": {
-    "runAt": "2026-02-27T22:41:26Z",
-    "ts": 1772232086,
+    "runAt": "2026-02-28T00:36:48Z",
+    "ts": 1772239008,
     "reason_code": "SCAN_OK",
     "metrics": {
+      "docs_superseded": 6,
+      "docs_todo": 0,
+      "core_todo": 0,
+      "test_files": 62
+    },
+    "deltas": {
       "docs_superseded": 3,
       "docs_todo": 0,
       "core_todo": 0,
-      "test_files": 58
+      "test_files": 4
     },
-    "deltas": {
-      "docs_superseded": 0,
-      "docs_todo": 0,
-      "core_todo": 0,
-      "test_files": 0
-    },
-    "has_previous": false,
+    "has_previous": true,
     "no_change": false,
     "superseded_docs": {
       "items": [
@@ -159,6 +316,18 @@
         {
           "path": "docs/plans/2026-02-03-fiber-link-mvp-plan.md",
           "status": "superseded"
+        },
+        {
+          "path": "docs/plans/2026-02-07-phase2-delivery-plan.md",
+          "status": "diverged"
+        },
+        {
+          "path": "docs/plans/2026-02-11-phase3-sprint1-settlement-v1-plan.md",
+          "status": "diverged"
+        },
+        {
+          "path": "docs/plans/2026-02-13-phase3-priority3-balance-debit-design.md",
+          "status": "diverged"
         },
         {
           "path": "docs/plans/2026-02-17-issue-32-epic-execution-status-tracker.md",
@@ -181,11 +350,16 @@
     },
     "test_files": {
       "previous": 58,
-      "current": 58,
-      "delta": 0,
-      "added": [],
+      "current": 62,
+      "delta": 4,
+      "added": [
+        "fiber-link-service/apps/rpc/src/methods/dashboard.test.ts",
+        "fiber-link-service/apps/rpc/src/methods/tip.defaults.test.ts",
+        "fiber-link-service/apps/rpc/src/rpc-error.test.ts",
+        "fiber-link-service/apps/worker/src/withdrawal-reconciliation.test.ts"
+      ],
       "removed": [],
-      "current_hash": "f9b8b6467ce8238a",
+      "current_hash": "4981eab6b7cc4c5b",
       "previous_hash": "f9b8b6467ce8238a",
       "paths": [
         "deploy/compose/compose-reference.test.sh",
@@ -211,11 +385,14 @@
         "fiber-link-service/apps/admin/src/server/auth/roles.test.ts",
         "fiber-link-service/apps/rpc/src/auth/hmac.test.ts",
         "fiber-link-service/apps/rpc/src/contracts.test.ts",
+        "fiber-link-service/apps/rpc/src/methods/dashboard.test.ts",
+        "fiber-link-service/apps/rpc/src/methods/tip.defaults.test.ts",
         "fiber-link-service/apps/rpc/src/methods/tip.test.ts",
         "fiber-link-service/apps/rpc/src/methods/withdrawal.test.ts",
         "fiber-link-service/apps/rpc/src/nonce-store.test.ts",
         "fiber-link-service/apps/rpc/src/rate-limit.test.ts",
         "fiber-link-service/apps/rpc/src/repositories/app-repo.test.ts",
+        "fiber-link-service/apps/rpc/src/rpc-error.test.ts",
         "fiber-link-service/apps/rpc/src/rpc.test.ts",
         "fiber-link-service/apps/rpc/src/secret-map.test.ts",
         "fiber-link-service/apps/worker/src/config.test.ts",
@@ -228,6 +405,7 @@
         "fiber-link-service/apps/worker/src/settlement-subscription-runner.test.ts",
         "fiber-link-service/apps/worker/src/settlement.test.ts",
         "fiber-link-service/apps/worker/src/withdrawal-batch.test.ts",
+        "fiber-link-service/apps/worker/src/withdrawal-reconciliation.test.ts",
         "fiber-link-service/apps/worker/src/worker-runtime.test.ts",
         "fiber-link-service/packages/db/src/amount.test.ts",
         "fiber-link-service/packages/db/src/client.test.ts",
@@ -250,17 +428,23 @@
     },
     "diagnostics": [
       {
-        "runAt": "2026-02-27T22:41:26Z",
+        "runAt": "2026-02-28T00:36:48Z",
         "stage": "scan-prewrite",
         "source": "git_status_porcelain",
-        "reason_code": "SCAN_PREWRITE_CLEAN",
-        "blocked": false,
-        "dirty_count": 0,
-        "dirty_fingerprint": "0",
-        "representative_paths": [],
+        "reason_code": "SCAN_PREWRITE_DIRTY",
+        "blocked": true,
+        "dirty_count": 5,
+        "dirty_fingerprint": "b98688f3ab1a17d2",
+        "representative_paths": [
+          "docs/README.md",
+          "docs/current-architecture.md",
+          "docs/plans/2026-02-07-phase2-delivery-plan.md",
+          "docs/plans/2026-02-11-phase3-sprint1-settlement-v1-plan.md",
+          "docs/plans/2026-02-13-phase3-priority3-balance-debit-design.md"
+        ],
         "unexpected_paths": []
       }
     ]
   },
-  "updatedAt": "2026-02-27T22:41:26Z"
+  "updatedAt": "2026-02-28T00:36:48Z"
 }

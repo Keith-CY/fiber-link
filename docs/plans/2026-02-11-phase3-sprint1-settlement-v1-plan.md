@@ -1,8 +1,12 @@
 # Phase 3 Sprint 1 Plan: Settlement Detection v1
 
+Status: Diverged historical sprint-plan snapshot.
+Canonical replacements: `docs/decisions/2026-02-10-settlement-discovery-strategy.md`, `docs/02-architecture.md`, `docs/06-development-progress.md`.
+Canonical index: `docs/current-architecture.md`.
+
 Date: 2026-02-11  
 Owner: Fiber Link  
-Status: Planned
+Plan status at authoring time: Planned
 
 ## Goal
 

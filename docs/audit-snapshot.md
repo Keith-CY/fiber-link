@@ -4,20 +4,23 @@
 > Contract: this generator writes only `docs/audit-snapshot.md` and `.github/architecture-audit-state.json`.
 > Canonical architecture index: `docs/current-architecture.md`.
 
-Run timestamp (UTC): `2026-02-27T22:41:26Z`
+Run timestamp (UTC): `2026-02-28T00:36:48Z`
 
 ## Metric Summary
 
 | Metric | Current | Delta |
 | --- | ---: | ---: |
-| `docs_superseded` | 3 | +0 |
+| `docs_superseded` | 6 | +3 |
 | `docs_todo` | 0 | +0 |
 | `core_todo` | 0 | +0 |
-| `test_files` | 58 | +0 |
+| `test_files` | 62 | +4 |
 
 ## Superseded/Diverged Docs
 - `docs/plans/2026-02-03-fiber-link-mvp-design.md` (`superseded`)
 - `docs/plans/2026-02-03-fiber-link-mvp-plan.md` (`superseded`)
+- `docs/plans/2026-02-07-phase2-delivery-plan.md` (`diverged`)
+- `docs/plans/2026-02-11-phase3-sprint1-settlement-v1-plan.md` (`diverged`)
+- `docs/plans/2026-02-13-phase3-priority3-balance-debit-design.md` (`diverged`)
 - `docs/plans/2026-02-17-issue-32-epic-execution-status-tracker.md` (`superseded`)
 
 ### Placeholder Marker Hits (Docs)
@@ -29,11 +32,17 @@ Run timestamp (UTC): `2026-02-27T22:41:26Z`
 ## Test File Delta
 
 - previous: `58`
-- current: `58`
-- signed delta: `+0`
+- current: `62`
+- signed delta: `+4`
 - previous hash: `f9b8b6467ce8238a`
-- current hash: `f9b8b6467ce8238a`
+- current hash: `4981eab6b7cc4c5b`
+- added:
+  - `fiber-link-service/apps/rpc/src/methods/dashboard.test.ts`
+  - `fiber-link-service/apps/rpc/src/methods/tip.defaults.test.ts`
+  - `fiber-link-service/apps/rpc/src/rpc-error.test.ts`
+  - `fiber-link-service/apps/worker/src/withdrawal-reconciliation.test.ts`
 
 ## Diagnostics
 
-- `scan-prewrite` `SCAN_PREWRITE_CLEAN` (dirty_count=0, fingerprint=0)
+- `scan-prewrite` `SCAN_PREWRITE_DIRTY` (dirty_count=5, fingerprint=b98688f3ab1a17d2)
+  - representative paths: docs/README.md, docs/current-architecture.md, docs/plans/2026-02-07-phase2-delivery-plan.md, docs/plans/2026-02-11-phase3-sprint1-settlement-v1-plan.md, docs/plans/2026-02-13-phase3-priority3-balance-debit-design.md
