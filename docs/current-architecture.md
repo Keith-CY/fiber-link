@@ -1,6 +1,6 @@
 # Current Architecture (Canonical Index)
 
-Last updated: 2026-02-27
+Last updated: 2026-02-28
 
 This file is the source-of-truth index for architecture, operational boundaries, and active
 implementation references.
@@ -41,7 +41,7 @@ implementation references.
   - `docs/runbooks/security-assumptions.md`
   - `docs/runbooks/threat-model-evidence-checklist.md`
 
-## Historical/Superseded Docs
+## Historical/Superseded/Diverged Docs
 
 These docs remain for historical traceability but should not be treated as current implementation
 guidance.
@@ -58,6 +58,18 @@ guidance.
   - Status: superseded implementation-plan snapshot.
   - Canonical replacements: `docs/02-architecture.md`, `docs/06-development-progress.md`.
   - Canonical index: `docs/current-architecture.md`.
+- `docs/plans/2026-02-07-phase2-delivery-plan.md`
+  - Status: diverged historical delivery-plan snapshot.
+  - Canonical replacements: `docs/02-architecture.md`, `docs/06-development-progress.md`, `docs/plans/2026-02-21-issue-32-epic-closeout.md`.
+  - Canonical index: `docs/current-architecture.md`.
+- `docs/plans/2026-02-11-phase3-sprint1-settlement-v1-plan.md`
+  - Status: diverged historical sprint-plan snapshot.
+  - Canonical replacements: `docs/decisions/2026-02-10-settlement-discovery-strategy.md`, `docs/02-architecture.md`, `docs/06-development-progress.md`.
+  - Canonical index: `docs/current-architecture.md`.
+- `docs/plans/2026-02-13-phase3-priority3-balance-debit-design.md`
+  - Status: diverged historical design snapshot.
+  - Canonical replacements: `docs/02-architecture.md`, `docs/06-development-progress.md`, `docs/acceptance/milestone-3/checkpoint-1-creator-withdrawal-workflow.md`.
+  - Canonical index: `docs/current-architecture.md`.
 
 ## Audit Generator Contract
 
@@ -68,7 +80,7 @@ guidance.
 
 ## Freshness Snapshot
 
-- Historical/superseded docs tracked with explicit redirect: 3
+- Historical/superseded/diverged docs tracked with explicit redirect: 6
 - Planning placeholder marker count in `docs/`: 0
 - Audit snapshot path (non-canonical): `docs/audit-snapshot.md`
 

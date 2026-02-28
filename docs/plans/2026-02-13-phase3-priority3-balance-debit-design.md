@@ -1,8 +1,12 @@
 # Phase 3 Priority 3 Design: Balance + Debit Invariants
 
+Status: Diverged historical design snapshot.
+Canonical replacements: `docs/02-architecture.md`, `docs/06-development-progress.md`, `docs/acceptance/milestone-3/checkpoint-1-creator-withdrawal-workflow.md`.
+Canonical index: `docs/current-architecture.md`.
+
 Date: 2026-02-13  
 Owner: Fiber Link  
-Status: Draft (Approved)
+Design status at authoring time: Draft (Approved)
 
 ## Goal
 

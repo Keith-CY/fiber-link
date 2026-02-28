@@ -1,5 +1,9 @@
 # Fiber Link Phase 2 Delivery Implementation Plan
 
+Status: Diverged historical delivery-plan snapshot.
+Canonical replacements: `docs/02-architecture.md`, `docs/06-development-progress.md`, `docs/plans/2026-02-21-issue-32-epic-closeout.md`.
+Canonical index: `docs/current-architecture.md`.
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Convert the merged MVP scaffold into a working end-to-end tipping and withdrawal system on testnet with production-safe controls.
@@ -10,7 +14,7 @@
 
 ## Status
 
-Status: COMPLETED (merged to `main`).
+Plan execution status at authoring time: COMPLETED (merged to `main`).
 
 Merged PRs:
 - PR #3: Phase2 Task 1 to Task 2
