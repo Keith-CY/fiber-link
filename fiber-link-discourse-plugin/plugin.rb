@@ -3,6 +3,7 @@
 # authors: Fiber Link
 
 enabled_site_setting :fiber_link_enabled
+register_asset "stylesheets/common/fiber-link.scss"
 
 after_initialize do
   require_dependency File.expand_path("app/controllers/fiber_link/rpc_controller.rb", __dir__)

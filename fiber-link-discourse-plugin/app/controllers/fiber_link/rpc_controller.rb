@@ -53,6 +53,16 @@ module ::FiberLink
             return
           end
 
+          if post.user_id == current_user.id
+            render json: {
+                     jsonrpc: "2.0",
+                     id: request_id,
+                     error: { code: -32002, message: "Cannot tip your own post" },
+                   },
+                   status: :unprocessable_entity
+            return
+          end
+
           {
             amount: params["amount"],
             asset: params["asset"],

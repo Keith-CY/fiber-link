@@ -6,8 +6,8 @@ import FiberLinkTipEntry from "../../components/fiber-link-tip-entry";
 @tagName("")
 export default class FiberLinkTip extends Component {
   <template>
-    <div class="topic-above-post-stream-outlet fiber-link-tip" ...attributes>
-      <FiberLinkTipEntry @topic={{@outletArgs.model}} />
+    <div class="fiber-link-tip-post-entry" ...attributes>
+      <FiberLinkTipEntry @post={{@outletArgs.post}} />
     </div>
   </template>
 }

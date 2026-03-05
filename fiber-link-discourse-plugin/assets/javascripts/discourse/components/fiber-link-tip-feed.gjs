@@ -104,6 +104,29 @@ function normalizeDirection(rawValue) {
   return rawValue === "OUT" ? "Outgoing" : "Incoming";
 }
 
+function mapStateToBadge(state) {
+  if (state === "SETTLED") {
+    return { label: "Paid", className: "fiber-link-status-badge is-success" };
+  }
+  if (state === "FAILED") {
+    return { label: "Failed", className: "fiber-link-status-badge is-danger" };
+  }
+  if (state === "UNPAID") {
+    return { label: "Awaiting payment", className: "fiber-link-status-badge is-warning" };
+  }
+  return { label: "Unknown", className: "fiber-link-status-badge" };
+}
+
+function shortenInvoice(invoice) {
+  if (typeof invoice !== "string") {
+    return "unknown";
+  }
+  if (invoice.length <= 40) {
+    return invoice;
+  }
+  return `${invoice.slice(0, 18)}…${invoice.slice(-10)}`;
+}
+
 export function normalizeTipState(rawState) {
   if (rawState === "UNPAID" || rawState === "SETTLED" || rawState === "FAILED") {
     return rawState;
@@ -175,12 +198,16 @@ export default class FiberLinkTipFeed extends Component {
     const rows = Array.isArray(this.args.tips) ? this.args.tips : [];
     return rows.map((tip) => {
       const lifecycle = buildLifecycleModel(tip?.state, { isPolling: false });
+      const badge = mapStateToBadge(lifecycle.backendLabel);
+      const invoice = typeof tip?.invoice === "string" ? tip.invoice : "unknown";
       return {
         id: typeof tip?.id === "string" ? tip.id : "unknown",
-        invoice: typeof tip?.invoice === "string" ? tip.invoice : "unknown",
+        invoice,
+        shortInvoice: shortenInvoice(invoice),
         amount: typeof tip?.amount === "string" ? tip.amount : "0",
         asset: tip?.asset === "USDI" ? "USDI" : "CKB",
-        state: lifecycle.backendLabel,
+        state: badge.label,
+        stateClassName: badge.className,
         directionLabel: normalizeDirection(tip?.direction),
         counterpartyUserId:
           typeof tip?.counterpartyUserId === "string" ? tip.counterpartyUserId : "unknown",
@@ -202,31 +229,34 @@ export default class FiberLinkTipFeed extends Component {
         <p class="fiber-link-tip-feed-error">Failed to load tip feed: {{this.errorMessage}}</p>
       {{else}}
         {{#if this.isEmpty}}
-          <p class="fiber-link-tip-feed-empty">No tips available for this account yet.</p>
+          <p class="fiber-link-tip-feed-empty">
+            You don’t have tip records yet. Once someone tips your post, it will appear here.
+          </p>
         {{else}}
           <table class="fiber-link-tip-feed-table">
             <thead>
               <tr>
-                <th>Direction</th>
-                <th>Amount</th>
-                <th>Invoice</th>
+                <th>Tip</th>
                 <th>Status</th>
                 <th>Counterparty</th>
-                <th>Created</th>
+                <th>Created At</th>
               </tr>
             </thead>
             <tbody>
               {{#each this.tips as |tip|}}
                 <tr data-tip-id={{tip.id}}>
-                  <td>{{tip.directionLabel}}</td>
-                  <td>{{tip.amount}} {{tip.asset}}</td>
-                  <td>{{tip.invoice}}</td>
-                  <td>{{tip.state}}</td>
-                  <td>{{tip.counterpartyUserId}}</td>
+                  <td>
+                    <p class="fiber-link-tip-feed-primary">
+                      <strong>{{tip.amount}} {{tip.asset}}</strong>
+                      <span class="fiber-link-tip-feed-direction">{{tip.directionLabel}}</span>
+                    </p>
+                    <p class="fiber-link-tip-feed-secondary" title={{tip.invoice}}>
+                      {{tip.shortInvoice}}
+                    </p>
+                  </td>
+                  <td><span class={{tip.stateClassName}}>{{tip.state}}</span></td>
+                  <td>@{{tip.counterpartyUserId}}</td>
                   <td>{{tip.createdAtLabel}}</td>
-                </tr>
-                <tr class="fiber-link-tip-feed-row-summary">
-                  <td colspan="6">{{tip.lifecycleSummary}}</td>
                 </tr>
               {{/each}}
             </tbody>
