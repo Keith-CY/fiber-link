@@ -526,7 +526,7 @@ run_phase1_with_flow12() {
 
   record_cmd "expect phase1+flow12"
   set +e
-  expect <<'EXPECT' | tee "${LOGS_DIR}/phase1.pause.log"
+  expect <<'EXPECT' 2>&1 | tee "${LOGS_DIR}/phase1.pause.log"
 set timeout -1
 set ran_flow12 0
 
@@ -583,7 +583,7 @@ run_phase2_subscription() {
   )
 
   record_cmd "${cmd[*]}"
-  (cd "${ROOT_DIR}" && "${cmd[@]}") | tee "${LOGS_DIR}/phase2.subscription.log" >/dev/null \
+  (cd "${ROOT_DIR}" && "${cmd[@]}") 2>&1 | tee "${LOGS_DIR}/phase2.subscription.log" >/dev/null \
     || fatal "${EXIT_PHASE2}" "phase2 subscription workflow failed"
 }
 
@@ -623,7 +623,7 @@ run_polling_mode_verification() {
   set_worker_strategy polling
   record_cmd "${cmd[*]}"
   set +e
-  (cd "${ROOT_DIR}" && "${cmd[@]}") | tee "${LOGS_DIR}/phase-polling.log" >/dev/null
+  (cd "${ROOT_DIR}" && "${cmd[@]}") 2>&1 | tee "${LOGS_DIR}/phase-polling.log" >/dev/null
   local rc=${PIPESTATUS[0]}
   set -e
   set_worker_strategy subscription

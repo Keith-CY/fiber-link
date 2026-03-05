@@ -74,7 +74,7 @@ TARGET="$HOME/Downloads/e2e-discourse-four-flows-$TS"
 mkdir -p "$TARGET/tmp-screenshots" "$TARGET/evidence-screenshots"
 
 mv ".tmp/e2e-discourse-four-flows/$TS/screenshots/"*.png "$TARGET/tmp-screenshots/"
-mv "deploy/compose/evidence/e2e-discourse-four-flows/$TS/artifacts/screenshots/"*.png "$TARGET/evidence-screenshots/"
+mv "deploy/compose/evidence/e2e-discourse-four-flows/$TS/screenshots/"*.png "$TARGET/evidence-screenshots/"
 ```
 
 ## 6) Explorer 截图若显示 `Untracked`

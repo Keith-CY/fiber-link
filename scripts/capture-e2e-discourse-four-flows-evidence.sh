@@ -138,7 +138,7 @@ if [[ "${RUN_E2E}" -eq 1 ]]; then
 
   log "running e2e script..."
   set +e
-  (cd "${ROOT_DIR}" && "${e2e_cmd[@]}") | tee "${RUN_LOG}"
+  (cd "${ROOT_DIR}" && "${e2e_cmd[@]}") 2>&1 | tee "${RUN_LOG}"
   e2e_rc=${PIPESTATUS[0]}
   set -e
 
@@ -157,17 +157,28 @@ fi
   exit "${EXIT_PRECHECK}"
 }
 
-mkdir -p "${EVIDENCE_DIR}/artifacts" "${EVIDENCE_DIR}/artifact-root" "${EVIDENCE_DIR}/logs" "${EVIDENCE_DIR}/metadata"
+mkdir -p "${EVIDENCE_DIR}/artifacts" "${EVIDENCE_DIR}/screenshots" "${EVIDENCE_DIR}/artifact-root" "${EVIDENCE_DIR}/logs" "${EVIDENCE_DIR}/metadata"
 cp -R "${SOURCE_ARTIFACT_DIR}/." "${EVIDENCE_DIR}/artifact-root/"
 if [[ -d "${SOURCE_ARTIFACT_DIR}/artifacts" ]]; then
   cp -R "${SOURCE_ARTIFACT_DIR}/artifacts/." "${EVIDENCE_DIR}/artifacts/"
 else
   cp -R "${SOURCE_ARTIFACT_DIR}/." "${EVIDENCE_DIR}/artifacts/"
 fi
+if [[ -d "${SOURCE_ARTIFACT_DIR}/screenshots" ]]; then
+  cp -R "${SOURCE_ARTIFACT_DIR}/screenshots/." "${EVIDENCE_DIR}/screenshots/"
+elif [[ -d "${SOURCE_ARTIFACT_DIR}/artifacts/screenshots" ]]; then
+  cp -R "${SOURCE_ARTIFACT_DIR}/artifacts/screenshots/." "${EVIDENCE_DIR}/screenshots/"
+fi
 
-summary_file="${EVIDENCE_DIR}/artifacts/summary.json"
-if [[ ! -f "${summary_file}" ]]; then
-  summary_file="${EVIDENCE_DIR}/artifact-root/summary.json"
+summary_source="${SOURCE_ARTIFACT_DIR}/artifacts/summary.json"
+if [[ -f "${summary_source}" ]]; then
+  cp "${summary_source}" "${EVIDENCE_DIR}/summary.json"
+  summary_file="${EVIDENCE_DIR}/summary.json"
+elif [[ -f "${SOURCE_ARTIFACT_DIR}/summary.json" ]]; then
+  cp "${SOURCE_ARTIFACT_DIR}/summary.json" "${EVIDENCE_DIR}/summary.json"
+  summary_file="${EVIDENCE_DIR}/summary.json"
+else
+  summary_file="${EVIDENCE_DIR}/artifacts/summary.json"
 fi
 
 git_sha="$(cd "${ROOT_DIR}" && git rev-parse HEAD)"

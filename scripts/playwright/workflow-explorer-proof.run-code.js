@@ -15,7 +15,7 @@ async (page) => {
       return rawTemplate.replaceAll("${txHash}", encodeURIComponent(hash));
     }
     if (rawTemplate.includes("%s")) {
-      return rawTemplate.replace("%s", encodeURIComponent(hash));
+      return rawTemplate.replaceAll("%s", encodeURIComponent(hash));
     }
     return `${rawTemplate.replace(/\/+$/, "")}/${encodeURIComponent(hash)}`;
   }
