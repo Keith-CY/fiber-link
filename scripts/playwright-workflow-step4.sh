@@ -28,6 +28,9 @@ export PATH
 }
 
 mkdir -p "${ARTIFACT_DIR}"
+PW_TMPDIR="${PW_TMPDIR:-/tmp/playwright-cli}"
+mkdir -p "${PW_TMPDIR}"
+export TMPDIR="${PW_TMPDIR}"
 
 BASE_URL="${PW_DEMO_URL:-http://127.0.0.1:4200}"
 if [[ "${BASE_URL}" == */login ]]; then
@@ -78,7 +81,7 @@ run_code_status=${PIPESTATUS[0]}
 set -e
 
 if [[ "${run_code_status}" -ne 0 ]]; then
-  if rg -q '^### Result' "${ARTIFACT_DIR}/playwright-step4-result.log"; then
+  if grep -q '^### Result' "${ARTIFACT_DIR}/playwright-step4-result.log"; then
     echo "[playwright-step4] run-code returned ${run_code_status} (likely due console errors); continuing because result payload exists." >> "${ARTIFACT_DIR}/playwright-step4-result.log"
   else
     echo "[playwright-step4] run-code failed with status ${run_code_status}" >&2

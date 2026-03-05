@@ -34,10 +34,14 @@
 ## Local workflow + Playwright demo
 
 - `docs/runbooks/local-playwright-workflow-demo.md` — one-command local demo flow (Discourse + tip modal + author/admin checks).
+- `docs/runbooks/e2e-discourse-four-flows.md` — four-flow end-to-end verification (UI + backend interfaces + settlement strategy + withdrawal explorer proof).
+- `docs/runbooks/discourse-four-flows-demo-repro.md` — standalone operator playbook for full repro (full run, fast rerun, artifacts, screenshots, Downloads transfer, explorer validation).
 - `scripts/local-workflow-automation.sh` — backend workflow automation for discourse seed, tip settlement, balance check, and withdrawal request.
 - `scripts/playwright-demo-local-workflow.sh` — two-phase demo wrapper: pause at step4 for browser demo, then backend completion + post-check.
 - `scripts/playwright-workflow-step4.sh` — browser automation for login + tip modal invoice generation.
 - `scripts/playwright-workflow-postcheck.sh` — browser automation for author/admin dashboard checks.
+- `scripts/e2e-discourse-four-flows.sh` — orchestrates four required local e2e flows and emits structured artifacts.
+- `scripts/capture-e2e-discourse-four-flows-evidence.sh` — captures and archives four-flow evidence bundles.
 
 ## W4 integration tracking
 

@@ -28,6 +28,9 @@ export PATH
 }
 
 mkdir -p "${ARTIFACT_DIR}"
+PW_TMPDIR="${PW_TMPDIR:-/tmp/playwright-cli}"
+mkdir -p "${PW_TMPDIR}"
+export TMPDIR="${PW_TMPDIR}"
 
 BASE_URL="${PW_DEMO_URL:-http://127.0.0.1:4200}"
 if [[ "${BASE_URL}" == */login ]]; then
@@ -41,6 +44,9 @@ author_password="${PW_DEMO_AUTHOR_PASSWORD:-fiber-local-pass-1}"
 admin_user="${PW_DEMO_ADMIN_USERNAME:-fiber_tipper}"
 admin_password="${PW_DEMO_ADMIN_PASSWORD:-fiber-local-pass-1}"
 withdrawal_id="${PW_DEMO_WITHDRAWAL_ID:-}"
+withdraw_amount="${PW_DEMO_WITHDRAW_AMOUNT:-61}"
+withdraw_to_address="${PW_DEMO_WITHDRAW_TO_ADDRESS:-}"
+initiate_withdrawal="${PW_DEMO_INITIATE_WITHDRAWAL:-0}"
 
 demo_env_json="$(
   jq -cn \
@@ -50,6 +56,9 @@ demo_env_json="$(
     --arg adminUser "${admin_user}" \
     --arg adminPassword "${admin_password}" \
     --arg withdrawalId "${withdrawal_id}" \
+    --arg withdrawAmount "${withdraw_amount}" \
+    --arg withdrawToAddress "${withdraw_to_address}" \
+    --arg initiateWithdrawal "${initiate_withdrawal}" \
     --arg artifactDir "${ARTIFACT_DIR}" \
     '{
       baseUrl: $baseUrl,
@@ -58,6 +67,9 @@ demo_env_json="$(
       adminUser: $adminUser,
       adminPassword: $adminPassword,
       withdrawalId: $withdrawalId,
+      withdrawAmount: $withdrawAmount,
+      withdrawToAddress: $withdrawToAddress,
+      initiateWithdrawal: $initiateWithdrawal,
       artifactDir: $artifactDir
     }'
 )"
@@ -78,7 +90,7 @@ run_code_status=${PIPESTATUS[0]}
 set -e
 
 if [[ "${run_code_status}" -ne 0 ]]; then
-  if rg -q '^### Result' "${ARTIFACT_DIR}/playwright-postcheck-result.log"; then
+  if grep -q '^### Result' "${ARTIFACT_DIR}/playwright-postcheck-result.log"; then
     echo "[playwright-postcheck] run-code returned ${run_code_status} (likely due console errors); continuing because result payload exists." >> "${ARTIFACT_DIR}/playwright-postcheck-result.log"
   else
     echo "[playwright-postcheck] run-code failed with status ${run_code_status}" >&2
