@@ -9,7 +9,7 @@
 
 ## 1) 准备条件
 
-- 目录：`/Users/ChenYu/Documents/Github/fiber-link/.worktrees/e2e-discourse-four-flows`
+- 目录：`<YOUR_LOCAL_REPO_PATH>/fiber-link`（或你的 worktree 路径）
 - Docker Desktop 已启动
 - 本地已具备：`jq` `expect` `curl` `openssl` `tar`
 - Playwright wrapper：`~/.codex/skills/playwright/scripts/playwright_cli.sh`
@@ -17,7 +17,7 @@
 进入目录：
 
 ```bash
-cd /Users/ChenYu/Documents/Github/fiber-link/.worktrees/e2e-discourse-four-flows
+cd <YOUR_LOCAL_REPO_PATH>/fiber-link
 ```
 
 ## 2) 一键完整跑（推荐）
@@ -68,7 +68,7 @@ scripts/capture-e2e-discourse-four-flows-evidence.sh \
 示例（把某次 run 的截图移到 Downloads）：
 
 ```bash
-TS=20260304T180007Z
+TS=<TIMESTAMP_OF_RUN>
 TARGET="$HOME/Downloads/e2e-discourse-four-flows-$TS"
 
 mkdir -p "$TARGET/tmp-screenshots" "$TARGET/evidence-screenshots"
@@ -129,4 +129,3 @@ export WORKFLOW_WITHDRAW_AMOUNT=62
 ```
 
 然后再执行 capture 脚本即可。
-

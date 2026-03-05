@@ -81,7 +81,7 @@ run_code_status=${PIPESTATUS[0]}
 set -e
 
 if [[ "${run_code_status}" -ne 0 ]]; then
-  if rg -q '^### Result' "${ARTIFACT_DIR}/playwright-flow12-result.log"; then
+  if grep -q '^### Result' "${ARTIFACT_DIR}/playwright-flow12-result.log"; then
     echo "[playwright-flow12] run-code returned ${run_code_status}; continuing because result payload exists." >> "${ARTIFACT_DIR}/playwright-flow12-result.log"
   else
     echo "[playwright-flow12] run-code failed with status ${run_code_status}" >&2

@@ -157,12 +157,17 @@ fi
   exit "${EXIT_PRECHECK}"
 }
 
-mkdir -p "${EVIDENCE_DIR}/artifacts" "${EVIDENCE_DIR}/logs" "${EVIDENCE_DIR}/metadata"
-cp -R "${SOURCE_ARTIFACT_DIR}/." "${EVIDENCE_DIR}/artifacts/"
+mkdir -p "${EVIDENCE_DIR}/artifacts" "${EVIDENCE_DIR}/artifact-root" "${EVIDENCE_DIR}/logs" "${EVIDENCE_DIR}/metadata"
+cp -R "${SOURCE_ARTIFACT_DIR}/." "${EVIDENCE_DIR}/artifact-root/"
+if [[ -d "${SOURCE_ARTIFACT_DIR}/artifacts" ]]; then
+  cp -R "${SOURCE_ARTIFACT_DIR}/artifacts/." "${EVIDENCE_DIR}/artifacts/"
+else
+  cp -R "${SOURCE_ARTIFACT_DIR}/." "${EVIDENCE_DIR}/artifacts/"
+fi
 
-summary_file="${EVIDENCE_DIR}/artifacts/artifacts/summary.json"
+summary_file="${EVIDENCE_DIR}/artifacts/summary.json"
 if [[ ! -f "${summary_file}" ]]; then
-  summary_file="${EVIDENCE_DIR}/artifacts/summary.json"
+  summary_file="${EVIDENCE_DIR}/artifact-root/summary.json"
 fi
 
 git_sha="$(cd "${ROOT_DIR}" && git rev-parse HEAD)"

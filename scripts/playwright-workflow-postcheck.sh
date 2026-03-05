@@ -90,7 +90,7 @@ run_code_status=${PIPESTATUS[0]}
 set -e
 
 if [[ "${run_code_status}" -ne 0 ]]; then
-  if rg -q '^### Result' "${ARTIFACT_DIR}/playwright-postcheck-result.log"; then
+  if grep -q '^### Result' "${ARTIFACT_DIR}/playwright-postcheck-result.log"; then
     echo "[playwright-postcheck] run-code returned ${run_code_status} (likely due console errors); continuing because result payload exists." >> "${ARTIFACT_DIR}/playwright-postcheck-result.log"
   else
     echo "[playwright-postcheck] run-code failed with status ${run_code_status}" >&2
