@@ -382,16 +382,48 @@ jobs:
           marker='<!-- fiber-link-pr-coverage-report -->'
           pr='${{ github.event.pull_request.number }}'
           body=$(cat coverage-comment.md)
-          ids=$(gh api "repos/${GITHUB_REPOSITORY}/issues/${pr}/comments" --paginate \
-            | jq -r --arg m "$marker" '.[] | select(.body | contains($m)) | .id')
+
+          gh_api_retry() {
+            local max_attempts=4
+            local attempt=1
+            local delay=2
+            local output status
+
+            while true; do
+              output="$("$@" 2>&1)" && {
+                printf '%s' "$output"
+                return 0
+              }
+              status=$?
+
+              if [ "$attempt" -ge "$max_attempts" ]; then
+                printf '%s\n' "$output" >&2
+                return "$status"
+              fi
+
+              if printf '%s' "$output" | grep -Eiq '(HTTP 5[0-9]{2}|server error|internal server error|bad gateway|gateway timeout|timed out|connection reset|temporary failure)'; then
+                echo "Transient GitHub API failure (attempt ${attempt}/${max_attempts}), retrying in ${delay}s..." >&2
+                sleep "$delay"
+                delay=$((delay * 2))
+                attempt=$((attempt + 1))
+                continue
+              fi
+
+              printf '%s\n' "$output" >&2
+              return "$status"
+            done
+          }
+
+          comments_json=$(gh_api_retry gh api "repos/${GITHUB_REPOSITORY}/issues/${pr}/comments" --paginate)
+          ids=$(printf '%s\n' "$comments_json" | jq -r --arg m "$marker" '.[] | select(.body | contains($m)) | .id')
           existing_id=$(printf '%s\n' "$ids" | sed '/^$/d' | head -n1)
           if [ -n "${existing_id:-}" ]; then
-            gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${existing_id}" -f body="$body" >/dev/null
+            gh_api_retry gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${existing_id}" -f body="$body" >/dev/null
             printf '%s\n' "$ids" | sed '/^$/d' | tail -n +2 | while read -r extra_id; do
-              gh api -X DELETE "repos/${GITHUB_REPOSITORY}/issues/comments/${extra_id}" >/dev/null || true
+              gh_api_retry gh api -X DELETE "repos/${GITHUB_REPOSITORY}/issues/comments/${extra_id}" >/dev/null || true
             done
           else
-            gh api "repos/${GITHUB_REPOSITORY}/issues/${pr}/comments" -f body="$body" >/dev/null
+            gh_api_retry gh api "repos/${GITHUB_REPOSITORY}/issues/${pr}/comments" -f body="$body" >/dev/null
           fi
 
       - name: Skip comment for fork PR
@@ -459,7 +491,20 @@ jobs:
       PLUGIN_SMOKE_REQUEST_SPECS: "plugins/fiber-link/spec/requests/fiber_link_spec.rb plugins/fiber-link/spec/requests/fiber_link/rpc_controller_spec.rb"
       PLUGIN_SMOKE_EXTRA_SPECS: ""
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository (attempt 1)
+        id: checkout_try1
+        continue-on-error: true
+        uses: actions/checkout@v4
+
+      - name: Checkout repository (attempt 2)
+        if: steps.checkout_try1.outcome == 'failure'
+        id: checkout_try2
+        continue-on-error: true
+        uses: actions/checkout@v4
+
+      - name: Checkout repository (attempt 3)
+        if: steps.checkout_try1.outcome == 'failure' && steps.checkout_try2.outcome == 'failure'
+        uses: actions/checkout@v4
 
       - name: Checkout Discourse (pinned)
         run: |
