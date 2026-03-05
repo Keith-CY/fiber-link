@@ -188,7 +188,7 @@ async (page) => {
     ]).catch(() => {});
   }
 
-  async function readAuthorBalance() {
+  async function readAuthorDashboard() {
     const summary = await page.evaluate(async () => {
       let csrfToken = null;
       try {
@@ -233,12 +233,15 @@ async (page) => {
       }
       return payload?.result ?? null;
     });
-    return summary?.balance ?? null;
+    return {
+      balance: summary?.balance ?? null,
+      tipsCount: Array.isArray(summary?.tips) ? summary.tips.length : null,
+    };
   }
 
   async function readAdminWithdrawal(targetWithdrawalId) {
     if (!targetWithdrawalId) {
-      return { containsWithdrawalId: null, extractedState: null };
+      return { containsWithdrawalId: null, extractedState: null, extractedTxHash: null };
     }
 
     return page.evaluate(async ({ withdrawalId }) => {
@@ -284,13 +287,14 @@ async (page) => {
       try {
         payload = await response.json();
       } catch (_error) {
-        return { containsWithdrawalId: false, extractedState: null };
+        return { containsWithdrawalId: false, extractedState: null, extractedTxHash: null };
       }
       const rows = Array.isArray(payload?.result?.admin?.withdrawals) ? payload.result.admin.withdrawals : [];
       const row = rows.find((item) => item?.id === withdrawalId) ?? null;
       return {
         containsWithdrawalId: Boolean(row),
         extractedState: row?.state ?? null,
+        extractedTxHash: row?.txHash ?? row?.tx_hash ?? null,
       };
     }, { withdrawalId: targetWithdrawalId });
   }
@@ -321,20 +325,21 @@ async (page) => {
       if (csrfToken) {
         headers["x-csrf-token"] = csrfToken;
       }
+      const requestPayload = {
+        jsonrpc: "2.0",
+        id: `pw-withdraw-${Date.now()}`,
+        method: "withdrawal.request",
+        params: {
+          asset: "CKB",
+          amount,
+          toAddress,
+        },
+      };
       const response = await fetch("/fiber-link/rpc", {
         method: "POST",
         credentials: "same-origin",
         headers,
-        body: JSON.stringify({
-          jsonrpc: "2.0",
-          id: `pw-withdraw-${Date.now()}`,
-          method: "withdrawal.request",
-          params: {
-            asset: "CKB",
-            amount,
-            toAddress,
-          },
-        }),
+        body: JSON.stringify(requestPayload),
       });
       let payload = null;
       try {
@@ -351,13 +356,15 @@ async (page) => {
       return {
         id: payload?.result?.id ?? null,
         state: payload?.result?.state ?? null,
+        requestPayload,
+        responsePayload: payload,
       };
     }, { amount: withdrawAmount, toAddress: withdrawToAddress });
   }
 
   async function waitForWithdrawalState(targetWithdrawalId) {
     if (!targetWithdrawalId) {
-      return { containsWithdrawalId: null, extractedState: null };
+      return { containsWithdrawalId: null, extractedState: null, extractedTxHash: null };
     }
 
     await openDashboard();
@@ -381,16 +388,23 @@ async (page) => {
   try {
     await login(authorUser, authorPassword);
     await openDashboard();
-    const authorBalance = await readAuthorBalance();
+    const authorDashboard = await readAuthorDashboard();
+    const authorBalance = authorDashboard.balance;
+    const authorTipHistoryCount = authorDashboard.tipsCount;
     const authorBalanceScreenshot = await safeScreenshot(authorBalanceScreenshotPath);
 
     let requestedWithdrawalId = withdrawalId || null;
     let requestedWithdrawalState = null;
+    let withdrawalRequestTrace = null;
 
     if (!requestedWithdrawalId && initiateWithdrawal) {
       const requested = await requestWithdrawalInAuthorSession();
       requestedWithdrawalId = requested.id;
       requestedWithdrawalState = requested.state;
+      withdrawalRequestTrace = {
+        request: requested.requestPayload ?? null,
+        response: requested.responsePayload ?? null,
+      };
     }
 
     const authorWithdrawalScreenshot = await safeScreenshot(authorWithdrawalScreenshotPath);
@@ -403,11 +417,14 @@ async (page) => {
     return {
       authorUser,
       authorBalance,
+      authorTipHistoryCount,
       adminUser,
       withdrawalId: requestedWithdrawalId,
       withdrawalRequestedState: requestedWithdrawalState,
       adminContainsWithdrawalId: adminView.containsWithdrawalId,
       adminExtractedState: adminView.extractedState,
+      withdrawalTxHash: adminView.extractedTxHash ?? null,
+      withdrawalRequestTrace,
       screenshots: {
         authorBalance: authorBalanceScreenshot,
         authorWithdrawal: authorWithdrawalScreenshot,

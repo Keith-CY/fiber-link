@@ -24,6 +24,7 @@ SKIP_DISCOURSE=0
 SKIP_WITHDRAWAL=0
 PAUSE_AT_STEP4=0
 START_EMBER_CLI=0
+PAUSE_START_EMBER_CLI="${WORKFLOW_PAUSE_START_EMBER_CLI:-1}"
 
 WORKFLOW_ASSET="${WORKFLOW_ASSET:-CKB}"
 TIP_AMOUNT="${WORKFLOW_TIP_AMOUNT:-31}"
@@ -68,6 +69,7 @@ Environment knobs:
   WORKFLOW_POLL_INTERVAL_SECONDS=5
   WORKFLOW_SETTLEMENT_TIMEOUT_SECONDS=240
   WORKFLOW_WITHDRAWAL_TIMEOUT_SECONDS=360
+  WORKFLOW_PAUSE_START_EMBER_CLI=1
   DISCOURSE_DEV_ROOT=/tmp/discourse-dev
   DISCOURSE_REF=26f3e2aa87a3abb35849183e0740fe7ab84cec67
 
@@ -621,7 +623,7 @@ done
 mkdir -p "${ARTIFACT_DIR}"
 write_result_metadata "RUNNING" "" "" ""
 
-if [[ "${PAUSE_AT_STEP4}" -eq 1 ]]; then
+if [[ "${PAUSE_AT_STEP4}" -eq 1 && "${PAUSE_START_EMBER_CLI}" -eq 1 ]]; then
   START_EMBER_CLI=1
 fi
 
@@ -640,6 +642,9 @@ require_cmd python3
 [[ "${WITHDRAW_AMOUNT}" -ge 61 ]] || fatal "${EXIT_PRECHECK}" "WORKFLOW_WITHDRAW_AMOUNT must be >= 61 for CKB cell minimum"
 if [[ -n "${WITHDRAW_TO_ADDRESS}" && ! "${WITHDRAW_TO_ADDRESS}" =~ ^(ckt|ckb)1[0-9a-zA-Z]+$ ]]; then
   fatal "${EXIT_PRECHECK}" "WORKFLOW_WITHDRAW_TO_ADDRESS must be a ckt1... or ckb1... address"
+fi
+if [[ "${PAUSE_START_EMBER_CLI}" != "0" && "${PAUSE_START_EMBER_CLI}" != "1" ]]; then
+  fatal "${EXIT_PRECHECK}" "WORKFLOW_PAUSE_START_EMBER_CLI must be 0 or 1"
 fi
 
 APP_SECRET="${FIBER_LINK_APP_SECRET:-}"
@@ -702,7 +707,7 @@ if [[ "${SKIP_DISCOURSE}" -eq 0 ]]; then
     ./bin/docker/exec env \
       LOAD_PLUGINS=1 \
       RAILS_ENV=development \
-      bundle exec rake db:migrate
+      bundle exec rake db:create db:migrate
   ) > "${ARTIFACT_DIR}/discourse-bootstrap.log" 2>&1 || fatal "${EXIT_DISCOURSE}" "failed to bootstrap discourse (see discourse-bootstrap.log)"
 
   cp "${ROOT_DIR}/scripts/discourse-seed-fiber-link.rb" "${DISCOURSE_DEV_ROOT}/tmp/fiber-link-seed.rb"
