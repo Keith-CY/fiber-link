@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import type { DbClient } from "./client";
 import {
+  LiquidityRequestFundingAmountError,
   LiquidityRequestNotFoundError,
+  LiquidityRequestStateTransitionError,
   createDbLiquidityRequestRepo,
   createInMemoryLiquidityRequestRepo,
 } from "./liquidity-request-repo";
@@ -114,6 +116,73 @@ describe("createInMemoryLiquidityRequestRepo", () => {
     expect(funded.fundedAmount).toBe("100");
     expect(funded.completedAt?.toISOString()).toBe(now.toISOString());
   });
+
+  it("rejects markFunded when the liquidity request is already FAILED", async () => {
+    const repo = createInMemoryLiquidityRequestRepo([
+      mockRow({
+        state: "FAILED",
+      }),
+    ]);
+
+    await expect(
+      repo.markFunded("liq1", {
+        fundedAmount: "100",
+        now: new Date("2026-03-07T01:00:00.000Z"),
+      }),
+    ).rejects.toBeInstanceOf(LiquidityRequestStateTransitionError);
+
+    await expect(repo.findByIdOrThrow("liq1")).resolves.toMatchObject({
+      state: "FAILED",
+      fundedAmount: "0",
+    });
+  });
+
+  it("rejects markFunded when the liquidity request is already FUNDED", async () => {
+    const now = new Date("2026-03-07T01:00:00.000Z");
+    const repo = createInMemoryLiquidityRequestRepo([
+      mockRow({
+        state: "FUNDED",
+        fundedAmount: "100",
+        updatedAt: now,
+        completedAt: now,
+      }),
+    ]);
+
+    await expect(
+      repo.markFunded("liq1", {
+        fundedAmount: "100",
+        now,
+      }),
+    ).rejects.toBeInstanceOf(LiquidityRequestStateTransitionError);
+
+    await expect(repo.findByIdOrThrow("liq1")).resolves.toMatchObject({
+      state: "FUNDED",
+      fundedAmount: "100",
+      completedAt: now,
+    });
+  });
+
+  it("rejects markFunded when fundedAmount is below requiredAmount", async () => {
+    const repo = createInMemoryLiquidityRequestRepo([
+      mockRow({
+        state: "REQUESTED",
+        requiredAmount: "100",
+      }),
+    ]);
+
+    await expect(
+      repo.markFunded("liq1", {
+        fundedAmount: "99.99",
+        now: new Date("2026-03-07T01:00:00.000Z"),
+      }),
+    ).rejects.toBeInstanceOf(LiquidityRequestFundingAmountError);
+
+    await expect(repo.findByIdOrThrow("liq1")).resolves.toMatchObject({
+      state: "REQUESTED",
+      fundedAmount: "0",
+      requiredAmount: "100",
+    });
+  });
 });
 
 describe("createDbLiquidityRequestRepo", () => {
@@ -139,6 +208,7 @@ describe("createDbLiquidityRequestRepo", () => {
   it("throws not found when marking funded for a missing request", async () => {
     const mock = createDbMock();
     const repo = createDbLiquidityRequestRepo(mock.db);
+    mock.selectLimit.mockResolvedValueOnce([]);
     mock.updateReturning.mockResolvedValueOnce([]);
 
     await expect(
@@ -147,5 +217,63 @@ describe("createDbLiquidityRequestRepo", () => {
         now: new Date("2026-03-07T01:00:00.000Z"),
       }),
     ).rejects.toBeInstanceOf(LiquidityRequestNotFoundError);
+  });
+
+  it("rejects markFunded when the persisted request is already FAILED", async () => {
+    const mock = createDbMock();
+    const repo = createDbLiquidityRequestRepo(mock.db);
+    mock.selectLimit.mockResolvedValueOnce([mockRow({ state: "FAILED" })]);
+
+    await expect(
+      repo.markFunded("liq1", {
+        fundedAmount: "100",
+        now: new Date("2026-03-07T01:00:00.000Z"),
+      }),
+    ).rejects.toBeInstanceOf(LiquidityRequestStateTransitionError);
+
+    expect(mock.updateSet).not.toHaveBeenCalled();
+  });
+
+  it("rejects markFunded when the persisted request is already FUNDED", async () => {
+    const mock = createDbMock();
+    const repo = createDbLiquidityRequestRepo(mock.db);
+    const now = new Date("2026-03-07T01:00:00.000Z");
+    mock.selectLimit.mockResolvedValueOnce([
+      mockRow({
+        state: "FUNDED",
+        fundedAmount: "100",
+        updatedAt: now,
+        completedAt: now,
+      }),
+    ]);
+
+    await expect(
+      repo.markFunded("liq1", {
+        fundedAmount: "100",
+        now,
+      }),
+    ).rejects.toBeInstanceOf(LiquidityRequestStateTransitionError);
+
+    expect(mock.updateSet).not.toHaveBeenCalled();
+  });
+
+  it("rejects markFunded when fundedAmount is below requiredAmount", async () => {
+    const mock = createDbMock();
+    const repo = createDbLiquidityRequestRepo(mock.db);
+    mock.selectLimit.mockResolvedValueOnce([
+      mockRow({
+        state: "REBALANCING",
+        requiredAmount: "100",
+      }),
+    ]);
+
+    await expect(
+      repo.markFunded("liq1", {
+        fundedAmount: "99.99",
+        now: new Date("2026-03-07T01:00:00.000Z"),
+      }),
+    ).rejects.toBeInstanceOf(LiquidityRequestFundingAmountError);
+
+    expect(mock.updateSet).not.toHaveBeenCalled();
   });
 });

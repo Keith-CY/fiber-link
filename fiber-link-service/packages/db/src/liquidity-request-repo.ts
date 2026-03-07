@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
-import { asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import type { DbClient } from "./client";
-import { assertPositiveAmount, formatDecimal, parseDecimal } from "./amount";
+import { assertPositiveAmount, compareDecimalStrings, formatDecimal, parseDecimal } from "./amount";
 import {
   liquidityRequests,
   type Asset,
@@ -50,6 +50,30 @@ export class LiquidityRequestNotFoundError extends Error {
   }
 }
 
+export class LiquidityRequestStateTransitionError extends Error {
+  constructor(
+    public readonly liquidityRequestId: string,
+    public readonly from: LiquidityRequestState,
+    public readonly to: LiquidityRequestState,
+  ) {
+    super(`invalid liquidity request state transition: ${from} -> ${to}`);
+    this.name = "LiquidityRequestStateTransitionError";
+  }
+}
+
+export class LiquidityRequestFundingAmountError extends Error {
+  constructor(
+    public readonly liquidityRequestId: string,
+    public readonly fundedAmount: string,
+    public readonly requiredAmount: string,
+  ) {
+    super(
+      `liquidity request ${liquidityRequestId} cannot be marked funded: fundedAmount ${fundedAmount} is below requiredAmount ${requiredAmount}`,
+    );
+    this.name = "LiquidityRequestFundingAmountError";
+  }
+}
+
 export type LiquidityRequestRepo = {
   create(input: CreateLiquidityRequestInput): Promise<LiquidityRequestRecord>;
   findById(liquidityRequestId: string): Promise<LiquidityRequestRecord | null>;
@@ -61,6 +85,7 @@ export type LiquidityRequestRepo = {
 };
 
 type LiquidityRequestRow = typeof liquidityRequests.$inferSelect;
+const OPEN_LIQUIDITY_REQUEST_STATES = ["REQUESTED", "REBALANCING"] as const;
 
 function normalizeMetadata(metadata: unknown): LiquidityRequestMetadata | null {
   if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
@@ -111,7 +136,16 @@ function cloneRecord(record: LiquidityRequestRecord): LiquidityRequestRecord {
 }
 
 function isOpenState(state: LiquidityRequestState): boolean {
-  return state === "REQUESTED" || state === "REBALANCING";
+  return OPEN_LIQUIDITY_REQUEST_STATES.includes(state as (typeof OPEN_LIQUIDITY_REQUEST_STATES)[number]);
+}
+
+function assertCanMarkFunded(record: LiquidityRequestRecord, fundedAmount: string): void {
+  if (!isOpenState(record.state)) {
+    throw new LiquidityRequestStateTransitionError(record.id, record.state, "FUNDED");
+  }
+  if (compareDecimalStrings(fundedAmount, record.requiredAmount) < 0) {
+    throw new LiquidityRequestFundingAmountError(record.id, fundedAmount, record.requiredAmount);
+  }
 }
 
 export function createDbLiquidityRequestRepo(db: DbClient): LiquidityRequestRepo {
@@ -169,6 +203,11 @@ export function createDbLiquidityRequestRepo(db: DbClient): LiquidityRequestRepo
 
     async markFunded(liquidityRequestId, input) {
       const fundedAmount = normalizeAmount(input.fundedAmount);
+      const current = await findById(liquidityRequestId);
+      if (!current) {
+        throw new LiquidityRequestNotFoundError(liquidityRequestId);
+      }
+      assertCanMarkFunded(current, fundedAmount);
       const now = input.now ? new Date(input.now) : new Date();
       const [row] = await db
         .update(liquidityRequests)
@@ -180,11 +219,20 @@ export function createDbLiquidityRequestRepo(db: DbClient): LiquidityRequestRepo
           updatedAt: now,
           completedAt: now,
         })
-        .where(eq(liquidityRequests.id, liquidityRequestId))
+        .where(
+          and(
+            eq(liquidityRequests.id, liquidityRequestId),
+            inArray(liquidityRequests.state, [...OPEN_LIQUIDITY_REQUEST_STATES]),
+          ),
+        )
         .returning();
 
       if (!row) {
-        throw new LiquidityRequestNotFoundError(liquidityRequestId);
+        const latest = await findById(liquidityRequestId);
+        if (!latest) {
+          throw new LiquidityRequestNotFoundError(liquidityRequestId);
+        }
+        throw new LiquidityRequestStateTransitionError(liquidityRequestId, latest.state, "FUNDED");
       }
 
       return toRecord(row);
@@ -260,11 +308,13 @@ export function createInMemoryLiquidityRequestRepo(
         throw new LiquidityRequestNotFoundError(liquidityRequestId);
       }
 
+      const fundedAmount = normalizeAmount(input.fundedAmount);
+      assertCanMarkFunded(records[index], fundedAmount);
       const now = input.now ? new Date(input.now) : new Date();
       records[index] = {
         ...records[index],
         state: "FUNDED",
-        fundedAmount: normalizeAmount(input.fundedAmount),
+        fundedAmount,
         metadata: input.metadata === undefined ? records[index].metadata : cloneMetadata(input.metadata ?? null),
         lastError: null,
         updatedAt: now,
