@@ -76,6 +76,9 @@ describe("schema", () => {
     expect(ledgerEntries.idempotencyKey.name).toBe("idempotency_key");
     expect(withdrawals.state.name).toBe("state");
     expect(withdrawals.nextRetryAt.name).toBe("next_retry_at");
+    expect(withdrawals.liquidityRequestId.name).toBe("liquidity_request_id");
+    expect(withdrawals.liquidityPendingReason.name).toBe("liquidity_pending_reason");
+    expect(withdrawals.liquidityCheckedAt.name).toBe("liquidity_checked_at");
     expect(liquidityRequests.state.name).toBe("state");
     expect(liquidityRequests.sourceKind.name).toBe("source_kind");
     expect(liquidityRequests.requiredAmount.name).toBe("required_amount");

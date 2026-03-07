@@ -223,6 +223,9 @@ export const withdrawals = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
     completedAt: timestamp("completed_at"),
     txHash: text("tx_hash"),
+    liquidityRequestId: uuid("liquidity_request_id"),
+    liquidityPendingReason: text("liquidity_pending_reason"),
+    liquidityCheckedAt: timestamp("liquidity_checked_at"),
   },
   (table) => ({
     byStateRetryAt: index("withdrawals_state_next_retry_at_idx").on(table.state, table.nextRetryAt, table.createdAt),

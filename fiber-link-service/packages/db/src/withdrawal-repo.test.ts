@@ -36,6 +36,9 @@ function mockRow(overrides: Record<string, unknown> = {}) {
     updatedAt: new Date("2026-02-07T00:00:00.000Z"),
     completedAt: null,
     txHash: null,
+    liquidityRequestId: null,
+    liquidityPendingReason: null,
+    liquidityCheckedAt: null,
     ...overrides,
   };
 }
@@ -215,6 +218,68 @@ describe("createDbWithdrawalRepo", () => {
     expect(valuesArg.destinationKind).toBe("PAYMENT_REQUEST");
   });
 
+  it("creates LIQUIDITY_PENDING withdrawals with linked liquidity fields", async () => {
+    const insertReturning = vi.fn().mockResolvedValueOnce([
+      mockRow({
+        state: "LIQUIDITY_PENDING",
+        asset: "CKB",
+        amount: "61",
+        destinationKind: "CKB_ADDRESS",
+        toAddress: "ckt1qyqfth8m4fevfzh5hhd088s78qcdjjp8cehs7z8jhw",
+        liquidityRequestId: "liq1",
+        liquidityPendingReason: "hot wallet underfunded",
+        liquidityCheckedAt: new Date("2026-03-07T00:00:00.000Z"),
+      }),
+    ]);
+    const insertValues = vi.fn(() => ({ returning: insertReturning }));
+    const insert = vi.fn(() => ({ values: insertValues }));
+    const db = { insert } as unknown as DbClient;
+    const repo = createDbWithdrawalRepo(db);
+
+    const created = await repo.createLiquidityPending({
+      appId: "app1",
+      userId: "u1",
+      asset: "CKB",
+      amount: "61",
+      toAddress: "ckt1qyqfth8m4fevfzh5hhd088s78qcdjjp8cehs7z8jhw",
+      liquidityRequestId: "liq1",
+      liquidityPendingReason: "hot wallet underfunded",
+    });
+
+    expect(created.state).toBe("LIQUIDITY_PENDING");
+    expect(created.liquidityRequestId).toBe("liq1");
+    expect(created.liquidityPendingReason).toBe("hot wallet underfunded");
+    const valuesArg = insertValues.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(valuesArg.state).toBe("LIQUIDITY_PENDING");
+    expect(valuesArg.liquidityRequestId).toBe("liq1");
+    expect(valuesArg.liquidityPendingReason).toBe("hot wallet underfunded");
+    expect(valuesArg.liquidityCheckedAt).toBeInstanceOf(Date);
+  });
+
+  it("promotes LIQUIDITY_PENDING withdrawals to PENDING", async () => {
+    const mock = createDbMock();
+    const repo = createDbWithdrawalRepo(mock.db);
+    const now = new Date("2026-03-07T00:00:00.000Z");
+
+    mock.updateReturning.mockResolvedValueOnce([
+      mockRow({
+        state: "PENDING",
+        updatedAt: now,
+        liquidityRequestId: "liq1",
+        liquidityPendingReason: "hot wallet underfunded",
+        liquidityCheckedAt: now,
+      }),
+    ]);
+
+    const promoted = await repo.markPendingFromLiquidity("w1", now);
+
+    expect(promoted.state).toBe("PENDING");
+    expect(promoted.liquidityCheckedAt).toEqual(now);
+    const setArg = mock.updateSet.mock.calls[0][0] as Record<string, unknown>;
+    expect(setArg.state).toBe("PENDING");
+    expect(setArg.liquidityCheckedAt).toEqual(now);
+  });
+
   it("creates with balance check when funds are sufficient", async () => {
     const txSelectWhere = vi
       .fn()
@@ -365,6 +430,112 @@ describe("createInMemoryWithdrawalRepo balance gating", () => {
     );
 
     expect(created.state).toBe("PENDING");
+  });
+
+  it("creates a withdrawal in LIQUIDITY_PENDING with linked liquidity request", async () => {
+    const repo = createInMemoryWithdrawalRepo();
+
+    const created = await repo.createLiquidityPending({
+      appId: "app1",
+      userId: "u1",
+      asset: "CKB",
+      amount: "61",
+      toAddress: "ckt1qyqfth8m4fevfzh5hhd088s78qcdjjp8cehs7z8jhw",
+      liquidityRequestId: "liq1",
+      liquidityPendingReason: "hot wallet underfunded",
+    });
+
+    expect(created.state).toBe("LIQUIDITY_PENDING");
+    expect(created.liquidityRequestId).toBe("liq1");
+    expect(created.liquidityPendingReason).toBe("hot wallet underfunded");
+    expect(created.liquidityCheckedAt).toBeInstanceOf(Date);
+  });
+
+  it("promotes liquidity pending withdrawal to PENDING", async () => {
+    const repo = createInMemoryWithdrawalRepo();
+    const created = await repo.createLiquidityPending({
+      appId: "app1",
+      userId: "u1",
+      asset: "CKB",
+      amount: "61",
+      toAddress: "ckt1qyqfth8m4fevfzh5hhd088s78qcdjjp8cehs7z8jhw",
+      liquidityRequestId: "liq1",
+      liquidityPendingReason: "hot wallet underfunded",
+    });
+
+    const beforePromotion = await repo.listReadyForProcessing(new Date("2026-03-07T00:00:00.000Z"));
+    expect(beforePromotion).toEqual([]);
+
+    const promoted = await repo.markPendingFromLiquidity(created.id, new Date("2026-03-07T00:00:00.000Z"));
+
+    expect(promoted.state).toBe("PENDING");
+    expect(promoted.liquidityCheckedAt).toEqual(new Date("2026-03-07T00:00:00.000Z"));
+
+    const afterPromotion = await repo.listReadyForProcessing(new Date("2026-03-07T00:00:00.000Z"));
+    expect(afterPromotion.map((item) => item.id)).toEqual([created.id]);
+  });
+
+  it("lists only liquidity pending withdrawals", async () => {
+    const repo = createInMemoryWithdrawalRepo();
+    const pending = await repo.createLiquidityPending({
+      appId: "app1",
+      userId: "u1",
+      asset: "CKB",
+      amount: "61",
+      toAddress: "ckt1qyqfth8m4fevfzh5hhd088s78qcdjjp8cehs7z8jhw",
+      liquidityRequestId: "liq1",
+      liquidityPendingReason: "hot wallet underfunded",
+    });
+    await repo.create({
+      appId: "app1",
+      userId: "u1",
+      asset: "CKB",
+      amount: "5",
+      toAddress: "ckt1qready",
+    });
+
+    const listed = await repo.listLiquidityPending();
+
+    expect(listed.map((item) => item.id)).toEqual([pending.id]);
+    expect(listed[0]?.state).toBe("LIQUIDITY_PENDING");
+  });
+
+  it("counts LIQUIDITY_PENDING withdrawals as reserved in balance gating", async () => {
+    const ledger = createInMemoryLedgerRepo();
+    const repo = createInMemoryWithdrawalRepo();
+
+    await ledger.creditOnce({
+      appId: "app1",
+      userId: "u1",
+      asset: "CKB",
+      amount: "100",
+      refId: "t1",
+      idempotencyKey: "credit:t1",
+    });
+    await repo.createLiquidityPending({
+      appId: "app1",
+      userId: "u1",
+      asset: "CKB",
+      amount: "80",
+      toAddress: "ckt1qpending",
+      liquidityRequestId: "liq1",
+      liquidityPendingReason: "hot wallet underfunded",
+    });
+
+    await expect(
+      repo.createWithBalanceCheck(
+        {
+          appId: "app1",
+          userId: "u1",
+          asset: "CKB",
+          amount: "21",
+          toAddress: "ckt1qnext",
+        },
+        { ledgerRepo: ledger },
+      ),
+    ).rejects.toBeInstanceOf(InsufficientFundsError);
+
+    await expect(repo.getPendingTotal({ appId: "app1", userId: "u1", asset: "CKB" })).resolves.toBe("80");
   });
 
   it("rejects non-positive withdrawal amounts", async () => {
