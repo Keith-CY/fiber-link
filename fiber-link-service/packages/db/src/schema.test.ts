@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { getTableConfig } from "drizzle-orm/pg-core";
 import {
   assetEnum,
   invoiceStateEnum,
@@ -18,6 +19,44 @@ import {
   withdrawalStateEnum,
   withdrawals,
 } from "./schema";
+
+function collectSqlTokens(node: unknown): string[] {
+  const tokens: string[] = [];
+
+  function walk(value: unknown) {
+    if (Array.isArray(value)) {
+      value.forEach(walk);
+      return;
+    }
+    if (typeof value === "string") {
+      tokens.push(value);
+      return;
+    }
+    if (!value || typeof value !== "object") {
+      return;
+    }
+
+    if ("value" in value) {
+      const current = (value as { value: unknown }).value;
+      if (Array.isArray(current)) {
+        current.forEach(walk);
+      } else if (typeof current === "string") {
+        tokens.push(current);
+      }
+    }
+
+    if ("name" in value && typeof (value as { name?: unknown }).name === "string") {
+      tokens.push((value as { name: string }).name);
+    }
+
+    if ("queryChunks" in value) {
+      walk((value as { queryChunks: unknown }).queryChunks);
+    }
+  }
+
+  walk(node);
+  return tokens;
+}
 
 describe("schema", () => {
   it("exports core tables", () => {
@@ -91,5 +130,26 @@ describe("schema", () => {
     expect(notificationChannels.enabled.name).toBe("enabled");
     expect(notificationRules.event.name).toBe("event");
     expect(notificationRules.channelId.name).toBe("channel_id");
+  });
+
+  it("defines liquidity gating constraints on withdrawals", () => {
+    const config = getTableConfig(withdrawals);
+    const liquidityRequestFk = config.foreignKeys.find(
+      (foreignKey) => foreignKey.reference().columns[0]?.name === "liquidity_request_id",
+    );
+    const liquidityPendingCheck = config.checks.find(
+      (checkConstraint) => checkConstraint.name === "withdrawals_liquidity_pending_fields_check",
+    );
+
+    expect(liquidityRequestFk).toBeDefined();
+    expect(liquidityRequestFk?.reference().foreignTable).toBe(liquidityRequests);
+    expect(liquidityRequestFk?.reference().foreignColumns[0]?.name).toBe("id");
+
+    expect(liquidityPendingCheck).toBeDefined();
+    const checkTokens = collectSqlTokens(liquidityPendingCheck?.value);
+    expect(checkTokens.some((token) => token.includes("LIQUIDITY_PENDING"))).toBe(true);
+    expect(checkTokens).toContain("liquidity_request_id");
+    expect(checkTokens).toContain("liquidity_pending_reason");
+    expect(checkTokens).toContain("liquidity_checked_at");
   });
 });

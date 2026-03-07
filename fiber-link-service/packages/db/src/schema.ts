@@ -1,4 +1,5 @@
-import { boolean, index, integer, jsonb, numeric, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import { boolean, check, index, integer, jsonb, numeric, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 
 export const userRoleEnum = pgEnum("user_role", ["SUPER_ADMIN", "COMMUNITY_ADMIN"]);
 export type UserRole = (typeof userRoleEnum.enumValues)[number];
@@ -223,13 +224,22 @@ export const withdrawals = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
     completedAt: timestamp("completed_at"),
     txHash: text("tx_hash"),
-    liquidityRequestId: uuid("liquidity_request_id"),
+    liquidityRequestId: uuid("liquidity_request_id").references(() => liquidityRequests.id),
     liquidityPendingReason: text("liquidity_pending_reason"),
     liquidityCheckedAt: timestamp("liquidity_checked_at"),
   },
   (table) => ({
     byStateRetryAt: index("withdrawals_state_next_retry_at_idx").on(table.state, table.nextRetryAt, table.createdAt),
     byAccountAssetState: index("withdrawals_account_asset_state_idx").on(table.appId, table.userId, table.asset, table.state),
+    liquidityPendingFieldsCheck: check(
+      "withdrawals_liquidity_pending_fields_check",
+      sql`${table.state} <> 'LIQUIDITY_PENDING'
+        OR (
+          ${table.liquidityRequestId} IS NOT NULL
+          AND ${table.liquidityPendingReason} IS NOT NULL
+          AND ${table.liquidityCheckedAt} IS NOT NULL
+        )`,
+    ),
   }),
 );
 

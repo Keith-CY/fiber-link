@@ -17,6 +17,7 @@ type DbMock = {
   updateSet: ReturnType<typeof vi.fn>;
   updateReturning: ReturnType<typeof vi.fn>;
   selectLimit: ReturnType<typeof vi.fn>;
+  selectWhere: ReturnType<typeof vi.fn>;
 };
 
 function mockRow(overrides: Record<string, unknown> = {}) {
@@ -64,7 +65,45 @@ function createDbMock(): DbMock {
     update,
   } as unknown as DbClient;
 
-  return { db, updateSet, updateReturning, selectLimit };
+  return { db, updateSet, updateReturning, selectLimit, selectWhere };
+}
+
+function collectSqlTokens(node: unknown): string[] {
+  const tokens: string[] = [];
+
+  function walk(value: unknown) {
+    if (Array.isArray(value)) {
+      value.forEach(walk);
+      return;
+    }
+    if (typeof value === "string") {
+      tokens.push(value);
+      return;
+    }
+    if (!value || typeof value !== "object") {
+      return;
+    }
+
+    if ("value" in value) {
+      const current = (value as { value: unknown }).value;
+      if (Array.isArray(current)) {
+        current.forEach(walk);
+      } else if (typeof current === "string") {
+        tokens.push(current);
+      }
+    }
+
+    if ("name" in value && typeof (value as { name?: unknown }).name === "string") {
+      tokens.push((value as { name: string }).name);
+    }
+
+    if ("queryChunks" in value) {
+      walk((value as { queryChunks: unknown }).queryChunks);
+    }
+  }
+
+  walk(node);
+  return tokens;
 }
 
 describe("createDbWithdrawalRepo", () => {
@@ -280,6 +319,28 @@ describe("createDbWithdrawalRepo", () => {
     expect(setArg.liquidityCheckedAt).toEqual(now);
   });
 
+  it("throws transition conflict when markPendingFromLiquidity update affects no rows but record exists", async () => {
+    const mock = createDbMock();
+    const repo = createDbWithdrawalRepo(mock.db);
+
+    mock.updateReturning.mockResolvedValueOnce([]);
+    mock.selectLimit.mockResolvedValueOnce([mockRow({ state: "PROCESSING" })]);
+
+    await expect(repo.markPendingFromLiquidity("w1", new Date())).rejects.toBeInstanceOf(
+      WithdrawalTransitionConflictError,
+    );
+  });
+
+  it("throws not found when markPendingFromLiquidity update affects no rows and record is missing", async () => {
+    const mock = createDbMock();
+    const repo = createDbWithdrawalRepo(mock.db);
+
+    mock.updateReturning.mockResolvedValueOnce([]);
+    mock.selectLimit.mockResolvedValueOnce([]);
+
+    await expect(repo.markPendingFromLiquidity("w1", new Date())).rejects.toBeInstanceOf(WithdrawalNotFoundError);
+  });
+
   it("creates with balance check when funds are sufficient", async () => {
     const txSelectWhere = vi
       .fn()
@@ -339,6 +400,19 @@ describe("createDbWithdrawalRepo", () => {
 
     const zero = await repo.getPendingTotal({ appId: "app1", userId: "u1", asset: "USDI" });
     expect(zero).toBe("0");
+  });
+
+  it("includes LIQUIDITY_PENDING in DB pending-total accounting", async () => {
+    const mock = createDbMock();
+    const repo = createDbWithdrawalRepo(mock.db);
+
+    mock.selectWhere.mockResolvedValueOnce([{ total: "80" }]);
+
+    const total = await repo.getPendingTotal({ appId: "app1", userId: "u1", asset: "CKB" });
+
+    expect(total).toBe("80");
+    const whereArg = mock.selectWhere.mock.calls[0]?.[0];
+    expect(collectSqlTokens(whereArg)).toContain("LIQUIDITY_PENDING");
   });
 
   it("finds rows by id and lists ready withdrawals", async () => {
