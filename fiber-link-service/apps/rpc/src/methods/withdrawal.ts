@@ -3,10 +3,10 @@ import {
   compareDecimalStrings,
   createDbClient,
   createDbLedgerRepo,
+  createDbLiquidityRequestRepo,
   createDbWithdrawalPolicyRepo,
   createDbWithdrawalRepo,
   formatDecimal,
-  InsufficientFundsError,
   parseDecimal,
   type Asset,
   type CreateWithdrawalInput,
@@ -18,13 +18,14 @@ import {
   type WithdrawalRepo,
 } from "@fiber-link/db";
 import {
+  createDefaultHotWalletInventoryProvider,
   type HotWalletInventoryProvider,
   WithdrawalExecutionError,
   getCkbAddressMinCellCapacityShannons,
   shannonsToCkbDecimal,
   type WithdrawalDestination,
 } from "@fiber-link/fiber-adapter";
-import { decideWithdrawalRequestLiquidity } from "./liquidity";
+import { MissingLiquidityRequestRepoError, decideWithdrawalRequestLiquidity } from "./liquidity";
 
 export type RequestWithdrawalInput = {
   appId: string;
@@ -51,7 +52,7 @@ export class WithdrawalPolicyViolationError extends Error {
   }
 }
 
-type RequestWithdrawalOptions = {
+export type RequestWithdrawalOptions = {
   repo?: WithdrawalRepo;
   ledgerRepo?: LedgerRepo;
   policyRepo?: WithdrawalPolicyRepo | null;
@@ -62,7 +63,9 @@ type RequestWithdrawalOptions = {
 
 let defaultRepo: WithdrawalRepo | null = null;
 let defaultLedgerRepo: LedgerRepo | null = null;
+let defaultLiquidityRequestRepo: LiquidityRequestRepo | null | undefined;
 let defaultPolicyRepo: WithdrawalPolicyRepo | null | undefined;
+let defaultHotWalletInventoryProvider: HotWalletInventoryProvider | null | undefined;
 
 const DEFAULT_ALLOWED_ASSETS: Asset[] = ["CKB", "USDI"];
 const DEFAULT_MAX_PER_REQUEST = "5000";
@@ -94,6 +97,30 @@ function getDefaultPolicyRepo(): WithdrawalPolicyRepo | null {
     defaultPolicyRepo = null;
   }
   return defaultPolicyRepo;
+}
+
+function getDefaultLiquidityRequestRepo(): LiquidityRequestRepo | null {
+  if (defaultLiquidityRequestRepo !== undefined) {
+    return defaultLiquidityRequestRepo;
+  }
+  try {
+    defaultLiquidityRequestRepo = createDbLiquidityRequestRepo(createDbClient());
+  } catch {
+    defaultLiquidityRequestRepo = null;
+  }
+  return defaultLiquidityRequestRepo;
+}
+
+function getDefaultHotWalletInventoryProvider(): HotWalletInventoryProvider | null {
+  if (defaultHotWalletInventoryProvider !== undefined) {
+    return defaultHotWalletInventoryProvider;
+  }
+  if (!process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY?.trim()) {
+    defaultHotWalletInventoryProvider = null;
+    return defaultHotWalletInventoryProvider;
+  }
+  defaultHotWalletInventoryProvider = createDefaultHotWalletInventoryProvider();
+  return defaultHotWalletInventoryProvider;
 }
 
 function parseAllowedAssetsFromEnv(raw: string | undefined): Asset[] {
@@ -263,28 +290,6 @@ function assertWithdrawalPolicy(
   }
 }
 
-async function assertSufficientCreatorBalance(
-  input: RequestWithdrawalInput,
-  deps: { repo: WithdrawalRepo; ledgerRepo: LedgerRepo },
-) {
-  const [balance, pending] = await Promise.all([
-    deps.ledgerRepo.getBalance({
-      appId: input.appId,
-      userId: input.userId,
-      asset: input.asset,
-    }),
-    deps.repo.getPendingTotal({
-      appId: input.appId,
-      userId: input.userId,
-      asset: input.asset,
-    }),
-  ]);
-  const required = addDecimalStrings(pending, input.amount);
-  if (compareDecimalStrings(balance, required) < 0) {
-    throw new InsufficientFundsError(input.appId, input.userId, input.asset, input.amount);
-  }
-}
-
 export async function requestWithdrawal(input: RequestWithdrawalInput, options: RequestWithdrawalOptions = {}) {
   const now = options.now ?? new Date();
   const repo = options.repo ?? getDefaultRepo();
@@ -303,7 +308,6 @@ export async function requestWithdrawal(input: RequestWithdrawalInput, options: 
 
   const minimumRequiredAmount = await resolveMinimumRequiredAmount(input);
   assertWithdrawalPolicy(input, policy, usage, now, minimumRequiredAmount);
-  await assertSufficientCreatorBalance(input, { repo, ledgerRepo });
 
   const createInput: CreateWithdrawalInput = {
     appId: input.appId,
@@ -313,17 +317,41 @@ export async function requestWithdrawal(input: RequestWithdrawalInput, options: 
     ...mapDestinationForStorage(input.destination),
   };
 
-  const liquidityDecision = await decideWithdrawalRequestLiquidity(input, {
-    hotWalletInventoryProvider: options.hotWalletInventoryProvider,
-    liquidityRequestRepo: options.liquidityRequestRepo,
-  });
+  const hotWalletInventoryProvider =
+    options.hotWalletInventoryProvider === undefined
+      ? input.destination.kind === "CKB_ADDRESS"
+        ? getDefaultHotWalletInventoryProvider()
+        : null
+      : options.hotWalletInventoryProvider;
+  let liquidityDecision;
+  try {
+    liquidityDecision = await decideWithdrawalRequestLiquidity(input, {
+      repo,
+      hotWalletInventoryProvider,
+      liquidityRequestRepo: options.liquidityRequestRepo,
+    });
+  } catch (error) {
+    if (
+      error instanceof MissingLiquidityRequestRepoError &&
+      input.destination.kind === "CKB_ADDRESS" &&
+      options.liquidityRequestRepo === undefined
+    ) {
+      liquidityDecision = await decideWithdrawalRequestLiquidity(input, {
+        repo,
+        hotWalletInventoryProvider,
+        liquidityRequestRepo: getDefaultLiquidityRequestRepo(),
+      });
+    } else {
+      throw error;
+    }
+  }
 
   if (liquidityDecision.state === "LIQUIDITY_PENDING") {
-    const record = await repo.createLiquidityPending({
+    const record = await repo.createLiquidityPendingWithBalanceCheck({
       ...createInput,
       liquidityRequestId: liquidityDecision.liquidityRequestId,
       liquidityPendingReason: liquidityDecision.liquidityPendingReason,
-    });
+    }, { ledgerRepo });
     return { id: record.id, state: record.state };
   }
 
@@ -332,4 +360,20 @@ export async function requestWithdrawal(input: RequestWithdrawalInput, options: 
     { ledgerRepo },
   );
   return { id: record.id, state: record.state };
+}
+
+export function __setRequestWithdrawalDefaultsForTests(defaults: RequestWithdrawalOptions) {
+  defaultRepo = defaults.repo ?? null;
+  defaultLedgerRepo = defaults.ledgerRepo ?? null;
+  defaultPolicyRepo = defaults.policyRepo ?? null;
+  defaultLiquidityRequestRepo = defaults.liquidityRequestRepo ?? null;
+  defaultHotWalletInventoryProvider = defaults.hotWalletInventoryProvider ?? null;
+}
+
+export function __resetRequestWithdrawalDefaultsForTests() {
+  defaultRepo = null;
+  defaultLedgerRepo = null;
+  defaultPolicyRepo = undefined;
+  defaultLiquidityRequestRepo = undefined;
+  defaultHotWalletInventoryProvider = undefined;
 }

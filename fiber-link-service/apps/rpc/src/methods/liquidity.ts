@@ -1,4 +1,13 @@
-import { compareDecimalStrings, type Asset, type LiquidityRequestRepo } from "@fiber-link/db";
+import {
+  addDecimalStrings,
+  compareDecimalStrings,
+  formatDecimal,
+  parseDecimal,
+  pow10,
+  type Asset,
+  type LiquidityRequestRepo,
+  type WithdrawalRepo,
+} from "@fiber-link/db";
 import {
   resolveCkbNetworkConfig,
   type HotWalletInventoryProvider,
@@ -25,6 +34,7 @@ export type DecideWithdrawalRequestLiquidityInput = {
 };
 
 export type DecideWithdrawalRequestLiquidityOptions = {
+  repo?: WithdrawalRepo | null;
   hotWalletInventoryProvider?: HotWalletInventoryProvider | null;
   liquidityRequestRepo?: LiquidityRequestRepo | null;
 };
@@ -51,6 +61,14 @@ function resolveCkbNetwork(address: string): "AGGRON4" | "LINA" {
   return isTestnet ? "AGGRON4" : "LINA";
 }
 
+function subtractDecimalStrings(left: string, right: string): string {
+  const a = parseDecimal(left);
+  const b = parseDecimal(right);
+  const scale = Math.max(a.scale, b.scale);
+  const value = a.value * pow10(scale - a.scale) - b.value * pow10(scale - b.scale);
+  return formatDecimal(value, scale);
+}
+
 export async function decideWithdrawalRequestLiquidity(
   input: DecideWithdrawalRequestLiquidityInput,
   options: DecideWithdrawalRequestLiquidityOptions = {},
@@ -64,8 +82,16 @@ export async function decideWithdrawalRequestLiquidity(
     asset: input.asset,
     network,
   });
+  const reserved = options.repo
+    ? await options.repo.getActiveCkbAddressReservationTotal({
+        appId: input.appId,
+        asset: input.asset,
+        network,
+      })
+    : "0";
+  const requiredAmount = addDecimalStrings(reserved, input.amount);
 
-  if (compareDecimalStrings(inventory.availableAmount, input.amount) >= 0) {
+  if (compareDecimalStrings(inventory.availableAmount, requiredAmount) >= 0) {
     return pendingDecision();
   }
 
@@ -73,18 +99,25 @@ export async function decideWithdrawalRequestLiquidity(
     throw new MissingLiquidityRequestRepoError();
   }
 
-  const liquidityRequest = await options.liquidityRequestRepo.create({
-    appId: input.appId,
-    asset: input.asset,
-    network,
-    sourceKind: "FIBER_TO_CKB_CHAIN",
-    requiredAmount: input.amount,
-    metadata: {
-      destinationKind: input.destination.kind,
-      toAddress: input.destination.address,
-      hotWalletAvailableAmount: inventory.availableAmount,
-    },
-  });
+  const liquidityRequest =
+    (await options.liquidityRequestRepo.findOpenByKey({
+      appId: input.appId,
+      asset: input.asset,
+      network,
+      sourceKind: "FIBER_TO_CKB_CHAIN",
+    })) ??
+    (await options.liquidityRequestRepo.create({
+      appId: input.appId,
+      asset: input.asset,
+      network,
+      sourceKind: "FIBER_TO_CKB_CHAIN",
+      requiredAmount: subtractDecimalStrings(requiredAmount, inventory.availableAmount),
+      metadata: {
+        destinationKind: input.destination.kind,
+        toAddress: input.destination.address,
+        hotWalletAvailableAmount: inventory.availableAmount,
+      },
+    }));
 
   return {
     state: "LIQUIDITY_PENDING",

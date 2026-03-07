@@ -5,7 +5,7 @@ export {
   shannonsToCkbDecimal,
   WithdrawalExecutionError,
 } from "./ckb-onchain-withdrawal";
-export { getHotWalletInventory } from "./hot-wallet-inventory";
+export { createDefaultHotWalletInventoryProvider, getHotWalletInventory } from "./hot-wallet-inventory";
 
 export { createAdapter } from "./rpc-adapter";
 export { createAdapterProvider } from "./provider";

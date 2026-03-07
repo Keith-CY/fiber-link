@@ -531,6 +531,102 @@ describe("requestWithdrawal", () => {
     expect(saved.liquidityRequestId).toBe(requests[0]?.id);
   });
 
+  it("attaches an existing open liquidity request when hot wallet is underfunded", async () => {
+    const ledger = createInMemoryLedgerRepo();
+    const liquidityRequestRepo = createInMemoryLiquidityRequestRepo();
+    const existing = await liquidityRequestRepo.create({
+      appId: "app1",
+      asset: "CKB",
+      network: "AGGRON4",
+      sourceKind: "FIBER_TO_CKB_CHAIN",
+      requiredAmount: "90",
+    });
+    await ledger.creditOnce({
+      appId: "app1",
+      userId: "u1",
+      asset: "CKB",
+      amount: "100",
+      refId: "t1",
+      idempotencyKey: "credit:t1",
+    });
+    const hotWalletInventoryProvider = vi.fn(async () => ({
+      asset: "CKB" as const,
+      network: "AGGRON4" as const,
+      availableAmount: "60",
+    }));
+
+    const result = await requestWithdrawal(
+      {
+        appId: "app1",
+        userId: "u1",
+        asset: "CKB",
+        amount: "61",
+        destination: {
+          kind: "CKB_ADDRESS",
+          address: "ckt1qyqfth8m4fevfzh5hhd088s78qcdjjp8cehs7z8jhw",
+        },
+      },
+      { repo, ledgerRepo: ledger, liquidityRequestRepo, hotWalletInventoryProvider },
+    );
+
+    expect(result.state).toBe("LIQUIDITY_PENDING");
+    const saved = await repo.findByIdOrThrow(result.id);
+    expect(saved.liquidityRequestId).toBe(existing.id);
+    expect(liquidityRequestRepo.__listForTests?.()).toHaveLength(1);
+  });
+
+  it("routes to LIQUIDITY_PENDING when active chain reservations consume the remaining hot wallet inventory", async () => {
+    const ledger = createInMemoryLedgerRepo();
+    const liquidityRequestRepo = createInMemoryLiquidityRequestRepo();
+    await ledger.creditOnce({
+      appId: "app1",
+      userId: "u-existing",
+      asset: "CKB",
+      amount: "200",
+      refId: "t-existing",
+      idempotencyKey: "credit:t-existing",
+    });
+    await ledger.creditOnce({
+      appId: "app1",
+      userId: "u1",
+      asset: "CKB",
+      amount: "200",
+      refId: "t1",
+      idempotencyKey: "credit:t1",
+    });
+    await repo.createWithBalanceCheck(
+      {
+        appId: "app1",
+        userId: "u-existing",
+        asset: "CKB",
+        amount: "40",
+        toAddress: "ckt1qreserved",
+      },
+      { ledgerRepo: ledger },
+    );
+    const hotWalletInventoryProvider = vi.fn(async () => ({
+      asset: "CKB" as const,
+      network: "AGGRON4" as const,
+      availableAmount: "100",
+    }));
+
+    const result = await requestWithdrawal(
+      {
+        appId: "app1",
+        userId: "u1",
+        asset: "CKB",
+        amount: "61",
+        destination: {
+          kind: "CKB_ADDRESS",
+          address: "ckt1qyqfth8m4fevfzh5hhd088s78qcdjjp8cehs7z8jhw",
+        },
+      },
+      { repo, ledgerRepo: ledger, liquidityRequestRepo, hotWalletInventoryProvider },
+    );
+
+    expect(result.state).toBe("LIQUIDITY_PENDING");
+  });
+
   it("falls back to defaults when env allowed-assets has no valid values", async () => {
     const ledger = createInMemoryLedgerRepo();
     await ledger.creditOnce({

@@ -295,6 +295,61 @@ describe("createDbWithdrawalRepo", () => {
     expect(valuesArg.liquidityCheckedAt).toBeInstanceOf(Date);
   });
 
+  it("creates LIQUIDITY_PENDING with balance check under the advisory lock", async () => {
+    const txSelectWhere = vi
+      .fn()
+      .mockResolvedValueOnce([{ balance: "100" }])
+      .mockResolvedValueOnce([{ total: "20" }]);
+    const txSelectFrom = vi.fn(() => ({ where: txSelectWhere }));
+    const txSelect = vi.fn(() => ({ from: txSelectFrom }));
+
+    const txInsertReturning = vi.fn().mockResolvedValueOnce([
+      mockRow({
+        id: "w-liq",
+        asset: "CKB",
+        amount: "10",
+        state: "LIQUIDITY_PENDING",
+        destinationKind: "CKB_ADDRESS",
+        toAddress: "ckt1qyqfth8m4fevfzh5hhd088s78qcdjjp8cehs7z8jhw",
+        liquidityRequestId: "liq1",
+        liquidityPendingReason: "hot wallet underfunded",
+        liquidityCheckedAt: new Date("2026-03-07T00:00:00.000Z"),
+      }),
+    ]);
+    const txInsertValues = vi.fn(() => ({ returning: txInsertReturning }));
+    const txInsert = vi.fn(() => ({ values: txInsertValues }));
+
+    const tx = {
+      execute: vi.fn(),
+      select: txSelect,
+      insert: txInsert,
+    } as unknown as DbClient;
+
+    const db = {
+      transaction: vi.fn(async (fn: (client: DbClient) => Promise<unknown>) => fn(tx)),
+    } as unknown as DbClient;
+
+    const repo = createDbWithdrawalRepo(db);
+    const created = await repo.createLiquidityPendingWithBalanceCheck(
+      {
+        appId: "app1",
+        userId: "u1",
+        asset: "CKB",
+        amount: "10",
+        toAddress: "ckt1qyqfth8m4fevfzh5hhd088s78qcdjjp8cehs7z8jhw",
+        liquidityRequestId: "liq1",
+        liquidityPendingReason: "hot wallet underfunded",
+      },
+      { ledgerRepo: createInMemoryLedgerRepo() },
+    );
+
+    expect(created.state).toBe("LIQUIDITY_PENDING");
+    expect((tx as { execute: ReturnType<typeof vi.fn> }).execute).toHaveBeenCalledTimes(1);
+    const valuesArg = txInsertValues.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(valuesArg.state).toBe("LIQUIDITY_PENDING");
+    expect(valuesArg.liquidityRequestId).toBe("liq1");
+  });
+
   it("promotes LIQUIDITY_PENDING withdrawals to PENDING", async () => {
     const mock = createDbMock();
     const repo = createDbWithdrawalRepo(mock.db);
@@ -413,6 +468,28 @@ describe("createDbWithdrawalRepo", () => {
     expect(total).toBe("80");
     const whereArg = mock.selectWhere.mock.calls[0]?.[0];
     expect(collectSqlTokens(whereArg)).toContain("LIQUIDITY_PENDING");
+  });
+
+  it("counts only active on-chain reservations for a specific network", async () => {
+    const mock = createDbMock();
+    const repo = createDbWithdrawalRepo(mock.db);
+
+    mock.selectWhere.mockResolvedValueOnce([{ total: "80" }]);
+
+    const total = await repo.getActiveCkbAddressReservationTotal({
+      appId: "app1",
+      asset: "CKB",
+      network: "AGGRON4",
+    });
+
+    expect(total).toBe("80");
+    const whereArg = mock.selectWhere.mock.calls[0]?.[0];
+    const tokens = collectSqlTokens(whereArg);
+    expect(tokens).toContain("CKB_ADDRESS");
+    expect(tokens).toContain("PENDING");
+    expect(tokens).toContain("PROCESSING");
+    expect(tokens).toContain("RETRY_PENDING");
+    expect(tokens).toContain("ckt1%");
   });
 
   it("finds rows by id and lists ready withdrawals", async () => {
@@ -610,6 +687,91 @@ describe("createInMemoryWithdrawalRepo balance gating", () => {
     ).rejects.toBeInstanceOf(InsufficientFundsError);
 
     await expect(repo.getPendingTotal({ appId: "app1", userId: "u1", asset: "CKB" })).resolves.toBe("80");
+  });
+
+  it("creates LIQUIDITY_PENDING with balance check and rejects oversubscription", async () => {
+    const ledger = createInMemoryLedgerRepo();
+    const repo = createInMemoryWithdrawalRepo();
+
+    await ledger.creditOnce({
+      appId: "app1",
+      userId: "u1",
+      asset: "CKB",
+      amount: "100",
+      refId: "t1",
+      idempotencyKey: "credit:t1",
+    });
+    await repo.createLiquidityPendingWithBalanceCheck(
+      {
+        appId: "app1",
+        userId: "u1",
+        asset: "CKB",
+        amount: "80",
+        toAddress: "ckt1qpending",
+        liquidityRequestId: "liq1",
+        liquidityPendingReason: "hot wallet underfunded",
+      },
+      { ledgerRepo: ledger },
+    );
+
+    await expect(
+      repo.createLiquidityPendingWithBalanceCheck(
+        {
+          appId: "app1",
+          userId: "u1",
+          asset: "CKB",
+          amount: "21",
+          toAddress: "ckt1qnext",
+          liquidityRequestId: "liq2",
+          liquidityPendingReason: "hot wallet underfunded",
+        },
+        { ledgerRepo: ledger },
+      ),
+    ).rejects.toBeInstanceOf(InsufficientFundsError);
+  });
+
+  it("counts only active CKB address reservations for the requested network", async () => {
+    const repo = createInMemoryWithdrawalRepo();
+
+    await repo.create({
+      appId: "app1",
+      userId: "u1",
+      asset: "CKB",
+      amount: "30",
+      toAddress: "ckt1qtestnet",
+    });
+    const mainnet = await repo.create({
+      appId: "app1",
+      userId: "u1",
+      asset: "CKB",
+      amount: "15",
+      toAddress: "ckb1qmainnet",
+    });
+    await repo.markProcessing(mainnet.id, new Date("2026-03-07T00:00:00.000Z"));
+    await repo.createLiquidityPending({
+      appId: "app1",
+      userId: "u1",
+      asset: "CKB",
+      amount: "80",
+      toAddress: "ckt1qliquidity",
+      liquidityRequestId: "liq1",
+      liquidityPendingReason: "hot wallet underfunded",
+    });
+
+    await expect(
+      repo.getActiveCkbAddressReservationTotal({
+        appId: "app1",
+        asset: "CKB",
+        network: "AGGRON4",
+      }),
+    ).resolves.toBe("30");
+    await expect(
+      repo.getActiveCkbAddressReservationTotal({
+        appId: "app1",
+        asset: "CKB",
+        network: "LINA",
+      }),
+    ).resolves.toBe("15");
   });
 
   it("rejects non-positive withdrawal amounts", async () => {

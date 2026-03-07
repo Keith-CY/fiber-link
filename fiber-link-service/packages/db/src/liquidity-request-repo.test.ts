@@ -117,6 +117,35 @@ describe("createInMemoryLiquidityRequestRepo", () => {
     expect(funded.completedAt?.toISOString()).toBe(now.toISOString());
   });
 
+  it("finds an existing open liquidity request by app asset network and source kind", async () => {
+    const repo = createInMemoryLiquidityRequestRepo();
+    const target = await repo.create({
+      appId: "app1",
+      asset: "CKB",
+      network: "AGGRON4",
+      sourceKind: "FIBER_TO_CKB_CHAIN",
+      requiredAmount: "100",
+      createdAt: new Date("2026-03-07T00:00:00.000Z"),
+    });
+    await repo.create({
+      appId: "app1",
+      asset: "CKB",
+      network: "LINA",
+      sourceKind: "FIBER_TO_CKB_CHAIN",
+      requiredAmount: "50",
+      createdAt: new Date("2026-03-07T00:01:00.000Z"),
+    });
+
+    const found = await repo.findOpenByKey({
+      appId: "app1",
+      asset: "CKB",
+      network: "AGGRON4",
+      sourceKind: "FIBER_TO_CKB_CHAIN",
+    });
+
+    expect(found?.id).toBe(target.id);
+  });
+
   it("rejects markFunded when the liquidity request is already FAILED", async () => {
     const repo = createInMemoryLiquidityRequestRepo([
       mockRow({
@@ -203,6 +232,21 @@ describe("createDbLiquidityRequestRepo", () => {
     const insertArg = mock.insertValues.mock.calls[0][0] as Record<string, unknown>;
     expect(insertArg.sourceKind).toBe("FIBER_TO_CKB_CHAIN");
     expect(insertArg.requiredAmount).toBe("100");
+  });
+
+  it("finds an open liquidity request by app asset network and source kind", async () => {
+    const mock = createDbMock();
+    const repo = createDbLiquidityRequestRepo(mock.db);
+    mock.selectLimit.mockResolvedValueOnce([mockRow()]);
+
+    const found = await repo.findOpenByKey({
+      appId: "app1",
+      asset: "CKB",
+      network: "AGGRON4",
+      sourceKind: "FIBER_TO_CKB_CHAIN",
+    });
+
+    expect(found?.id).toBe("liq1");
   });
 
   it("throws not found when marking funded for a missing request", async () => {

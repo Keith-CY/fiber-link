@@ -78,6 +78,12 @@ export type BalanceCheckDeps = {
   ledgerRepo: LedgerRepo;
 };
 
+export type ActiveCkbAddressReservationTotalInput = {
+  appId: string;
+  asset: WithdrawalAsset;
+  network: "AGGRON4" | "LINA";
+};
+
 export type CompletionDeps = {
   ledgerRepo: LedgerRepo;
 };
@@ -85,8 +91,13 @@ export type CompletionDeps = {
 export type WithdrawalRepo = {
   create(input: CreateWithdrawalInput): Promise<WithdrawalRecord>;
   createLiquidityPending(input: CreateLiquidityPendingWithdrawalInput): Promise<WithdrawalRecord>;
+  createLiquidityPendingWithBalanceCheck(
+    input: CreateLiquidityPendingWithdrawalInput,
+    deps: BalanceCheckDeps,
+  ): Promise<WithdrawalRecord>;
   createWithBalanceCheck(input: CreateWithdrawalInput, deps: BalanceCheckDeps): Promise<WithdrawalRecord>;
   getPendingTotal(input: PendingTotalInput): Promise<string>;
+  getActiveCkbAddressReservationTotal(input: ActiveCkbAddressReservationTotalInput): Promise<string>;
   findByIdOrThrow(id: string): Promise<WithdrawalRecord>;
   listLiquidityPending(): Promise<WithdrawalRecord[]>;
   listReadyForProcessing(now: Date): Promise<WithdrawalRecord[]>;
@@ -153,6 +164,10 @@ function isInsufficient(balance: string, pending: string, amount: string): boole
   return available < required;
 }
 
+function ckbAddressPrefixForNetwork(network: "AGGRON4" | "LINA"): "ckt1%" | "ckb1%" {
+  return network === "AGGRON4" ? "ckt1%" : "ckb1%";
+}
+
 async function getPendingTotalWithClient(client: DbClient, input: PendingTotalInput): Promise<string> {
   const [row] = await client
     .select({
@@ -165,6 +180,28 @@ async function getPendingTotalWithClient(client: DbClient, input: PendingTotalIn
         eq(withdrawals.userId, input.userId),
         eq(withdrawals.asset, input.asset),
         inArray(withdrawals.state, reservedWithdrawalStates),
+      ),
+    );
+
+  return row ? String(row.total) : "0";
+}
+
+async function getActiveCkbAddressReservationTotalWithClient(
+  client: DbClient,
+  input: ActiveCkbAddressReservationTotalInput,
+): Promise<string> {
+  const [row] = await client
+    .select({
+      total: sql<string>`COALESCE(SUM(${withdrawals.amount}), 0)`,
+    })
+    .from(withdrawals)
+    .where(
+      and(
+        eq(withdrawals.appId, input.appId),
+        eq(withdrawals.asset, input.asset),
+        eq(withdrawals.destinationKind, "CKB_ADDRESS"),
+        inArray(withdrawals.state, ["PENDING", "PROCESSING", "RETRY_PENDING"]),
+        sql`${withdrawals.toAddress} ILIKE ${ckbAddressPrefixForNetwork(input.network)}`,
       ),
     );
 
@@ -234,6 +271,55 @@ export function createDbWithdrawalRepo(db: DbClient): WithdrawalRepo {
       return toRecord(row);
     },
 
+    async createLiquidityPendingWithBalanceCheck(input, _deps) {
+      assertPositiveAmount(input.amount);
+      return db.transaction(async (tx) => {
+        const lockKey = `${input.appId}:${input.userId}:${input.asset}`;
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${lockKey}))`);
+
+        const ledgerRepo = createDbLedgerRepo(tx);
+        const balance = await ledgerRepo.getBalance({
+          appId: input.appId,
+          userId: input.userId,
+          asset: input.asset,
+        });
+        const pending = await getPendingTotalWithClient(tx, {
+          appId: input.appId,
+          userId: input.userId,
+          asset: input.asset,
+        });
+        if (isInsufficient(balance, pending, input.amount)) {
+          throw new InsufficientFundsError(input.appId, input.userId, input.asset, input.amount);
+        }
+
+        const now = new Date();
+        const [row] = await tx
+          .insert(withdrawals)
+          .values({
+            appId: input.appId,
+            userId: input.userId,
+            asset: input.asset,
+            amount: input.amount,
+            destinationKind: input.destinationKind ?? inferDestinationKind(input.toAddress),
+            toAddress: input.toAddress,
+            state: "LIQUIDITY_PENDING",
+            retryCount: 0,
+            nextRetryAt: null,
+            lastError: null,
+            createdAt: now,
+            updatedAt: now,
+            completedAt: null,
+            txHash: null,
+            liquidityRequestId: input.liquidityRequestId,
+            liquidityPendingReason: input.liquidityPendingReason,
+            liquidityCheckedAt: now,
+          })
+          .returning();
+
+        return toRecord(row);
+      });
+    },
+
     async createWithBalanceCheck(input, _deps) {
       assertPositiveAmount(input.amount);
       return db.transaction(async (tx) => {
@@ -282,6 +368,10 @@ export function createDbWithdrawalRepo(db: DbClient): WithdrawalRepo {
 
     async getPendingTotal(input) {
       return getPendingTotalWithClient(db, input);
+    },
+
+    async getActiveCkbAddressReservationTotal(input) {
+      return getActiveCkbAddressReservationTotalWithClient(db, input);
     },
 
     async findByIdOrThrow(id) {
@@ -496,6 +586,23 @@ export function createInMemoryWithdrawalRepo(): WithdrawalRepo {
       return clone(record);
     },
 
+    async createLiquidityPendingWithBalanceCheck(input, deps) {
+      const pending = await this.getPendingTotal({
+        appId: input.appId,
+        userId: input.userId,
+        asset: input.asset,
+      });
+      const balance = await deps.ledgerRepo.getBalance({
+        appId: input.appId,
+        userId: input.userId,
+        asset: input.asset,
+      });
+      if (isInsufficient(balance, pending, input.amount)) {
+        throw new InsufficientFundsError(input.appId, input.userId, input.asset, input.amount);
+      }
+      return this.createLiquidityPending(input);
+    },
+
     async createWithBalanceCheck(input, deps) {
       const pending = await this.getPendingTotal({
         appId: input.appId,
@@ -522,6 +629,19 @@ export function createInMemoryWithdrawalRepo(): WithdrawalRepo {
           pendingStates.has(item.state),
       );
       return sumAmounts(pending.map((item) => item.amount));
+    },
+
+    async getActiveCkbAddressReservationTotal(input) {
+      const prefix = input.network === "AGGRON4" ? "ckt1" : "ckb1";
+      const active = records.filter(
+        (item) =>
+          item.appId === input.appId &&
+          item.asset === input.asset &&
+          item.destinationKind === "CKB_ADDRESS" &&
+          item.toAddress.toLowerCase().startsWith(prefix) &&
+          (item.state === "PENDING" || item.state === "PROCESSING" || item.state === "RETRY_PENDING"),
+      );
+      return sumAmounts(active.map((item) => item.amount));
     },
 
     async findByIdOrThrow(id) {

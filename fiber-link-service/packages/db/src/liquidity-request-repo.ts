@@ -43,6 +43,13 @@ export type LiquidityRequestRecord = {
   completedAt: Date | null;
 };
 
+export type FindOpenLiquidityRequestByKeyInput = {
+  appId: string;
+  asset: Asset;
+  network: string;
+  sourceKind: LiquidityRequestSourceKind;
+};
+
 export class LiquidityRequestNotFoundError extends Error {
   constructor(public readonly liquidityRequestId: string) {
     super(`liquidity request not found: ${liquidityRequestId}`);
@@ -78,6 +85,7 @@ export type LiquidityRequestRepo = {
   create(input: CreateLiquidityRequestInput): Promise<LiquidityRequestRecord>;
   findById(liquidityRequestId: string): Promise<LiquidityRequestRecord | null>;
   findByIdOrThrow(liquidityRequestId: string): Promise<LiquidityRequestRecord>;
+  findOpenByKey(input: FindOpenLiquidityRequestByKeyInput): Promise<LiquidityRequestRecord | null>;
   listOpen(): Promise<LiquidityRequestRecord[]>;
   markFunded(liquidityRequestId: string, input: MarkLiquidityRequestFundedInput): Promise<LiquidityRequestRecord>;
   __listForTests?: () => LiquidityRequestRecord[];
@@ -158,6 +166,24 @@ export function createDbLiquidityRequestRepo(db: DbClient): LiquidityRequestRepo
     return row ? toRecord(row) : null;
   }
 
+  async function findOpenByKey(input: FindOpenLiquidityRequestByKeyInput): Promise<LiquidityRequestRecord | null> {
+    const [row] = await db
+      .select()
+      .from(liquidityRequests)
+      .where(
+        and(
+          eq(liquidityRequests.appId, input.appId),
+          eq(liquidityRequests.asset, input.asset),
+          eq(liquidityRequests.network, input.network),
+          eq(liquidityRequests.sourceKind, input.sourceKind),
+          inArray(liquidityRequests.state, [...OPEN_LIQUIDITY_REQUEST_STATES]),
+        ),
+      )
+      .orderBy(asc(liquidityRequests.createdAt), asc(liquidityRequests.id))
+      .limit(1);
+    return row ? toRecord(row) : null;
+  }
+
   return {
     async create(input) {
       const now = input.createdAt ? new Date(input.createdAt) : new Date();
@@ -191,6 +217,8 @@ export function createDbLiquidityRequestRepo(db: DbClient): LiquidityRequestRepo
       }
       return row;
     },
+
+    findOpenByKey,
 
     async listOpen() {
       const rows = await db
@@ -257,6 +285,20 @@ export function createInMemoryLiquidityRequestRepo(
     return cloneRecord(records[index]);
   }
 
+  async function findOpenByKey(input: FindOpenLiquidityRequestByKeyInput): Promise<LiquidityRequestRecord | null> {
+    const match = records
+      .filter(
+        (record) =>
+          record.appId === input.appId &&
+          record.asset === input.asset &&
+          record.network === input.network &&
+          record.sourceKind === input.sourceKind &&
+          isOpenState(record.state),
+      )
+      .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime() || left.id.localeCompare(right.id))[0];
+    return match ? cloneRecord(match) : null;
+  }
+
   return {
     async create(input) {
       const now = input.createdAt ? new Date(input.createdAt) : new Date();
@@ -280,6 +322,8 @@ export function createInMemoryLiquidityRequestRepo(
     },
 
     findById,
+
+    findOpenByKey,
 
     async findByIdOrThrow(liquidityRequestId) {
       const record = await findById(liquidityRequestId);

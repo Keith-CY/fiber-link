@@ -1,4 +1,4 @@
-import { createInMemoryLiquidityRequestRepo } from "@fiber-link/db";
+import { createInMemoryLiquidityRequestRepo, createInMemoryWithdrawalRepo } from "@fiber-link/db";
 import { describe, expect, it, vi } from "vitest";
 import { decideWithdrawalRequestLiquidity } from "./liquidity";
 
@@ -60,7 +60,72 @@ describe("decideWithdrawalRequestLiquidity", () => {
       asset: "CKB",
       network: "AGGRON4",
       sourceKind: "FIBER_TO_CKB_CHAIN",
-      requiredAmount: "61",
+      requiredAmount: "1",
     });
+  });
+
+  it("attaches an existing open liquidity request for the same app asset network and source kind", async () => {
+    const liquidityRequestRepo = createInMemoryLiquidityRequestRepo();
+    const existing = await liquidityRequestRepo.create({
+      appId: "app1",
+      asset: "CKB",
+      network: "AGGRON4",
+      sourceKind: "FIBER_TO_CKB_CHAIN",
+      requiredAmount: "100",
+    });
+    const hotWalletInventoryProvider = vi.fn(async () => ({
+      asset: "CKB" as const,
+      network: "AGGRON4" as const,
+      availableAmount: "60",
+    }));
+
+    const result = await decideWithdrawalRequestLiquidity(
+      {
+        appId: "app1",
+        asset: "CKB",
+        amount: "61",
+        destination: {
+          kind: "CKB_ADDRESS",
+          address: "ckt1qyqfth8m4fevfzh5hhd088s78qcdjjp8cehs7z8jhw",
+        },
+      },
+      { hotWalletInventoryProvider, liquidityRequestRepo },
+    );
+
+    expect(result.state).toBe("LIQUIDITY_PENDING");
+    expect(result.liquidityRequestId).toBe(existing.id);
+    expect(liquidityRequestRepo.__listForTests?.()).toHaveLength(1);
+  });
+
+  it("uses active chain reservations before deciding whether liquidity is sufficient", async () => {
+    const repo = createInMemoryWithdrawalRepo();
+    const liquidityRequestRepo = createInMemoryLiquidityRequestRepo();
+    const hotWalletInventoryProvider = vi.fn(async () => ({
+      asset: "CKB" as const,
+      network: "AGGRON4" as const,
+      availableAmount: "100",
+    }));
+    await repo.create({
+      appId: "app1",
+      userId: "u-existing",
+      asset: "CKB",
+      amount: "40",
+      toAddress: "ckt1qreserved",
+    });
+
+    const result = await decideWithdrawalRequestLiquidity(
+      {
+        appId: "app1",
+        asset: "CKB",
+        amount: "61",
+        destination: {
+          kind: "CKB_ADDRESS",
+          address: "ckt1qyqfth8m4fevfzh5hhd088s78qcdjjp8cehs7z8jhw",
+        },
+      },
+      { repo, hotWalletInventoryProvider, liquidityRequestRepo },
+    );
+
+    expect(result.state).toBe("LIQUIDITY_PENDING");
   });
 });
