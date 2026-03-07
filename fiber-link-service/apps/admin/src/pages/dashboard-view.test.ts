@@ -132,4 +132,49 @@ describe("withdrawal summary", () => {
     expect(summary.byState.FAILED).toBe(1);
     expect(summary.byState.COMPLETED).toBe(0);
   });
+
+  it("does not produce NaN for unexpected withdrawal states during staggered deploys", () => {
+    const now = new Date("2026-02-17T10:00:00.000Z");
+    const summary = summarizeWithdrawalStates([
+      {
+        id: "w-expected",
+        appId: "app-alpha",
+        userId: "u-1",
+        asset: "CKB",
+        amount: "5",
+        toAddress: "ckt1qexpected",
+        state: "PENDING",
+        retryCount: 0,
+        nextRetryAt: null,
+        lastError: null,
+        createdAt: now,
+        updatedAt: now,
+        completedAt: null,
+        txHash: null,
+      },
+      {
+        id: "w-unknown",
+        appId: "app-beta",
+        userId: "u-2",
+        asset: "CKB",
+        amount: "7",
+        toAddress: "ckt1qunknown",
+        state: "WAITING_FOR_BATCH",
+        retryCount: 0,
+        nextRetryAt: null,
+        lastError: null,
+        createdAt: now,
+        updatedAt: now,
+        completedAt: null,
+        txHash: null,
+      } as unknown as DashboardWithdrawal,
+    ]);
+
+    const dynamicCounts = summary.byState as Record<string, number>;
+
+    expect(summary.total).toBe(2);
+    expect(summary.byState.PENDING).toBe(1);
+    expect(dynamicCounts.WAITING_FOR_BATCH).toBe(1);
+    expect(Number.isNaN(dynamicCounts.WAITING_FOR_BATCH)).toBe(false);
+  });
 });

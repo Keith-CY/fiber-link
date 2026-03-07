@@ -88,6 +88,8 @@ export const WithdrawalRequestParamsSchema = z
     };
   });
 
+const WithdrawalRequestAcceptedStateSchema = z.enum(["LIQUIDITY_PENDING", "PENDING"]);
+
 const WithdrawalStateSchema = z.enum([
   "LIQUIDITY_PENDING",
   "PENDING",
@@ -99,7 +101,7 @@ const WithdrawalStateSchema = z.enum([
 
 export const WithdrawalRequestResultSchema = z.object({
   id: z.string().min(1),
-  state: WithdrawalStateSchema,
+  state: WithdrawalRequestAcceptedStateSchema,
 });
 
 export const DashboardWithdrawalStateFilterSchema = z.enum([
