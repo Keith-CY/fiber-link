@@ -46,9 +46,9 @@ RSpec.describe ::FiberLink::RpcController, type: :request do
       expect(WebMock).to have_requested(:post, "https://fiber-link.example/rpc").with { |request|
         body = JSON.parse(request.body)
         body.fetch("method") == "tip.create" &&
-          body.dig("params", "postId") == post_id &&
-          body.dig("params", "fromUserId") == user.id &&
-          body.dig("params", "toUserId") == to_user_id
+          body.dig("params", "postId") == post_id.to_s &&
+          body.dig("params", "fromUserId") == user.id.to_s &&
+          body.dig("params", "toUserId") == to_user_id.to_s
       }
     end
 
@@ -158,6 +158,46 @@ RSpec.describe ::FiberLink::RpcController, type: :request do
       }
     end
 
+    it "server-enforces withdrawal.request params" do
+      sign_in(user)
+
+      stub_request(:post, "https://fiber-link.example/rpc").to_return(
+        status: 200,
+        body: {
+          jsonrpc: "2.0",
+          id: "withdraw-req",
+          result: { id: "wd-1", state: "PENDING" },
+        }.to_json,
+        headers: { "Content-Type" => "application/json" },
+      )
+
+      post "/fiber-link/rpc",
+           params: {
+             jsonrpc: "2.0",
+             id: "withdraw-req",
+             method: "withdrawal.request",
+             params: {
+               userId: "-1",
+               asset: "CKB",
+               amount: "61",
+               toAddress: "ckt1qyqg5xa84dfwfy76tptw2sy0k9q98xaeka9q5tvdlm",
+             },
+           },
+           as: :json
+
+      expect(response).to have_http_status(:ok)
+      expect(JSON.parse(response.body).dig("result", "id")).to eq("wd-1")
+
+      expect(WebMock).to have_requested(:post, "https://fiber-link.example/rpc").with { |request|
+        body = JSON.parse(request.body)
+        body.fetch("method") == "withdrawal.request" &&
+          body.dig("params", "userId") == user.id.to_s &&
+          body.dig("params", "asset") == "CKB" &&
+          body.dig("params", "amount") == "61" &&
+          body.dig("params", "toAddress") == "ckt1qyqg5xa84dfwfy76tptw2sy0k9q98xaeka9q5tvdlm"
+      }
+    end
+
     it "rejects unknown methods without forwarding" do
       sign_in(user)
 
@@ -199,6 +239,34 @@ RSpec.describe ::FiberLink::RpcController, type: :request do
       expect(body.fetch("jsonrpc")).to eq("2.0")
       expect(body.fetch("id")).to eq("bad-post")
       expect(body.dig("error", "code")).to eq(-32602)
+
+      expect(WebMock).not_to have_requested(:post, "https://fiber-link.example/rpc")
+    end
+
+    it "rejects tip.create when current user tips their own post" do
+      self_post = Fabricate(:post)
+      sign_in(self_post.user)
+
+      stub_request(:post, "https://fiber-link.example/rpc").to_return(status: 200, body: "{}")
+
+      post "/fiber-link/rpc",
+           params: {
+             jsonrpc: "2.0",
+             id: "self-tip",
+             method: "tip.create",
+             params: {
+               amount: "1",
+               asset: "CKB",
+               postId: self_post.id,
+             },
+           },
+           as: :json
+
+      expect(response).to have_http_status(:unprocessable_entity)
+      body = JSON.parse(response.body)
+      expect(body.fetch("jsonrpc")).to eq("2.0")
+      expect(body.fetch("id")).to eq("self-tip")
+      expect(body.dig("error", "code")).to eq(-32002)
 
       expect(WebMock).not_to have_requested(:post, "https://fiber-link.example/rpc")
     end

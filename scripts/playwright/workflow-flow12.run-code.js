@@ -65,32 +65,79 @@ async (page) => {
     }, { method, params });
   }
 
-  await page.goto(`${baseUrl}/login`, { waitUntil: "domcontentloaded" });
+  async function waitForSessionLoggedIn(timeoutMs = 30_000) {
+    await page.waitForFunction(
+      async () => {
+        const response = await fetch("/session/current.json", {
+          credentials: "same-origin",
+          headers: { "x-requested-with": "XMLHttpRequest" },
+        });
+        if (!response.ok) {
+          return false;
+        }
+        const payload = await response.json().catch(() => null);
+        return Boolean(payload?.current_user?.id);
+      },
+      undefined,
+      { timeout: timeoutMs },
+    );
+  }
 
-  const accountButton = page.getByRole("button", { name: /notifications and account/i }).first();
-  const alreadyLoggedIn = await accountButton.isVisible().catch(() => false);
+  async function login(loginUsername, loginPassword) {
+    await page.goto(`${baseUrl}/login`, { waitUntil: "domcontentloaded" });
+    const loginResult = await page.evaluate(async ({ login, password }) => {
+      let csrfToken = null;
+      try {
+        const csrfResponse = await fetch("/session/csrf.json", {
+          credentials: "same-origin",
+          headers: { "x-requested-with": "XMLHttpRequest" },
+        });
+        const csrfPayload = await csrfResponse.json();
+        csrfToken = csrfPayload?.csrf ?? null;
+      } catch (_error) {
+        csrfToken = null;
+      }
+      if (!csrfToken) {
+        csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribute("content");
+      }
+      const headers = {
+        "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
+        "x-requested-with": "XMLHttpRequest",
+      };
+      if (csrfToken) {
+        headers["x-csrf-token"] = csrfToken;
+      }
+      const body = new URLSearchParams({ login, password });
+      const response = await fetch("/session", {
+        method: "POST",
+        credentials: "same-origin",
+        headers,
+        body: body.toString(),
+      });
+      let payload = null;
+      try {
+        payload = await response.json();
+      } catch (_error) {
+        payload = null;
+      }
+      return {
+        ok: response.ok,
+        status: response.status,
+        payload,
+      };
+    }, { login: loginUsername, password: loginPassword });
 
-  if (!alreadyLoggedIn) {
-    let usernameInput = page.locator("#login-account-name:visible, #signin-account-name:visible, input[name='login']:visible").first();
-    let passwordInput = page.locator("#login-password:visible, #signin_password:visible, input[type='password']:visible").first();
-    const directFormVisible = await usernameInput.isVisible().catch(() => false);
-
-    if (!directFormVisible) {
-      const openLoginButton = page.getByRole("button", { name: /log in/i }).first();
-      await openLoginButton.waitFor({ timeout: 20_000 });
-      await openLoginButton.click();
-      usernameInput = page.locator("#login-account-name:visible, #signin-account-name:visible, input[name='login']:visible").first();
-      passwordInput = page.locator("#login-password:visible, #signin_password:visible, input[type='password']:visible").first();
+    const loginErrors = Array.isArray(loginResult?.payload?.errors) ? loginResult.payload.errors : [];
+    if (!loginResult.ok || loginResult.payload?.error || loginErrors.length > 0) {
+      const details = [loginResult.payload?.error, ...loginErrors].filter(Boolean).join("; ");
+      throw new Error(`login failed for ${loginUsername}${details ? `: ${details}` : ""}`);
     }
 
-    await usernameInput.waitFor({ timeout: 20_000 });
-    await usernameInput.fill(username);
-    await passwordInput.fill(password);
-
-    const submitButton = page.locator("button#login-button, button:has-text('Log In')").first();
-    await submitButton.click();
-    await accountButton.waitFor({ timeout: 20_000 });
+    await page.goto(`${baseUrl}/`, { waitUntil: "domcontentloaded" });
+    await waitForSessionLoggedIn(30_000);
   }
+
+  await login(username, password);
 
   if (topicPath.trim()) {
     const normalizedPath = topicPath.startsWith("/") ? topicPath : `/${topicPath}`;
@@ -100,7 +147,11 @@ async (page) => {
     await page.getByRole("link", { name: topicTitle }).first().click();
   }
 
-  const tipButton = page.getByRole("button", { name: /^tip$/i }).first();
+  const tipButton = page
+    .locator(
+      ".fiber-link-tip-entry__button:visible, .post-action-menu__fiber-link-tip:visible, button[aria-label='Tip']:visible",
+    )
+    .first();
   await tipButton.waitFor({ timeout: 20_000 });
   await page.screenshot({ path: tipButtonScreenshotPath, fullPage: false });
   await tipButton.click();

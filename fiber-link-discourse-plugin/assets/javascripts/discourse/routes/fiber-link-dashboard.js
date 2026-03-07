@@ -1,34 +1,10 @@
 import Route from "@ember/routing/route";
 import EmberObject from "@ember/object";
-import { service } from "@ember/service";
 
-import { TIP_STATE_MAPPING } from "../components/fiber-link-tip-feed";
 import { getDashboardSummary } from "../services/fiber-link-api";
 
 const POLL_INTERVAL_MS = 4000;
 const DASHBOARD_LIMIT = 20;
-const WITHDRAWAL_STATE_OPTIONS = Object.freeze([
-  "ALL",
-  "PENDING",
-  "PROCESSING",
-  "RETRY_PENDING",
-  "COMPLETED",
-  "FAILED",
-]);
-const SETTLEMENT_STATE_OPTIONS = Object.freeze(["ALL", "UNPAID", "SETTLED", "FAILED"]);
-const PIPELINE_STAGE_OPTIONS = Object.freeze(["UNPAID", "SETTLED", "FAILED"]);
-
-function normalizePipelineBoard(rawBoard) {
-  const stageCounts = Array.isArray(rawBoard?.stageCounts)
-    ? rawBoard.stageCounts
-    : PIPELINE_STAGE_OPTIONS.map((stage) => ({ stage, count: 0 }));
-  const invoiceRows = Array.isArray(rawBoard?.invoiceRows) ? rawBoard.invoiceRows : [];
-
-  return {
-    stageCounts,
-    invoiceRows,
-  };
-}
 
 function formatTimestamp(rawValue) {
   if (typeof rawValue !== "string" || !rawValue.trim()) {
@@ -43,21 +19,41 @@ function formatTimestamp(rawValue) {
   return value.toISOString();
 }
 
-export default class FiberLinkDashboardRoute extends Route {
-  @service currentUser;
+function buildTipStats(tips) {
+  const rows = Array.isArray(tips) ? tips : [];
+  let pendingCount = 0;
+  let settledCount = 0;
+  let failedCount = 0;
 
+  for (const tip of rows) {
+    const state = typeof tip?.state === "string" ? tip.state.toUpperCase() : "UNKNOWN";
+    if (state === "UNPAID") {
+      pendingCount += 1;
+      continue;
+    }
+    if (state === "SETTLED") {
+      settledCount += 1;
+      continue;
+    }
+    if (state === "FAILED") {
+      failedCount += 1;
+    }
+  }
+
+  return {
+    totalTipCount: rows.length,
+    pendingTipCount: pendingCount,
+    settledTipCount: settledCount,
+    failedTipCount: failedCount,
+  };
+}
+
+export default class FiberLinkDashboardRoute extends Route {
   _activeModel = null;
   _pollTimer = null;
 
-  model(params = {}) {
+  model() {
     this._clearPollTimer();
-
-    const normalizedWithdrawalState = WITHDRAWAL_STATE_OPTIONS.includes(params.withdrawalState)
-      ? params.withdrawalState
-      : "ALL";
-    const normalizedSettlementState = SETTLEMENT_STATE_OPTIONS.includes(params.settlementState)
-      ? params.settlementState
-      : "ALL";
 
     const model = EmberObject.create({
       isSummaryLoading: true,
@@ -69,26 +65,10 @@ export default class FiberLinkDashboardRoute extends Route {
       generatedAt: null,
       refreshedAt: null,
       tipFeedItems: [],
-      mappingRows: TIP_STATE_MAPPING,
-      isAdminViewEnabled: Boolean(this.currentUser?.admin || this.currentUser?.staff),
-      adminApps: [],
-      adminWithdrawals: [],
-      adminSettlements: [],
-      withdrawalStateOptions: WITHDRAWAL_STATE_OPTIONS.map((state) => ({
-        value: state,
-        selected: state === normalizedWithdrawalState,
-      })),
-      settlementStateOptions: SETTLEMENT_STATE_OPTIONS.map((state) => ({
-        value: state,
-        selected: state === normalizedSettlementState,
-      })),
-      withdrawalStateFilter: normalizedWithdrawalState,
-      settlementStateFilter: normalizedSettlementState,
-      adminFiltersApplied: {
-        withdrawalState: normalizedWithdrawalState,
-        settlementState: normalizedSettlementState,
-      },
-      adminPipelineBoard: normalizePipelineBoard(),
+      totalTipCount: 0,
+      pendingTipCount: 0,
+      settledTipCount: 0,
+      failedTipCount: 0,
     });
 
     this._activeModel = model;
@@ -119,31 +99,10 @@ export default class FiberLinkDashboardRoute extends Route {
     });
 
     try {
-      const baseParams = {
+      const result = await getDashboardSummary({
         limit: DASHBOARD_LIMIT,
-        filters: {
-          withdrawalState: model.withdrawalStateFilter,
-          settlementState: model.settlementStateFilter,
-        },
-      };
-
-      let result;
-
-      try {
-        result = await getDashboardSummary({
-          ...baseParams,
-          includeAdmin: true,
-        });
-      } catch (error) {
-        if (!this._isAdminPermissionError(error)) {
-          throw error;
-        }
-
-        result = await getDashboardSummary({
-          ...baseParams,
-          includeAdmin: false,
-        });
-      }
+        includeAdmin: false,
+      });
 
       if (model !== this._activeModel) {
         return;
@@ -151,14 +110,7 @@ export default class FiberLinkDashboardRoute extends Route {
 
       const tips = Array.isArray(result?.tips) ? result.tips : [];
       const hasUnpaid = tips.some((tip) => tip?.state === "UNPAID");
-      const hasAdminPayload = Boolean(result?.admin);
-      const isAdminViewEnabled = Boolean(
-        this.currentUser?.admin || this.currentUser?.staff || hasAdminPayload
-      );
-      const adminFallbackFilters = {
-        withdrawalState: model.withdrawalStateFilter,
-        settlementState: model.settlementStateFilter,
-      };
+      const stats = buildTipStats(tips);
 
       model.setProperties({
         isSummaryLoading: false,
@@ -170,22 +122,7 @@ export default class FiberLinkDashboardRoute extends Route {
         generatedAt: formatTimestamp(result?.generatedAt),
         refreshedAt: new Date().toISOString(),
         tipFeedItems: tips,
-        isAdminViewEnabled,
-        adminApps: isAdminViewEnabled && Array.isArray(result?.admin?.apps) ? result.admin.apps : [],
-        adminWithdrawals:
-          isAdminViewEnabled && Array.isArray(result?.admin?.withdrawals)
-            ? result.admin.withdrawals
-            : [],
-        adminSettlements:
-          isAdminViewEnabled && Array.isArray(result?.admin?.settlements)
-            ? result.admin.settlements
-            : [],
-        adminPipelineBoard: isAdminViewEnabled
-          ? normalizePipelineBoard(result?.admin?.pipelineBoard)
-          : normalizePipelineBoard(),
-        adminFiltersApplied: isAdminViewEnabled
-          ? result?.admin?.filtersApplied ?? adminFallbackFilters
-          : adminFallbackFilters,
+        ...stats,
       });
 
       if (hasUnpaid) {
@@ -218,21 +155,5 @@ export default class FiberLinkDashboardRoute extends Route {
       clearTimeout(this._pollTimer);
       this._pollTimer = null;
     }
-  }
-
-  _isAdminPermissionError(error) {
-    const status = Number(error?.jqXHR?.status ?? error?.status);
-    const rpcErrorCode = Number(error?.jqXHR?.responseJSON?.error?.code ?? error?.code);
-    if (status === 403 || rpcErrorCode === -32001 || rpcErrorCode === 403) {
-      return true;
-    }
-
-    const rpcMessage = (error?.jqXHR?.responseJSON?.error?.message ?? "").toLowerCase();
-    if (rpcMessage.includes("forbidden") || rpcMessage.includes("admin")) {
-      return true;
-    }
-
-    const errorMessage = (error?.message ?? "").toLowerCase();
-    return errorMessage.includes("forbidden") || errorMessage.includes("admin");
   }
 }

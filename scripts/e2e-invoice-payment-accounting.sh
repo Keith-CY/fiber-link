@@ -19,6 +19,21 @@ ENV_FILE="${COMPOSE_DIR}/.env"
 ARTIFACT_DIR="${ROOT_DIR}/.tmp/e2e-invoice-payment-accounting/$(date -u +%Y%m%dT%H%M%SZ)"
 SUMMARY_FILE="${ARTIFACT_DIR}/summary.tsv"
 
+# Normalize PATH for non-interactive shells (expect/CI) so modern Node/Bun are found first.
+if [[ -d "${HOME}/.nvm/versions/node" ]]; then
+  latest_nvm_bin="$(ls -d "${HOME}"/.nvm/versions/node/*/bin 2>/dev/null | sort -V | tail -n1 || true)"
+  if [[ -n "${latest_nvm_bin}" ]]; then
+    PATH="${latest_nvm_bin}:${PATH}"
+  fi
+fi
+if [[ -x "/opt/homebrew/bin/node" ]]; then
+  PATH="/opt/homebrew/bin:${PATH}"
+fi
+if [[ -x "${HOME}/.bun/bin/bun" ]]; then
+  PATH="${HOME}/.bun/bin:${PATH}"
+fi
+export PATH
+
 WAIT_TIMEOUT_SECONDS="${WAIT_TIMEOUT_SECONDS:-600}"
 SETTLEMENT_TIMEOUT_SECONDS="${SETTLEMENT_TIMEOUT_SECONDS:-180}"
 SETTLEMENT_POLL_INTERVAL_SECONDS="${SETTLEMENT_POLL_INTERVAL_SECONDS:-5}"
@@ -39,10 +54,14 @@ CKB_FAUCET_FALLBACK_API_BASE="${CKB_FAUCET_FALLBACK_API_BASE:-https://ckb-utilit
 CKB_FAUCET_ENABLE_FALLBACK="${CKB_FAUCET_ENABLE_FALLBACK:-1}"
 CKB_FAUCET_AMOUNT="${CKB_FAUCET_AMOUNT:-100000}"
 CKB_FAUCET_WAIT_SECONDS="${CKB_FAUCET_WAIT_SECONDS:-20}"
+CKB_POST_FAUCET_BALANCE_WAIT_TIMEOUT_SECONDS="${CKB_POST_FAUCET_BALANCE_WAIT_TIMEOUT_SECONDS:-180}"
+CKB_POST_FAUCET_BALANCE_POLL_INTERVAL_SECONDS="${CKB_POST_FAUCET_BALANCE_POLL_INTERVAL_SECONDS:-5}"
 CKB_PAYMENT_FAUCET_ON_FLOW="${E2E_CKB_PAYMENT_FAUCET_ON_FLOW:-0}"
 CKB_RPC_URL="${E2E_CKB_RPC_URL:-https://testnet.ckbapp.dev/}"
 CKB_BALANCE_CHECK_LIMIT_PAGES="${E2E_CKB_BALANCE_CHECK_LIMIT_PAGES:-20}"
 USDI_BALANCE_CHECK_LIMIT_PAGES="${E2E_USDI_BALANCE_CHECK_LIMIT_PAGES:-20}"
+NODE_INFO_DERIVE_RETRIES="${NODE_INFO_DERIVE_RETRIES:-30}"
+NODE_INFO_DERIVE_RETRY_INTERVAL_SECONDS="${NODE_INFO_DERIVE_RETRY_INTERVAL_SECONDS:-2}"
 
 USDI_FAUCET_COMMAND="${E2E_USDI_FAUCET_COMMAND:-}"
 USDI_FAUCET_AMOUNT="${USDI_FAUCET_AMOUNT:-20}"
@@ -61,9 +80,9 @@ VERBOSE=0
 PREPARE_ONLY=0
 FINALIZED=0
 
-RPC_PORT=""
-FNN_INVOICE_RPC_PORT=""
-FNN_PAYER_RPC_PORT=""
+RPC_PORT="${RPC_PORT:-}"
+FNN_INVOICE_RPC_PORT="${FNN_INVOICE_RPC_PORT:-}"
+FNN_PAYER_RPC_PORT="${FNN_PAYER_RPC_PORT:-}"
 
 INVOICE_NODE_CONTAINER="fiber-link-fnn"
 PAYER_NODE_CONTAINER="fiber-link-fnn2"
@@ -117,10 +136,14 @@ Optional env:
   CKB_FAUCET_ENABLE_FALLBACK=1
   CKB_FAUCET_AMOUNT=100000
   CKB_FAUCET_WAIT_SECONDS=20
+  CKB_POST_FAUCET_BALANCE_WAIT_TIMEOUT_SECONDS=180
+  CKB_POST_FAUCET_BALANCE_POLL_INTERVAL_SECONDS=5
   E2E_CKB_PAYMENT_FAUCET_ON_FLOW=0  # 0=precheck and topup only when needed, 1=always request faucet on CKB payment flow
   E2E_CKB_RPC_URL=https://testnet.ckbapp.dev/
   E2E_CKB_BALANCE_CHECK_LIMIT_PAGES=20
   E2E_USDI_BALANCE_CHECK_LIMIT_PAGES=20
+  NODE_INFO_DERIVE_RETRIES=30
+  NODE_INFO_DERIVE_RETRY_INTERVAL_SECONDS=2
   E2E_USDI_CHANNEL_FUNDING_AMOUNT=<auto from fnn node_info.udt_cfg_infos[].auto_accept_amount>
   # default when E2E_USDI_FAUCET_COMMAND is unset:
   # curl -fsS -X POST https://ckb-utilities.random-walk.co.jp/api/faucet \
@@ -176,22 +199,19 @@ compose() {
 
 is_tcp_port_listening() {
   local port="$1"
-  python3 - "${port}" <<'PY'
-import socket
-import sys
-
-port = int(sys.argv[1])
-sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-sock.settimeout(0.5)
-try:
-    sock.connect(("127.0.0.1", port))
-except OSError:
-    sys.exit(1)
-else:
-    sys.exit(0)
-finally:
-    sock.close()
-PY
+  node -e 'const net = require("node:net");
+const port = Number(process.argv[1]);
+if (!Number.isInteger(port) || port <= 0) process.exit(1);
+const socket = new net.Socket();
+const finish = (code) => {
+  socket.destroy();
+  process.exit(code);
+};
+socket.setTimeout(500);
+socket.once("connect", () => finish(0));
+socket.once("timeout", () => finish(1));
+socket.once("error", () => finish(1));
+socket.connect(port, "127.0.0.1");' "${port}"
 }
 
 listener_hint_for_port() {
@@ -366,15 +386,12 @@ to_hex_quantity() {
 
 hex_quantity_to_decimal() {
   local quantity="$1"
-  python3 - "${quantity}" <<'PY'
-import sys
-
-q = sys.argv[1].strip()
-if q.startswith("0x") or q.startswith("0X"):
-    print(int(q, 16))
-else:
-    print(int(q))
-PY
+  node -e 'const q = String(process.argv[1] ?? "").trim();
+try {
+  console.log(BigInt(q).toString());
+} catch (_error) {
+  process.exit(1);
+}' "${quantity}"
 }
 
 currency_for_asset() {
@@ -455,13 +472,13 @@ ckb_rpc_call() {
 bigint_gte() {
   local left="$1"
   local right="$2"
-  python3 - "${left}" "${right}" <<'PY'
-import sys
-
-left = int(sys.argv[1])
-right = int(sys.argv[2])
-raise SystemExit(0 if left >= right else 1)
-PY
+  node -e 'try {
+  const left = BigInt(process.argv[1]);
+  const right = BigInt(process.argv[2]);
+  process.exit(left >= right ? 0 : 1);
+} catch (_error) {
+  process.exit(1);
+}' "${left}" "${right}"
 }
 
 extract_usdi_type_script_from_node_info() {
@@ -512,27 +529,33 @@ extract_usdi_auto_accept_amount_from_node_info() {
 
 sum_xudt_amount_from_get_cells_response() {
   local response_payload="$1"
-  python3 - "${response_payload}" <<'PY'
-import json
-import sys
-
-resp = json.loads(sys.argv[1])
-objs = (resp.get("result") or {}).get("objects") or []
-total = 0
-for obj in objs:
-    data = obj.get("output_data") or obj.get("outputData") or ""
-    if not isinstance(data, str) or not data.startswith("0x"):
-        continue
-    hex_data = data[2:]
-    if len(hex_data) < 32:
-        continue
-    try:
-        first16 = bytes.fromhex(hex_data[:32])
-    except ValueError:
-        continue
-    total += int.from_bytes(first16, "little")
-print(total)
-PY
+  node -e 'let resp;
+try {
+  resp = JSON.parse(process.argv[1]);
+} catch (_error) {
+  process.exit(1);
+}
+const objs = Array.isArray(resp?.result?.objects) ? resp.result.objects : [];
+let total = 0n;
+for (const obj of objs) {
+  const data = obj?.output_data ?? obj?.outputData ?? "";
+  if (typeof data !== "string" || !data.startsWith("0x")) continue;
+  const hexData = data.slice(2);
+  if (hexData.length < 32) continue;
+  let first16;
+  try {
+    first16 = Buffer.from(hexData.slice(0, 32), "hex");
+  } catch (_error) {
+    continue;
+  }
+  if (first16.length !== 16) continue;
+  let value = 0n;
+  for (let i = 15; i >= 0; i -= 1) {
+    value = (value << 8n) + BigInt(first16[i]);
+  }
+  total += value;
+}
+console.log(total.toString());' "${response_payload}"
 }
 
 contains_jsonrpc_error() {
@@ -652,102 +675,107 @@ fail_with_route_hint() {
 
 derive_ckb_testnet_address_from_lock_args() {
   local lock_args_hex="$1"
-  python3 - "${lock_args_hex}" <<'PY'
-import sys
+  node -e 'const lockArgsHex = String(process.argv[1] ?? "").trim();
+if (!lockArgsHex.startsWith("0x")) process.exit(1);
+let args;
+try {
+  args = Buffer.from(lockArgsHex.slice(2), "hex");
+} catch (_error) {
+  process.exit(1);
+}
+if (args.length !== 20) process.exit(1);
 
-lock_args_hex = sys.argv[1].strip()
-if not lock_args_hex.startswith("0x"):
-    raise SystemExit(1)
-args = bytes.fromhex(lock_args_hex[2:])
-if len(args) != 20:
-    raise SystemExit(1)
+const payload = Buffer.concat([Buffer.from([0x01, 0x00]), args]);
+const charset = "qpzry9x8gf2tvdw0s3jn54khce6mua7l";
+const generators = [0x3B6A57B2, 0x26508E6D, 0x1EA119FA, 0x3D4233DD, 0x2A1462B3];
 
-# CKB short address payload:
-#   [0x01, code_hash_index=0x00 (secp256k1_blake160_sighash_all), args(20 bytes)]
-payload = bytes([0x01, 0x00]) + args
-CHARSET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
+const hrpExpand = (hrp) => {
+  const expanded = [];
+  for (const char of hrp) expanded.push(char.charCodeAt(0) >> 5);
+  expanded.push(0);
+  for (const char of hrp) expanded.push(char.charCodeAt(0) & 31);
+  return expanded;
+};
 
-def hrp_expand(hrp):
-    return [ord(x) >> 5 for x in hrp] + [0] + [ord(x) & 31 for x in hrp]
+const polymod = (values) => {
+  let chk = 1;
+  for (const value of values) {
+    const top = chk >>> 25;
+    chk = ((chk & 0x1ffffff) << 5) ^ value;
+    for (let i = 0; i < 5; i += 1) {
+      if ((top >>> i) & 1) chk ^= generators[i];
+    }
+  }
+  return chk >>> 0;
+};
 
-def polymod(values):
-    gen = [0x3B6A57B2, 0x26508E6D, 0x1EA119FA, 0x3D4233DD, 0x2A1462B3]
-    chk = 1
-    for v in values:
-        top = chk >> 25
-        chk = ((chk & 0x1FFFFFF) << 5) ^ v
-        for i in range(5):
-            if (top >> i) & 1:
-                chk ^= gen[i]
-    return chk
+const createChecksum = (hrp, data) => {
+  const values = hrpExpand(hrp).concat(data);
+  const pm = polymod(values.concat([0, 0, 0, 0, 0, 0])) ^ 1;
+  const checksum = [];
+  for (let i = 0; i < 6; i += 1) checksum.push((pm >>> (5 * (5 - i))) & 31);
+  return checksum;
+};
 
-def create_checksum(hrp, data):
-    values = hrp_expand(hrp) + data
-    pm = polymod(values + [0, 0, 0, 0, 0, 0]) ^ 1
-    return [(pm >> (5 * (5 - i))) & 31 for i in range(6)]
+const convertBits = (data, fromBits, toBits, pad) => {
+  let acc = 0;
+  let bits = 0;
+  const ret = [];
+  const maxv = (1 << toBits) - 1;
+  for (const value of data) {
+    if (value < 0 || (value >>> fromBits) !== 0) return null;
+    acc = (acc << fromBits) | value;
+    bits += fromBits;
+    while (bits >= toBits) {
+      bits -= toBits;
+      ret.push((acc >>> bits) & maxv);
+    }
+  }
+  if (pad) {
+    if (bits > 0) ret.push((acc << (toBits - bits)) & maxv);
+  } else if (bits >= fromBits || ((acc << (toBits - bits)) & maxv) !== 0) {
+    return null;
+  }
+  return ret;
+};
 
-def convertbits(data, frombits, tobits, pad=True):
-    acc = 0
-    bits = 0
-    ret = []
-    maxv = (1 << tobits) - 1
-    for value in data:
-        if value < 0 or (value >> frombits):
-            return None
-        acc = (acc << frombits) | value
-        bits += frombits
-        while bits >= tobits:
-            bits -= tobits
-            ret.append((acc >> bits) & maxv)
-    if pad:
-        if bits:
-            ret.append((acc << (tobits - bits)) & maxv)
-    elif bits >= frombits or ((acc << (tobits - bits)) & maxv):
-        return None
-    return ret
-
-data = convertbits(payload, 8, 5, True)
-if data is None:
-    raise SystemExit(1)
-
-checksum = create_checksum("ckt", data)
-addr = "ckt1" + "".join(CHARSET[d] for d in (data + checksum))
-print(addr)
-PY
+const data = convertBits([...payload], 8, 5, true);
+if (!data) process.exit(1);
+const checksum = createChecksum("ckt", data);
+const addr = "ckt1" + data.concat(checksum).map((idx) => charset[idx]).join("");
+console.log(addr);' "${lock_args_hex}"
 }
 
 derive_peer_id_from_node_id() {
   local node_id_hex="$1"
-  python3 - "${node_id_hex}" <<'PY'
-import hashlib
-import sys
+  node -e 'const crypto = require("node:crypto");
+let nodeIdHex = String(process.argv[1] ?? "").trim();
+if (nodeIdHex.startsWith("0x")) nodeIdHex = nodeIdHex.slice(2);
+let pubkey;
+try {
+  pubkey = Buffer.from(nodeIdHex, "hex");
+} catch (_error) {
+  process.exit(1);
+}
+if (pubkey.length !== 33) process.exit(1);
 
-node_id_hex = sys.argv[1].strip()
-if node_id_hex.startswith("0x"):
-    node_id_hex = node_id_hex[2:]
-pubkey = bytes.fromhex(node_id_hex)
-if len(pubkey) != 33:
-    raise SystemExit(1)
-
-# Tentacle PeerId is multihash(sha2-256(pubkey)):
-# [0x12 (sha2-256 code), 0x20 (32-byte digest length), digest]
-raw = bytes([0x12, 0x20]) + hashlib.sha256(pubkey).digest()
-alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
-num = int.from_bytes(raw, "big")
-out = ""
-while num > 0:
-    num, rem = divmod(num, 58)
-    out = alphabet[rem] + out
-
-leading_zero = 0
-for b in raw:
-    if b == 0:
-        leading_zero += 1
-    else:
-        break
-out = ("1" * leading_zero) + out
-print(out)
-PY
+const digest = crypto.createHash("sha256").update(pubkey).digest();
+const raw = Buffer.concat([Buffer.from([0x12, 0x20]), digest]);
+const alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+let num = BigInt("0x" + raw.toString("hex"));
+let out = "";
+while (num > 0n) {
+  const rem = Number(num % 58n);
+  out = alphabet[rem] + out;
+  num /= 58n;
+}
+let leadingZero = 0;
+for (const b of raw) {
+  if (b === 0) leadingZero += 1;
+  else break;
+}
+out = "1".repeat(leadingZero) + out;
+console.log(out);' "${node_id_hex}"
 }
 
 derive_ckb_topup_address_from_node_info() {
@@ -759,16 +787,47 @@ derive_ckb_topup_address_from_node_info() {
   local rc=$?
   set -e
   if [[ "${rc}" -ne 0 ]]; then
+    printf '[e2e-invoice] node_info call failed on port=%s (rc=%s)\n' "${rpc_port}" "${rc}" >&2
     return 1
   fi
 
   local lock_args
   lock_args="$(printf '%s' "${response}" | jq -r '.result.default_funding_lock_script.args // empty')"
   if [[ -z "${lock_args}" ]]; then
+    printf '[e2e-invoice] node_info missing default_funding_lock_script.args on port=%s\n' "${rpc_port}" >&2
+    printf '%s\n' "${response}" > "${ARTIFACT_DIR}/node-info-derive-${rpc_port}.last.json" || true
     return 1
   fi
 
   derive_ckb_testnet_address_from_lock_args "${lock_args}"
+}
+
+derive_ckb_topup_address_with_retry() {
+  local rpc_port="$1"
+  local node_label="$2"
+  local attempt=1
+  local derived=""
+
+  while [[ "${attempt}" -le "${NODE_INFO_DERIVE_RETRIES}" ]]; do
+    set +e
+    derived="$(derive_ckb_topup_address_from_node_info "${rpc_port}")"
+    local rc=$?
+    set -e
+    if [[ "${rc}" -eq 0 && -n "${derived}" ]]; then
+      printf '%s' "${derived}"
+      return 0
+    fi
+
+    if [[ "${attempt}" -lt "${NODE_INFO_DERIVE_RETRIES}" ]]; then
+      printf '[e2e-invoice] derive %s top-up address attempt=%s failed; retrying in %ss\n' \
+        "${node_label}" "${attempt}" "${NODE_INFO_DERIVE_RETRY_INTERVAL_SECONDS}" >&2
+      sleep "${NODE_INFO_DERIVE_RETRY_INTERVAL_SECONDS}"
+    fi
+    attempt=$((attempt + 1))
+  done
+
+  printf '[e2e-invoice] derive %s top-up address exhausted retries=%s\n' "${node_label}" "${NODE_INFO_DERIVE_RETRIES}" >&2
+  return 1
 }
 
 request_ckb_faucet() {
@@ -840,23 +899,24 @@ request_ckb_faucet() {
 
 sum_ckb_capacity_from_get_cells_response() {
   local response_payload="$1"
-  python3 - "${response_payload}" <<'PY'
-import json
-import sys
-
-resp = json.loads(sys.argv[1])
-objs = (resp.get("result") or {}).get("objects") or []
-total = 0
-for obj in objs:
-    cap = ((obj.get("output") or {}).get("capacity")) or ""
-    if not isinstance(cap, str) or not cap:
-        continue
-    try:
-        total += int(cap, 16) if cap.startswith("0x") else int(cap)
-    except ValueError:
-        continue
-print(total)
-PY
+  node -e 'let resp;
+try {
+  resp = JSON.parse(process.argv[1]);
+} catch (_error) {
+  process.exit(1);
+}
+const objs = Array.isArray(resp?.result?.objects) ? resp.result.objects : [];
+let total = 0n;
+for (const obj of objs) {
+  const cap = obj?.output?.capacity ?? "";
+  if (typeof cap !== "string" || cap.length === 0) continue;
+  try {
+    total += BigInt(cap);
+  } catch (_error) {
+    continue;
+  }
+}
+console.log(total.toString());' "${response_payload}"
 }
 
 query_ckb_balance_for_lock_script() {
@@ -924,11 +984,7 @@ query_ckb_balance_for_lock_script() {
 
     local page_sum
     page_sum="$(sum_ckb_capacity_from_get_cells_response "${response}")"
-    total="$(python3 - "${total}" "${page_sum}" <<'PY'
-import sys
-print(int(sys.argv[1]) + int(sys.argv[2]))
-PY
-)"
+    total="$(node -e 'console.log((BigInt(process.argv[1]) + BigInt(process.argv[2])).toString())' "${total}" "${page_sum}")"
 
     local count next_cursor
     count="$(printf '%s' "${response}" | jq -r '.result.objects | length')"
@@ -983,6 +1039,38 @@ ensure_ckb_balance_or_request_faucet() {
     if [[ "${after_rc}" -eq 0 && -n "${after_balance}" ]]; then
       printf '%s\n' "${after_balance}" > "${target_dir}/ckb-balance-${label}.after.txt"
       log "CKB balance after faucet (label=${label}): ${after_balance}"
+      if bigint_gte "${after_balance}" "${required_amount}"; then
+        return 0
+      fi
+    fi
+
+    if [[ "${CKB_POST_FAUCET_BALANCE_WAIT_TIMEOUT_SECONDS}" -gt 0 ]]; then
+      local deadline attempt waited_balance
+      deadline=$(( $(date +%s) + CKB_POST_FAUCET_BALANCE_WAIT_TIMEOUT_SECONDS ))
+      attempt=0
+      waited_balance="${after_balance:-0}"
+
+      while [[ "$(date +%s)" -lt "${deadline}" ]]; do
+        attempt=$((attempt + 1))
+        sleep "${CKB_POST_FAUCET_BALANCE_POLL_INTERVAL_SECONDS}"
+
+        set +e
+        waited_balance="$(query_ckb_balance_for_lock_script "${lock_script_json}" "${target_dir}" "${label}-postwait")"
+        after_rc=$?
+        set -e
+        if [[ "${after_rc}" -ne 0 || -z "${waited_balance}" ]]; then
+          continue
+        fi
+
+        printf '%s\n' "${waited_balance}" > "${target_dir}/ckb-balance-${label}.after.txt"
+        vlog "CKB balance post-faucet wait (label=${label}, attempt=${attempt}): ${waited_balance}"
+        if bigint_gte "${waited_balance}" "${required_amount}"; then
+          log "CKB balance reached required threshold after faucet (label=${label}, balance=${waited_balance}, required=${required_amount})"
+          return 0
+        fi
+      done
+
+      log "CKB balance still below required after waiting ${CKB_POST_FAUCET_BALANCE_WAIT_TIMEOUT_SECONDS}s (label=${label}, balance=${waited_balance}, required=${required_amount})"
     fi
   fi
 }
@@ -1051,11 +1139,7 @@ query_usdi_balance_for_payer() {
 
     local page_sum
     page_sum="$(sum_xudt_amount_from_get_cells_response "${response}")"
-    total="$(python3 - "${total}" "${page_sum}" <<'PY'
-import sys
-print(int(sys.argv[1]) + int(sys.argv[2]))
-PY
-)"
+    total="$(node -e 'console.log((BigInt(process.argv[1]) + BigInt(process.argv[2])).toString())' "${total}" "${page_sum}")"
 
     local count next_cursor
     count="$(printf '%s' "${response}" | jq -r '.result.objects | length')"
@@ -1872,7 +1956,7 @@ done
 mkdir -p "${ARTIFACT_DIR}"
 printf 'asset\tinvoice\ttx_hash\tfinal_state\n' > "${SUMMARY_FILE}"
 
-for binary in docker curl openssl awk jq grep python3; do
+for binary in docker curl openssl awk jq grep node; do
   if ! command -v "${binary}" >/dev/null 2>&1; then
     fatal "${EXIT_PRECHECK}" "missing required binary: ${binary}"
   fi
@@ -1901,8 +1985,13 @@ done
 
 set -a
 # shellcheck disable=SC1090
+preloaded_rpc_port="${RPC_PORT:-}"
 source "${ENV_FILE}"
 set +a
+
+if [[ -n "${preloaded_rpc_port}" ]]; then
+  RPC_PORT="${preloaded_rpc_port}"
+fi
 
 RPC_PORT="${RPC_PORT:-3000}"
 FNN_INVOICE_RPC_PORT="${FNN_RPC_PORT:-8227}"
@@ -1924,8 +2013,20 @@ fi
 if ! is_positive_integer "${CKB_FAUCET_WAIT_SECONDS}"; then
   fatal "${EXIT_PRECHECK}" "CKB_FAUCET_WAIT_SECONDS must be a positive integer"
 fi
+if ! is_positive_integer "${CKB_POST_FAUCET_BALANCE_WAIT_TIMEOUT_SECONDS}"; then
+  fatal "${EXIT_PRECHECK}" "CKB_POST_FAUCET_BALANCE_WAIT_TIMEOUT_SECONDS must be a positive integer"
+fi
+if ! is_positive_integer "${CKB_POST_FAUCET_BALANCE_POLL_INTERVAL_SECONDS}"; then
+  fatal "${EXIT_PRECHECK}" "CKB_POST_FAUCET_BALANCE_POLL_INTERVAL_SECONDS must be a positive integer"
+fi
 if ! is_positive_integer "${USDI_FAUCET_WAIT_SECONDS}"; then
   fatal "${EXIT_PRECHECK}" "USDI_FAUCET_WAIT_SECONDS must be a positive integer"
+fi
+if ! is_positive_integer "${NODE_INFO_DERIVE_RETRIES}"; then
+  fatal "${EXIT_PRECHECK}" "NODE_INFO_DERIVE_RETRIES must be a positive integer"
+fi
+if ! is_positive_integer "${NODE_INFO_DERIVE_RETRY_INTERVAL_SECONDS}"; then
+  fatal "${EXIT_PRECHECK}" "NODE_INFO_DERIVE_RETRY_INTERVAL_SECONDS must be a positive integer"
 fi
 if [[ -n "${USDI_CHANNEL_FUNDING_AMOUNT}" ]] && ! is_positive_integer "${USDI_CHANNEL_FUNDING_AMOUNT}"; then
   fatal "${EXIT_PRECHECK}" "E2E_USDI_CHANNEL_FUNDING_AMOUNT must be a positive integer"
@@ -2007,7 +2108,7 @@ wait_for_state "fiber-link-worker" "healthy" || fatal "${EXIT_STARTUP_TIMEOUT}" 
 
 if [[ -z "${CKB_TOPUP_ADDRESS}" ]]; then
   set +e
-  CKB_TOPUP_ADDRESS="$(derive_ckb_topup_address_from_node_info "${FNN_PAYER_RPC_PORT}")"
+  CKB_TOPUP_ADDRESS="$(derive_ckb_topup_address_with_retry "${FNN_PAYER_RPC_PORT}" "fnn2")"
   local_rc=$?
   set -e
   if [[ "${local_rc}" -ne 0 || -z "${CKB_TOPUP_ADDRESS}" ]]; then
@@ -2018,7 +2119,7 @@ fi
 
 if [[ -z "${CKB_INVOICE_NODE_TOPUP_ADDRESS}" ]]; then
   set +e
-  CKB_INVOICE_NODE_TOPUP_ADDRESS="$(derive_ckb_topup_address_from_node_info "${FNN_INVOICE_RPC_PORT}")"
+  CKB_INVOICE_NODE_TOPUP_ADDRESS="$(derive_ckb_topup_address_with_retry "${FNN_INVOICE_RPC_PORT}" "fnn")"
   local_rc=$?
   set -e
   if [[ "${local_rc}" -ne 0 || -z "${CKB_INVOICE_NODE_TOPUP_ADDRESS}" ]]; then

@@ -1,0 +1,409 @@
+.fiber-link-tip-post-entry {
+  margin-top: 0.65rem;
+}
+
+.fiber-link-tip-entry {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.fiber-link-tip-entry__button {
+  font-weight: 600;
+}
+
+.fiber-link-tip-modal__content {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.fiber-link-tip-modal__recipient {
+  margin: 0;
+  color: var(--primary-medium);
+}
+
+.fiber-link-tip-alert {
+  margin: 0;
+  border-radius: 8px;
+  padding: 0.55rem 0.7rem;
+  font-size: 0.92rem;
+}
+
+.fiber-link-tip-alert.is-error {
+  background: var(--danger-low);
+  color: var(--danger);
+}
+
+.fiber-link-tip-alert.is-warning {
+  background: var(--highlight-low);
+  color: var(--primary);
+}
+
+.fiber-link-tip-alert.is-success {
+  background: var(--success-low);
+  color: var(--success);
+}
+
+.fiber-link-tip-form {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.fiber-link-tip-field {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.fiber-link-tip-label {
+  font-weight: 600;
+  color: var(--primary-high);
+}
+
+.fiber-link-tip-input {
+  width: 100%;
+  max-width: 320px;
+  border: 1px solid var(--primary-low-mid);
+  border-radius: 8px;
+  padding: 0.48rem 0.6rem;
+}
+
+.fiber-link-tip-input-error {
+  margin: 0;
+  color: var(--danger);
+  font-size: 0.86rem;
+}
+
+.fiber-link-tip-help {
+  margin: 0;
+  color: var(--primary-medium);
+  font-size: 0.9rem;
+}
+
+.fiber-link-tip-invoice-card {
+  border: 1px solid var(--primary-low-mid);
+  border-radius: 10px;
+  padding: 0.75rem;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.fiber-link-tip-invoice-label {
+  margin: 0;
+  color: var(--primary-medium);
+  font-size: 0.85rem;
+}
+
+.fiber-link-tip-invoice {
+  display: block;
+  max-height: 96px;
+  overflow: auto;
+  padding: 0.5rem;
+  border-radius: 8px;
+  background: var(--secondary);
+  border: 1px solid var(--primary-low-mid);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.fiber-link-tip-invoice-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.fiber-link-tip-copy-feedback {
+  color: var(--primary-medium);
+  font-size: 0.82rem;
+}
+
+.fiber-link-tip-status-badge,
+.fiber-link-status-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  line-height: 1;
+  font-weight: 600;
+  padding: 0.34rem 0.58rem;
+  background: var(--primary-low);
+  color: var(--primary);
+}
+
+.fiber-link-tip-status-badge.is-success,
+.fiber-link-status-badge.is-success {
+  background: var(--success-low);
+  color: var(--success);
+}
+
+.fiber-link-tip-status-badge.is-danger,
+.fiber-link-status-badge.is-danger {
+  background: var(--danger-low);
+  color: var(--danger);
+}
+
+.fiber-link-tip-status-badge.is-warning,
+.fiber-link-status-badge.is-warning {
+  background: var(--highlight-low);
+  color: var(--primary-high);
+}
+
+.fiber-link-dashboard {
+  max-width: 1080px;
+  margin: 0 auto;
+  display: grid;
+  gap: 1rem;
+  color: var(--primary-high);
+}
+
+.fiber-link-dashboard__header h2 {
+  margin: 0;
+  font-size: 1.75rem;
+}
+
+.fiber-link-dashboard__header p {
+  margin: 0.35rem 0 0;
+  color: var(--primary-medium);
+}
+
+.fiber-link-dashboard__alert {
+  margin: 0;
+  border-radius: 10px;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--danger-low);
+}
+
+.fiber-link-dashboard__alert.is-error {
+  background: var(--danger-low);
+  color: var(--danger);
+}
+
+.fiber-link-dashboard__metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.fiber-link-dashboard__metric-card {
+  border: 1px solid var(--primary-low-mid);
+  border-radius: 12px;
+  padding: 0.9rem 1rem;
+  background: var(--secondary);
+}
+
+.fiber-link-dashboard__metric-label {
+  margin: 0;
+  color: var(--primary-medium);
+  font-size: 0.85rem;
+}
+
+.fiber-link-dashboard__metric-value {
+  margin: 0.4rem 0 0;
+  font-size: 1.35rem;
+  font-weight: 700;
+}
+
+.fiber-link-dashboard__activity {
+  border: 1px solid var(--primary-low-mid);
+  border-radius: 12px;
+  padding: 0.95rem 1rem;
+}
+
+.fiber-link-dashboard__content-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.fiber-link-dashboard__withdrawal {
+  display: grid;
+  gap: 0.85rem;
+  border: 1px solid var(--primary-low-mid);
+  border-radius: 16px;
+  padding: 1rem;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--secondary) 80%, white 20%) 0%, var(--secondary) 100%);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.05);
+}
+
+.fiber-link-dashboard__withdrawal-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.8rem;
+  align-items: start;
+}
+
+.fiber-link-dashboard__withdrawal-header h3 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.fiber-link-dashboard__withdrawal-header p {
+  margin: 0.35rem 0 0;
+  color: var(--primary-medium);
+  font-size: 0.92rem;
+}
+
+.fiber-link-dashboard__withdrawal-badge {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 96px;
+  padding: 0.65rem 0.75rem;
+  border-radius: 14px;
+  background: var(--primary-low);
+  text-align: right;
+}
+
+.fiber-link-dashboard__withdrawal-badge span {
+  color: var(--primary-medium);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.fiber-link-dashboard__withdrawal-badge strong {
+  font-size: 1rem;
+}
+
+.fiber-link-dashboard__withdrawal-form {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.fiber-link-dashboard__withdrawal-input {
+  max-width: none;
+}
+
+.fiber-link-dashboard__withdrawal-input.is-address {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 0.86rem;
+}
+
+.fiber-link-dashboard__withdrawal-actions {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.fiber-link-dashboard__withdrawal-submit {
+  justify-content: center;
+}
+
+.fiber-link-dashboard__withdrawal-meta,
+.fiber-link-dashboard__withdrawal-success {
+  margin: 0;
+}
+
+.fiber-link-dashboard__activity-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.6rem;
+}
+
+.fiber-link-dashboard__activity-header h3 {
+  margin: 0;
+}
+
+.fiber-link-dashboard__meta {
+  margin: 0;
+  color: var(--primary-medium);
+  font-size: 0.82rem;
+}
+
+.fiber-link-tip-feed-loading,
+.fiber-link-tip-feed-empty,
+.fiber-link-tip-feed-error {
+  margin: 0;
+  border-radius: 8px;
+  padding: 0.72rem 0.78rem;
+}
+
+.fiber-link-tip-feed-loading,
+.fiber-link-tip-feed-empty {
+  background: var(--secondary);
+  color: var(--primary-medium);
+}
+
+.fiber-link-tip-feed-error {
+  background: var(--danger-low);
+  color: var(--danger);
+}
+
+.fiber-link-tip-feed-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.fiber-link-tip-feed-table th,
+.fiber-link-tip-feed-table td {
+  padding: 0.65rem 0.5rem;
+  border-bottom: 1px solid var(--primary-low-mid);
+  text-align: left;
+  vertical-align: top;
+}
+
+.fiber-link-tip-feed-table th {
+  color: var(--primary-medium);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.fiber-link-tip-feed-primary {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0;
+}
+
+.fiber-link-tip-feed-direction {
+  font-size: 0.75rem;
+  border-radius: 999px;
+  padding: 0.2rem 0.5rem;
+  background: var(--primary-low);
+  color: var(--primary-medium);
+}
+
+.fiber-link-tip-feed-secondary {
+  margin: 0.2rem 0 0;
+  color: var(--primary-medium);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 0.77rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 900px) {
+  .fiber-link-dashboard__metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .fiber-link-dashboard__content-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .fiber-link-dashboard__activity-header {
+    display: grid;
+    gap: 0.35rem;
+  }
+}
+
+@media (max-width: 680px) {
+  .fiber-link-dashboard__metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .fiber-link-dashboard__withdrawal-header {
+    display: grid;
+  }
+
+  .fiber-link-dashboard__withdrawal-badge {
+    text-align: left;
+  }
+
+  .fiber-link-tip-feed-table {
+    display: block;
+    overflow-x: auto;
+  }
+}

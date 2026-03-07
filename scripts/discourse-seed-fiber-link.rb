@@ -28,7 +28,10 @@ end
 
 def ensure_topic(owner:, title:, raw:)
   topic = Topic.find_by(title: title)
-  return topic if topic
+  if topic
+    first_post = topic.first_post
+    return topic if first_post&.user_id == owner.id
+  end
 
   first_post = PostCreator.create!(owner, title: title, raw: raw)
   first_post.topic
@@ -77,9 +80,14 @@ if tipper.respond_to?(:admin=) && !tipper.admin?
   tipper.save!
 end
 
-topic = ensure_topic(owner: tipper, title: topic_title, raw: topic_raw)
-first_post = topic.first_post
-reply = ensure_reply(author: author, topic: topic, raw: reply_raw)
+RateLimiter.disable
+begin
+  topic = ensure_topic(owner: author, title: topic_title, raw: topic_raw)
+  first_post = topic.first_post
+  reply = ensure_reply(author: author, topic: topic, raw: reply_raw)
+ensure
+  RateLimiter.enable
+end
 
 SiteSetting.fiber_link_enabled = true
 SiteSetting.fiber_link_service_url = service_url

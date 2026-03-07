@@ -212,10 +212,63 @@ resolve_runtime_ports() {
   fi
 }
 
+docker_container_env_value() {
+  local container="$1"
+  local key="$2"
+  docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "${container}" 2>/dev/null \
+    | awk -F= -v wanted_key="${key}" '$1 == wanted_key {print substr($0, length(wanted_key) + 2); exit}'
+}
+
+resolve_runtime_app_secret() {
+  [[ "${SKIP_SERVICES}" -eq 1 ]] || return 0
+
+  local runtime_secret
+  runtime_secret="$(docker_container_env_value "fiber-link-rpc" "FIBER_LINK_HMAC_SECRET")"
+  if [[ -z "${runtime_secret}" ]]; then
+    return 0
+  fi
+
+  if [[ "${APP_SECRET}" != "${runtime_secret}" ]]; then
+    log "detected running rpc secret mismatch under --skip-services; using runtime rpc secret"
+  fi
+  APP_SECRET="${runtime_secret}"
+}
+
+sync_rpc_app_secret_record() {
+  local pg_container="fiber-link-postgres"
+  local pg_user="${POSTGRES_USER:-$(get_env_value POSTGRES_USER)}"
+  local pg_db="${POSTGRES_DB:-$(get_env_value POSTGRES_DB)}"
+  pg_user="${pg_user:-fiber}"
+  pg_db="${pg_db:-fiber_link}"
+
+  if ! docker ps --format '{{.Names}}' | grep -qx "${pg_container}"; then
+    vlog "postgres container '${pg_container}' is not running; skip app secret sync"
+    return 0
+  fi
+
+  local app_id_sql app_secret_sql upsert_sql
+  app_id_sql="$(printf '%s' "${APP_ID}" | sed "s/'/''/g")"
+  app_secret_sql="$(printf '%s' "${APP_SECRET}" | sed "s/'/''/g")"
+  upsert_sql="INSERT INTO apps (app_id, hmac_secret) VALUES ('${app_id_sql}', '${app_secret_sql}') ON CONFLICT (app_id) DO UPDATE SET hmac_secret = EXCLUDED.hmac_secret;"
+
+  if docker exec "${pg_container}" psql \
+    -v ON_ERROR_STOP=1 \
+    -U "${pg_user}" \
+    -d "${pg_db}" \
+    -c "${upsert_sql}" >/dev/null 2>&1; then
+    vlog "synced rpc app secret row for app_id='${APP_ID}'"
+    return 0
+  fi
+
+  log "warning: failed to sync rpc app secret row for app_id='${APP_ID}'"
+  return 0
+}
+
 ensure_ember_cli_proxy() {
   local ember_url="http://127.0.0.1:4200/login"
+  local backend_ready_url="http://127.0.0.1:9292/session/csrf.json"
   local ember_log="${ARTIFACT_DIR}/discourse-ember-cli.log"
-  local ember_pattern='[e]mber server --proxy http://127.0.0.1:3000'
+  local ember_pattern='[e]mber server --proxy http://127.0.0.1:9292'
 
   if docker exec discourse_dev sh -lc "pgrep -f '${ember_pattern}' >/dev/null 2>&1"; then
     if wait_http_ready "${ember_url}" 20; then
@@ -232,11 +285,77 @@ ensure_ember_cli_proxy() {
     log "ember-cli proxy already running (${ember_url})"
   else
     log "starting ember-cli proxy (first compile can take a few minutes)"
-    docker exec -u discourse:discourse -w /src discourse_dev sh -lc 'bin/ember-cli' > "${ember_log}" 2>&1 &
+    docker exec -u discourse:discourse -w /src discourse_dev sh -lc 'bin/ember-cli --proxy http://127.0.0.1:9292' > "${ember_log}" 2>&1 &
     vlog "ember-cli logs: ${ember_log}"
   fi
 
   wait_http_ready "${ember_url}" 420 || fatal "${EXIT_DISCOURSE}" "ember-cli proxy did not become ready at ${ember_url} (see ${ember_log})"
+  wait_http_ready "${backend_ready_url}" 180 || fatal "${EXIT_DISCOURSE}" "discourse backend did not become ready at ${backend_ready_url} (see ${ember_log})"
+}
+
+ensure_discourse_backend_server() {
+  local backend_url="http://127.0.0.1:9292/session/csrf.json"
+  local login_url="http://127.0.0.1:9292/login"
+  local backend_log="${ARTIFACT_DIR}/discourse-unicorn.log"
+  local unicorn_pattern='[b]in/unicorn'
+  local unicorn_pid_path="/src/tmp/pids/unicorn.pid"
+
+  cleanup_discourse_unicorn() {
+    docker exec discourse_dev sh -lc "
+      if [ -f '${unicorn_pid_path}' ]; then
+        pid=\$(cat '${unicorn_pid_path}' 2>/dev/null || true)
+        if [ -n \"\${pid}\" ] && kill -0 \"\${pid}\" 2>/dev/null; then
+          kill -9 \"\${pid}\" >/dev/null 2>&1 || true
+        fi
+        rm -f '${unicorn_pid_path}' >/dev/null 2>&1 || true
+      fi
+      pkill -f '[u]nicorn master' >/dev/null 2>&1 || true
+      pkill -f '${unicorn_pattern}' >/dev/null 2>&1 || true
+    " >/dev/null 2>&1 || true
+  }
+
+  start_discourse_unicorn() {
+    log "starting discourse unicorn backend"
+    docker exec -u discourse:discourse -w /src discourse_dev sh -lc 'ALLOW_EMBER_CLI_PROXY_BYPASS=1 bin/unicorn' > "${backend_log}" 2>&1 &
+  }
+
+  if docker exec discourse_dev sh -lc "pgrep -f '${unicorn_pattern}' >/dev/null 2>&1"; then
+    if wait_http_ready "${backend_url}" 20; then
+      if curl -fsS -m 5 "${login_url}" 2>/dev/null | grep -q "Ember CLI is Required in Development Mode"; then
+        log "discourse backend is running without proxy bypass; restarting with ALLOW_EMBER_CLI_PROXY_BYPASS=1"
+      else
+        vlog "discourse backend already running (${backend_url})"
+        return 0
+      fi
+    fi
+
+    log "discourse unicorn process exists but ${backend_url} is not ready; restarting backend"
+    cleanup_discourse_unicorn
+    sleep 2
+  fi
+
+  local attempt
+  for attempt in 1 2; do
+    start_discourse_unicorn
+    if wait_http_ready "${backend_url}" 120; then
+      return 0
+    fi
+
+    if grep -q "Unicorn is already running!" "${backend_log}" 2>/dev/null; then
+      log "discourse unicorn reported stale running state; cleaning up and retrying (attempt ${attempt}/2)"
+      cleanup_discourse_unicorn
+      sleep 2
+      continue
+    fi
+
+    if (( attempt < 2 )); then
+      log "discourse backend not ready after startup attempt ${attempt}; restarting unicorn"
+      cleanup_discourse_unicorn
+      sleep 2
+    fi
+  done
+
+  fatal "${EXIT_DISCOURSE}" "discourse backend did not become ready at ${backend_url} (see ${backend_log})"
 }
 
 rpc_call_signed() {
@@ -668,6 +787,8 @@ RPC_PORT="${RPC_PORT:-3000}"
 FNN2_RPC_PORT="${FNN2_RPC_PORT:-9227}"
 CURRENCY="$(currency_for_asset "${WORKFLOW_ASSET}")"
 
+resolve_runtime_app_secret
+
 log "artifacts: ${ARTIFACT_DIR}"
 vlog "rpc_port=${RPC_PORT} fnn2_rpc_port=${FNN2_RPC_PORT} app_id=${APP_ID} asset=${WORKFLOW_ASSET}"
 
@@ -683,6 +804,7 @@ else
 fi
 
 resolve_runtime_ports
+sync_rpc_app_secret_record
 DISCOURSE_SERVICE_URL="${FIBER_LINK_DISCOURSE_SERVICE_URL:-http://host.docker.internal:${RPC_PORT}}"
 vlog "resolved rpc_port=${RPC_PORT} fnn2_rpc_port=${FNN2_RPC_PORT} discourse_service_url=${DISCOURSE_SERVICE_URL}"
 
@@ -739,6 +861,8 @@ if [[ "${SKIP_DISCOURSE}" -eq 0 ]]; then
   AUTHOR_USER_ID="$(printf '%s' "${seed_json}" | jq -r '.author.id // empty')"
   TOPIC_POST_ID="$(printf '%s' "${seed_json}" | jq -r '.topic.first_post_id // empty')"
   REPLY_POST_ID="$(printf '%s' "${seed_json}" | jq -r '.reply.post_id // empty')"
+
+  ensure_discourse_backend_server
 else
   log "skipping discourse bootstrap (--skip-discourse)"
 fi

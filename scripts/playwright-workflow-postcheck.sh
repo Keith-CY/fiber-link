@@ -39,6 +39,30 @@ else
   OPEN_URL="${BASE_URL%/}/login"
 fi
 
+wait_for_backend_ready() {
+  local probe_url="$1"
+  local timeout_seconds="$2"
+  local deadline
+  deadline=$(( $(date +%s) + timeout_seconds ))
+
+  while true; do
+    if curl -fsS -m 3 "${probe_url}" >/dev/null 2>&1; then
+      return 0
+    fi
+    if [[ "$(date +%s)" -ge "${deadline}" ]]; then
+      return 1
+    fi
+    sleep 2
+  done
+}
+
+BACKEND_READY_URL="${PW_DEMO_BACKEND_READY_URL:-${BASE_URL%/}/session/csrf.json}"
+BACKEND_WAIT_SECONDS="${PW_DEMO_BACKEND_WAIT_SECONDS:-120}"
+if ! wait_for_backend_ready "${BACKEND_READY_URL}" "${BACKEND_WAIT_SECONDS}"; then
+  echo "[playwright-postcheck] discourse backend not ready at ${BACKEND_READY_URL} after ${BACKEND_WAIT_SECONDS}s" >&2
+  exit 3
+fi
+
 author_user="${PW_DEMO_AUTHOR_USERNAME:-fiber_author}"
 author_password="${PW_DEMO_AUTHOR_PASSWORD:-fiber-local-pass-1}"
 admin_user="${PW_DEMO_ADMIN_USERNAME:-fiber_tipper}"

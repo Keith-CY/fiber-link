@@ -1,159 +1,64 @@
-<h2>Fiber Link Dashboard</h2>
-<p>
-  Uses the service endpoint path:
-  <code>/fiber-link/rpc</code> with method <code>dashboard.summary</code>.
-</p>
+<section class="fiber-link-dashboard">
+  <header class="fiber-link-dashboard__header">
+    <h2>Fiber Link Dashboard</h2>
+    <p>Track your balance, payment progress, and recent tip activity from Discourse.</p>
+  </header>
 
-<h3>Balance</h3>
-{{#if this.model.isSummaryLoading}}
-  <p class="fiber-link-dashboard-loading">Loading balance...</p>
-{{else}}
   {{#if this.model.summaryErrorMessage}}
-    <p class="fiber-link-dashboard-error">Failed to load balance: {{this.model.summaryErrorMessage}}</p>
-  {{else}}
-    <p><strong>Available:</strong> {{this.model.balance}} {{this.model.balanceAsset}}</p>
-    {{#if this.model.generatedAt}}
-      <p><strong>Generated at:</strong> {{this.model.generatedAt}}</p>
-    {{/if}}
+    <p class="fiber-link-dashboard__alert is-error">
+      Failed to load dashboard data: {{this.model.summaryErrorMessage}}
+    </p>
   {{/if}}
-{{/if}}
 
-<h3>Recent Tips</h3>
-<FiberLinkTipFeed
-  @tips={{this.model.tipFeedItems}}
-  @isLoading={{this.model.isFeedLoading}}
-  @errorMessage={{this.model.feedErrorMessage}}
-/>
-
-{{#if this.model.refreshedAt}}
-  <p><strong>Last refreshed:</strong> {{this.model.refreshedAt}}</p>
-{{/if}}
-
-<h3>State Mapping</h3>
-<table class="fiber-link-dashboard-mapping">
-  <thead>
-    <tr>
-      <th>UI label</th>
-      <th>Backend state</th>
-      <th>Notes</th>
-    </tr>
-  </thead>
-  <tbody>
-    {{#each this.model.mappingRows as |row|}}
-      <tr>
-        <td>{{row.uiState}}</td>
-        <td>{{row.backendState}}</td>
-        <td>{{row.copy}}</td>
-      </tr>
-    {{/each}}
-  </tbody>
-</table>
-
-{{#if this.model.isAdminViewEnabled}}
-  <hr />
-  <h3>Admin Inspection (Operational)</h3>
-
-  <p>
-    <strong>Active filters:</strong>
-    withdrawals={{this.model.adminFiltersApplied.withdrawalState}},
-    settlements={{this.model.adminFiltersApplied.settlementState}}
-    (<LinkTo
-      @route="fiber-link-dashboard"
-      @query={{hash withdrawalState="ALL" settlementState="ALL"}}
-      title="Clear both filters and reload full admin inspection data."
-    >Reset to ALL</LinkTo>)
-  </p>
-
-  <FiberLinkLifecycleBoard @board={{this.model.adminPipelineBoard}} />
-
-  <h4>Apps</h4>
-  <table class="fiber-link-dashboard-admin-apps">
-    <thead>
-      <tr><th>appId</th><th>createdAt</th></tr>
-    </thead>
-    <tbody>
-      {{#each this.model.adminApps as |row|}}
-        <tr>
-          <td><code>{{row.appId}}</code></td>
-          <td>{{row.createdAt}}</td>
-        </tr>
+  <section class="fiber-link-dashboard__metrics">
+    <article class="fiber-link-dashboard__metric-card">
+      <p class="fiber-link-dashboard__metric-label">Available Balance</p>
+      {{#if this.model.isSummaryLoading}}
+        <p class="fiber-link-dashboard__metric-value">Loading…</p>
       {{else}}
-        <tr>
-          <td colspan="2">No app records from admin payload. Verify plugin app credentials and refresh.</td>
-        </tr>
-      {{/each}}
-    </tbody>
-  </table>
+        <p class="fiber-link-dashboard__metric-value">
+          {{this.model.balance}} {{this.model.balanceAsset}}
+        </p>
+      {{/if}}
+    </article>
 
-  <h4>Withdrawals</h4>
-  <table class="fiber-link-dashboard-admin-withdrawals">
-    <thead>
-      <tr>
-        <th>id</th><th>user</th><th>state</th><th>amount</th><th>asset</th><th>retry</th><th>updatedAt</th>
-      </tr>
-    </thead>
-    <tbody>
-      {{#each this.model.adminWithdrawals as |row|}}
-        <tr>
-          <td><code>{{row.id}}</code></td>
-          <td>{{row.userId}}</td>
-          <td>{{row.state}}</td>
-          <td>{{row.amount}}</td>
-          <td>{{row.asset}}</td>
-          <td>{{row.retryCount}}</td>
-          <td>{{row.updatedAt}}</td>
-        </tr>
-      {{else}}
-        <tr>
-          <td colspan="7">
-            No withdrawals for current filter.
-            <LinkTo
-              @route="fiber-link-dashboard"
-              @query={{hash
-                withdrawalState="ALL"
-                settlementState=this.model.adminFiltersApplied.settlementState
-              }}
-            >Show all withdrawal states</LinkTo>.
-          </td>
-        </tr>
-      {{/each}}
-    </tbody>
-  </table>
+    <article class="fiber-link-dashboard__metric-card">
+      <p class="fiber-link-dashboard__metric-label">Awaiting Payment</p>
+      <p class="fiber-link-dashboard__metric-value">{{this.model.pendingTipCount}}</p>
+    </article>
 
-  <h4>Settlement State</h4>
-  <table class="fiber-link-dashboard-admin-settlements">
-    <thead>
-      <tr>
-        <th>invoice</th><th>state</th><th>from</th><th>to</th><th>retry</th><th>nextRetryAt</th><th>lastError</th>
-      </tr>
-    </thead>
-    <tbody>
-      {{#each this.model.adminSettlements as |row|}}
-        <tr>
-          <td><code>{{row.invoice}}</code></td>
-          <td>{{row.state}}</td>
-          <td>{{row.fromUserId}}</td>
-          <td>{{row.toUserId}}</td>
-          <td>{{row.retryCount}}</td>
-          <td>{{row.nextRetryAt}}</td>
-          <td>{{row.lastError}}</td>
-        </tr>
-      {{else}}
-        <tr>
-          <td colspan="7">
-            No settlement rows for current filter.
-            <LinkTo
-              @route="fiber-link-dashboard"
-              @query={{hash
-                withdrawalState=this.model.adminFiltersApplied.withdrawalState
-                settlementState="ALL"
-              }}
-            >Show all settlement states</LinkTo>.
-          </td>
-        </tr>
-      {{/each}}
-    </tbody>
-  </table>
-{{else}}
-  <p><em>Admin inspection view is available to admins only.</em></p>
-{{/if}}
+    <article class="fiber-link-dashboard__metric-card">
+      <p class="fiber-link-dashboard__metric-label">Paid</p>
+      <p class="fiber-link-dashboard__metric-value">{{this.model.settledTipCount}}</p>
+    </article>
+
+    <article class="fiber-link-dashboard__metric-card">
+      <p class="fiber-link-dashboard__metric-label">Failed</p>
+      <p class="fiber-link-dashboard__metric-value">{{this.model.failedTipCount}}</p>
+    </article>
+  </section>
+
+  <div class="fiber-link-dashboard__content-grid">
+    <FiberLinkWithdrawalPanel />
+
+    <section class="fiber-link-dashboard__activity">
+      <div class="fiber-link-dashboard__activity-header">
+        <h3>Recent Tips</h3>
+        <p class="fiber-link-dashboard__meta">
+          {{#if this.model.generatedAt}}
+            Generated: {{this.model.generatedAt}}
+          {{/if}}
+          {{#if this.model.refreshedAt}}
+            · Refreshed: {{this.model.refreshedAt}}
+          {{/if}}
+        </p>
+      </div>
+
+      <FiberLinkTipFeed
+        @tips={{this.model.tipFeedItems}}
+        @isLoading={{this.model.isFeedLoading}}
+        @errorMessage={{this.model.feedErrorMessage}}
+      />
+    </section>
+  </div>
+</section>

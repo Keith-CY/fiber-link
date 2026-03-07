@@ -53,12 +53,22 @@ module ::FiberLink
             return
           end
 
+          if post.user_id == current_user.id
+            render json: {
+                     jsonrpc: "2.0",
+                     id: request_id,
+                     error: { code: -32002, message: "Cannot tip your own post" },
+                   },
+                   status: :unprocessable_entity
+            return
+          end
+
           {
             amount: params["amount"],
             asset: params["asset"],
-            postId: post_id,
-            fromUserId: current_user.id,
-            toUserId: post.user_id,
+            postId: post_id.to_s,
+            fromUserId: current_user.id.to_s,
+            toUserId: post.user_id.to_s,
           }
         when "tip.status"
           { invoice: params["invoice"] }
@@ -104,6 +114,27 @@ module ::FiberLink
               withdrawalState: withdrawal_state,
               settlementState: settlement_state,
             },
+          }
+        when "withdrawal.request"
+          amount = params["amount"].to_s.strip
+          asset = params["asset"].to_s.strip
+          to_address = params["toAddress"].to_s.strip
+
+          if amount.blank? || to_address.blank?
+            render json: {
+                     jsonrpc: "2.0",
+                     id: request_id,
+                     error: { code: -32602, message: "Invalid params" },
+                   },
+                   status: :bad_request
+            return
+          end
+
+          {
+            userId: current_user.id.to_s,
+            amount: amount,
+            asset: asset.presence || "CKB",
+            toAddress: to_address,
           }
         else
           render json: {
