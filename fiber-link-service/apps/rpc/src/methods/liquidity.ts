@@ -99,25 +99,18 @@ export async function decideWithdrawalRequestLiquidity(
     throw new MissingLiquidityRequestRepoError();
   }
 
-  const liquidityRequest =
-    (await options.liquidityRequestRepo.findOpenByKey({
-      appId: input.appId,
-      asset: input.asset,
-      network,
-      sourceKind: "FIBER_TO_CKB_CHAIN",
-    })) ??
-    (await options.liquidityRequestRepo.create({
-      appId: input.appId,
-      asset: input.asset,
-      network,
-      sourceKind: "FIBER_TO_CKB_CHAIN",
-      requiredAmount: subtractDecimalStrings(requiredAmount, inventory.availableAmount),
-      metadata: {
-        destinationKind: input.destination.kind,
-        toAddress: input.destination.address,
-        hotWalletAvailableAmount: inventory.availableAmount,
-      },
-    }));
+  const liquidityRequest = await options.liquidityRequestRepo.ensureOpen({
+    appId: input.appId,
+    asset: input.asset,
+    network,
+    sourceKind: "FIBER_TO_CKB_CHAIN",
+    requiredAmount: subtractDecimalStrings(requiredAmount, inventory.availableAmount),
+    metadata: {
+      destinationKind: input.destination.kind,
+      toAddress: input.destination.address,
+      hotWalletAvailableAmount: inventory.availableAmount,
+    },
+  });
 
   return {
     state: "LIQUIDITY_PENDING",

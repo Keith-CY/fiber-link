@@ -50,6 +50,11 @@ export type FindOpenLiquidityRequestByKeyInput = {
   sourceKind: LiquidityRequestSourceKind;
 };
 
+export type EnsureOpenLiquidityRequestInput = FindOpenLiquidityRequestByKeyInput & {
+  requiredAmount: string;
+  metadata?: LiquidityRequestMetadata | null;
+};
+
 export class LiquidityRequestNotFoundError extends Error {
   constructor(public readonly liquidityRequestId: string) {
     super(`liquidity request not found: ${liquidityRequestId}`);
@@ -86,6 +91,7 @@ export type LiquidityRequestRepo = {
   findById(liquidityRequestId: string): Promise<LiquidityRequestRecord | null>;
   findByIdOrThrow(liquidityRequestId: string): Promise<LiquidityRequestRecord>;
   findOpenByKey(input: FindOpenLiquidityRequestByKeyInput): Promise<LiquidityRequestRecord | null>;
+  ensureOpen(input: EnsureOpenLiquidityRequestInput): Promise<LiquidityRequestRecord>;
   listOpen(): Promise<LiquidityRequestRecord[]>;
   markFunded(liquidityRequestId: string, input: MarkLiquidityRequestFundedInput): Promise<LiquidityRequestRecord>;
   __listForTests?: () => LiquidityRequestRecord[];
@@ -156,6 +162,12 @@ function assertCanMarkFunded(record: LiquidityRequestRecord, fundedAmount: strin
   }
 }
 
+function maxRequiredAmount(current: string, next: string): string {
+  const normalizedCurrent = normalizeAmount(current);
+  const normalizedNext = normalizeAmount(next);
+  return compareDecimalStrings(normalizedCurrent, normalizedNext) >= 0 ? normalizedCurrent : normalizedNext;
+}
+
 export function createDbLiquidityRequestRepo(db: DbClient): LiquidityRequestRepo {
   async function findById(liquidityRequestId: string): Promise<LiquidityRequestRecord | null> {
     const [row] = await db
@@ -184,28 +196,32 @@ export function createDbLiquidityRequestRepo(db: DbClient): LiquidityRequestRepo
     return row ? toRecord(row) : null;
   }
 
+  async function createRequested(input: CreateLiquidityRequestInput): Promise<LiquidityRequestRecord> {
+    const now = input.createdAt ? new Date(input.createdAt) : new Date();
+    const requiredAmount = normalizeAmount(input.requiredAmount);
+    const [row] = await db
+      .insert(liquidityRequests)
+      .values({
+        appId: input.appId,
+        asset: input.asset,
+        network: input.network,
+        state: "REQUESTED",
+        sourceKind: input.sourceKind,
+        requiredAmount,
+        fundedAmount: "0",
+        metadata: input.metadata ?? null,
+        lastError: null,
+        createdAt: now,
+        updatedAt: now,
+        completedAt: null,
+      })
+      .returning();
+    return toRecord(row);
+  }
+
   return {
     async create(input) {
-      const now = input.createdAt ? new Date(input.createdAt) : new Date();
-      const requiredAmount = normalizeAmount(input.requiredAmount);
-      const [row] = await db
-        .insert(liquidityRequests)
-        .values({
-          appId: input.appId,
-          asset: input.asset,
-          network: input.network,
-          state: "REQUESTED",
-          sourceKind: input.sourceKind,
-          requiredAmount,
-          fundedAmount: "0",
-          metadata: input.metadata ?? null,
-          lastError: null,
-          createdAt: now,
-          updatedAt: now,
-          completedAt: null,
-        })
-        .returning();
-      return toRecord(row);
+      return createRequested(input);
     },
 
     findById,
@@ -219,6 +235,53 @@ export function createDbLiquidityRequestRepo(db: DbClient): LiquidityRequestRepo
     },
 
     findOpenByKey,
+
+    async ensureOpen(input) {
+      const requiredAmount = normalizeAmount(input.requiredAmount);
+      const existing = await findOpenByKey(input);
+      if (!existing) {
+        return createRequested({
+          ...input,
+          requiredAmount,
+        });
+      }
+
+      const nextRequiredAmount = maxRequiredAmount(existing.requiredAmount, requiredAmount);
+      if (
+        nextRequiredAmount === existing.requiredAmount &&
+        input.metadata === undefined
+      ) {
+        return existing;
+      }
+
+      const [row] = await db
+        .update(liquidityRequests)
+        .set({
+          requiredAmount: nextRequiredAmount,
+          metadata: input.metadata === undefined ? undefined : (input.metadata ?? null),
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(liquidityRequests.id, existing.id),
+            inArray(liquidityRequests.state, [...OPEN_LIQUIDITY_REQUEST_STATES]),
+          ),
+        )
+        .returning();
+
+      if (!row) {
+        const latest = await findById(existing.id);
+        if (!latest || !isOpenState(latest.state)) {
+          return createRequested({
+            ...input,
+            requiredAmount,
+          });
+        }
+        throw new LiquidityRequestStateTransitionError(existing.id, latest.state, latest.state);
+      }
+
+      return toRecord(row);
+    },
 
     async listOpen() {
       const rows = await db
@@ -299,31 +362,60 @@ export function createInMemoryLiquidityRequestRepo(
     return match ? cloneRecord(match) : null;
   }
 
+  async function createRequested(input: CreateLiquidityRequestInput): Promise<LiquidityRequestRecord> {
+    const now = input.createdAt ? new Date(input.createdAt) : new Date();
+    const record: LiquidityRequestRecord = {
+      id: randomUUID(),
+      appId: input.appId,
+      asset: input.asset,
+      network: input.network,
+      state: "REQUESTED",
+      sourceKind: input.sourceKind,
+      requiredAmount: normalizeAmount(input.requiredAmount),
+      fundedAmount: "0",
+      metadata: cloneMetadata(input.metadata ?? null),
+      lastError: null,
+      createdAt: now,
+      updatedAt: now,
+      completedAt: null,
+    };
+    records.push(record);
+    return cloneRecord(record);
+  }
+
   return {
     async create(input) {
-      const now = input.createdAt ? new Date(input.createdAt) : new Date();
-      const record: LiquidityRequestRecord = {
-        id: randomUUID(),
-        appId: input.appId,
-        asset: input.asset,
-        network: input.network,
-        state: "REQUESTED",
-        sourceKind: input.sourceKind,
-        requiredAmount: normalizeAmount(input.requiredAmount),
-        fundedAmount: "0",
-        metadata: cloneMetadata(input.metadata ?? null),
-        lastError: null,
-        createdAt: now,
-        updatedAt: now,
-        completedAt: null,
-      };
-      records.push(record);
-      return cloneRecord(record);
+      return createRequested(input);
     },
 
     findById,
 
     findOpenByKey,
+
+    async ensureOpen(input) {
+      const requiredAmount = normalizeAmount(input.requiredAmount);
+      const existing = await findOpenByKey(input);
+      if (!existing) {
+        return createRequested({
+          ...input,
+          requiredAmount,
+        });
+      }
+
+      const index = findIndexById(existing.id);
+      const nextRequiredAmount = maxRequiredAmount(records[index].requiredAmount, requiredAmount);
+      if (nextRequiredAmount === records[index].requiredAmount && input.metadata === undefined) {
+        return cloneRecord(records[index]);
+      }
+
+      records[index] = {
+        ...records[index],
+        requiredAmount: nextRequiredAmount,
+        metadata: input.metadata === undefined ? records[index].metadata : cloneMetadata(input.metadata ?? null),
+        updatedAt: new Date(),
+      };
+      return cloneRecord(records[index]);
+    },
 
     async findByIdOrThrow(liquidityRequestId) {
       const record = await findById(liquidityRequestId);

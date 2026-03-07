@@ -531,6 +531,42 @@ describe("requestWithdrawal", () => {
     expect(saved.liquidityRequestId).toBe(requests[0]?.id);
   });
 
+  it("rejects before liquidity routing when creator balance is insufficient", async () => {
+    const ledger = createInMemoryLedgerRepo();
+    const liquidityRequestRepo = createInMemoryLiquidityRequestRepo();
+    await ledger.creditOnce({
+      appId: "app1",
+      userId: "u1",
+      asset: "CKB",
+      amount: "60",
+      refId: "t1",
+      idempotencyKey: "credit:t1",
+    });
+    const hotWalletInventoryProvider = vi.fn(async () => ({
+      asset: "CKB" as const,
+      network: "AGGRON4" as const,
+      availableAmount: "0",
+    }));
+
+    await expect(
+      requestWithdrawal(
+        {
+          appId: "app1",
+          userId: "u1",
+          asset: "CKB",
+          amount: "61",
+          destination: {
+            kind: "CKB_ADDRESS",
+            address: "ckt1qyqfth8m4fevfzh5hhd088s78qcdjjp8cehs7z8jhw",
+          },
+        },
+        { repo, ledgerRepo: ledger, liquidityRequestRepo, hotWalletInventoryProvider },
+      ),
+    ).rejects.toBeInstanceOf(InsufficientFundsError);
+
+    expect(liquidityRequestRepo.__listForTests?.()).toHaveLength(0);
+  });
+
   it("attaches an existing open liquidity request when hot wallet is underfunded", async () => {
     const ledger = createInMemoryLedgerRepo();
     const liquidityRequestRepo = createInMemoryLiquidityRequestRepo();
@@ -725,6 +761,119 @@ describe("requestWithdrawal", () => {
       ).rejects.toThrow("FIBER_WITHDRAWAL_POLICY_MAX_PER_REQUEST must be a positive decimal");
     } finally {
       process.env.FIBER_WITHDRAWAL_POLICY_MAX_PER_REQUEST = prevMax;
+    }
+  });
+
+  it("serializes CKB-address liquidity decisions across concurrent creators", async () => {
+    const concurrentRepo = createInMemoryWithdrawalRepo();
+    const ledger = createInMemoryLedgerRepo();
+    const liquidityRequestRepo = createInMemoryLiquidityRequestRepo();
+    const previousAllowedAssets = process.env.FIBER_WITHDRAWAL_POLICY_ALLOWED_ASSETS;
+    const previousMaxPerRequest = process.env.FIBER_WITHDRAWAL_POLICY_MAX_PER_REQUEST;
+    const previousPerUserDailyMax = process.env.FIBER_WITHDRAWAL_POLICY_PER_USER_DAILY_MAX;
+    const previousPerAppDailyMax = process.env.FIBER_WITHDRAWAL_POLICY_PER_APP_DAILY_MAX;
+    const previousCooldown = process.env.FIBER_WITHDRAWAL_POLICY_COOLDOWN_SECONDS;
+    process.env.FIBER_WITHDRAWAL_POLICY_ALLOWED_ASSETS = "";
+    process.env.FIBER_WITHDRAWAL_POLICY_MAX_PER_REQUEST = "";
+    process.env.FIBER_WITHDRAWAL_POLICY_PER_USER_DAILY_MAX = "";
+    process.env.FIBER_WITHDRAWAL_POLICY_PER_APP_DAILY_MAX = "";
+    process.env.FIBER_WITHDRAWAL_POLICY_COOLDOWN_SECONDS = "";
+
+    try {
+      await ledger.creditOnce({
+        appId: "app1",
+        userId: "u1",
+        asset: "CKB",
+        amount: "100",
+        refId: "t1",
+        idempotencyKey: "credit:t1",
+      });
+      await ledger.creditOnce({
+        appId: "app1",
+        userId: "u2",
+        asset: "CKB",
+        amount: "100",
+        refId: "t2",
+        idempotencyKey: "credit:t2",
+      });
+
+      let releaseFirstInventoryCall: (() => void) | null = null;
+      const firstInventoryCallStarted = new Promise<void>((resolve) => {
+        releaseFirstInventoryCall = resolve;
+      });
+      let inventoryCallCount = 0;
+      const hotWalletInventoryProvider = vi.fn(async () => {
+        inventoryCallCount += 1;
+        if (inventoryCallCount === 1) {
+          await firstInventoryCallStarted;
+        }
+        return {
+          asset: "CKB" as const,
+          network: "AGGRON4" as const,
+          availableAmount: "100",
+        };
+      });
+
+      const firstRequest = requestWithdrawal(
+        {
+          appId: "app1",
+          userId: "u1",
+          asset: "CKB",
+          amount: "61",
+          destination: {
+            kind: "CKB_ADDRESS",
+            address: "ckt1qyqfth8m4fevfzh5hhd088s78qcdjjp8cehs7z8jhw",
+          },
+        },
+        {
+          repo: concurrentRepo,
+          ledgerRepo: ledger,
+          liquidityRequestRepo,
+          hotWalletInventoryProvider,
+          policyRepo: null,
+        },
+      );
+
+      await Promise.resolve();
+      const secondRequest = requestWithdrawal(
+        {
+          appId: "app1",
+          userId: "u2",
+          asset: "CKB",
+          amount: "61",
+          destination: {
+            kind: "CKB_ADDRESS",
+            address: "ckt1qyqfth8m4fevfzh5hhd088s78qcdjjp8cehs7z8jhw",
+          },
+        },
+        {
+          repo: concurrentRepo,
+          ledgerRepo: ledger,
+          liquidityRequestRepo,
+          hotWalletInventoryProvider,
+          policyRepo: null,
+        },
+      );
+
+      await vi.waitFor(() => {
+        expect(hotWalletInventoryProvider).toHaveBeenCalledTimes(1);
+      });
+      releaseFirstInventoryCall?.();
+
+      const [firstResult, secondResult] = await Promise.all([firstRequest, secondRequest]);
+      expect([firstResult.state, secondResult.state].sort()).toEqual(["LIQUIDITY_PENDING", "PENDING"]);
+      expect(liquidityRequestRepo.__listForTests?.()).toHaveLength(1);
+    } finally {
+      if (previousAllowedAssets === undefined) delete process.env.FIBER_WITHDRAWAL_POLICY_ALLOWED_ASSETS;
+      else process.env.FIBER_WITHDRAWAL_POLICY_ALLOWED_ASSETS = previousAllowedAssets;
+      if (previousMaxPerRequest === undefined) delete process.env.FIBER_WITHDRAWAL_POLICY_MAX_PER_REQUEST;
+      else process.env.FIBER_WITHDRAWAL_POLICY_MAX_PER_REQUEST = previousMaxPerRequest;
+      if (previousPerUserDailyMax === undefined) delete process.env.FIBER_WITHDRAWAL_POLICY_PER_USER_DAILY_MAX;
+      else process.env.FIBER_WITHDRAWAL_POLICY_PER_USER_DAILY_MAX = previousPerUserDailyMax;
+      if (previousPerAppDailyMax === undefined) delete process.env.FIBER_WITHDRAWAL_POLICY_PER_APP_DAILY_MAX;
+      else process.env.FIBER_WITHDRAWAL_POLICY_PER_APP_DAILY_MAX = previousPerAppDailyMax;
+      if (previousCooldown === undefined) delete process.env.FIBER_WITHDRAWAL_POLICY_COOLDOWN_SECONDS;
+      else process.env.FIBER_WITHDRAWAL_POLICY_COOLDOWN_SECONDS = previousCooldown;
     }
   });
 });

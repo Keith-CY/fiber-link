@@ -7,6 +7,7 @@ import {
   createDbWithdrawalPolicyRepo,
   createDbWithdrawalRepo,
   formatDecimal,
+  InsufficientFundsError,
   parseDecimal,
   type Asset,
   type CreateWithdrawalInput,
@@ -20,6 +21,7 @@ import {
 import {
   createDefaultHotWalletInventoryProvider,
   type HotWalletInventoryProvider,
+  resolveCkbNetworkConfig,
   WithdrawalExecutionError,
   getCkbAddressMinCellCapacityShannons,
   shannonsToCkbDecimal,
@@ -66,6 +68,7 @@ let defaultLedgerRepo: LedgerRepo | null = null;
 let defaultLiquidityRequestRepo: LiquidityRequestRepo | null | undefined;
 let defaultPolicyRepo: WithdrawalPolicyRepo | null | undefined;
 let defaultHotWalletInventoryProvider: HotWalletInventoryProvider | null | undefined;
+const hotWalletReservationLocks = new Map<string, Promise<void>>();
 
 const DEFAULT_ALLOWED_ASSETS: Asset[] = ["CKB", "USDI"];
 const DEFAULT_MAX_PER_REQUEST = "5000";
@@ -194,6 +197,26 @@ function usageFallback(): WithdrawalPolicyUsage {
   };
 }
 
+async function withHotWalletReservationLock<T>(key: string, work: () => Promise<T>): Promise<T> {
+  const previous = hotWalletReservationLocks.get(key) ?? Promise.resolve();
+  let releaseCurrent!: () => void;
+  const current = new Promise<void>((resolve) => {
+    releaseCurrent = resolve;
+  });
+  const tail = previous.then(() => current, () => current);
+  hotWalletReservationLocks.set(key, tail);
+
+  await previous;
+  try {
+    return await work();
+  } finally {
+    releaseCurrent();
+    if (hotWalletReservationLocks.get(key) === tail) {
+      hotWalletReservationLocks.delete(key);
+    }
+  }
+}
+
 async function resolveMinimumRequiredAmount(input: RequestWithdrawalInput): Promise<string> {
   if (input.destination.kind !== "CKB_ADDRESS") {
     return "0";
@@ -290,6 +313,43 @@ function assertWithdrawalPolicy(
   }
 }
 
+async function assertSufficientCreatorBalance(
+  input: RequestWithdrawalInput,
+  deps: { repo: WithdrawalRepo; ledgerRepo: LedgerRepo },
+) {
+  const [balance, pending] = await Promise.all([
+    deps.ledgerRepo.getBalance({
+      appId: input.appId,
+      userId: input.userId,
+      asset: input.asset,
+    }),
+    deps.repo.getPendingTotal({
+      appId: input.appId,
+      userId: input.userId,
+      asset: input.asset,
+    }),
+  ]);
+
+  const nextReservedTotal = addDecimalStrings(pending, input.amount);
+  if (compareDecimalStrings(nextReservedTotal, balance) > 0) {
+    throw new InsufficientFundsError(input.appId, input.userId, input.asset, input.amount);
+  }
+}
+
+function getHotWalletReservationKey(input: RequestWithdrawalInput): string | null {
+  if (input.destination.kind !== "CKB_ADDRESS") {
+    return null;
+  }
+
+  try {
+    const { isTestnet } = resolveCkbNetworkConfig(input.destination.address);
+    const network = isTestnet ? "AGGRON4" : "LINA";
+    return `${input.appId}:${input.asset}:${network}`;
+  } catch {
+    return null;
+  }
+}
+
 export async function requestWithdrawal(input: RequestWithdrawalInput, options: RequestWithdrawalOptions = {}) {
   const now = options.now ?? new Date();
   const repo = options.repo ?? getDefaultRepo();
@@ -308,6 +368,7 @@ export async function requestWithdrawal(input: RequestWithdrawalInput, options: 
 
   const minimumRequiredAmount = await resolveMinimumRequiredAmount(input);
   assertWithdrawalPolicy(input, policy, usage, now, minimumRequiredAmount);
+  await assertSufficientCreatorBalance(input, { repo, ledgerRepo });
 
   const createInput: CreateWithdrawalInput = {
     appId: input.appId,
@@ -323,43 +384,52 @@ export async function requestWithdrawal(input: RequestWithdrawalInput, options: 
         ? getDefaultHotWalletInventoryProvider()
         : null
       : options.hotWalletInventoryProvider;
-  let liquidityDecision;
-  try {
-    liquidityDecision = await decideWithdrawalRequestLiquidity(input, {
-      repo,
-      hotWalletInventoryProvider,
-      liquidityRequestRepo: options.liquidityRequestRepo,
-    });
-  } catch (error) {
-    if (
-      error instanceof MissingLiquidityRequestRepoError &&
-      input.destination.kind === "CKB_ADDRESS" &&
-      options.liquidityRequestRepo === undefined
-    ) {
+  const runCreate = async () => {
+    let liquidityDecision;
+    try {
       liquidityDecision = await decideWithdrawalRequestLiquidity(input, {
         repo,
         hotWalletInventoryProvider,
-        liquidityRequestRepo: getDefaultLiquidityRequestRepo(),
+        liquidityRequestRepo: options.liquidityRequestRepo,
       });
-    } else {
-      throw error;
+    } catch (error) {
+      if (
+        error instanceof MissingLiquidityRequestRepoError &&
+        input.destination.kind === "CKB_ADDRESS" &&
+        options.liquidityRequestRepo === undefined
+      ) {
+        liquidityDecision = await decideWithdrawalRequestLiquidity(input, {
+          repo,
+          hotWalletInventoryProvider,
+          liquidityRequestRepo: getDefaultLiquidityRequestRepo(),
+        });
+      } else {
+        throw error;
+      }
     }
-  }
 
-  if (liquidityDecision.state === "LIQUIDITY_PENDING") {
-    const record = await repo.createLiquidityPendingWithBalanceCheck({
-      ...createInput,
-      liquidityRequestId: liquidityDecision.liquidityRequestId,
-      liquidityPendingReason: liquidityDecision.liquidityPendingReason,
-    }, { ledgerRepo });
+    if (liquidityDecision.state === "LIQUIDITY_PENDING") {
+      const record = await repo.createLiquidityPendingWithBalanceCheck({
+        ...createInput,
+        liquidityRequestId: liquidityDecision.liquidityRequestId,
+        liquidityPendingReason: liquidityDecision.liquidityPendingReason,
+      }, { ledgerRepo });
+      return { id: record.id, state: record.state };
+    }
+
+    const record = await repo.createWithBalanceCheck(
+      createInput,
+      { ledgerRepo },
+    );
     return { id: record.id, state: record.state };
+  };
+
+  const hotWalletReservationKey = getHotWalletReservationKey(input);
+  if (!hotWalletReservationKey || !hotWalletInventoryProvider) {
+    return runCreate();
   }
 
-  const record = await repo.createWithBalanceCheck(
-    createInput,
-    { ledgerRepo },
-  );
-  return { id: record.id, state: record.state };
+  return withHotWalletReservationLock(hotWalletReservationKey, runCreate);
 }
 
 export function __setRequestWithdrawalDefaultsForTests(defaults: RequestWithdrawalOptions) {

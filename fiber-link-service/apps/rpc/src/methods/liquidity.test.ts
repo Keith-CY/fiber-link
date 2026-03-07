@@ -97,6 +97,41 @@ describe("decideWithdrawalRequestLiquidity", () => {
     expect(liquidityRequestRepo.__listForTests?.()).toHaveLength(1);
   });
 
+  it("raises the attached liquidity request requiredAmount when the new shortfall is larger", async () => {
+    const liquidityRequestRepo = createInMemoryLiquidityRequestRepo();
+    const existing = await liquidityRequestRepo.create({
+      appId: "app1",
+      asset: "CKB",
+      network: "AGGRON4",
+      sourceKind: "FIBER_TO_CKB_CHAIN",
+      requiredAmount: "10",
+    });
+    const hotWalletInventoryProvider = vi.fn(async () => ({
+      asset: "CKB" as const,
+      network: "AGGRON4" as const,
+      availableAmount: "10",
+    }));
+
+    const result = await decideWithdrawalRequestLiquidity(
+      {
+        appId: "app1",
+        asset: "CKB",
+        amount: "61",
+        destination: {
+          kind: "CKB_ADDRESS",
+          address: "ckt1qyqfth8m4fevfzh5hhd088s78qcdjjp8cehs7z8jhw",
+        },
+      },
+      { hotWalletInventoryProvider, liquidityRequestRepo },
+    );
+
+    expect(result.state).toBe("LIQUIDITY_PENDING");
+    expect(result.liquidityRequestId).toBe(existing.id);
+    await expect(liquidityRequestRepo.findByIdOrThrow(existing.id)).resolves.toMatchObject({
+      requiredAmount: "51",
+    });
+  });
+
   it("uses active chain reservations before deciding whether liquidity is sufficient", async () => {
     const repo = createInMemoryWithdrawalRepo();
     const liquidityRequestRepo = createInMemoryLiquidityRequestRepo();
