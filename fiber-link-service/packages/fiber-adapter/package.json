@@ -2,7 +2,10 @@
   "name": "@fiber-link/fiber-adapter",
   "private": true,
   "main": "src/index.ts",
-  "scripts": { "test": "vitest" },
+  "scripts": {
+    "test": "vitest",
+    "test:hot-wallet-inventory": "vitest --run src/hot-wallet-inventory.test.ts"
+  },
   "dependencies": {
     "@ckb-lumos/lumos": "^0.22.2"
   },

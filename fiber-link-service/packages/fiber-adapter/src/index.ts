@@ -5,6 +5,7 @@ export {
   shannonsToCkbDecimal,
   WithdrawalExecutionError,
 } from "./ckb-onchain-withdrawal";
+export { getHotWalletInventory } from "./hot-wallet-inventory";
 
 export { createAdapter } from "./rpc-adapter";
 export { createAdapterProvider } from "./provider";
@@ -26,12 +27,18 @@ export type {
   Asset,
   CreateAdapterArgs,
   CreateInvoiceArgs,
+  CkbHotWalletInventory,
+  CkbNetwork,
   ExecuteWithdrawalArgs,
   FiberAdapter,
+  GetHotWalletInventoryArgs,
+  HotWalletInventory,
+  HotWalletInventoryProvider,
   InvoiceState,
   SettlementSubscriptionConfig,
   SettlementSubscriptionHandle,
   SubscribeSettlementsArgs,
+  UsdiHotWalletInventory,
   WithdrawalDestination,
   WithdrawalExecutionKind,
 } from "./types";

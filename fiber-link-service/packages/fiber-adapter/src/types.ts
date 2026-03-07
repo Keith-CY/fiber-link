@@ -1,4 +1,5 @@
 export type Asset = "CKB" | "USDI";
+export type CkbNetwork = "AGGRON4" | "LINA";
 
 export type CreateInvoiceArgs = { amount: string; asset: Asset };
 export type InvoiceState = "UNPAID" | "SETTLED" | "FAILED";
@@ -36,6 +37,27 @@ export type CreateAdapterArgs = {
   settlementSubscription?: SettlementSubscriptionConfig;
   fetchFn?: typeof fetch;
 };
+
+export type GetHotWalletInventoryArgs = {
+  asset: Asset;
+  network: CkbNetwork;
+};
+
+export type CkbHotWalletInventory = {
+  asset: "CKB";
+  network: CkbNetwork;
+  availableAmount: string;
+};
+
+export type UsdiHotWalletInventory = {
+  asset: "USDI";
+  network: CkbNetwork;
+  availableAmount: string;
+  supportingCkbAmount: string;
+};
+
+export type HotWalletInventory = CkbHotWalletInventory | UsdiHotWalletInventory;
+export type HotWalletInventoryProvider = (args: GetHotWalletInventoryArgs) => Promise<HotWalletInventory>;
 
 export type FiberAdapter = {
   createInvoice: (args: CreateInvoiceArgs) => Promise<{ invoice: string }>;
