@@ -10,6 +10,13 @@ END $$;
 
 DO $$
 BEGIN
+  CREATE TYPE "asset" AS ENUM ('CKB', 'USDI');
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$
+BEGIN
   CREATE TYPE "liquidity_request_source_kind" AS ENUM ('FIBER_TO_CKB_CHAIN');
 EXCEPTION
   WHEN duplicate_object THEN NULL;

@@ -31,6 +31,67 @@ export type EnsureChainLiquidityArgs = {
   sourceKind: "FIBER_TO_CKB_CHAIN";
 };
 
+export type LiquidityCapabilities = {
+  directRebalance: boolean;
+  channelLifecycle: boolean;
+};
+
+export type ListChannelsArgs = {
+  includeClosed?: boolean;
+  peerId?: string;
+};
+
+export type ChannelState = "CHANNEL_READY" | "CLOSED" | string;
+
+export type ChannelRecord = {
+  channelId: string;
+  state: ChannelState;
+  localBalance: string;
+  remoteBalance: string;
+  remotePubkey: string | null;
+  pendingTlcCount: number;
+};
+
+export type ListChannelsResult = {
+  channels: ChannelRecord[];
+};
+
+export type OpenChannelArgs = {
+  peerId: string;
+  fundingAmount: string;
+  fundingUdtTypeScript?: UdtTypeScript;
+  tlcFeeProportionalMillionths?: string;
+};
+
+export type OpenChannelResult = {
+  temporaryChannelId: string;
+};
+
+export type AcceptChannelArgs = {
+  temporaryChannelId: string;
+  fundingAmount: string;
+};
+
+export type AcceptChannelResult = {
+  newChannelId?: string;
+};
+
+export type CkbChannelAcceptancePolicy = {
+  openChannelAutoAcceptMinFundingAmount: string;
+  acceptChannelFundingAmount: string;
+};
+
+export type ShutdownChannelArgs = {
+  channelId: string;
+  closeScript?: Record<string, unknown>;
+  feeRate?: string;
+  force?: boolean;
+};
+
+export type ShutdownChannelResult = {
+  txHash?: string;
+};
+
 export type RebalanceStatusState = "IDLE" | "PENDING" | "FUNDED" | "FAILED";
 
 export type EnsureChainLiquidityResult = {
@@ -98,6 +159,12 @@ export type FiberAdapter = {
   getInvoiceStatus: (args: { invoice: string }) => Promise<{ state: InvoiceState }>;
   subscribeSettlements: (args: SubscribeSettlementsArgs) => Promise<SettlementSubscriptionHandle>;
   executeWithdrawal: (args: ExecuteWithdrawalArgs) => Promise<{ txHash: string }>;
+  getLiquidityCapabilities: () => Promise<LiquidityCapabilities>;
+  listChannels: (args: ListChannelsArgs) => Promise<ListChannelsResult>;
+  openChannel: (args: OpenChannelArgs) => Promise<OpenChannelResult>;
+  acceptChannel: (args: AcceptChannelArgs) => Promise<AcceptChannelResult>;
+  getCkbChannelAcceptancePolicy: () => Promise<CkbChannelAcceptancePolicy>;
+  shutdownChannel: (args: ShutdownChannelArgs) => Promise<ShutdownChannelResult>;
   ensureChainLiquidity: (args: EnsureChainLiquidityArgs) => Promise<EnsureChainLiquidityResult>;
   getRebalanceStatus: (args: GetRebalanceStatusArgs) => Promise<GetRebalanceStatusResult>;
 };

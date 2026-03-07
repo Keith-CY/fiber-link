@@ -26,6 +26,8 @@ CKB_FAUCET_AMOUNT="${CKB_FAUCET_AMOUNT:-100000}"
 CKB_FAUCET_WAIT_SECONDS="${CKB_FAUCET_WAIT_SECONDS:-20}"
 WITHDRAWAL_SIGNER_CACHE_PATH="${E2E_WITHDRAWAL_SIGNER_CACHE_PATH:-${ROOT_DIR}/.tmp/e2e-discourse-four-flows/withdrawal-signer.json}"
 WORKFLOW_RPC_PORT="${WORKFLOW_RPC_PORT:-${DEFAULT_WORKFLOW_RPC_PORT}}"
+E2E_WITHDRAWAL_SIGNER_ROTATE="${E2E_WITHDRAWAL_SIGNER_ROTATE:-0}"
+E2E_WITHDRAWAL_SIGNER_SKIP_FAUCET="${E2E_WITHDRAWAL_SIGNER_SKIP_FAUCET:-0}"
 
 LOG_PREFIX="${LOG_PREFIX:-e2e-four-flows}"
 VERBOSE="${VERBOSE:-0}"
@@ -61,6 +63,7 @@ TOPIC_TX_HASH="${TOPIC_TX_HASH:-}"
 REPLY_TX_HASH="${REPLY_TX_HASH:-}"
 WITHDRAW_TO_ADDRESS="${WITHDRAW_TO_ADDRESS:-}"
 WITHDRAWAL_ID="${WITHDRAWAL_ID:-}"
+WITHDRAWAL_REQUESTED_STATE="${WITHDRAWAL_REQUESTED_STATE:-}"
 WITHDRAWAL_STATE="${WITHDRAWAL_STATE:-}"
 WITHDRAWAL_TX_HASH="${WITHDRAWAL_TX_HASH:-}"
 WITHDRAWAL_PRIVATE_KEY="${WITHDRAWAL_PRIVATE_KEY:-}"
@@ -70,6 +73,10 @@ AUTHOR_TIP_HISTORY_COUNT="${AUTHOR_TIP_HISTORY_COUNT:-}"
 DISCOURSE_UI_BASE_URL="${DISCOURSE_UI_BASE_URL:-${DEFAULT_DISCOURSE_UI_BASE_URL}}"
 SETTLEMENT_MODES="${SETTLEMENT_MODES:-${DEFAULT_SETTLEMENT_MODES}}"
 EXPLORER_TX_URL_TEMPLATE="${EXPLORER_TX_URL_TEMPLATE:-${E2E_EXPLORER_TX_URL_TEMPLATE:-}}"
+LIQUIDITY_FALLBACK_MODE="${LIQUIDITY_FALLBACK_MODE:-${FIBER_LIQUIDITY_FALLBACK_MODE:-none}}"
+CHANNEL_ROTATION_BOOTSTRAP_RESERVE="${CHANNEL_ROTATION_BOOTSTRAP_RESERVE:-${FIBER_CHANNEL_ROTATION_BOOTSTRAP_RESERVE:-0}}"
+CHANNEL_ROTATION_MIN_RECOVERABLE_AMOUNT="${CHANNEL_ROTATION_MIN_RECOVERABLE_AMOUNT:-${FIBER_CHANNEL_ROTATION_MIN_RECOVERABLE_AMOUNT:-0}}"
+CHANNEL_ROTATION_MAX_CONCURRENT="${CHANNEL_ROTATION_MAX_CONCURRENT:-${FIBER_CHANNEL_ROTATION_MAX_CONCURRENT:-1}}"
 
 log() {
   printf '[%s] %s\n' "${LOG_PREFIX}" "$*"
@@ -193,12 +200,24 @@ TOPIC_TX_HASH
 REPLY_TX_HASH
 WITHDRAW_TO_ADDRESS
 WITHDRAWAL_ID
+WITHDRAWAL_REQUESTED_STATE
 WITHDRAWAL_STATE
 WITHDRAWAL_TX_HASH
 AUTHOR_BALANCE
 AUTHOR_TIP_HISTORY_COUNT
 EXPLORER_TX_URL_TEMPLATE
+LIQUIDITY_FALLBACK_MODE
+CHANNEL_ROTATION_BOOTSTRAP_RESERVE
+CHANNEL_ROTATION_MIN_RECOVERABLE_AMOUNT
+CHANNEL_ROTATION_MAX_CONCURRENT
 EOF_KEYS
+}
+
+sync_liquidity_fallback_env() {
+  export FIBER_LIQUIDITY_FALLBACK_MODE="${LIQUIDITY_FALLBACK_MODE:-none}"
+  export FIBER_CHANNEL_ROTATION_BOOTSTRAP_RESERVE="${CHANNEL_ROTATION_BOOTSTRAP_RESERVE:-0}"
+  export FIBER_CHANNEL_ROTATION_MIN_RECOVERABLE_AMOUNT="${CHANNEL_ROTATION_MIN_RECOVERABLE_AMOUNT:-0}"
+  export FIBER_CHANNEL_ROTATION_MAX_CONCURRENT="${CHANNEL_ROTATION_MAX_CONCURRENT:-1}"
 }
 
 load_state_env() {
@@ -207,16 +226,57 @@ load_state_env() {
     # shellcheck disable=SC1090
     source "${STATE_ENV_PATH}"
   fi
+  sync_liquidity_fallback_env
 }
 
 persist_state_env() {
   refresh_run_paths
+  sync_liquidity_fallback_env
   mkdir -p "$(dirname "${STATE_ENV_PATH}")"
   {
     while IFS= read -r key; do
       printf '%s=%q\n' "${key}" "${!key-}"
     done < <(state_keys)
   } > "${STATE_ENV_PATH}"
+}
+
+should_use_unique_withdraw_to_address() {
+  [[ "${E2E_UNIQUE_WITHDRAW_TO_ADDRESS:-0}" == "1" ]]
+}
+
+generate_unique_testnet_withdraw_to_address() {
+  local label="${1:-primary}"
+  local seed address
+
+  require_cmd docker
+  wait_container_healthy fiber-link-worker 180 \
+    || fatal "${EXIT_PRECHECK}" "fiber-link-worker is not healthy for unique withdraw address generation"
+
+  seed="${APP_ID}:${TIMESTAMP}:${label}"
+  record_cmd "generate unique withdraw address (label=${label}, seed=${seed})"
+  address="$(
+    docker exec \
+      -e "E2E_UNIQUE_ADDR_SEED=${seed}" \
+      fiber-link-worker \
+      bun -e 'import { createHash } from "node:crypto";
+import { config, hd, helpers } from "@ckb-lumos/lumos";
+const seed = process.env.E2E_UNIQUE_ADDR_SEED ?? "default";
+const digest = createHash("sha256").update(seed).digest("hex");
+const privateKey = `0x${digest}`;
+const cfg = config.predefined.AGGRON4;
+config.initializeConfig(cfg);
+const address = helpers.encodeToConfigAddress(
+  hd.key.privateKeyToBlake160(privateKey),
+  "SECP256K1_BLAKE160",
+  { config: cfg },
+);
+console.log(address);' 2>/dev/null | tail -n1 | tr -d '\r'
+  )"
+
+  [[ "${address}" =~ ^ckt1[0-9a-z]+$ ]] \
+    || fatal "${EXIT_PRECHECK}" "failed to generate a valid unique testnet withdraw address for ${label}"
+
+  printf '%s' "${address}"
 }
 
 ensure_compose_files() {
@@ -581,7 +641,7 @@ ensure_withdrawal_signer_private_key() {
     candidate="$(get_env_value FIBER_WITHDRAWAL_CKB_PRIVATE_KEY)"
   fi
 
-  if [[ -z "${candidate}" && -s "${WITHDRAWAL_SIGNER_CACHE_PATH}" ]]; then
+  if [[ "${E2E_WITHDRAWAL_SIGNER_ROTATE}" != "1" && -z "${candidate}" && -s "${WITHDRAWAL_SIGNER_CACHE_PATH}" ]]; then
     candidate="$(jq -r '.privateKey // empty' "${WITHDRAWAL_SIGNER_CACHE_PATH}" 2>/dev/null || true)"
     cached_address="$(jq -r '.address // empty' "${WITHDRAWAL_SIGNER_CACHE_PATH}" 2>/dev/null || true)"
     if [[ -n "${cached_address}" ]]; then
@@ -613,7 +673,43 @@ ensure_withdrawal_signer_private_key() {
     '{privateKey:$privateKey,address:$address,updatedAt:$updatedAt}' > "${WITHDRAWAL_SIGNER_CACHE_PATH}"
   chmod 600 "${WITHDRAWAL_SIGNER_CACHE_PATH}" || true
 
-  request_ckb_faucet_for_address "${WITHDRAWAL_SIGNER_ADDRESS}" "withdrawal-signer"
+  if [[ "${E2E_WITHDRAWAL_SIGNER_SKIP_FAUCET}" != "1" ]]; then
+    request_ckb_faucet_for_address "${WITHDRAWAL_SIGNER_ADDRESS}" "withdrawal-signer"
+  fi
+}
+
+restart_withdrawal_runtime() {
+  local strategy="$1"
+  local runtime_rpc_port="${WORKFLOW_RPC_PORT:-${DEFAULT_WORKFLOW_RPC_PORT}}"
+  record_cmd "RPC_PORT=${runtime_rpc_port} WORKER_SETTLEMENT_STRATEGY=${strategy} docker compose --env-file ${COMPOSE_ENV_FILE} -f ${COMPOSE_FILE} up -d --no-deps --force-recreate rpc worker"
+  if [[ -n "${WITHDRAWAL_PRIVATE_KEY}" ]]; then
+    record_cmd "runtime restart includes FIBER_WITHDRAWAL_CKB_PRIVATE_KEY=<redacted>"
+  fi
+  (
+    cd "${ROOT_DIR}"
+    export RPC_PORT="${runtime_rpc_port}"
+    export WORKER_SETTLEMENT_STRATEGY="${strategy}"
+    if [[ -n "${WITHDRAWAL_PRIVATE_KEY}" ]]; then
+      export FIBER_WITHDRAWAL_CKB_PRIVATE_KEY="${WITHDRAWAL_PRIVATE_KEY}"
+    fi
+    export FIBER_WITHDRAWAL_CKB_LIQUIDITY_FEE_BUFFER="${FIBER_WITHDRAWAL_CKB_LIQUIDITY_FEE_BUFFER:-0}"
+    export FIBER_WITHDRAWAL_CKB_LIQUIDITY_POST_TX_RESERVE="${FIBER_WITHDRAWAL_CKB_LIQUIDITY_POST_TX_RESERVE:-0}"
+    export FIBER_WITHDRAWAL_CKB_LIQUIDITY_WARM_BUFFER="${FIBER_WITHDRAWAL_CKB_LIQUIDITY_WARM_BUFFER:-0}"
+    export FIBER_LIQUIDITY_FALLBACK_MODE="${LIQUIDITY_FALLBACK_MODE:-none}"
+    export FIBER_CHANNEL_ROTATION_BOOTSTRAP_RESERVE="${CHANNEL_ROTATION_BOOTSTRAP_RESERVE:-0}"
+    export FIBER_CHANNEL_ROTATION_MIN_RECOVERABLE_AMOUNT="${CHANNEL_ROTATION_MIN_RECOVERABLE_AMOUNT:-0}"
+    export FIBER_CHANNEL_ROTATION_MAX_CONCURRENT="${CHANNEL_ROTATION_MAX_CONCURRENT:-1}"
+    docker compose \
+      --env-file "${COMPOSE_ENV_FILE}" \
+      -f "${COMPOSE_FILE}" \
+      up -d --no-deps --force-recreate rpc worker
+  ) > "${LOGS_DIR}/runtime-${strategy}.log" 2>&1 \
+    || fatal "${EXIT_PRECHECK}" "failed to restart rpc/worker with strategy=${strategy}"
+
+  wait_container_healthy fiber-link-rpc 180 \
+    || fatal "${EXIT_PRECHECK}" "rpc did not become healthy after strategy=${strategy}"
+  wait_container_healthy fiber-link-worker 180 \
+    || fatal "${EXIT_PRECHECK}" "worker did not become healthy after strategy=${strategy}"
 }
 
 sign_payload() {
@@ -709,6 +805,10 @@ set_worker_strategy() {
     if [[ -n "${WITHDRAWAL_PRIVATE_KEY}" ]]; then
       export FIBER_WITHDRAWAL_CKB_PRIVATE_KEY="${WITHDRAWAL_PRIVATE_KEY}"
     fi
+    export FIBER_LIQUIDITY_FALLBACK_MODE="${LIQUIDITY_FALLBACK_MODE:-none}"
+    export FIBER_CHANNEL_ROTATION_BOOTSTRAP_RESERVE="${CHANNEL_ROTATION_BOOTSTRAP_RESERVE:-0}"
+    export FIBER_CHANNEL_ROTATION_MIN_RECOVERABLE_AMOUNT="${CHANNEL_ROTATION_MIN_RECOVERABLE_AMOUNT:-0}"
+    export FIBER_CHANNEL_ROTATION_MAX_CONCURRENT="${CHANNEL_ROTATION_MAX_CONCURRENT:-1}"
     docker compose \
       --env-file "${COMPOSE_ENV_FILE}" \
       -f "${COMPOSE_FILE}" \
@@ -718,4 +818,50 @@ set_worker_strategy() {
 
   wait_container_healthy fiber-link-worker 180 \
     || fatal "${EXIT_PRECHECK}" "worker did not become healthy after strategy=${strategy}"
+}
+
+capture_hot_wallet_inventory() {
+  local output_path="$1"
+  local asset="${2:-CKB}"
+  local network="${3:-AGGRON4}"
+
+  docker exec -w /app fiber-link-rpc sh -lc "bun -e '
+import { createDefaultHotWalletInventoryProvider } from \"@fiber-link/fiber-adapter\";
+const provider = createDefaultHotWalletInventoryProvider();
+const inventory = await provider({ asset: \"${asset}\", network: \"${network}\" });
+console.log(JSON.stringify(inventory));
+' " > "${output_path}" 2>"${output_path%.json}.stderr.log" \
+    || fatal "${EXIT_ARTIFACT}" "failed to capture hot wallet inventory"
+}
+
+capture_withdrawal_liquidity_snapshot() {
+  local withdrawal_id="$1"
+  local output_path="$2"
+  local pg_container="fiber-link-postgres"
+  local pg_user="${POSTGRES_USER:-$(get_env_value POSTGRES_USER)}"
+  local pg_db="${POSTGRES_DB:-$(get_env_value POSTGRES_DB)}"
+  local withdrawal_id_sql query
+  pg_user="${pg_user:-fiber}"
+  pg_db="${pg_db:-fiber_link}"
+  withdrawal_id_sql="$(printf '%s' "${withdrawal_id}" | sed "s/'/''/g")"
+  query="SELECT COALESCE(row_to_json(t)::text, 'null')
+FROM (
+  SELECT
+    w.id,
+    w.state,
+    w.asset,
+    w.amount,
+    w.to_address AS \"toAddress\",
+    w.liquidity_request_id AS \"liquidityRequestId\",
+    w.liquidity_pending_reason AS \"liquidityPendingReason\",
+    lr.state AS \"liquidityRequestState\",
+    lr.required_amount AS \"liquidityRequestRequiredAmount\",
+    lr.funded_amount AS \"liquidityRequestFundedAmount\",
+    lr.metadata AS \"liquidityRequestMetadata\"
+  FROM withdrawals w
+  LEFT JOIN liquidity_requests lr ON lr.id = w.liquidity_request_id
+  WHERE w.id = '${withdrawal_id_sql}'
+) t;"
+  docker exec "${pg_container}" psql -At -U "${pg_user}" -d "${pg_db}" -c "${query}" > "${output_path}" \
+    || fatal "${EXIT_ARTIFACT}" "failed to capture withdrawal liquidity snapshot for ${withdrawal_id}"
 }

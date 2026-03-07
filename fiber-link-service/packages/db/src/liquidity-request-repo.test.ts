@@ -117,6 +117,64 @@ describe("createInMemoryLiquidityRequestRepo", () => {
     expect(funded.completedAt?.toISOString()).toBe(now.toISOString());
   });
 
+  it("marks a liquidity request REBALANCING and merges metadata", async () => {
+    const repo = createInMemoryLiquidityRequestRepo();
+    const created = await repo.create({
+      appId: "app1",
+      asset: "CKB",
+      network: "AGGRON4",
+      sourceKind: "FIBER_TO_CKB_CHAIN",
+      requiredAmount: "123",
+      metadata: { recoveryStrategy: "CHANNEL_ROTATION", existing: "keep" },
+    });
+    const now = new Date("2026-03-07T01:00:00.000Z");
+
+    const updated = await repo.markRebalancing(created.id, {
+      now,
+      metadata: {
+        replacementChannelId: "0xreplacement",
+        legacyChannelId: "0xlegacy",
+      },
+    });
+
+    expect(updated.state).toBe("REBALANCING");
+    expect(updated.updatedAt.toISOString()).toBe(now.toISOString());
+    expect(updated.metadata).toMatchObject({
+      recoveryStrategy: "CHANNEL_ROTATION",
+      existing: "keep",
+      replacementChannelId: "0xreplacement",
+      legacyChannelId: "0xlegacy",
+    });
+  });
+
+  it("marks a liquidity request FAILED without losing existing metadata", async () => {
+    const repo = createInMemoryLiquidityRequestRepo();
+    const created = await repo.create({
+      appId: "app1",
+      asset: "CKB",
+      network: "AGGRON4",
+      sourceKind: "FIBER_TO_CKB_CHAIN",
+      requiredAmount: "123",
+      metadata: { recoveryStrategy: "CHANNEL_ROTATION", existing: "keep" },
+    });
+    const now = new Date("2026-03-07T01:00:00.000Z");
+
+    const failed = await repo.markFailed(created.id, {
+      now,
+      error: "replacement channel never became ready",
+      metadata: { lastRotationError: "replacement channel never became ready" },
+    });
+
+    expect(failed.state).toBe("FAILED");
+    expect(failed.lastError).toBe("replacement channel never became ready");
+    expect(failed.completedAt?.toISOString()).toBe(now.toISOString());
+    expect(failed.metadata).toMatchObject({
+      recoveryStrategy: "CHANNEL_ROTATION",
+      existing: "keep",
+      lastRotationError: "replacement channel never became ready",
+    });
+  });
+
   it("finds an existing open liquidity request by app asset network and source kind", async () => {
     const repo = createInMemoryLiquidityRequestRepo();
     const target = await repo.create({
@@ -212,6 +270,44 @@ describe("createInMemoryLiquidityRequestRepo", () => {
       requiredAmount: "100",
     });
   });
+
+  it("rejects markRebalancing when the liquidity request is already FUNDED", async () => {
+    const now = new Date("2026-03-07T01:00:00.000Z");
+    const repo = createInMemoryLiquidityRequestRepo([
+      mockRow({
+        state: "FUNDED",
+        fundedAmount: "100",
+        updatedAt: now,
+        completedAt: now,
+      }),
+    ]);
+
+    await expect(
+      repo.markRebalancing("liq1", {
+        now,
+        metadata: { replacementChannelId: "0xreplacement" },
+      }),
+    ).rejects.toBeInstanceOf(LiquidityRequestStateTransitionError);
+  });
+
+  it("rejects markFailed when the liquidity request is already FUNDED", async () => {
+    const now = new Date("2026-03-07T01:00:00.000Z");
+    const repo = createInMemoryLiquidityRequestRepo([
+      mockRow({
+        state: "FUNDED",
+        fundedAmount: "100",
+        updatedAt: now,
+        completedAt: now,
+      }),
+    ]);
+
+    await expect(
+      repo.markFailed("liq1", {
+        now,
+        error: "should not fail funded request",
+      }),
+    ).rejects.toBeInstanceOf(LiquidityRequestStateTransitionError);
+  });
 });
 
 describe("createDbLiquidityRequestRepo", () => {
@@ -247,6 +343,110 @@ describe("createDbLiquidityRequestRepo", () => {
     });
 
     expect(found?.id).toBe("liq1");
+  });
+
+  it("marks a liquidity request REBALANCING and merges metadata", async () => {
+    const mock = createDbMock();
+    const repo = createDbLiquidityRequestRepo(mock.db);
+    const now = new Date("2026-03-07T01:00:00.000Z");
+    mock.selectLimit.mockResolvedValueOnce([
+      mockRow({
+        metadata: { recoveryStrategy: "CHANNEL_ROTATION", existing: "keep" },
+      }),
+    ]);
+    mock.updateReturning.mockResolvedValueOnce([
+      mockRow({
+        state: "REBALANCING",
+        updatedAt: now,
+        metadata: {
+          recoveryStrategy: "CHANNEL_ROTATION",
+          existing: "keep",
+          replacementChannelId: "0xreplacement",
+          legacyChannelId: "0xlegacy",
+        },
+      }),
+    ]);
+
+    const updated = await repo.markRebalancing("liq1", {
+      now,
+      metadata: {
+        replacementChannelId: "0xreplacement",
+        legacyChannelId: "0xlegacy",
+      },
+    });
+
+    expect(updated.state).toBe("REBALANCING");
+    expect(updated.metadata).toMatchObject({
+      recoveryStrategy: "CHANNEL_ROTATION",
+      existing: "keep",
+      replacementChannelId: "0xreplacement",
+      legacyChannelId: "0xlegacy",
+    });
+    expect(mock.updateSet).toHaveBeenCalledWith(
+      expect.objectContaining({
+        state: "REBALANCING",
+        metadata: {
+          recoveryStrategy: "CHANNEL_ROTATION",
+          existing: "keep",
+          replacementChannelId: "0xreplacement",
+          legacyChannelId: "0xlegacy",
+        },
+        lastError: null,
+        updatedAt: now,
+      }),
+    );
+  });
+
+  it("marks a liquidity request FAILED without losing existing metadata", async () => {
+    const mock = createDbMock();
+    const repo = createDbLiquidityRequestRepo(mock.db);
+    const now = new Date("2026-03-07T01:00:00.000Z");
+    mock.selectLimit.mockResolvedValueOnce([
+      mockRow({
+        state: "REBALANCING",
+        metadata: { recoveryStrategy: "CHANNEL_ROTATION", existing: "keep" },
+      }),
+    ]);
+    mock.updateReturning.mockResolvedValueOnce([
+      mockRow({
+        state: "FAILED",
+        updatedAt: now,
+        completedAt: now,
+        lastError: "replacement channel never became ready",
+        metadata: {
+          recoveryStrategy: "CHANNEL_ROTATION",
+          existing: "keep",
+          lastRotationError: "replacement channel never became ready",
+        },
+      }),
+    ]);
+
+    const failed = await repo.markFailed("liq1", {
+      now,
+      error: "replacement channel never became ready",
+      metadata: { lastRotationError: "replacement channel never became ready" },
+    });
+
+    expect(failed.state).toBe("FAILED");
+    expect(failed.lastError).toBe("replacement channel never became ready");
+    expect(failed.metadata).toMatchObject({
+      recoveryStrategy: "CHANNEL_ROTATION",
+      existing: "keep",
+      lastRotationError: "replacement channel never became ready",
+    });
+    expect(mock.updateSet).toHaveBeenCalledWith(
+      expect.objectContaining({
+        state: "FAILED",
+        lastError: "replacement channel never became ready",
+        metadata: {
+          recoveryStrategy: "CHANNEL_ROTATION",
+          existing: "keep",
+          lastRotationError: "replacement channel never became ready",
+        },
+        updatedAt: now,
+        completedAt: now,
+      }),
+    );
   });
 
   it("throws not found when marking funded for a missing request", async () => {
@@ -317,6 +517,52 @@ describe("createDbLiquidityRequestRepo", () => {
         now: new Date("2026-03-07T01:00:00.000Z"),
       }),
     ).rejects.toBeInstanceOf(LiquidityRequestFundingAmountError);
+
+    expect(mock.updateSet).not.toHaveBeenCalled();
+  });
+
+  it("rejects markRebalancing when the persisted request is already FUNDED", async () => {
+    const mock = createDbMock();
+    const repo = createDbLiquidityRequestRepo(mock.db);
+    const now = new Date("2026-03-07T01:00:00.000Z");
+    mock.selectLimit.mockResolvedValueOnce([
+      mockRow({
+        state: "FUNDED",
+        fundedAmount: "100",
+        updatedAt: now,
+        completedAt: now,
+      }),
+    ]);
+
+    await expect(
+      repo.markRebalancing("liq1", {
+        now,
+        metadata: { replacementChannelId: "0xreplacement" },
+      }),
+    ).rejects.toBeInstanceOf(LiquidityRequestStateTransitionError);
+
+    expect(mock.updateSet).not.toHaveBeenCalled();
+  });
+
+  it("rejects markFailed when the persisted request is already FUNDED", async () => {
+    const mock = createDbMock();
+    const repo = createDbLiquidityRequestRepo(mock.db);
+    const now = new Date("2026-03-07T01:00:00.000Z");
+    mock.selectLimit.mockResolvedValueOnce([
+      mockRow({
+        state: "FUNDED",
+        fundedAmount: "100",
+        updatedAt: now,
+        completedAt: now,
+      }),
+    ]);
+
+    await expect(
+      repo.markFailed("liq1", {
+        now,
+        error: "should not fail funded request",
+      }),
+    ).rejects.toBeInstanceOf(LiquidityRequestStateTransitionError);
 
     expect(mock.updateSet).not.toHaveBeenCalled();
   });

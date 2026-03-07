@@ -401,6 +401,130 @@ describe("fiber adapter", () => {
     );
   });
 
+  it("lists ready channels with local balances", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        jsonrpc: "2.0",
+        id: 1,
+        result: {
+          channels: [
+            {
+              channel_id: "0xlegacy",
+              state: { state_name: "ChannelReady" },
+              local_balance: "123",
+              remote_balance: "77",
+              remote_pubkey: "0xpeer",
+              pending_tlc_count: "0",
+            },
+          ],
+        },
+      }),
+    } as Response);
+
+    const adapter = createAdapter({ endpoint: "http://localhost:8119" });
+    const result = await adapter.listChannels({ includeClosed: false });
+
+    expect(result.channels[0]).toMatchObject({
+      channelId: "0xlegacy",
+      state: "CHANNEL_READY",
+      localBalance: "123",
+      remotePubkey: "0xpeer",
+      pendingTlcCount: 0,
+    });
+    expect(fetchSpy.mock.calls[0]?.[1]).toEqual(
+      expect.objectContaining({
+        body: expect.stringContaining("\"method\":\"list_channels\""),
+      }),
+    );
+  });
+
+  it("accepts channel with funding amount and returns new channel id when present", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        jsonrpc: "2.0",
+        id: 1,
+        result: {
+          new_channel_id: "0xaccepted",
+        },
+      }),
+    } as Response);
+
+    const adapter = createAdapter({ endpoint: "http://localhost:8119" });
+    const result = await adapter.acceptChannel({
+      temporaryChannelId: "0xtemp",
+      fundingAmount: "9900000000",
+    });
+
+    expect(result).toEqual({ newChannelId: "0xaccepted" });
+    expect(fetchSpy.mock.calls[0]?.[1]).toEqual(
+      expect.objectContaining({
+        body: expect.stringContaining("\"method\":\"accept_channel\""),
+      }),
+    );
+    expect(fetchSpy.mock.calls[0]?.[1]).toEqual(
+      expect.objectContaining({
+        body: expect.stringContaining("\"temporary_channel_id\":\"0xtemp\""),
+      }),
+    );
+  });
+
+  it("reads CKB channel acceptance policy from node_info", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        jsonrpc: "2.0",
+        id: 1,
+        result: {
+          open_channel_auto_accept_min_ckb_funding_amount: "0x2540be400",
+          auto_accept_channel_ckb_funding_amount: "0x24e160300",
+        },
+      }),
+    } as Response);
+
+    const adapter = createAdapter({ endpoint: "http://localhost:8119" });
+    const result = await adapter.getCkbChannelAcceptancePolicy();
+
+    expect(result).toEqual({
+      openChannelAutoAcceptMinFundingAmount: "10000000000",
+      acceptChannelFundingAmount: "9900000000",
+    });
+    expect(fetchSpy.mock.calls[0]?.[1]).toEqual(
+      expect.objectContaining({
+        body: expect.stringContaining("\"method\":\"node_info\""),
+      }),
+    );
+  });
+
+  it("detects unsupported direct rebalance and falls back cleanly", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          jsonrpc: "2.0",
+          id: 1,
+          error: { code: -32999, message: "Unauthorized" },
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          jsonrpc: "2.0",
+          id: 1,
+          result: { channels: [] },
+        }),
+      } as Response);
+
+    const adapter = createAdapter({ endpoint: "http://localhost:8119" });
+    const result = await adapter.getLiquidityCapabilities();
+
+    expect(result.directRebalance).toBe(false);
+    expect(result.channelLifecycle).toBe(true);
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
   it("executeWithdrawal keeps explicit requestId in send_payment", async () => {
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")

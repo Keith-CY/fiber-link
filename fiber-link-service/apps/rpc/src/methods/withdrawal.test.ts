@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   InsufficientFundsError,
   createInMemoryLedgerRepo,
@@ -15,6 +15,12 @@ describe("requestWithdrawal", () => {
   beforeEach(() => {
     repo.__resetForTests?.();
     policyRepo.__resetForTests?.();
+  });
+
+  afterEach(() => {
+    delete process.env.FIBER_WITHDRAWAL_CKB_LIQUIDITY_FEE_BUFFER;
+    delete process.env.FIBER_WITHDRAWAL_CKB_LIQUIDITY_POST_TX_RESERVE;
+    delete process.env.FIBER_WITHDRAWAL_CKB_LIQUIDITY_WARM_BUFFER;
   });
 
   it("creates PENDING withdrawal request", async () => {
@@ -529,6 +535,52 @@ describe("requestWithdrawal", () => {
     const requests = liquidityRequestRepo.__listForTests?.() ?? [];
     expect(requests).toHaveLength(1);
     expect(saved.liquidityRequestId).toBe(requests[0]?.id);
+  });
+
+  it("uses the configured CKB liquidity buffers to raise the hot wallet target", async () => {
+    process.env.FIBER_WITHDRAWAL_CKB_LIQUIDITY_FEE_BUFFER = "1";
+    process.env.FIBER_WITHDRAWAL_CKB_LIQUIDITY_WARM_BUFFER = "61";
+
+    const ledger = createInMemoryLedgerRepo();
+    const liquidityRequestRepo = createInMemoryLiquidityRequestRepo();
+    await ledger.creditOnce({
+      appId: "app1",
+      userId: "u1",
+      asset: "CKB",
+      amount: "200",
+      refId: "t1",
+      idempotencyKey: "credit:t1",
+    });
+    const hotWalletInventoryProvider = vi.fn(async () => ({
+      asset: "CKB" as const,
+      network: "AGGRON4" as const,
+      availableAmount: "61.5",
+    }));
+
+    const result = await requestWithdrawal(
+      {
+        appId: "app1",
+        userId: "u1",
+        asset: "CKB",
+        amount: "61",
+        destination: {
+          kind: "CKB_ADDRESS",
+          address: "ckt1qyqfth8m4fevfzh5hhd088s78qcdjjp8cehs7z8jhw",
+        },
+      },
+      { repo, ledgerRepo: ledger, liquidityRequestRepo, hotWalletInventoryProvider },
+    );
+
+    expect(result.state).toBe("LIQUIDITY_PENDING");
+    const saved = await repo.findByIdOrThrow(result.id);
+    const request = await liquidityRequestRepo.findByIdOrThrow(saved.liquidityRequestId ?? "");
+    expect(request.requiredAmount).toBe("61.5");
+    expect(request.metadata).toMatchObject({
+      targetAvailableAmount: "123",
+      requestedRebalanceAmount: "61.5",
+      feeBufferAmount: "1",
+      warmBufferAmount: "61",
+    });
   });
 
   it("rejects before liquidity routing when creator balance is insufficient", async () => {

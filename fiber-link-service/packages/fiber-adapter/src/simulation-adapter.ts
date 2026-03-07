@@ -1,6 +1,9 @@
 import { createHash } from "node:crypto";
 import { resolveSimulationScenario, type SimulationScenario } from "./simulation-scenarios";
 import type {
+  AcceptChannelArgs,
+  ChannelRecord,
+  CkbChannelAcceptancePolicy,
   CreateInvoiceArgs,
   EnsureChainLiquidityArgs,
   ExecuteWithdrawalArgs,
@@ -8,6 +11,10 @@ import type {
   GetRebalanceStatusArgs,
   GetRebalanceStatusResult,
   InvoiceState,
+  LiquidityCapabilities,
+  ListChannelsArgs,
+  OpenChannelArgs,
+  ShutdownChannelArgs,
   SettlementSubscriptionHandle,
   SubscribeSettlementsArgs,
 } from "./types";
@@ -16,6 +23,8 @@ export type CreateSimulationAdapterArgs = {
   scenario?: string;
   seed?: string;
   env?: NodeJS.ProcessEnv;
+  liquidityCapabilities?: LiquidityCapabilities;
+  channels?: ChannelRecord[];
 };
 
 type SimulatedInvoice = {
@@ -80,10 +89,15 @@ export function createSimulationAdapter(args: CreateSimulationAdapterArgs = {}):
   const env = args.env ?? process.env;
   const scenario = resolveSimulationScenario(args.scenario ?? env.FIBER_SIMULATION_SCENARIO);
   const seed = resolveSeed(args.seed ?? env.FIBER_SIMULATION_SEED);
+  const liquidityCapabilities: LiquidityCapabilities = {
+    directRebalance: args.liquidityCapabilities?.directRebalance ?? true,
+    channelLifecycle: args.liquidityCapabilities?.channelLifecycle ?? true,
+  };
 
   let invoiceIndex = 0;
   const invoices = new Map<string, SimulatedInvoice>();
   const rebalances = new Map<string, GetRebalanceStatusResult>();
+  const channels = (args.channels ?? []).map((channel) => ({ ...channel }));
 
   function getOrCreateInvoiceState(invoice: string): SimulatedInvoice {
     const existing = invoices.get(invoice);
@@ -151,7 +165,55 @@ export function createSimulationAdapter(args: CreateSimulationAdapterArgs = {}):
         }),
       };
     },
+    async getLiquidityCapabilities() {
+      return { ...liquidityCapabilities };
+    },
+    async listChannels({ includeClosed = false }: ListChannelsArgs) {
+      const visible = includeClosed
+        ? channels
+        : channels.filter((channel) => channel.state !== "CLOSED");
+      return {
+        channels: visible.map((channel) => ({ ...channel })),
+      };
+    },
+    async openChannel({ peerId, fundingAmount }: OpenChannelArgs) {
+      const temporaryChannelId = `0x${stableHex(
+        `${seed}|channel-open|${scenario.name}|${peerId}|${fundingAmount}|${channels.length}`,
+        64,
+      )}`;
+      channels.push({
+        channelId: temporaryChannelId,
+        state: "CHANNEL_READY",
+        localBalance: fundingAmount,
+        remoteBalance: "0",
+        remotePubkey: peerId,
+        pendingTlcCount: 0,
+      });
+      return { temporaryChannelId };
+    },
+    async acceptChannel(_: AcceptChannelArgs) {
+      return {};
+    },
+    async getCkbChannelAcceptancePolicy(): Promise<CkbChannelAcceptancePolicy> {
+      return {
+        openChannelAutoAcceptMinFundingAmount: "0",
+        acceptChannelFundingAmount: "0",
+      };
+    },
+    async shutdownChannel({ channelId }: ShutdownChannelArgs) {
+      const index = channels.findIndex((channel) => channel.channelId === channelId);
+      if (index >= 0) {
+        channels[index] = {
+          ...channels[index],
+          state: "CLOSED",
+        };
+      }
+      return {};
+    },
     async ensureChainLiquidity({ requestId }: EnsureChainLiquidityArgs) {
+      if (!liquidityCapabilities.directRebalance) {
+        return { state: "FAILED", started: false, error: "unsupported" } as const;
+      }
       const existing = rebalances.get(requestId);
       if (existing?.state === "FUNDED") {
         return { state: "FUNDED", started: false } as const;
@@ -160,6 +222,9 @@ export function createSimulationAdapter(args: CreateSimulationAdapterArgs = {}):
       return { state: "PENDING", started: !existing } as const;
     },
     async getRebalanceStatus({ requestId }: GetRebalanceStatusArgs) {
+      if (!liquidityCapabilities.directRebalance) {
+        return { state: "FAILED" as const, error: "unsupported" };
+      }
       return rebalances.get(requestId) ?? { state: "IDLE" as const };
     },
   };

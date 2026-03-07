@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { createLiquidityRebalanceEvent, createSettlementUpdateEvent } from "./contracts";
+import {
+  createLiquidityChannelRotationEvent,
+  createLiquidityRebalanceEvent,
+  createSettlementUpdateEvent,
+} from "./contracts";
 
 describe("worker settlement contracts", () => {
   it("builds canonical settlement update event payload", () => {
@@ -39,6 +43,23 @@ describe("worker settlement contracts", () => {
       nextState: "REBALANCING",
       outcome: "REBALANCE_STARTED",
       promotedCount: 0,
+    });
+  });
+
+  it("builds canonical liquidity channel rotation event payload", () => {
+    const event = createLiquidityChannelRotationEvent({
+      liquidityRequestId: "liq-1",
+      legacyChannelId: "0xlegacy",
+      replacementChannelId: "0xreplacement",
+      expectedRecoveredAmount: "150",
+    });
+
+    expect(event).toEqual({
+      type: "liquidity.channel_rotation",
+      liquidityRequestId: "liq-1",
+      legacyChannelId: "0xlegacy",
+      replacementChannelId: "0xreplacement",
+      expectedRecoveredAmount: "150",
     });
   });
 });

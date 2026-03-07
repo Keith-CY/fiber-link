@@ -7,6 +7,12 @@ export type HotWalletCell = {
   data?: string;
 };
 
+export type HotWalletLockScript = {
+  codeHash: string;
+  hashType: string;
+  args: string;
+};
+
 export type GetHotWalletInventoryDeps = {
   getNativeCells: (network: CkbNetwork) => Promise<readonly HotWalletCell[]>;
   getUsdiCells: (network: CkbNetwork) => Promise<readonly HotWalletCell[]>;
@@ -56,6 +62,23 @@ function resolveIndexerUrl(network: CkbNetwork, rpcUrl: string): string {
 
 function resolveNetworkConfig(network: CkbNetwork) {
   return network === "AGGRON4" ? config.predefined.AGGRON4 : config.predefined.LINA;
+}
+
+export function resolveHotWalletLockScript(network: CkbNetwork): HotWalletLockScript {
+  const cfg = resolveNetworkConfig(network);
+  config.initializeConfig(cfg);
+  const privateKey = resolveWithdrawalPrivateKey();
+  const address = helpers.encodeToConfigAddress(
+    hd.key.privateKeyToBlake160(privateKey),
+    "SECP256K1_BLAKE160",
+    { config: cfg },
+  );
+  const lock = helpers.parseAddress(address, { config: cfg });
+  return {
+    codeHash: lock.codeHash,
+    hashType: lock.hashType,
+    args: lock.args,
+  };
 }
 
 function parseQuantity(value: string): bigint {
@@ -149,17 +172,9 @@ export async function getHotWalletInventory(
 }
 
 async function collectDefaultNativeCells(network: CkbNetwork): Promise<readonly HotWalletCell[]> {
-  const cfg = resolveNetworkConfig(network);
-  config.initializeConfig(cfg);
-  const privateKey = resolveWithdrawalPrivateKey();
   const rpcUrl = resolveCkbRpcUrl(network);
   const indexerUrl = resolveIndexerUrl(network, rpcUrl);
-  const fromAddress = helpers.encodeToConfigAddress(
-    hd.key.privateKeyToBlake160(privateKey),
-    "SECP256K1_BLAKE160",
-    { config: cfg },
-  );
-  const lock = helpers.parseAddress(fromAddress, { config: cfg });
+  const lock = resolveHotWalletLockScript(network);
   const indexer = new Indexer(indexerUrl, rpcUrl);
 
   const cells: HotWalletCell[] = [];

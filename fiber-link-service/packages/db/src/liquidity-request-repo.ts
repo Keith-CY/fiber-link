@@ -27,6 +27,17 @@ export type MarkLiquidityRequestFundedInput = {
   metadata?: LiquidityRequestMetadata | null;
 };
 
+export type MarkLiquidityRequestRebalancingInput = {
+  now?: Date;
+  metadata?: LiquidityRequestMetadata | null;
+};
+
+export type MarkLiquidityRequestFailedInput = {
+  error: string;
+  now?: Date;
+  metadata?: LiquidityRequestMetadata | null;
+};
+
 export type LiquidityRequestRecord = {
   id: string;
   appId: string;
@@ -93,6 +104,11 @@ export type LiquidityRequestRepo = {
   findOpenByKey(input: FindOpenLiquidityRequestByKeyInput): Promise<LiquidityRequestRecord | null>;
   ensureOpen(input: EnsureOpenLiquidityRequestInput): Promise<LiquidityRequestRecord>;
   listOpen(): Promise<LiquidityRequestRecord[]>;
+  markRebalancing(
+    liquidityRequestId: string,
+    input: MarkLiquidityRequestRebalancingInput,
+  ): Promise<LiquidityRequestRecord>;
+  markFailed(liquidityRequestId: string, input: MarkLiquidityRequestFailedInput): Promise<LiquidityRequestRecord>;
   markFunded(liquidityRequestId: string, input: MarkLiquidityRequestFundedInput): Promise<LiquidityRequestRecord>;
   __listForTests?: () => LiquidityRequestRecord[];
   __resetForTests?: () => void;
@@ -113,6 +129,25 @@ function cloneMetadata(metadata: LiquidityRequestMetadata | null): LiquidityRequ
     return null;
   }
   return JSON.parse(JSON.stringify(metadata)) as LiquidityRequestMetadata;
+}
+
+function mergeMetadata(
+  existing: LiquidityRequestMetadata | null,
+  next: LiquidityRequestMetadata | null | undefined,
+): LiquidityRequestMetadata | null {
+  if (next === undefined) {
+    return cloneMetadata(existing);
+  }
+  if (next === null) {
+    return null;
+  }
+  if (!existing) {
+    return cloneMetadata(next);
+  }
+  return {
+    ...cloneMetadata(existing),
+    ...cloneMetadata(next),
+  };
 }
 
 function normalizeAmount(amount: string): string {
@@ -159,6 +194,18 @@ function assertCanMarkFunded(record: LiquidityRequestRecord, fundedAmount: strin
   }
   if (compareDecimalStrings(fundedAmount, record.requiredAmount) < 0) {
     throw new LiquidityRequestFundingAmountError(record.id, fundedAmount, record.requiredAmount);
+  }
+}
+
+function assertCanMarkRebalancing(record: LiquidityRequestRecord): void {
+  if (record.state !== "REQUESTED") {
+    throw new LiquidityRequestStateTransitionError(record.id, record.state, "REBALANCING");
+  }
+}
+
+function assertCanMarkFailed(record: LiquidityRequestRecord): void {
+  if (record.state !== "REQUESTED" && record.state !== "REBALANCING") {
+    throw new LiquidityRequestStateTransitionError(record.id, record.state, "FAILED");
   }
 }
 
@@ -258,7 +305,7 @@ export function createDbLiquidityRequestRepo(db: DbClient): LiquidityRequestRepo
         .update(liquidityRequests)
         .set({
           requiredAmount: nextRequiredAmount,
-          metadata: input.metadata === undefined ? undefined : (input.metadata ?? null),
+          metadata: mergeMetadata(existing.metadata, input.metadata),
           updatedAt: new Date(),
         })
         .where(
@@ -292,6 +339,77 @@ export function createDbLiquidityRequestRepo(db: DbClient): LiquidityRequestRepo
       return rows.map(toRecord);
     },
 
+    async markRebalancing(liquidityRequestId, input) {
+      const current = await findById(liquidityRequestId);
+      if (!current) {
+        throw new LiquidityRequestNotFoundError(liquidityRequestId);
+      }
+
+      assertCanMarkRebalancing(current);
+      const now = input.now ? new Date(input.now) : new Date();
+      const [row] = await db
+        .update(liquidityRequests)
+        .set({
+          state: "REBALANCING",
+          metadata: mergeMetadata(current.metadata, input.metadata),
+          lastError: null,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(liquidityRequests.id, liquidityRequestId),
+            eq(liquidityRequests.state, "REQUESTED"),
+          ),
+        )
+        .returning();
+
+      if (!row) {
+        const latest = await findById(liquidityRequestId);
+        if (!latest) {
+          throw new LiquidityRequestNotFoundError(liquidityRequestId);
+        }
+        throw new LiquidityRequestStateTransitionError(liquidityRequestId, latest.state, "REBALANCING");
+      }
+
+      return toRecord(row);
+    },
+
+    async markFailed(liquidityRequestId, input) {
+      const current = await findById(liquidityRequestId);
+      if (!current) {
+        throw new LiquidityRequestNotFoundError(liquidityRequestId);
+      }
+
+      assertCanMarkFailed(current);
+      const now = input.now ? new Date(input.now) : new Date();
+      const [row] = await db
+        .update(liquidityRequests)
+        .set({
+          state: "FAILED",
+          metadata: mergeMetadata(current.metadata, input.metadata),
+          lastError: input.error,
+          updatedAt: now,
+          completedAt: now,
+        })
+        .where(
+          and(
+            eq(liquidityRequests.id, liquidityRequestId),
+            inArray(liquidityRequests.state, ["REQUESTED", "REBALANCING"]),
+          ),
+        )
+        .returning();
+
+      if (!row) {
+        const latest = await findById(liquidityRequestId);
+        if (!latest) {
+          throw new LiquidityRequestNotFoundError(liquidityRequestId);
+        }
+        throw new LiquidityRequestStateTransitionError(liquidityRequestId, latest.state, "FAILED");
+      }
+
+      return toRecord(row);
+    },
+
     async markFunded(liquidityRequestId, input) {
       const fundedAmount = normalizeAmount(input.fundedAmount);
       const current = await findById(liquidityRequestId);
@@ -305,7 +423,7 @@ export function createDbLiquidityRequestRepo(db: DbClient): LiquidityRequestRepo
         .set({
           state: "FUNDED",
           fundedAmount,
-          metadata: input.metadata === undefined ? undefined : (input.metadata ?? null),
+          metadata: mergeMetadata(current.metadata, input.metadata),
           lastError: null,
           updatedAt: now,
           completedAt: now,
@@ -411,7 +529,7 @@ export function createInMemoryLiquidityRequestRepo(
       records[index] = {
         ...records[index],
         requiredAmount: nextRequiredAmount,
-        metadata: input.metadata === undefined ? records[index].metadata : cloneMetadata(input.metadata ?? null),
+        metadata: mergeMetadata(records[index].metadata, input.metadata),
         updatedAt: new Date(),
       };
       return cloneRecord(records[index]);
@@ -438,6 +556,43 @@ export function createInMemoryLiquidityRequestRepo(
         .map(cloneRecord);
     },
 
+    async markRebalancing(liquidityRequestId, input) {
+      const index = findIndexById(liquidityRequestId);
+      if (index === -1) {
+        throw new LiquidityRequestNotFoundError(liquidityRequestId);
+      }
+
+      assertCanMarkRebalancing(records[index]);
+      const now = input.now ? new Date(input.now) : new Date();
+      records[index] = {
+        ...records[index],
+        state: "REBALANCING",
+        metadata: mergeMetadata(records[index].metadata, input.metadata),
+        lastError: null,
+        updatedAt: now,
+      };
+      return cloneRecord(records[index]);
+    },
+
+    async markFailed(liquidityRequestId, input) {
+      const index = findIndexById(liquidityRequestId);
+      if (index === -1) {
+        throw new LiquidityRequestNotFoundError(liquidityRequestId);
+      }
+
+      assertCanMarkFailed(records[index]);
+      const now = input.now ? new Date(input.now) : new Date();
+      records[index] = {
+        ...records[index],
+        state: "FAILED",
+        metadata: mergeMetadata(records[index].metadata, input.metadata),
+        lastError: input.error,
+        updatedAt: now,
+        completedAt: now,
+      };
+      return cloneRecord(records[index]);
+    },
+
     async markFunded(liquidityRequestId, input) {
       const index = findIndexById(liquidityRequestId);
       if (index === -1) {
@@ -451,7 +606,7 @@ export function createInMemoryLiquidityRequestRepo(
         ...records[index],
         state: "FUNDED",
         fundedAmount,
-        metadata: input.metadata === undefined ? records[index].metadata : cloneMetadata(input.metadata ?? null),
+        metadata: mergeMetadata(records[index].metadata, input.metadata),
         lastError: null,
         updatedAt: now,
         completedAt: now,

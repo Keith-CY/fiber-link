@@ -1,4 +1,5 @@
 export type WorkerSettlementStrategy = "polling" | "subscription";
+export type WorkerLiquidityFallbackMode = "none" | "channel_rotation";
 
 export type WorkerConfig = {
   withdrawalIntervalMs: number;
@@ -13,9 +14,14 @@ export type WorkerConfig = {
   settlementStrategy: WorkerSettlementStrategy;
   settlementCursorFile: string;
   fiberRpcUrl: string;
+  channelAcceptRpcUrl: string;
   subscriptionConcurrency: number;
   subscriptionMaxPendingEvents: number;
   subscriptionRecentInvoiceDedupeSize: number;
+  liquidityFallbackMode: WorkerLiquidityFallbackMode;
+  channelRotationBootstrapReserve: string;
+  channelRotationMinRecoverableAmount: string;
+  channelRotationMaxConcurrent: number;
 };
 
 function parseInteger(
@@ -40,6 +46,28 @@ function parseStrategy(env: NodeJS.ProcessEnv): WorkerSettlementStrategy {
   throw new Error(
     `Invalid WORKER_SETTLEMENT_STRATEGY: expected one of polling, subscription, received "${raw}"`,
   );
+}
+
+function parseLiquidityFallbackMode(env: NodeJS.ProcessEnv): WorkerLiquidityFallbackMode {
+  const raw = (env.FIBER_LIQUIDITY_FALLBACK_MODE ?? "none").trim().toLowerCase();
+  if (raw === "none" || raw === "channel_rotation") {
+    return raw;
+  }
+  throw new Error(
+    `Invalid FIBER_LIQUIDITY_FALLBACK_MODE: expected one of none, channel_rotation, received "${raw}"`,
+  );
+}
+
+function parseDecimalString(
+  env: NodeJS.ProcessEnv,
+  name: string,
+  fallback: string,
+): string {
+  const raw = (env[name] ?? fallback).trim();
+  if (!/^\d+(\.\d+)?$/.test(raw)) {
+    throw new Error(`Invalid ${name}: expected non-negative decimal string`);
+  }
+  return raw;
 }
 
 export function parseWorkerConfig(env: NodeJS.ProcessEnv = process.env): WorkerConfig {
@@ -71,6 +99,7 @@ export function parseWorkerConfig(env: NodeJS.ProcessEnv = process.env): WorkerC
   const settlementCursorFile = (env.WORKER_SETTLEMENT_CURSOR_FILE ?? "/var/lib/fiber-link/settlement-cursor.json")
     .trim();
   const fiberRpcUrl = (env.FIBER_RPC_URL ?? "").trim();
+  const channelAcceptRpcUrl = (env.FIBER_CHANNEL_ACCEPT_RPC_URL ?? fiberRpcUrl).trim() || fiberRpcUrl;
   const subscriptionConcurrency = parseInteger(
     env,
     "WORKER_SETTLEMENT_SUBSCRIPTION_CONCURRENCY",
@@ -88,6 +117,23 @@ export function parseWorkerConfig(env: NodeJS.ProcessEnv = process.env): WorkerC
     "WORKER_SETTLEMENT_SUBSCRIPTION_RECENT_INVOICE_DEDUPE_SIZE",
     256,
     0,
+  );
+  const liquidityFallbackMode = parseLiquidityFallbackMode(env);
+  const channelRotationBootstrapReserve = parseDecimalString(
+    env,
+    "FIBER_CHANNEL_ROTATION_BOOTSTRAP_RESERVE",
+    "0",
+  );
+  const channelRotationMinRecoverableAmount = parseDecimalString(
+    env,
+    "FIBER_CHANNEL_ROTATION_MIN_RECOVERABLE_AMOUNT",
+    "0",
+  );
+  const channelRotationMaxConcurrent = parseInteger(
+    env,
+    "FIBER_CHANNEL_ROTATION_MAX_CONCURRENT",
+    1,
+    1,
   );
 
   if (!fiberRpcUrl) {
@@ -110,8 +156,13 @@ export function parseWorkerConfig(env: NodeJS.ProcessEnv = process.env): WorkerC
     settlementStrategy,
     settlementCursorFile,
     fiberRpcUrl,
+    channelAcceptRpcUrl,
     subscriptionConcurrency,
     subscriptionMaxPendingEvents,
     subscriptionRecentInvoiceDedupeSize,
+    liquidityFallbackMode,
+    channelRotationBootstrapReserve,
+    channelRotationMinRecoverableAmount,
+    channelRotationMaxConcurrent,
   };
 }

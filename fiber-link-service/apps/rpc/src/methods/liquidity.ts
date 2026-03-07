@@ -2,6 +2,7 @@ import {
   addDecimalStrings,
   compareDecimalStrings,
   formatDecimal,
+  type LiquidityRequestMetadata,
   parseDecimal,
   pow10,
   type Asset,
@@ -47,6 +48,14 @@ export class MissingLiquidityRequestRepoError extends Error {
 }
 
 const HOT_WALLET_UNDERFUNDED_REASON = "hot wallet underfunded";
+const DEFAULT_CKB_LIQUIDITY_BUFFER = "0";
+
+type CkbHotWalletTarget = {
+  targetAvailableAmount: string;
+  feeBufferAmount: string;
+  postTxReserveAmount: string;
+  warmBufferAmount: string;
+};
 
 function pendingDecision(): WithdrawalLiquidityDecision {
   return {
@@ -69,6 +78,71 @@ function subtractDecimalStrings(left: string, right: string): string {
   return formatDecimal(value, scale);
 }
 
+function parseNonNegativeAmountEnv(name: string, fallback: string): string {
+  const raw = process.env[name];
+  const value = raw === undefined || raw.trim() === "" ? fallback : raw.trim();
+  const parsed = parseDecimal(value);
+  if (parsed.value < 0n) {
+    throw new Error(`${name} must be a non-negative decimal`);
+  }
+  return formatDecimal(parsed.value, parsed.scale);
+}
+
+function resolveCkbHotWalletTarget(requiredAmount: string): CkbHotWalletTarget {
+  const feeBufferAmount = parseNonNegativeAmountEnv(
+    "FIBER_WITHDRAWAL_CKB_LIQUIDITY_FEE_BUFFER",
+    DEFAULT_CKB_LIQUIDITY_BUFFER,
+  );
+  const postTxReserveAmount = parseNonNegativeAmountEnv(
+    "FIBER_WITHDRAWAL_CKB_LIQUIDITY_POST_TX_RESERVE",
+    DEFAULT_CKB_LIQUIDITY_BUFFER,
+  );
+  const warmBufferAmount = parseNonNegativeAmountEnv(
+    "FIBER_WITHDRAWAL_CKB_LIQUIDITY_WARM_BUFFER",
+    DEFAULT_CKB_LIQUIDITY_BUFFER,
+  );
+
+  let targetAvailableAmount = requiredAmount;
+  targetAvailableAmount = addDecimalStrings(targetAvailableAmount, feeBufferAmount);
+  targetAvailableAmount = addDecimalStrings(targetAvailableAmount, postTxReserveAmount);
+  targetAvailableAmount = addDecimalStrings(targetAvailableAmount, warmBufferAmount);
+
+  return {
+    targetAvailableAmount,
+    feeBufferAmount,
+    postTxReserveAmount,
+    warmBufferAmount,
+  };
+}
+
+function resolveHotWalletRequirement(
+  input: DecideWithdrawalRequestLiquidityInput,
+  reservedAmount: string,
+): {
+  targetAvailableAmount: string;
+  metadata: LiquidityRequestMetadata | null;
+} {
+  const requiredAvailableAmount = addDecimalStrings(reservedAmount, input.amount);
+  if (!(input.asset === "CKB" && input.destination.kind === "CKB_ADDRESS")) {
+    return {
+      targetAvailableAmount: requiredAvailableAmount,
+      metadata: null,
+    };
+  }
+
+  const target = resolveCkbHotWalletTarget(requiredAvailableAmount);
+  return {
+    targetAvailableAmount: target.targetAvailableAmount,
+    metadata: {
+      requiredAvailableAmount,
+      targetAvailableAmount: target.targetAvailableAmount,
+      feeBufferAmount: target.feeBufferAmount,
+      postTxReserveAmount: target.postTxReserveAmount,
+      warmBufferAmount: target.warmBufferAmount,
+    },
+  };
+}
+
 export async function decideWithdrawalRequestLiquidity(
   input: DecideWithdrawalRequestLiquidityInput,
   options: DecideWithdrawalRequestLiquidityOptions = {},
@@ -89,9 +163,9 @@ export async function decideWithdrawalRequestLiquidity(
         network,
       })
     : "0";
-  const requiredAmount = addDecimalStrings(reserved, input.amount);
+  const requirement = resolveHotWalletRequirement(input, reserved);
 
-  if (compareDecimalStrings(inventory.availableAmount, requiredAmount) >= 0) {
+  if (compareDecimalStrings(inventory.availableAmount, requirement.targetAvailableAmount) >= 0) {
     return pendingDecision();
   }
 
@@ -99,16 +173,20 @@ export async function decideWithdrawalRequestLiquidity(
     throw new MissingLiquidityRequestRepoError();
   }
 
+  const requestedRebalanceAmount = subtractDecimalStrings(requirement.targetAvailableAmount, inventory.availableAmount);
+
   const liquidityRequest = await options.liquidityRequestRepo.ensureOpen({
     appId: input.appId,
     asset: input.asset,
     network,
     sourceKind: "FIBER_TO_CKB_CHAIN",
-    requiredAmount: subtractDecimalStrings(requiredAmount, inventory.availableAmount),
+    requiredAmount: requestedRebalanceAmount,
     metadata: {
       destinationKind: input.destination.kind,
       toAddress: input.destination.address,
       hotWalletAvailableAmount: inventory.availableAmount,
+      requestedRebalanceAmount,
+      ...(requirement.metadata ?? {}),
     },
   });
 

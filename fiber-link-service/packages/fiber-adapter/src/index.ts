@@ -6,7 +6,11 @@ export {
   WithdrawalExecutionError,
 } from "./ckb-onchain-withdrawal";
 export { executeUdtOnchainWithdrawal } from "./udt-onchain-withdrawal";
-export { createDefaultHotWalletInventoryProvider, getHotWalletInventory } from "./hot-wallet-inventory";
+export {
+  createDefaultHotWalletInventoryProvider,
+  getHotWalletInventory,
+  resolveHotWalletLockScript,
+} from "./hot-wallet-inventory";
 
 export { createAdapter } from "./rpc-adapter";
 export { createAdapterProvider } from "./provider";
@@ -26,6 +30,11 @@ export type { CreateSimulationAdapterArgs } from "./simulation-adapter";
 
 export type {
   Asset,
+  AcceptChannelArgs,
+  AcceptChannelResult,
+  ChannelRecord,
+  ChannelState,
+  CkbChannelAcceptancePolicy,
   CreateAdapterArgs,
   CreateInvoiceArgs,
   CkbHotWalletInventory,
@@ -40,9 +49,16 @@ export type {
   HotWalletInventory,
   HotWalletInventoryProvider,
   InvoiceState,
+  LiquidityCapabilities,
+  ListChannelsArgs,
+  ListChannelsResult,
+  OpenChannelArgs,
+  OpenChannelResult,
   RebalanceStatusState,
   SettlementSubscriptionConfig,
   SettlementSubscriptionHandle,
+  ShutdownChannelArgs,
+  ShutdownChannelResult,
   SubscribeSettlementsArgs,
   UdtTypeScript,
   UsdiHotWalletInventory,

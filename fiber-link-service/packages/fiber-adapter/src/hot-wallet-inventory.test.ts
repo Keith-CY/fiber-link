@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { getHotWalletInventory } from "./hot-wallet-inventory";
+import { afterEach, describe, expect, it } from "vitest";
+import { getHotWalletInventory, resolveHotWalletLockScript } from "./hot-wallet-inventory";
 
 function ckbToHexShannons(amount: bigint): string {
   return `0x${(amount * 100_000_000n).toString(16)}`;
@@ -116,5 +116,29 @@ describe("getHotWalletInventory", () => {
         },
       ),
     ).rejects.toThrow("xUDT cell data must contain at least 16 bytes");
+  });
+});
+
+describe("resolveHotWalletLockScript", () => {
+  const originalPrivateKey = process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY;
+
+  afterEach(() => {
+    if (originalPrivateKey === undefined) {
+      delete process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY;
+    } else {
+      process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY = originalPrivateKey;
+    }
+  });
+
+  it("derives the secp256k1 lock script for the configured hot wallet", () => {
+    process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY =
+      "0x1111111111111111111111111111111111111111111111111111111111111111";
+
+    const lock = resolveHotWalletLockScript("AGGRON4");
+    expect(lock).toMatchObject({
+      hashType: "type",
+    });
+    expect(typeof lock.codeHash).toBe("string");
+    expect(typeof lock.args).toBe("string");
   });
 });

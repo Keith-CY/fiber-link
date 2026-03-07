@@ -17,6 +17,7 @@ describe("parseWorkerConfig", () => {
     expect(config.retryDelayMs).toBe(60_000);
     expect(config.settlementRetryDelayMs).toBe(60_000);
     expect(config.settlementStrategy).toBe("subscription");
+    expect(config.channelAcceptRpcUrl).toBe("http://127.0.0.1:8227");
     expect(config.subscriptionConcurrency).toBe(1);
     expect(config.subscriptionMaxPendingEvents).toBe(1000);
     expect(config.subscriptionRecentInvoiceDedupeSize).toBe(256);
@@ -33,7 +34,47 @@ describe("parseWorkerConfig", () => {
     expect(config.settlementCursorFile).toBe("/tmp/worker-cursor.json");
   });
 
+  it("parses channel rotation fallback mode and reserves", () => {
+    const config = parseWorkerConfig({
+      ...baseEnv,
+      FIBER_LIQUIDITY_FALLBACK_MODE: "channel_rotation",
+      FIBER_CHANNEL_ROTATION_BOOTSTRAP_RESERVE: "61",
+      FIBER_CHANNEL_ROTATION_MIN_RECOVERABLE_AMOUNT: "30",
+      FIBER_CHANNEL_ROTATION_MAX_CONCURRENT: "2",
+      FIBER_CHANNEL_ACCEPT_RPC_URL: "http://127.0.0.1:9227",
+    });
+
+    expect(config.liquidityFallbackMode).toBe("channel_rotation");
+    expect(config.channelRotationBootstrapReserve).toBe("61");
+    expect(config.channelRotationMinRecoverableAmount).toBe("30");
+    expect(config.channelRotationMaxConcurrent).toBe(2);
+    expect(config.channelAcceptRpcUrl).toBe("http://127.0.0.1:9227");
+  });
+
   it.each([
+    {
+      name: "invalid fallback mode",
+      env: { ...baseEnv, FIBER_LIQUIDITY_FALLBACK_MODE: "rotate" },
+      expectedMessage:
+        "Invalid FIBER_LIQUIDITY_FALLBACK_MODE: expected one of none, channel_rotation, received \"rotate\"",
+    },
+    {
+      name: "invalid channel rotation bootstrap reserve",
+      env: { ...baseEnv, FIBER_CHANNEL_ROTATION_BOOTSTRAP_RESERVE: "-1" },
+      expectedMessage:
+        "Invalid FIBER_CHANNEL_ROTATION_BOOTSTRAP_RESERVE: expected non-negative decimal string",
+    },
+    {
+      name: "invalid channel rotation min recoverable amount",
+      env: { ...baseEnv, FIBER_CHANNEL_ROTATION_MIN_RECOVERABLE_AMOUNT: "abc" },
+      expectedMessage:
+        "Invalid FIBER_CHANNEL_ROTATION_MIN_RECOVERABLE_AMOUNT: expected non-negative decimal string",
+    },
+    {
+      name: "invalid channel rotation concurrency",
+      env: { ...baseEnv, FIBER_CHANNEL_ROTATION_MAX_CONCURRENT: "0" },
+      expectedMessage: "Invalid FIBER_CHANNEL_ROTATION_MAX_CONCURRENT: expected integer >= 1",
+    },
     {
       name: "invalid positive integer field",
       env: { ...baseEnv, WORKER_SETTLEMENT_BATCH_SIZE: "0" },

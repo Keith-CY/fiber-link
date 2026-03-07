@@ -41,6 +41,14 @@ export type LiquidityRebalanceEvent = {
   error?: string;
 };
 
+export type LiquidityChannelRotationEvent = {
+  type: "liquidity.channel_rotation";
+  liquidityRequestId: string;
+  legacyChannelId: string;
+  replacementChannelId: string;
+  expectedRecoveredAmount: string;
+};
+
 export function createSettlementUpdateEvent(input: {
   invoice: string;
   previousState: SettlementState;
@@ -101,4 +109,19 @@ export function createLiquidityRebalanceEvent(input: {
   }
 
   return event;
+}
+
+export function createLiquidityChannelRotationEvent(input: {
+  liquidityRequestId: string;
+  legacyChannelId: string;
+  replacementChannelId: string;
+  expectedRecoveredAmount: string;
+}): LiquidityChannelRotationEvent {
+  return {
+    type: "liquidity.channel_rotation",
+    liquidityRequestId: input.liquidityRequestId,
+    legacyChannelId: input.legacyChannelId,
+    replacementChannelId: input.replacementChannelId,
+    expectedRecoveredAmount: input.expectedRecoveredAmount,
+  };
 }

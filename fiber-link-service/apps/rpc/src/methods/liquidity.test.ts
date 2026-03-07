@@ -1,8 +1,14 @@
 import { createInMemoryLiquidityRequestRepo, createInMemoryWithdrawalRepo } from "@fiber-link/db";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { decideWithdrawalRequestLiquidity } from "./liquidity";
 
 describe("decideWithdrawalRequestLiquidity", () => {
+  afterEach(() => {
+    delete process.env.FIBER_WITHDRAWAL_CKB_LIQUIDITY_FEE_BUFFER;
+    delete process.env.FIBER_WITHDRAWAL_CKB_LIQUIDITY_POST_TX_RESERVE;
+    delete process.env.FIBER_WITHDRAWAL_CKB_LIQUIDITY_WARM_BUFFER;
+  });
+
   it("returns PENDING for payment request destinations without querying hot wallet inventory", async () => {
     const hotWalletInventoryProvider = vi.fn();
 
@@ -61,6 +67,48 @@ describe("decideWithdrawalRequestLiquidity", () => {
       network: "AGGRON4",
       sourceKind: "FIBER_TO_CKB_CHAIN",
       requiredAmount: "1",
+    });
+  });
+
+  it("targets a higher CKB hot wallet balance when fee, reserve, and warm buffers are configured", async () => {
+    process.env.FIBER_WITHDRAWAL_CKB_LIQUIDITY_FEE_BUFFER = "1";
+    process.env.FIBER_WITHDRAWAL_CKB_LIQUIDITY_POST_TX_RESERVE = "0";
+    process.env.FIBER_WITHDRAWAL_CKB_LIQUIDITY_WARM_BUFFER = "61";
+
+    const liquidityRequestRepo = createInMemoryLiquidityRequestRepo();
+    const hotWalletInventoryProvider = vi.fn(async () => ({
+      asset: "CKB" as const,
+      network: "AGGRON4" as const,
+      availableAmount: "60",
+    }));
+
+    const result = await decideWithdrawalRequestLiquidity(
+      {
+        appId: "app1",
+        asset: "CKB",
+        amount: "61",
+        destination: {
+          kind: "CKB_ADDRESS",
+          address: "ckt1qyqfth8m4fevfzh5hhd088s78qcdjjp8cehs7z8jhw",
+        },
+      },
+      { hotWalletInventoryProvider, liquidityRequestRepo },
+    );
+
+    expect(result.state).toBe("LIQUIDITY_PENDING");
+    const requests = liquidityRequestRepo.__listForTests?.() ?? [];
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({
+      requiredAmount: "63",
+      metadata: expect.objectContaining({
+        requiredAvailableAmount: "61",
+        targetAvailableAmount: "123",
+        requestedRebalanceAmount: "63",
+        feeBufferAmount: "1",
+        postTxReserveAmount: "0",
+        warmBufferAmount: "61",
+        hotWalletAvailableAmount: "60",
+      }),
     });
   });
 

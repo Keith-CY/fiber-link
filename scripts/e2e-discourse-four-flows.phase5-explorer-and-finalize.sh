@@ -8,6 +8,7 @@ source "${ROOT_DIR}/scripts/lib/e2e-discourse-four-flows-common.sh"
 LOG_PREFIX="e2e-four-flows-phase5"
 VERBOSE=0
 CLI_EXPLORER_TX_URL_TEMPLATE=""
+ATTEMPT_LABEL="primary"
 
 usage() {
   cat <<'USAGE'
@@ -20,6 +21,7 @@ Phase 6 of the discourse four-flows workflow:
 
 Options:
   --run-dir <path>                   Existing run directory from phase4.
+  --attempt-label <label>            Attempt label. Default: primary.
   --explorer-tx-url-template <tpl>   Explorer URL template containing {txHash} or %s.
   --verbose                          Print detailed logs.
   -h, --help                         Show help.
@@ -31,6 +33,11 @@ while [[ $# -gt 0 ]]; do
     --run-dir)
       [[ $# -ge 2 ]] || { usage >&2; exit "${EXIT_USAGE}"; }
       RUN_DIR="$2"
+      shift
+      ;;
+    --attempt-label)
+      [[ $# -ge 2 ]] || { usage >&2; exit "${EXIT_USAGE}"; }
+      ATTEMPT_LABEL="$2"
       shift
       ;;
     --explorer-tx-url-template)
@@ -70,6 +77,15 @@ persist_state_env
 [[ -n "${WITHDRAWAL_ID}" ]] || fatal "${EXIT_WITHDRAWAL}" "phase5 requires withdrawal id from phase3"
 [[ -n "${AUTHOR_USER_ID}" ]] || fatal "${EXIT_WITHDRAWAL}" "phase5 requires author user id in state"
 
+attempt_postcheck_dir="${POSTCHECK_DIR}"
+attempt_explorer_dir="${EXPLORER_DIR}"
+if [[ "${ATTEMPT_LABEL}" != "primary" ]]; then
+  attempt_postcheck_dir="${RUN_DIR}/postcheck-${ATTEMPT_LABEL}"
+  attempt_explorer_dir="${RUN_DIR}/explorer-${ATTEMPT_LABEL}"
+  mkdir -p "${attempt_postcheck_dir}" "${attempt_explorer_dir}"
+fi
+attempt_prefix="withdrawal-${ATTEMPT_LABEL}"
+
 require_cmd jq
 require_cmd curl
 require_cmd openssl
@@ -86,26 +102,39 @@ if ! wait_withdrawal_completed "${WITHDRAWAL_ID}" 420; then
   fatal "${EXIT_WITHDRAWAL}" "timeout waiting withdrawal ${WITHDRAWAL_ID} completion"
 fi
 [[ -n "${WITHDRAWAL_TX_HASH}" ]] || fatal "${EXIT_WITHDRAWAL}" "completed withdrawal ${WITHDRAWAL_ID} missing tx hash"
+capture_withdrawal_liquidity_snapshot "${WITHDRAWAL_ID}" "${ARTIFACTS_DIR}/${attempt_prefix}.completed.snapshot.json"
+capture_hot_wallet_inventory "${ARTIFACTS_DIR}/${attempt_prefix}.hot-wallet.after.json"
 
 explorer_cmd=(
   env
   "PW_EXPLORER_SESSION=fiber-exp"
   "PW_EXPLORER_TX_HASH=${WITHDRAWAL_TX_HASH}"
   "PW_EXPLORER_TX_URL_TEMPLATE=${EXPLORER_TX_URL_TEMPLATE}"
-  "PW_EXPLORER_ARTIFACT_DIR=${EXPLORER_DIR}"
+  "PW_EXPLORER_ARTIFACT_DIR=${attempt_explorer_dir}"
   scripts/playwright-workflow-explorer-proof.sh
 )
 record_cmd "${explorer_cmd[*]}"
-(cd "${ROOT_DIR}" && "${explorer_cmd[@]}") > "${LOGS_DIR}/explorer.log" 2>&1 \
+(cd "${ROOT_DIR}" && "${explorer_cmd[@]}") > "${LOGS_DIR}/explorer.${ATTEMPT_LABEL}.log" 2>&1 \
   || fatal "${EXIT_EXPLORER}" "failed to capture explorer screenshot"
-EXPLORER_RESULT_JSON="$(extract_result_json "${EXPLORER_DIR}/playwright-explorer-result.log" || true)"
+EXPLORER_RESULT_JSON="$(extract_result_json "${attempt_explorer_dir}/playwright-explorer-result.log" || true)"
 [[ -n "${EXPLORER_RESULT_JSON}" ]] || fatal "${EXIT_EXPLORER}" "missing explorer result payload"
+
+printf '%s\n' "${EXPLORER_RESULT_JSON}" > "${ARTIFACTS_DIR}/${attempt_prefix}.explorer.json"
+
+if [[ "${ATTEMPT_LABEL}" != "primary" ]]; then
+  copy_or_fail "${attempt_postcheck_dir}/playwright-step5-author-dashboard.png" "${SCREENSHOT_DIR}/flow4-author-balance-history-${ATTEMPT_LABEL}.png"
+  copy_or_fail "${attempt_postcheck_dir}/playwright-step7-admin-withdrawal.png" "${SCREENSHOT_DIR}/flow4-admin-withdrawal-${ATTEMPT_LABEL}.png"
+  copy_or_fail "${attempt_explorer_dir}/playwright-flow4-explorer-withdrawal-tx.png" "${SCREENSHOT_DIR}/flow4-explorer-withdrawal-tx-${ATTEMPT_LABEL}.png"
+  persist_state_env
+  printf 'RESULT=PASS CODE=0 ATTEMPT=%s RUN_DIR=%s WITHDRAWAL_ID=%s\n' "${ATTEMPT_LABEL}" "${RUN_DIR}" "${WITHDRAWAL_ID}"
+  exit "${EXIT_OK}"
+fi
 
 copy_or_fail "${FLOW12_DIR}/playwright-flow1-tip-button.png" "${SCREENSHOT_DIR}/flow1-tip-button.png"
 copy_or_fail "${FLOW12_DIR}/playwright-flow1-tip-modal-invoice.png" "${SCREENSHOT_DIR}/flow1-tip-modal-invoice.png"
-copy_or_fail "${POSTCHECK_DIR}/playwright-step5-author-dashboard.png" "${SCREENSHOT_DIR}/flow4-author-balance-history.png"
-copy_or_fail "${POSTCHECK_DIR}/playwright-step7-admin-withdrawal.png" "${SCREENSHOT_DIR}/flow4-admin-withdrawal.png"
-copy_or_fail "${EXPLORER_DIR}/playwright-flow4-explorer-withdrawal-tx.png" "${SCREENSHOT_DIR}/flow4-explorer-withdrawal-tx.png"
+copy_or_fail "${attempt_postcheck_dir}/playwright-step5-author-dashboard.png" "${SCREENSHOT_DIR}/flow4-author-balance-history.png"
+copy_or_fail "${attempt_postcheck_dir}/playwright-step7-admin-withdrawal.png" "${SCREENSHOT_DIR}/flow4-admin-withdrawal.png"
+copy_or_fail "${attempt_explorer_dir}/playwright-flow4-explorer-withdrawal-tx.png" "${SCREENSHOT_DIR}/flow4-explorer-withdrawal-tx.png"
 
 flow2_tip_create_req="$(json_or_null "${PHASE2_DIR}/tips/topic-post/tip-create.request.json")"
 flow2_tip_create_resp="$(json_or_null "${PHASE2_DIR}/tips/topic-post/tip-create.response.json")"
