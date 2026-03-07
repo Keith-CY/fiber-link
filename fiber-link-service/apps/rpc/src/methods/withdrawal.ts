@@ -6,21 +6,25 @@ import {
   createDbWithdrawalPolicyRepo,
   createDbWithdrawalRepo,
   formatDecimal,
+  InsufficientFundsError,
   parseDecimal,
   type Asset,
   type CreateWithdrawalInput,
   type LedgerRepo,
+  type LiquidityRequestRepo,
   type WithdrawalPolicyRecord,
   type WithdrawalPolicyRepo,
   type WithdrawalPolicyUsage,
   type WithdrawalRepo,
 } from "@fiber-link/db";
 import {
+  type HotWalletInventoryProvider,
   WithdrawalExecutionError,
   getCkbAddressMinCellCapacityShannons,
   shannonsToCkbDecimal,
   type WithdrawalDestination,
 } from "@fiber-link/fiber-adapter";
+import { decideWithdrawalRequestLiquidity } from "./liquidity";
 
 export type RequestWithdrawalInput = {
   appId: string;
@@ -51,6 +55,8 @@ type RequestWithdrawalOptions = {
   repo?: WithdrawalRepo;
   ledgerRepo?: LedgerRepo;
   policyRepo?: WithdrawalPolicyRepo | null;
+  liquidityRequestRepo?: LiquidityRequestRepo | null;
+  hotWalletInventoryProvider?: HotWalletInventoryProvider | null;
   now?: Date;
 };
 
@@ -257,6 +263,28 @@ function assertWithdrawalPolicy(
   }
 }
 
+async function assertSufficientCreatorBalance(
+  input: RequestWithdrawalInput,
+  deps: { repo: WithdrawalRepo; ledgerRepo: LedgerRepo },
+) {
+  const [balance, pending] = await Promise.all([
+    deps.ledgerRepo.getBalance({
+      appId: input.appId,
+      userId: input.userId,
+      asset: input.asset,
+    }),
+    deps.repo.getPendingTotal({
+      appId: input.appId,
+      userId: input.userId,
+      asset: input.asset,
+    }),
+  ]);
+  const required = addDecimalStrings(pending, input.amount);
+  if (compareDecimalStrings(balance, required) < 0) {
+    throw new InsufficientFundsError(input.appId, input.userId, input.asset, input.amount);
+  }
+}
+
 export async function requestWithdrawal(input: RequestWithdrawalInput, options: RequestWithdrawalOptions = {}) {
   const now = options.now ?? new Date();
   const repo = options.repo ?? getDefaultRepo();
@@ -275,15 +303,32 @@ export async function requestWithdrawal(input: RequestWithdrawalInput, options: 
 
   const minimumRequiredAmount = await resolveMinimumRequiredAmount(input);
   assertWithdrawalPolicy(input, policy, usage, now, minimumRequiredAmount);
+  await assertSufficientCreatorBalance(input, { repo, ledgerRepo });
+
+  const createInput: CreateWithdrawalInput = {
+    appId: input.appId,
+    userId: input.userId,
+    asset: input.asset,
+    amount: input.amount,
+    ...mapDestinationForStorage(input.destination),
+  };
+
+  const liquidityDecision = await decideWithdrawalRequestLiquidity(input, {
+    hotWalletInventoryProvider: options.hotWalletInventoryProvider,
+    liquidityRequestRepo: options.liquidityRequestRepo,
+  });
+
+  if (liquidityDecision.state === "LIQUIDITY_PENDING") {
+    const record = await repo.createLiquidityPending({
+      ...createInput,
+      liquidityRequestId: liquidityDecision.liquidityRequestId,
+      liquidityPendingReason: liquidityDecision.liquidityPendingReason,
+    });
+    return { id: record.id, state: record.state };
+  }
 
   const record = await repo.createWithBalanceCheck(
-    {
-      appId: input.appId,
-      userId: input.userId,
-      asset: input.asset,
-      amount: input.amount,
-      ...mapDestinationForStorage(input.destination),
-    },
+    createInput,
     { ledgerRepo },
   );
   return { id: record.id, state: record.state };

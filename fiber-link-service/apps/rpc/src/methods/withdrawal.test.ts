@@ -1,7 +1,8 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   InsufficientFundsError,
   createInMemoryLedgerRepo,
+  createInMemoryLiquidityRequestRepo,
   createInMemoryWithdrawalPolicyRepo,
   createInMemoryWithdrawalRepo,
 } from "@fiber-link/db";
@@ -451,6 +452,83 @@ describe("requestWithdrawal", () => {
     const saved = await repo.findByIdOrThrow(res.id);
     expect(saved.destinationKind).toBe("CKB_ADDRESS");
     expect(saved.toAddress).toBe("ckt1qyqfth8m4fevfzh5hhd088s78qcdjjp8cehs7z8jhw");
+  });
+
+  it("returns PENDING when hot wallet liquidity is sufficient", async () => {
+    const ledger = createInMemoryLedgerRepo();
+    await ledger.creditOnce({
+      appId: "app1",
+      userId: "u1",
+      asset: "CKB",
+      amount: "100",
+      refId: "t1",
+      idempotencyKey: "credit:t1",
+    });
+    const hotWalletInventoryProvider = vi.fn(async () => ({
+      asset: "CKB" as const,
+      network: "AGGRON4" as const,
+      availableAmount: "61",
+    }));
+
+    const result = await requestWithdrawal(
+      {
+        appId: "app1",
+        userId: "u1",
+        asset: "CKB",
+        amount: "61",
+        destination: {
+          kind: "CKB_ADDRESS",
+          address: "ckt1qyqfth8m4fevfzh5hhd088s78qcdjjp8cehs7z8jhw",
+        },
+      },
+      { repo, ledgerRepo: ledger, hotWalletInventoryProvider },
+    );
+
+    expect(result.state).toBe("PENDING");
+    const saved = await repo.findByIdOrThrow(result.id);
+    expect(saved.state).toBe("PENDING");
+    expect(saved.liquidityRequestId).toBeNull();
+    expect(hotWalletInventoryProvider).toHaveBeenCalledWith({ asset: "CKB", network: "AGGRON4" });
+  });
+
+  it("returns LIQUIDITY_PENDING and creates liquidity request when hot wallet is underfunded", async () => {
+    const ledger = createInMemoryLedgerRepo();
+    const liquidityRequestRepo = createInMemoryLiquidityRequestRepo();
+    await ledger.creditOnce({
+      appId: "app1",
+      userId: "u1",
+      asset: "CKB",
+      amount: "100",
+      refId: "t1",
+      idempotencyKey: "credit:t1",
+    });
+    const hotWalletInventoryProvider = vi.fn(async () => ({
+      asset: "CKB" as const,
+      network: "AGGRON4" as const,
+      availableAmount: "60",
+    }));
+
+    const result = await requestWithdrawal(
+      {
+        appId: "app1",
+        userId: "u1",
+        asset: "CKB",
+        amount: "61",
+        destination: {
+          kind: "CKB_ADDRESS",
+          address: "ckt1qyqfth8m4fevfzh5hhd088s78qcdjjp8cehs7z8jhw",
+        },
+      },
+      { repo, ledgerRepo: ledger, liquidityRequestRepo, hotWalletInventoryProvider },
+    );
+
+    expect(result.state).toBe("LIQUIDITY_PENDING");
+    const saved = await repo.findByIdOrThrow(result.id);
+    expect(saved.state).toBe("LIQUIDITY_PENDING");
+    expect(saved.liquidityRequestId).toBeTruthy();
+    const requests = liquidityRequestRepo.__listForTests?.() ?? [];
+    expect(requests).toHaveLength(1);
+    expect(saved.liquidityRequestId).toBe(requests[0]?.id);
   });
 
   it("falls back to defaults when env allowed-assets has no valid values", async () => {
