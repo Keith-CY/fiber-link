@@ -5,7 +5,7 @@ const SHANNONS_PER_CKB = 100_000_000n;
 const DEFAULT_FEE_RATE_SHANNONS_PER_KB = 1_000n;
 const DEFAULT_TESTNET_CKB_RPC_URL = "https://testnet.ckbapp.dev/";
 
-type LumosConfig = typeof config.predefined.LINA;
+export type LumosConfig = typeof config.predefined.LINA;
 export type CkbNetworkConfig = { cfg: LumosConfig; isTestnet: boolean };
 
 export class WithdrawalExecutionError extends Error {
@@ -19,7 +19,7 @@ export class WithdrawalExecutionError extends Error {
   }
 }
 
-function normalizeErrorMessage(error: unknown): string {
+export function normalizeErrorMessage(error: unknown): string {
   if (error instanceof Error) {
     return error.message;
   }
@@ -70,7 +70,7 @@ function normalizeHexPrivateKey(input: string): string {
   return normalized.toLowerCase();
 }
 
-function resolvePrivateKey(): string {
+export function resolvePrivateKey(): string {
   const raw = process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY?.trim();
   if (!raw) {
     throw new WithdrawalExecutionError("FIBER_WITHDRAWAL_CKB_PRIVATE_KEY is required for on-chain withdrawal", "permanent");
@@ -93,7 +93,7 @@ export function resolveCkbNetworkConfig(toAddress: string): CkbNetworkConfig {
   );
 }
 
-function resolveCkbRpcUrl(isTestnet: boolean): string {
+export function resolveCkbRpcUrl(isTestnet: boolean): string {
   const explicit = process.env.FIBER_WITHDRAWAL_CKB_RPC_URL?.trim();
   if (explicit) {
     return explicit;
@@ -118,7 +118,7 @@ function resolveCkbRpcUrl(isTestnet: boolean): string {
   );
 }
 
-function resolveIndexerUrl(rpcUrl: string, isTestnet: boolean): string {
+export function resolveIndexerUrl(rpcUrl: string, isTestnet: boolean): string {
   const explicit = process.env.FIBER_WITHDRAWAL_CKB_INDEXER_URL?.trim();
   if (explicit) {
     return explicit;
@@ -139,7 +139,7 @@ function resolveIndexerUrl(rpcUrl: string, isTestnet: boolean): string {
   return rpcUrl;
 }
 
-function resolveFeeRateShannonsPerKb(): bigint {
+export function resolveFeeRateShannonsPerKb(): bigint {
   const feeRate = parseOptionalBigIntEnv("FIBER_WITHDRAWAL_CKB_FEE_RATE_SHANNONS_PER_KB");
   if (feeRate === null) {
     return DEFAULT_FEE_RATE_SHANNONS_PER_KB;
@@ -150,7 +150,7 @@ function resolveFeeRateShannonsPerKb(): bigint {
   return feeRate;
 }
 
-function classifyUnknownRuntimeError(error: unknown): WithdrawalExecutionKind {
+export function classifyUnknownRuntimeError(error: unknown): WithdrawalExecutionKind {
   const jsonRpcCodeKind = new Map<number, WithdrawalExecutionKind>([
     [-32700, "permanent"],
     [-32600, "permanent"],

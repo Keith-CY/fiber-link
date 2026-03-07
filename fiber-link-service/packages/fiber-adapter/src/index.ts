@@ -5,6 +5,7 @@ export {
   shannonsToCkbDecimal,
   WithdrawalExecutionError,
 } from "./ckb-onchain-withdrawal";
+export { executeUdtOnchainWithdrawal } from "./udt-onchain-withdrawal";
 export { createDefaultHotWalletInventoryProvider, getHotWalletInventory } from "./hot-wallet-inventory";
 
 export { createAdapter } from "./rpc-adapter";
@@ -43,6 +44,7 @@ export type {
   SettlementSubscriptionConfig,
   SettlementSubscriptionHandle,
   SubscribeSettlementsArgs,
+  UdtTypeScript,
   UsdiHotWalletInventory,
   WithdrawalDestination,
   WithdrawalExecutionKind,

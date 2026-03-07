@@ -9,11 +9,18 @@ export type WithdrawalDestination =
   | { kind: "CKB_ADDRESS"; address: string }
   | { kind: "PAYMENT_REQUEST"; paymentRequest: string };
 
+export type UdtTypeScript = {
+  codeHash: string;
+  hashType: string;
+  args: string;
+};
+
 export type ExecuteWithdrawalArgs = {
   amount: string;
   asset: Asset;
   destination: WithdrawalDestination;
   requestId: string;
+  udtTypeScript?: UdtTypeScript;
 };
 
 export type EnsureChainLiquidityArgs = {

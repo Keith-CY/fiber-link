@@ -14,6 +14,9 @@ async function waitForCondition(condition: () => boolean, timeoutMs = 500) {
 describe("fiber adapter", () => {
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unmock("./udt-onchain-withdrawal");
+    vi.unmock("./ckb-onchain-withdrawal");
+    vi.resetModules();
     delete process.env.FIBER_INVOICE_CURRENCY;
     delete process.env.FIBER_INVOICE_CURRENCY_CKB;
     delete process.env.FIBER_INVOICE_CURRENCY_USDI;
@@ -285,6 +288,57 @@ describe("fiber adapter", () => {
         body: expect.stringContaining("\"currency\":\"Fibt\""),
       }),
     );
+  });
+
+  it("executeWithdrawal routes USDI CKB_ADDRESS payouts to the xUDT executor", async () => {
+    const executeUdtOnchainWithdrawal = vi.fn().mockResolvedValue({ txHash: "0xudt" });
+    const executeCkbOnchainWithdrawal = vi.fn().mockResolvedValue({ txHash: "0xckb" });
+
+    vi.doMock("./udt-onchain-withdrawal", () => ({
+      executeUdtOnchainWithdrawal,
+    }));
+    vi.doMock("./ckb-onchain-withdrawal", async () => {
+      const actual = await vi.importActual<typeof import("./ckb-onchain-withdrawal")>("./ckb-onchain-withdrawal");
+      return {
+        ...actual,
+        executeCkbOnchainWithdrawal,
+      };
+    });
+
+    process.env.FIBER_USDI_UDT_TYPE_SCRIPT_JSON = JSON.stringify({
+      code_hash: "0x01",
+      hash_type: "type",
+      args: "0x02",
+    });
+
+    const { createAdapter: createAdapterWithMocks } = await import("./index");
+    const adapter = createAdapterWithMocks({ endpoint: "http://localhost:8119" });
+    const result = await adapter.executeWithdrawal({
+      amount: "10",
+      asset: "USDI",
+      destination: {
+        kind: "CKB_ADDRESS",
+        address: "ckt1qyqwyxfa75whssgkq9ukkdd30d8c7txct0gq5f9mxs",
+      },
+      requestId: "w-usdi-chain",
+    });
+
+    expect(result).toEqual({ txHash: "0xudt" });
+    expect(executeUdtOnchainWithdrawal).toHaveBeenCalledWith({
+      amount: "10",
+      asset: "USDI",
+      destination: {
+        kind: "CKB_ADDRESS",
+        address: "ckt1qyqwyxfa75whssgkq9ukkdd30d8c7txct0gq5f9mxs",
+      },
+      requestId: "w-usdi-chain",
+      udtTypeScript: {
+        codeHash: "0x01",
+        hashType: "type",
+        args: "0x02",
+      },
+    });
+    expect(executeCkbOnchainWithdrawal).not.toHaveBeenCalled();
   });
 
   it("ensureChainLiquidity starts a rebalance request and returns pending status", async () => {

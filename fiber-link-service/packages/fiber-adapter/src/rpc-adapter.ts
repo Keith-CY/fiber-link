@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { FiberRpcError, rpcCall } from "./fiber-client";
 import { executeCkbOnchainWithdrawal } from "./ckb-onchain-withdrawal";
+import { executeUdtOnchainWithdrawal } from "./udt-onchain-withdrawal";
 import type {
   Asset,
   CreateAdapterArgs,
@@ -16,9 +17,10 @@ import type {
   SettlementSubscriptionConfig,
   SettlementSubscriptionHandle,
   SubscribeSettlementsArgs,
+  UdtTypeScript,
 } from "./types";
 
-type UdtTypeScript = {
+type RpcUdtTypeScript = {
   code_hash: string;
   hash_type: string;
   args: string;
@@ -83,7 +85,7 @@ function normalizeOptionalName(input: unknown): string {
   return input.trim().toLowerCase();
 }
 
-function isUdtTypeScript(value: unknown): value is UdtTypeScript {
+function isUdtTypeScript(value: unknown): value is RpcUdtTypeScript {
   if (!value || typeof value !== "object") {
     return false;
   }
@@ -117,7 +119,7 @@ async function rpcCallWithoutParams(endpoint: string, method: string): Promise<u
   return payload?.result;
 }
 
-function pickUsdiUdtScript(nodeInfo: unknown): UdtTypeScript | null {
+function pickUsdiUdtScript(nodeInfo: unknown): RpcUdtTypeScript | null {
   if (!nodeInfo || typeof nodeInfo !== "object") {
     return null;
   }
@@ -147,7 +149,7 @@ function pickUsdiUdtScript(nodeInfo: unknown): UdtTypeScript | null {
   return script;
 }
 
-async function resolveUsdiUdtScript(endpoint: string): Promise<UdtTypeScript> {
+async function resolveUsdiUdtScript(endpoint: string): Promise<RpcUdtTypeScript> {
   const envJson = process.env.FIBER_USDI_UDT_TYPE_SCRIPT_JSON;
   if (typeof envJson === "string" && envJson.trim()) {
     let parsed: unknown;
@@ -168,6 +170,14 @@ async function resolveUsdiUdtScript(endpoint: string): Promise<UdtTypeScript> {
     throw new Error("node_info does not expose a usable USDI udt_type_script");
   }
   return script;
+}
+
+function toWithdrawalUdtTypeScript(script: RpcUdtTypeScript): UdtTypeScript {
+  return {
+    codeHash: script.code_hash,
+    hashType: script.hash_type,
+    args: script.args,
+  };
 }
 
 function pickPaymentHash(result: Record<string, unknown> | undefined): string | null {
@@ -597,6 +607,15 @@ export function createAdapter({ endpoint, settlementSubscription, fetchFn }: Cre
     },
     async executeWithdrawal({ amount, asset, destination, requestId }: ExecuteWithdrawalArgs) {
       if (destination.kind === "CKB_ADDRESS") {
+        if (asset === "USDI") {
+          return executeUdtOnchainWithdrawal({
+            amount,
+            asset,
+            destination,
+            requestId,
+            udtTypeScript: toWithdrawalUdtTypeScript(await resolveUsdiUdtScript(endpoint)),
+          });
+        }
         return executeCkbOnchainWithdrawal({ amount, asset, destination, requestId });
       }
 
