@@ -3,6 +3,9 @@ import {
   assetEnum,
   invoiceStateEnum,
   ledgerEntries,
+  liquidityRequestSourceKindEnum,
+  liquidityRequestStateEnum,
+  liquidityRequests,
   notificationChannelKindEnum,
   notificationChannels,
   notificationEventEnum,
@@ -22,6 +25,7 @@ describe("schema", () => {
     expect(tipIntentEvents).toBeDefined();
     expect(ledgerEntries).toBeDefined();
     expect(withdrawals).toBeDefined();
+    expect(liquidityRequests).toBeDefined();
     expect(withdrawalPolicies).toBeDefined();
     expect(notificationChannels).toBeDefined();
     expect(notificationRules).toBeDefined();
@@ -46,7 +50,16 @@ describe("schema", () => {
       "SETTLEMENT_FAILED_RETRY_EXHAUSTED",
       "SETTLEMENT_FAILED_TERMINAL_ERROR",
     ]);
-    expect(withdrawalStateEnum.enumValues).toEqual(["PENDING", "PROCESSING", "RETRY_PENDING", "COMPLETED", "FAILED"]);
+    expect(withdrawalStateEnum.enumValues).toEqual([
+      "LIQUIDITY_PENDING",
+      "PENDING",
+      "PROCESSING",
+      "RETRY_PENDING",
+      "COMPLETED",
+      "FAILED",
+    ]);
+    expect(liquidityRequestStateEnum.enumValues).toEqual(["REQUESTED", "REBALANCING", "FUNDED", "FAILED"]);
+    expect(liquidityRequestSourceKindEnum.enumValues).toEqual(["FIBER_TO_CKB_CHAIN"]);
     expect(notificationChannelKindEnum.enumValues).toEqual(["WEBHOOK"]);
     expect(notificationEventEnum.enumValues).toEqual([
       "WITHDRAWAL_RETRY_PENDING",
@@ -63,6 +76,10 @@ describe("schema", () => {
     expect(ledgerEntries.idempotencyKey.name).toBe("idempotency_key");
     expect(withdrawals.state.name).toBe("state");
     expect(withdrawals.nextRetryAt.name).toBe("next_retry_at");
+    expect(liquidityRequests.state.name).toBe("state");
+    expect(liquidityRequests.sourceKind.name).toBe("source_kind");
+    expect(liquidityRequests.requiredAmount.name).toBe("required_amount");
+    expect(liquidityRequests.fundedAmount.name).toBe("funded_amount");
     expect(withdrawalPolicies.allowedAssets.name).toBe("allowed_assets");
     expect(withdrawalPolicies.maxPerRequest.name).toBe("max_per_request");
     expect(withdrawalPolicies.perUserDailyMax.name).toBe("per_user_daily_max");

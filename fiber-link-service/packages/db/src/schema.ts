@@ -36,6 +36,7 @@ export const tipIntentEventTypeEnum = pgEnum("tip_intent_event_type", [
 export type TipIntentEventType = (typeof tipIntentEventTypeEnum.enumValues)[number];
 
 export const withdrawalStateEnum = pgEnum("withdrawal_state", [
+  "LIQUIDITY_PENDING",
   "PENDING",
   "PROCESSING",
   "RETRY_PENDING",
@@ -43,6 +44,19 @@ export const withdrawalStateEnum = pgEnum("withdrawal_state", [
   "FAILED",
 ]);
 export type WithdrawalState = (typeof withdrawalStateEnum.enumValues)[number];
+
+export const liquidityRequestStateEnum = pgEnum("liquidity_request_state", [
+  "REQUESTED",
+  "REBALANCING",
+  "FUNDED",
+  "FAILED",
+]);
+export type LiquidityRequestState = (typeof liquidityRequestStateEnum.enumValues)[number];
+
+export const liquidityRequestSourceKindEnum = pgEnum("liquidity_request_source_kind", [
+  "FIBER_TO_CKB_CHAIN",
+]);
+export type LiquidityRequestSourceKind = (typeof liquidityRequestSourceKindEnum.enumValues)[number];
 
 export const withdrawalDestinationKindEnum = pgEnum("withdrawal_destination_kind", [
   "CKB_ADDRESS",
@@ -213,6 +227,35 @@ export const withdrawals = pgTable(
   (table) => ({
     byStateRetryAt: index("withdrawals_state_next_retry_at_idx").on(table.state, table.nextRetryAt, table.createdAt),
     byAccountAssetState: index("withdrawals_account_asset_state_idx").on(table.appId, table.userId, table.asset, table.state),
+  }),
+);
+
+export const liquidityRequests = pgTable(
+  "liquidity_requests",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    appId: text("app_id").notNull(),
+    asset: assetEnum("asset").notNull(),
+    network: text("network").notNull(),
+    state: liquidityRequestStateEnum("state").notNull(),
+    sourceKind: liquidityRequestSourceKindEnum("source_kind").notNull(),
+    requiredAmount: numeric("required_amount").notNull(),
+    fundedAmount: numeric("funded_amount").notNull(),
+    metadata: jsonb("metadata").$type<Record<string, unknown> | null>(),
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+    completedAt: timestamp("completed_at"),
+  },
+  (table) => ({
+    byStateCreatedAt: index("liquidity_requests_state_created_at_idx").on(table.state, table.createdAt, table.id),
+    byAppAssetState: index("liquidity_requests_app_asset_state_idx").on(
+      table.appId,
+      table.asset,
+      table.state,
+      table.createdAt,
+      table.id,
+    ),
   }),
 );
 
