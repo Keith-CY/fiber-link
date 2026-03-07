@@ -46,12 +46,14 @@ export type GetHotWalletInventoryArgs = {
 export type CkbHotWalletInventory = {
   asset: "CKB";
   network: CkbNetwork;
+  // Canonical decimal string in asset units.
   availableAmount: string;
 };
 
 export type UsdiHotWalletInventory = {
   asset: "USDI";
   network: CkbNetwork;
+  // Canonical decimal string in asset units.
   availableAmount: string;
   supportingCkbAmount: string;
 };

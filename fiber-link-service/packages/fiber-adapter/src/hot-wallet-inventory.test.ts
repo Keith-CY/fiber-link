@@ -35,4 +35,50 @@ describe("getHotWalletInventory", () => {
     expect(inventory.availableAmount).toBe("500");
     expect(inventory.supportingCkbAmount).toBe("120");
   });
+
+  it("formats USDI availableAmount as a canonical decimal asset-unit string when decimals are configured", async () => {
+    const inventory = await getHotWalletInventory(
+      { asset: "USDI", network: "AGGRON4" },
+      {
+        ...deps,
+        getUsdiDecimals: async () => 2,
+        getUsdiCells: async () => [{ capacity: ckbToHexShannons(61n), data: encodeUdtAmount(550n) }],
+      },
+    );
+
+    expect(inventory.availableAmount).toBe("5.5");
+    expect(inventory.supportingCkbAmount).toBe("62");
+  });
+
+  it("uses zero supporting fee when estimateUsdiFeeShannons is omitted", async () => {
+    const { estimateUsdiFeeShannons: _estimateUsdiFeeShannons, ...depsWithoutFee } = deps;
+    const inventory = await getHotWalletInventory({ asset: "USDI", network: "AGGRON4" }, depsWithoutFee);
+
+    expect(inventory.availableAmount).toBe("500");
+    expect(inventory.supportingCkbAmount).toBe("119");
+  });
+
+  it("throws when a cell capacity is malformed", async () => {
+    await expect(
+      getHotWalletInventory(
+        { asset: "CKB", network: "AGGRON4" },
+        {
+          ...deps,
+          getNativeCells: async () => [{ capacity: "not-a-quantity" }],
+        },
+      ),
+    ).rejects.toThrow("invalid quantity: not-a-quantity");
+  });
+
+  it("throws when xUDT data is malformed", async () => {
+    await expect(
+      getHotWalletInventory(
+        { asset: "USDI", network: "AGGRON4" },
+        {
+          ...deps,
+          getUsdiCells: async () => [{ capacity: ckbToHexShannons(61n), data: "0x01" }],
+        },
+      ),
+    ).rejects.toThrow("xUDT cell data must contain at least 16 bytes");
+  });
 });

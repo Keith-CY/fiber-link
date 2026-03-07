@@ -1,6 +1,5 @@
+import { shannonsToCkbDecimal } from "./ckb-onchain-withdrawal";
 import type { CkbNetwork, GetHotWalletInventoryArgs, HotWalletInventory } from "./types";
-
-const SHANNONS_PER_CKB = 100_000_000n;
 
 export type HotWalletCell = {
   capacity: string;
@@ -10,6 +9,7 @@ export type HotWalletCell = {
 export type GetHotWalletInventoryDeps = {
   getNativeCells: (network: CkbNetwork) => Promise<readonly HotWalletCell[]>;
   getUsdiCells: (network: CkbNetwork) => Promise<readonly HotWalletCell[]>;
+  getUsdiDecimals?: (network: CkbNetwork) => Promise<number> | number;
   estimateUsdiFeeShannons?: (network: CkbNetwork, cells: readonly HotWalletCell[]) => Promise<string> | string;
 };
 
@@ -24,14 +24,29 @@ function parseQuantity(value: string): bigint {
   throw new Error(`invalid quantity: ${value}`);
 }
 
-function shannonsToCkbDecimal(shannons: bigint): string {
-  const integerPart = shannons / SHANNONS_PER_CKB;
-  const fractionPart = shannons % SHANNONS_PER_CKB;
+function normalizeDecimals(value: number | undefined): number {
+  if (value === undefined) {
+    return 0;
+  }
+  if (!Number.isInteger(value) || value < 0) {
+    throw new Error(`invalid decimals: ${value}`);
+  }
+  return value;
+}
+
+function formatAssetAmount(amount: bigint, decimals: number): string {
+  if (decimals === 0) {
+    return amount.toString();
+  }
+
+  const scale = 10n ** BigInt(decimals);
+  const integerPart = amount / scale;
+  const fractionPart = amount % scale;
   if (fractionPart === 0n) {
     return integerPart.toString();
   }
 
-  return `${integerPart}.${fractionPart.toString().padStart(8, "0").replace(/0+$/, "")}`;
+  return `${integerPart}.${fractionPart.toString().padStart(decimals, "0").replace(/0+$/, "")}`;
 }
 
 function sumCellCapacities(cells: readonly HotWalletCell[]): bigint {
@@ -75,6 +90,9 @@ export async function getHotWalletInventory(
   }
 
   const usdiCells = await deps.getUsdiCells(network);
+  const usdiDecimals = normalizeDecimals(
+    deps.getUsdiDecimals ? await deps.getUsdiDecimals(network) : undefined,
+  );
   const feeShannons = deps.estimateUsdiFeeShannons
     ? parseQuantity(await deps.estimateUsdiFeeShannons(network, usdiCells))
     : 0n;
@@ -82,7 +100,7 @@ export async function getHotWalletInventory(
   return {
     asset,
     network,
-    availableAmount: sumXudtAmounts(usdiCells).toString(),
+    availableAmount: formatAssetAmount(sumXudtAmounts(usdiCells), usdiDecimals),
     supportingCkbAmount: shannonsToCkbDecimal(sumCellCapacities(usdiCells) + feeShannons),
   };
 }
