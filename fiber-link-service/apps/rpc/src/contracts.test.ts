@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  DashboardWithdrawalStateFilterSchema,
   DashboardSummaryResultSchema,
   RpcErrorCode,
   RpcRequestSchema,
@@ -87,11 +88,18 @@ describe("rpc contracts", () => {
       }).success,
     ).toBe(true);
     expect(
-      WithdrawalRequestResultSchema.safeParse({
+      WithdrawalRequestResultSchema.parse({
         id: "wd-1",
         state: "PENDING",
-      }).success,
-    ).toBe(true);
+      }).state,
+    ).toBe("PENDING");
+    expect(
+      WithdrawalRequestResultSchema.parse({
+        id: "w1",
+        state: "LIQUIDITY_PENDING",
+      }).state,
+    ).toBe("LIQUIDITY_PENDING");
+    expect(DashboardWithdrawalStateFilterSchema.options).toContain("LIQUIDITY_PENDING");
     expect(
       DashboardSummaryResultSchema.safeParse({
         balance: "10",

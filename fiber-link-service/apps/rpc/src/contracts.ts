@@ -88,13 +88,23 @@ export const WithdrawalRequestParamsSchema = z
     };
   });
 
+const WithdrawalStateSchema = z.enum([
+  "LIQUIDITY_PENDING",
+  "PENDING",
+  "PROCESSING",
+  "RETRY_PENDING",
+  "COMPLETED",
+  "FAILED",
+]);
+
 export const WithdrawalRequestResultSchema = z.object({
   id: z.string().min(1),
-  state: z.enum(["PENDING", "PROCESSING", "RETRY_PENDING", "COMPLETED", "FAILED"]),
+  state: WithdrawalStateSchema,
 });
 
 export const DashboardWithdrawalStateFilterSchema = z.enum([
   "ALL",
+  "LIQUIDITY_PENDING",
   "PENDING",
   "PROCESSING",
   "RETRY_PENDING",
@@ -150,7 +160,7 @@ export const DashboardSummaryResultSchema = z.object({
           userId: z.string().min(1),
           asset: z.enum(["CKB", "USDI"]),
           amount: z.string().min(1),
-          state: z.enum(["PENDING", "PROCESSING", "RETRY_PENDING", "COMPLETED", "FAILED"]),
+          state: WithdrawalStateSchema,
           retryCount: z.number().int().min(0),
           createdAt: z.string().datetime(),
           updatedAt: z.string().datetime(),

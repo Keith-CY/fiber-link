@@ -154,6 +154,16 @@ describe("dashboard data", () => {
     const now = "2026-02-17T00:00:00.000Z";
     const summaries = summarizeWithdrawalStates([
       {
+        id: "w-0",
+        appId: "a0",
+        userId: "u0",
+        asset: "CKB",
+        amount: "8",
+        state: "LIQUIDITY_PENDING",
+        createdAt: now,
+        txHash: null,
+      },
+      {
         id: "w-1",
         appId: "a1",
         userId: "u1",
@@ -186,6 +196,7 @@ describe("dashboard data", () => {
     ]);
 
     expect(summaries).toEqual([
+      { state: "LIQUIDITY_PENDING", count: 1 },
       { state: "PENDING", count: 2 },
       { state: "PROCESSING", count: 0 },
       { state: "RETRY_PENDING", count: 0 },

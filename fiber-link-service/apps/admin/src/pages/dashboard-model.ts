@@ -11,6 +11,7 @@ export type DashboardWithdrawal = WithdrawalListOutput[number];
 export type DashboardWithdrawalState = DashboardWithdrawal["state"];
 
 export const WITHDRAWAL_STATE_ORDER: DashboardWithdrawalState[] = [
+  "LIQUIDITY_PENDING",
   "PENDING",
   "PROCESSING",
   "RETRY_PENDING",

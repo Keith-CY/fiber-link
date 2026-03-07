@@ -13,6 +13,24 @@ function normalizeValue(value) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function getWithdrawalResultPresentation(state) {
+  if (state === "LIQUIDITY_PENDING") {
+    return {
+      alertClass: "fiber-link-tip-alert is-warning",
+      badgeClass: "fiber-link-status-badge is-liquidity-pending",
+      badgeLabel: "Liquidity Pending",
+      detail: "Withdrawal queued until liquidity is available.",
+    };
+  }
+
+  return {
+    alertClass: "fiber-link-tip-alert is-success",
+    badgeClass: "fiber-link-status-badge is-warning",
+    badgeLabel: state,
+    detail: null,
+  };
+}
+
 export default class FiberLinkWithdrawalPanel extends Component {
   @tracked amount = "61";
   @tracked toAddress = "";
@@ -62,6 +80,10 @@ export default class FiberLinkWithdrawalPanel extends Component {
 
   get minimumWithdrawalAmount() {
     return MIN_WITHDRAW_AMOUNT;
+  }
+
+  get requestedResultPresentation() {
+    return getWithdrawalResultPresentation(this.requestedState);
   }
 
   @action
@@ -130,14 +152,22 @@ export default class FiberLinkWithdrawalPanel extends Component {
       {{/if}}
 
       {{#if this.successMessage}}
-        <div class="fiber-link-tip-alert is-success" data-fiber-link-withdrawal-result="success">
+        <div
+          class={{this.requestedResultPresentation.alertClass}}
+          data-fiber-link-withdrawal-result="success"
+        >
           <p class="fiber-link-dashboard__withdrawal-success">{{this.successMessage}}</p>
+          {{#if this.requestedResultPresentation.detail}}
+            <p class="fiber-link-dashboard__withdrawal-note">
+              {{this.requestedResultPresentation.detail}}
+            </p>
+          {{/if}}
           {{#if this.requestedState}}
             <span
-              class="fiber-link-status-badge is-warning"
+              class={{this.requestedResultPresentation.badgeClass}}
               data-fiber-link-withdrawal-result="state"
             >
-              {{this.requestedState}}
+              {{this.requestedResultPresentation.badgeLabel}}
             </span>
           {{/if}}
         </div>

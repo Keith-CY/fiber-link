@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  WITHDRAWAL_STATE_ORDER,
   createReadyDashboardState,
   summarizeWithdrawalStates,
   type DashboardApp,
@@ -33,6 +34,22 @@ function createFixtures() {
     },
     {
       id: "w-2",
+      appId: "app-beta",
+      userId: "u-3",
+      asset: "CKB",
+      amount: "15",
+      toAddress: "ckt1q222",
+      state: "LIQUIDITY_PENDING",
+      retryCount: 0,
+      nextRetryAt: null,
+      lastError: null,
+      createdAt: now,
+      updatedAt: now,
+      completedAt: null,
+      txHash: null,
+    },
+    {
+      id: "w-3",
       appId: "app-beta",
       userId: "u-2",
       asset: "CKB",
@@ -81,9 +98,12 @@ describe("dashboard view model", () => {
 
     expect(renderModel.showUserColumn).toBe(true);
     expect(renderModel.scopeLabel).toContain("Global");
+    expect(renderModel.summaryRows.map((row) => row.state)).toEqual(WITHDRAWAL_STATE_ORDER);
+    expect(renderModel.summaryRows.find((row) => row.state === "LIQUIDITY_PENDING")?.count).toBe(1);
     expect(renderModel.summaryRows.find((row) => row.state === "PENDING")?.count).toBe(1);
     expect(renderModel.summaryRows.find((row) => row.state === "FAILED")?.count).toBe(1);
     expect(renderModel.withdrawalRows[0]?.userId).toBe("u-1");
+    expect(renderModel.withdrawalRows[1]?.state).toBe("LIQUIDITY_PENDING");
   });
 
   it("hides user ids for COMMUNITY_ADMIN", () => {
@@ -106,7 +126,8 @@ describe("withdrawal summary", () => {
   it("counts each state and keeps total", () => {
     const { withdrawals } = createFixtures();
     const summary = summarizeWithdrawalStates(withdrawals);
-    expect(summary.total).toBe(2);
+    expect(summary.total).toBe(3);
+    expect(summary.byState.LIQUIDITY_PENDING).toBe(1);
     expect(summary.byState.PENDING).toBe(1);
     expect(summary.byState.FAILED).toBe(1);
     expect(summary.byState.COMPLETED).toBe(0);
