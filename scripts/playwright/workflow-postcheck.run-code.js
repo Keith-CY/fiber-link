@@ -16,7 +16,7 @@ async (page) => {
   const authorWithdrawalScreenshotPath = `${artifactDir}/playwright-step6-author-withdrawal.png`;
   const adminScreenshotPath = `${artifactDir}/playwright-step7-admin-withdrawal.png`;
   const terminalStates = ["COMPLETED", "FAILED"];
-  const knownStates = ["COMPLETED", "FAILED", "PROCESSING", "RETRY_PENDING", "PENDING"];
+  const knownStates = ["COMPLETED", "FAILED", "LIQUIDITY_PENDING", "PROCESSING", "RETRY_PENDING", "PENDING"];
 
   async function safeScreenshot(path) {
     try {

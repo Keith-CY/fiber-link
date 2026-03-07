@@ -4,7 +4,7 @@ module ::FiberLink
   class RpcController < ::ApplicationController
     requires_plugin "fiber-link"
     before_action :ensure_logged_in
-    ALLOWED_WITHDRAWAL_STATES = ["ALL", "PENDING", "PROCESSING", "RETRY_PENDING", "COMPLETED", "FAILED"].freeze
+    ALLOWED_WITHDRAWAL_STATES = ["ALL", "LIQUIDITY_PENDING", "PENDING", "PROCESSING", "RETRY_PENDING", "COMPLETED", "FAILED"].freeze
     ALLOWED_SETTLEMENT_STATES = ["ALL", "UNPAID", "SETTLED", "FAILED"].freeze
 
     def proxy
