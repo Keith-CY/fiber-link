@@ -195,7 +195,8 @@ RSpec.describe ::FiberLink::RpcController, type: :request do
           body.dig("params", "userId") == user.id.to_s &&
           body.dig("params", "asset") == "CKB" &&
           body.dig("params", "amount") == "61" &&
-          body.dig("params", "toAddress") == "ckt1qyqg5xa84dfwfy76tptw2sy0k9q98xaeka9q5tvdlm"
+          body.dig("params", "toAddress") == "ckt1qyqg5xa84dfwfy76tptw2sy0k9q98xaeka9q5tvdlm" &&
+          body.dig("params", "destinationKind") == "CKB_ADDRESS"
       }
     end
 

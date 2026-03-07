@@ -135,6 +135,7 @@ module ::FiberLink
             amount: amount,
             asset: asset.presence || "CKB",
             toAddress: to_address,
+            destinationKind: "CKB_ADDRESS",
           }
         else
           render json: {
