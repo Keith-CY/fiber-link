@@ -266,9 +266,9 @@ sync_rpc_app_secret_record() {
 
 ensure_ember_cli_proxy() {
   local ember_url="http://127.0.0.1:4200/login"
-  local backend_ready_url="http://127.0.0.1:3000/session/csrf.json"
+  local backend_ready_url="http://127.0.0.1:9292/session/csrf.json"
   local ember_log="${ARTIFACT_DIR}/discourse-ember-cli.log"
-  local ember_pattern='[e]mber server --proxy http://127.0.0.1:3000 --unicorn'
+  local ember_pattern='[e]mber server --proxy http://127.0.0.1:9292'
 
   if docker exec discourse_dev sh -lc "pgrep -f '${ember_pattern}' >/dev/null 2>&1"; then
     if wait_http_ready "${ember_url}" 20; then
@@ -285,7 +285,7 @@ ensure_ember_cli_proxy() {
     log "ember-cli proxy already running (${ember_url})"
   else
     log "starting ember-cli proxy (first compile can take a few minutes)"
-    docker exec -u discourse:discourse -w /src discourse_dev sh -lc 'bin/ember-cli --unicorn' > "${ember_log}" 2>&1 &
+    docker exec -u discourse:discourse -w /src discourse_dev sh -lc 'bin/ember-cli --proxy http://127.0.0.1:9292' > "${ember_log}" 2>&1 &
     vlog "ember-cli logs: ${ember_log}"
   fi
 

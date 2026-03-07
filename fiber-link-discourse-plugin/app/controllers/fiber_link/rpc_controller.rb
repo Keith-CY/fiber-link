@@ -115,6 +115,27 @@ module ::FiberLink
               settlementState: settlement_state,
             },
           }
+        when "withdrawal.request"
+          amount = params["amount"].to_s.strip
+          asset = params["asset"].to_s.strip
+          to_address = params["toAddress"].to_s.strip
+
+          if amount.blank? || to_address.blank?
+            render json: {
+                     jsonrpc: "2.0",
+                     id: request_id,
+                     error: { code: -32602, message: "Invalid params" },
+                   },
+                   status: :bad_request
+            return
+          end
+
+          {
+            userId: current_user.id.to_s,
+            amount: amount,
+            asset: asset.presence || "CKB",
+            toAddress: to_address,
+          }
         else
           render json: {
                    jsonrpc: "2.0",

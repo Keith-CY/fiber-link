@@ -116,4 +116,51 @@ RSpec.describe "Fiber Link Dashboard", type: :system do
     expect(page).to have_no_content("Lifecycle Pipeline Board")
     expect(page).to have_no_content("Uses the service endpoint path")
   end
+
+  it "lets the author request a withdrawal from the dashboard" do
+    stub_request(:post, "https://fiber-link.example/rpc")
+      .with { |request| JSON.parse(request.body).fetch("method") == "dashboard.summary" }
+      .to_return(
+        status: 200,
+        body: {
+          jsonrpc: "2.0",
+          id: "dash-3",
+          result: {
+            balance: "124",
+            tips: [],
+            generatedAt: "2026-02-16T00:00:00.000Z",
+          },
+        }.to_json,
+        headers: { "Content-Type" => "application/json" },
+      )
+
+    stub_request(:post, "https://fiber-link.example/rpc")
+      .with { |request| JSON.parse(request.body).fetch("method") == "withdrawal.request" }
+      .to_return(
+        status: 200,
+        body: {
+          jsonrpc: "2.0",
+          id: "withdraw-1",
+          result: { id: "wd-1", state: "PENDING" },
+        }.to_json,
+        headers: { "Content-Type" => "application/json" },
+      )
+
+    visit "/fiber-link"
+
+    expect(page).to have_content("Withdraw Balance")
+    fill_in "Amount (CKB)", with: "61"
+    fill_in "Destination Address", with: "ckt1qyqg5xa84dfwfy76tptw2sy0k9q98xaeka9q5tvdlm"
+    click_button "Request Withdrawal"
+
+    expect(page).to have_content("Requested withdrawal wd-1")
+    expect(page).to have_content("PENDING")
+
+    expect(WebMock).to have_requested(:post, "https://fiber-link.example/rpc").with { |request|
+      body = JSON.parse(request.body)
+      body.fetch("method") == "withdrawal.request" &&
+        body.dig("params", "userId") == user.id.to_s &&
+        body.dig("params", "amount") == "61"
+    }
+  end
 end

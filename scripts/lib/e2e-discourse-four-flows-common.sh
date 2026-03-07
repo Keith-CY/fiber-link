@@ -1,0 +1,721 @@
+#!/usr/bin/env bash
+
+EXIT_OK=0
+EXIT_USAGE=2
+EXIT_PRECHECK=10
+EXIT_FLOW12=11
+EXIT_PHASE2=12
+EXIT_POSTCHECK=13
+EXIT_WITHDRAWAL=14
+EXIT_EXPLORER=15
+EXIT_POLLING=16
+EXIT_ARTIFACT=17
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+COMPOSE_FILE="${ROOT_DIR}/deploy/compose/docker-compose.yml"
+COMPOSE_ENV_FILE="${ROOT_DIR}/deploy/compose/.env"
+DEFAULT_RUN_TIMESTAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+DEFAULT_RUN_DIR="${ROOT_DIR}/.tmp/e2e-discourse-four-flows/${DEFAULT_RUN_TIMESTAMP}"
+DEFAULT_DISCOURSE_UI_BASE_URL="${E2E_DISCOURSE_UI_BASE_URL:-http://127.0.0.1:4200}"
+DEFAULT_SETTLEMENT_MODES="${E2E_SETTLEMENT_MODES:-subscription,polling}"
+DEFAULT_WORKFLOW_RPC_PORT="${E2E_WORKFLOW_RPC_PORT:-13001}"
+CKB_FAUCET_API_BASE="${CKB_FAUCET_API_BASE:-https://faucet-api.nervos.org}"
+CKB_FAUCET_FALLBACK_API_BASE="${CKB_FAUCET_FALLBACK_API_BASE:-https://ckb-utilities.random-walk.co.jp/api}"
+CKB_FAUCET_ENABLE_FALLBACK="${CKB_FAUCET_ENABLE_FALLBACK:-1}"
+CKB_FAUCET_AMOUNT="${CKB_FAUCET_AMOUNT:-100000}"
+CKB_FAUCET_WAIT_SECONDS="${CKB_FAUCET_WAIT_SECONDS:-20}"
+WITHDRAWAL_SIGNER_CACHE_PATH="${E2E_WITHDRAWAL_SIGNER_CACHE_PATH:-${ROOT_DIR}/.tmp/e2e-discourse-four-flows/withdrawal-signer.json}"
+WORKFLOW_RPC_PORT="${WORKFLOW_RPC_PORT:-${DEFAULT_WORKFLOW_RPC_PORT}}"
+
+LOG_PREFIX="${LOG_PREFIX:-e2e-four-flows}"
+VERBOSE="${VERBOSE:-0}"
+RUN_DIR="${RUN_DIR:-}"
+TIMESTAMP="${TIMESTAMP:-}"
+STATE_ENV_PATH=""
+PHASE1_DIR=""
+PHASE2_DIR=""
+POLLING_DIR=""
+FLOW12_DIR=""
+PHASE3_DIR=""
+POSTCHECK_DIR=""
+EXPLORER_DIR=""
+SCREENSHOT_DIR=""
+ARTIFACTS_DIR=""
+STATUS_DIR=""
+LOGS_DIR=""
+COMMANDS_DIR=""
+COMMAND_LOG=""
+PHASE1_METADATA_PATH=""
+PHASE2_METADATA_PATH=""
+POLLING_METADATA_PATH=""
+
+RUN_SUBSCRIPTION=1
+RUN_POLLING=1
+APP_SECRET="${APP_SECRET:-}"
+APP_ID="${APP_ID:-}"
+AUTHOR_USER_ID="${AUTHOR_USER_ID:-}"
+TIPPER_USER_ID="${TIPPER_USER_ID:-}"
+TOPIC_POST_ID="${TOPIC_POST_ID:-}"
+REPLY_POST_ID="${REPLY_POST_ID:-}"
+TOPIC_TX_HASH="${TOPIC_TX_HASH:-}"
+REPLY_TX_HASH="${REPLY_TX_HASH:-}"
+WITHDRAW_TO_ADDRESS="${WITHDRAW_TO_ADDRESS:-}"
+WITHDRAWAL_ID="${WITHDRAWAL_ID:-}"
+WITHDRAWAL_STATE="${WITHDRAWAL_STATE:-}"
+WITHDRAWAL_TX_HASH="${WITHDRAWAL_TX_HASH:-}"
+WITHDRAWAL_PRIVATE_KEY="${WITHDRAWAL_PRIVATE_KEY:-}"
+WITHDRAWAL_SIGNER_ADDRESS="${WITHDRAWAL_SIGNER_ADDRESS:-}"
+AUTHOR_BALANCE="${AUTHOR_BALANCE:-}"
+AUTHOR_TIP_HISTORY_COUNT="${AUTHOR_TIP_HISTORY_COUNT:-}"
+DISCOURSE_UI_BASE_URL="${DISCOURSE_UI_BASE_URL:-${DEFAULT_DISCOURSE_UI_BASE_URL}}"
+SETTLEMENT_MODES="${SETTLEMENT_MODES:-${DEFAULT_SETTLEMENT_MODES}}"
+EXPLORER_TX_URL_TEMPLATE="${EXPLORER_TX_URL_TEMPLATE:-${E2E_EXPLORER_TX_URL_TEMPLATE:-}}"
+
+log() {
+  printf '[%s] %s\n' "${LOG_PREFIX}" "$*"
+}
+
+vlog() {
+  if [[ "${VERBOSE}" -eq 1 ]]; then
+    log "$*"
+  fi
+}
+
+record_cmd() {
+  if [[ -n "${COMMAND_LOG}" ]]; then
+    printf '[%s] %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >> "${COMMAND_LOG}"
+  fi
+}
+
+write_checklist() {
+  local overall_status="$1"
+  local note="$2"
+  mkdir -p "${STATUS_DIR}"
+  cat > "${STATUS_DIR}/verification-checklist.md" <<CHECKLIST
+# E2E Discourse Four Flows Checklist
+
+- Overall status: ${overall_status}
+- Note: ${note}
+- Artifact directory: ${RUN_DIR}
+
+## Required Screenshots
+- [ ] screenshots/flow1-tip-button.png
+- [ ] screenshots/flow1-tip-modal-invoice.png
+- [ ] screenshots/flow4-author-balance-history.png
+- [ ] screenshots/flow4-admin-withdrawal.png
+- [ ] screenshots/flow4-explorer-withdrawal-tx.png
+
+## Required Evidence
+- [ ] artifacts/flow2-rpc-calls.json
+- [ ] artifacts/flow3-subscription.json
+- [ ] artifacts/flow3-polling.json
+- [ ] artifacts/summary.json
+CHECKLIST
+}
+
+fatal() {
+  local code="$1"
+  shift
+  log "FAIL(${code}): $*"
+  if [[ -n "${RUN_DIR}" ]]; then
+    write_checklist "FAIL" "$*"
+  fi
+  printf 'RESULT=FAIL CODE=%s ARTIFACT_DIR=%s MESSAGE=%s\n' "${code}" "${RUN_DIR:-<unset>}" "$*"
+  exit "${code}"
+}
+
+require_cmd() {
+  local cmd="$1"
+  command -v "${cmd}" >/dev/null 2>&1 || fatal "${EXIT_PRECHECK}" "missing required command: ${cmd}"
+}
+
+ensure_run_dir() {
+  if [[ -z "${RUN_DIR}" ]]; then
+    RUN_DIR="${DEFAULT_RUN_DIR}"
+  fi
+  if [[ -z "${TIMESTAMP}" ]]; then
+    TIMESTAMP="$(basename "${RUN_DIR}")"
+  fi
+}
+
+refresh_run_paths() {
+  ensure_run_dir
+  PHASE1_DIR="${RUN_DIR}/workflow-phase1-subscription"
+  PHASE2_DIR="${RUN_DIR}/workflow-phase2-subscription"
+  POLLING_DIR="${RUN_DIR}/workflow-polling"
+  FLOW12_DIR="${RUN_DIR}/flow12"
+  PHASE3_DIR="${RUN_DIR}/withdrawal-browser"
+  POSTCHECK_DIR="${RUN_DIR}/postcheck"
+  EXPLORER_DIR="${RUN_DIR}/explorer"
+  SCREENSHOT_DIR="${RUN_DIR}/screenshots"
+  ARTIFACTS_DIR="${RUN_DIR}/artifacts"
+  STATUS_DIR="${RUN_DIR}/status"
+  LOGS_DIR="${RUN_DIR}/logs"
+  COMMANDS_DIR="${RUN_DIR}/commands"
+  STATE_ENV_PATH="${RUN_DIR}/state.env"
+  PHASE1_METADATA_PATH="${PHASE1_DIR}/result.env"
+  PHASE2_METADATA_PATH="${PHASE2_DIR}/result.env"
+  POLLING_METADATA_PATH="${POLLING_DIR}/result.env"
+  COMMAND_LOG="${COMMANDS_DIR}/command-index.log"
+}
+
+ensure_run_layout() {
+  refresh_run_paths
+  mkdir -p \
+    "${RUN_DIR}" \
+    "${SCREENSHOT_DIR}" \
+    "${ARTIFACTS_DIR}" \
+    "${STATUS_DIR}" \
+    "${LOGS_DIR}" \
+    "${COMMANDS_DIR}" \
+    "${PHASE1_DIR}" \
+    "${PHASE2_DIR}" \
+    "${POLLING_DIR}" \
+    "${FLOW12_DIR}" \
+    "${PHASE3_DIR}" \
+    "${POSTCHECK_DIR}" \
+    "${EXPLORER_DIR}"
+  touch "${COMMAND_LOG}"
+}
+
+state_keys() {
+  cat <<'EOF_KEYS'
+TIMESTAMP
+RUN_DIR
+APP_ID
+DISCOURSE_UI_BASE_URL
+SETTLEMENT_MODES
+AUTHOR_USER_ID
+TIPPER_USER_ID
+TOPIC_POST_ID
+REPLY_POST_ID
+TOPIC_TX_HASH
+REPLY_TX_HASH
+WITHDRAW_TO_ADDRESS
+WITHDRAWAL_ID
+WITHDRAWAL_STATE
+WITHDRAWAL_TX_HASH
+AUTHOR_BALANCE
+AUTHOR_TIP_HISTORY_COUNT
+EXPLORER_TX_URL_TEMPLATE
+EOF_KEYS
+}
+
+load_state_env() {
+  refresh_run_paths
+  if [[ -f "${STATE_ENV_PATH}" ]]; then
+    # shellcheck disable=SC1090
+    source "${STATE_ENV_PATH}"
+  fi
+}
+
+persist_state_env() {
+  refresh_run_paths
+  mkdir -p "$(dirname "${STATE_ENV_PATH}")"
+  {
+    while IFS= read -r key; do
+      printf '%s=%q\n' "${key}" "${!key-}"
+    done < <(state_keys)
+  } > "${STATE_ENV_PATH}"
+}
+
+ensure_compose_files() {
+  [[ -f "${COMPOSE_ENV_FILE}" ]] || fatal "${EXIT_PRECHECK}" "missing compose env file: ${COMPOSE_ENV_FILE}"
+  [[ -f "${COMPOSE_FILE}" ]] || fatal "${EXIT_PRECHECK}" "missing compose file: ${COMPOSE_FILE}"
+}
+
+ensure_app_context() {
+  if [[ -z "${APP_ID}" ]]; then
+    APP_ID="${FIBER_LINK_APP_ID:-}"
+  fi
+  if [[ -z "${APP_ID}" ]]; then
+    APP_ID="e2e-four-flows-${TIMESTAMP}"
+  fi
+  export FIBER_LINK_APP_ID="${APP_ID}"
+
+  if [[ -z "${DISCOURSE_UI_BASE_URL}" ]]; then
+    DISCOURSE_UI_BASE_URL="${DEFAULT_DISCOURSE_UI_BASE_URL}"
+  fi
+
+  export DISCOURSE_UI_BASE_URL
+}
+
+ensure_topic_defaults() {
+  if [[ -z "${WORKFLOW_TOPIC_TITLE:-}" ]]; then
+    export WORKFLOW_TOPIC_TITLE="Fiber Link Local Workflow Topic ${TIMESTAMP}"
+  fi
+  if [[ -z "${WORKFLOW_TOPIC_BODY:-}" ]]; then
+    export WORKFLOW_TOPIC_BODY="This topic is created by local workflow automation (${TIMESTAMP})."
+  fi
+  if [[ -z "${WORKFLOW_REPLY_BODY:-}" ]]; then
+    export WORKFLOW_REPLY_BODY="This reply is created by local workflow automation (${TIMESTAMP})."
+  fi
+  if [[ -z "${PW_FLOW12_TOPIC_TITLE:-}" ]]; then
+    export PW_FLOW12_TOPIC_TITLE="${WORKFLOW_TOPIC_TITLE}"
+  fi
+}
+
+parse_settlement_modes() {
+  local normalized_modes mode_validation
+  SETTLEMENT_MODES="${SETTLEMENT_MODES//[[:space:]]/}"
+  normalized_modes=",${SETTLEMENT_MODES},"
+  RUN_SUBSCRIPTION=0
+  RUN_POLLING=0
+  if [[ "${normalized_modes}" == *",subscription,"* ]]; then
+    RUN_SUBSCRIPTION=1
+  fi
+  if [[ "${normalized_modes}" == *",polling,"* ]]; then
+    RUN_POLLING=1
+  fi
+  if [[ "${RUN_SUBSCRIPTION}" -eq 0 && "${RUN_POLLING}" -eq 0 ]]; then
+    fatal "${EXIT_USAGE}" "invalid --settlement-modes value: ${SETTLEMENT_MODES}"
+  fi
+  mode_validation="${SETTLEMENT_MODES//subscription/}"
+  mode_validation="${mode_validation//polling/}"
+  mode_validation="${mode_validation//,/}"
+  if [[ -n "${mode_validation}" ]]; then
+    fatal "${EXIT_USAGE}" "invalid --settlement-modes value: ${SETTLEMENT_MODES}"
+  fi
+}
+
+extract_result_json() {
+  local log_file="$1"
+  [[ -f "${log_file}" ]] || return 1
+  awk '/^### Result/{getline; print; exit}' "${log_file}"
+}
+
+load_result_metadata() {
+  local file="$1"
+  [[ -f "${file}" ]] || return 1
+  unset WORKFLOW_RESULT_STATUS WORKFLOW_RESULT_CODE WORKFLOW_RESULT_MESSAGE \
+    WORKFLOW_RESULT_ARTIFACT_DIR WORKFLOW_RESULT_SUMMARY_PATH WORKFLOW_RESULT_SEED_JSON_PATH
+  # shellcheck disable=SC1090
+  source "${file}"
+  return 0
+}
+
+get_env_value() {
+  local key="$1"
+  local line
+  line="$(grep -E "^${key}=" "${COMPOSE_ENV_FILE}" | tail -n1 || true)"
+  [[ -n "${line}" ]] || {
+    printf ''
+    return
+  }
+  printf '%s' "${line#*=}"
+}
+
+json_or_null() {
+  local file="$1"
+  if [[ -s "${file}" ]]; then
+    jq -c . "${file}" 2>/dev/null || printf 'null'
+  else
+    printf 'null'
+  fi
+}
+
+last_json_line_or_null() {
+  local file="$1"
+  if [[ -s "${file}" ]]; then
+    tail -n1 "${file}" | jq -c . 2>/dev/null || printf 'null'
+  else
+    printf 'null'
+  fi
+}
+
+copy_or_fail() {
+  local src="$1"
+  local dest="$2"
+  [[ -f "${src}" ]] || fatal "${EXIT_ARTIFACT}" "missing expected file: ${src}"
+  cp "${src}" "${dest}"
+}
+
+wait_container_healthy() {
+  local container="$1"
+  local timeout_seconds="$2"
+  local start now status
+  start="$(date +%s)"
+
+  while true; do
+    status="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "${container}" 2>/dev/null || true)"
+    if [[ "${status}" == "healthy" || "${status}" == "running" ]]; then
+      return 0
+    fi
+
+    now="$(date +%s)"
+    if (( now - start >= timeout_seconds )); then
+      return 1
+    fi
+    sleep 2
+  done
+}
+
+wait_http_ready() {
+  local url="$1"
+  local timeout_seconds="$2"
+  local started now
+  started="$(date +%s)"
+
+  while true; do
+    if curl -fsS -m 3 "${url}" >/dev/null 2>&1; then
+      return 0
+    fi
+
+    now="$(date +%s)"
+    if (( now - started >= timeout_seconds )); then
+      return 1
+    fi
+
+    sleep 2
+  done
+}
+
+ensure_discourse_ui_proxy() {
+  local base_url normalized_url login_url backend_ready_url ember_log ember_pattern
+
+  normalized_url="${DISCOURSE_UI_BASE_URL%/}"
+  if [[ -z "${normalized_url}" ]]; then
+    normalized_url="${DEFAULT_DISCOURSE_UI_BASE_URL%/}"
+  fi
+
+  if [[ "${normalized_url}" != "http://127.0.0.1:4200" ]]; then
+    login_url="${normalized_url}/login"
+    wait_http_ready "${login_url}" 120 \
+      || fatal "${EXIT_PRECHECK}" "discourse ui did not become ready at ${login_url}"
+    return 0
+  fi
+
+  login_url="http://127.0.0.1:4200/login"
+  backend_ready_url="http://127.0.0.1:9292/session/csrf.json"
+  ember_log="${LOGS_DIR}/discourse-ember-cli.log"
+  ember_pattern='[e]mber server --proxy http://127.0.0.1:9292'
+
+  if docker exec discourse_dev sh -lc "pgrep -f '${ember_pattern}' >/dev/null 2>&1"; then
+    if wait_http_ready "${login_url}" 20; then
+      vlog "ember-cli proxy already running (${login_url})"
+      return 0
+    fi
+
+    log "ember-cli process exists but ${login_url} is not ready; restarting proxy"
+    docker exec discourse_dev sh -lc "pkill -f '${ember_pattern}' >/dev/null 2>&1 || true"
+    sleep 2
+  fi
+
+  log "starting ember-cli proxy"
+  docker exec -u discourse:discourse -w /src discourse_dev sh -lc 'bin/ember-cli --proxy http://127.0.0.1:9292' > "${ember_log}" 2>&1 &
+  wait_http_ready "${login_url}" 420 \
+    || fatal "${EXIT_PRECHECK}" "ember-cli proxy did not become ready at ${login_url} (see ${ember_log})"
+  wait_http_ready "${backend_ready_url}" 180 \
+    || fatal "${EXIT_PRECHECK}" "discourse backend did not become ready at ${backend_ready_url} (see ${ember_log})"
+}
+
+docker_container_env_value() {
+  local container="$1"
+  local key="$2"
+  docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "${container}" 2>/dev/null \
+    | awk -F= -v wanted_key="${key}" '$1 == wanted_key {print substr($0, length(wanted_key) + 2); exit}'
+}
+
+resolve_runtime_app_secret() {
+  [[ "${SKIP_SERVICES:-0}" -eq 1 ]] || return 0
+
+  local runtime_secret
+  runtime_secret="$(docker_container_env_value "fiber-link-rpc" "FIBER_LINK_HMAC_SECRET")"
+  if [[ -z "${runtime_secret}" ]]; then
+    return 0
+  fi
+
+  if [[ "${APP_SECRET}" != "${runtime_secret}" ]]; then
+    log "detected running rpc secret mismatch under --skip-services; using runtime rpc secret"
+  fi
+  APP_SECRET="${runtime_secret}"
+}
+
+ensure_app_secret() {
+  ensure_compose_files
+  if [[ -z "${APP_SECRET}" ]]; then
+    APP_SECRET="${FIBER_LINK_APP_SECRET:-}"
+  fi
+  if [[ -z "${APP_SECRET}" ]]; then
+    APP_SECRET="$(get_env_value FIBER_LINK_HMAC_SECRET)"
+  fi
+  [[ -n "${APP_SECRET}" ]] || fatal "${EXIT_PRECHECK}" "FIBER_LINK_HMAC_SECRET/FIBER_LINK_APP_SECRET is required"
+  resolve_runtime_app_secret
+}
+
+sync_rpc_app_secret_record() {
+  local pg_container="fiber-link-postgres"
+  local pg_user="${POSTGRES_USER:-$(get_env_value POSTGRES_USER)}"
+  local pg_db="${POSTGRES_DB:-$(get_env_value POSTGRES_DB)}"
+  pg_user="${pg_user:-fiber}"
+  pg_db="${pg_db:-fiber_link}"
+
+  if ! docker ps --format '{{.Names}}' | grep -qx "${pg_container}"; then
+    vlog "postgres container '${pg_container}' is not running; skip app secret sync"
+    return 0
+  fi
+
+  local app_id_sql app_secret_sql upsert_sql
+  app_id_sql="$(printf '%s' "${APP_ID}" | sed "s/'/''/g")"
+  app_secret_sql="$(printf '%s' "${APP_SECRET}" | sed "s/'/''/g")"
+  upsert_sql="INSERT INTO apps (app_id, hmac_secret) VALUES ('${app_id_sql}', '${app_secret_sql}') ON CONFLICT (app_id) DO UPDATE SET hmac_secret = EXCLUDED.hmac_secret;"
+
+  if docker exec "${pg_container}" psql \
+    -v ON_ERROR_STOP=1 \
+    -U "${pg_user}" \
+    -d "${pg_db}" \
+    -c "${upsert_sql}" >/dev/null 2>&1; then
+    vlog "synced rpc app secret row for app_id='${APP_ID}'"
+    return 0
+  fi
+
+  log "warning: failed to sync rpc app secret row for app_id='${APP_ID}'"
+  return 0
+}
+
+resolve_runtime_rpc_port() {
+  local configured detected
+  configured="$(get_env_value RPC_PORT)"
+  if [[ -z "${configured}" ]]; then
+    configured="3000"
+  fi
+  WORKFLOW_RPC_PORT="${configured}"
+
+  if ! curl -fsS -m 3 "http://127.0.0.1:${WORKFLOW_RPC_PORT}/healthz/ready" >/dev/null 2>&1; then
+    detected="$(docker port fiber-link-rpc 3000/tcp 2>/dev/null | awk -F: 'NR==1 {print $NF}' || true)"
+    if [[ -n "${detected}" ]]; then
+      WORKFLOW_RPC_PORT="${detected}"
+    fi
+  fi
+
+  curl -fsS -m 5 "http://127.0.0.1:${WORKFLOW_RPC_PORT}/healthz/ready" >/dev/null 2>&1 \
+    || fatal "${EXIT_PRECHECK}" "rpc endpoint is not ready at http://127.0.0.1:${WORKFLOW_RPC_PORT}/healthz/ready"
+}
+
+normalize_private_key_hex() {
+  local value="$1"
+  if [[ "${value}" =~ ^0x[0-9a-fA-F]{64}$ ]]; then
+    printf '%s' "${value}" | tr 'A-F' 'a-f'
+    return 0
+  fi
+  if [[ "${value}" =~ ^[0-9a-fA-F]{64}$ ]]; then
+    printf '0x%s' "$(printf '%s' "${value}" | tr 'A-F' 'a-f')"
+    return 0
+  fi
+  return 1
+}
+
+derive_ckb_testnet_address_from_private_key() {
+  local private_key="$1"
+  docker exec -e FIBER_LINK_WITHDRAW_PK="${private_key}" fiber-link-rpc sh -lc 'bun -e '"'"'import { hd, helpers, config } from "@ckb-lumos/lumos";
+const privateKey = (process.env.FIBER_LINK_WITHDRAW_PK ?? "").trim().toLowerCase();
+if (!/^0x[0-9a-f]{64}$/.test(privateKey)) {
+  throw new Error("invalid FIBER_LINK_WITHDRAW_PK");
+}
+config.initializeConfig(config.predefined.AGGRON4);
+const address = helpers.encodeToConfigAddress(
+  hd.key.privateKeyToBlake160(privateKey),
+  "SECP256K1_BLAKE160",
+  { config: config.predefined.AGGRON4 },
+);
+console.log(address);
+'"'"''
+}
+
+request_ckb_faucet_for_address() {
+  local address="$1"
+  local label="$2"
+  local payload request_file response_file http_code
+  local fallback_payload fallback_request_file fallback_response_file fallback_http_code
+  payload="$(jq -cn --arg address "${address}" --arg amount "${CKB_FAUCET_AMOUNT}" '{claim_event:{address_hash:$address,amount:$amount}}')"
+  request_file="${ARTIFACTS_DIR}/ckb-faucet-${label}.request.json"
+  response_file="${ARTIFACTS_DIR}/ckb-faucet-${label}.response.json"
+  printf '%s\n' "${payload}" > "${request_file}"
+
+  set +e
+  http_code="$(curl -sS -o "${response_file}" -w "%{http_code}" \
+    -H "content-type: application/json" \
+    -d "${payload}" \
+    "${CKB_FAUCET_API_BASE%/}/claim_events")"
+  local rc=$?
+  set -e
+  if [[ "${rc}" -eq 0 && "${http_code}" -ge 200 && "${http_code}" -lt 300 ]] \
+    && ! jq -e '(.error != null) or ((.errors | type) == "array" and (.errors | length) > 0)' "${response_file}" >/dev/null 2>&1; then
+    log "ckb faucet(${label}) accepted; waiting ${CKB_FAUCET_WAIT_SECONDS}s"
+    sleep "${CKB_FAUCET_WAIT_SECONDS}"
+    return 0
+  fi
+
+  if [[ "${CKB_FAUCET_ENABLE_FALLBACK}" == "1" ]]; then
+    fallback_payload="$(jq -cn --arg address "${address}" '{address:$address,token:"ckb"}')"
+    fallback_request_file="${ARTIFACTS_DIR}/ckb-faucet-fallback-${label}.request.json"
+    fallback_response_file="${ARTIFACTS_DIR}/ckb-faucet-fallback-${label}.response.json"
+    printf '%s\n' "${fallback_payload}" > "${fallback_request_file}"
+    set +e
+    fallback_http_code="$(curl -sS -o "${fallback_response_file}" -w "%{http_code}" \
+      -H "content-type: application/json" \
+      -d "${fallback_payload}" \
+      "${CKB_FAUCET_FALLBACK_API_BASE%/}/faucet")"
+    rc=$?
+    set -e
+    if [[ "${rc}" -eq 0 && "${fallback_http_code}" -ge 200 && "${fallback_http_code}" -lt 300 ]] \
+      && ! jq -e '(.error != null) or ((.errors | type) == "array" and (.errors | length) > 0)' "${fallback_response_file}" >/dev/null 2>&1; then
+      log "ckb faucet fallback(${label}) accepted; waiting ${CKB_FAUCET_WAIT_SECONDS}s"
+      sleep "${CKB_FAUCET_WAIT_SECONDS}"
+      return 0
+    fi
+  fi
+
+  if [[ "${http_code:-000}" == "422" ]]; then
+    log "ckb faucet(${label}) returned HTTP 422; continuing with existing signer balance"
+    return 0
+  fi
+
+  fatal "${EXIT_PRECHECK}" "ckb faucet request failed for ${label} (http=${http_code:-000})"
+}
+
+ensure_withdrawal_signer_private_key() {
+  local candidate cached_address generated derived_address
+  candidate="${FIBER_WITHDRAWAL_CKB_PRIVATE_KEY:-${FIBER_WITHDRAW_CKB_PRIVATE_KEY:-}}"
+  if [[ -z "${candidate}" ]]; then
+    candidate="$(get_env_value FIBER_WITHDRAWAL_CKB_PRIVATE_KEY)"
+  fi
+
+  if [[ -z "${candidate}" && -s "${WITHDRAWAL_SIGNER_CACHE_PATH}" ]]; then
+    candidate="$(jq -r '.privateKey // empty' "${WITHDRAWAL_SIGNER_CACHE_PATH}" 2>/dev/null || true)"
+    cached_address="$(jq -r '.address // empty' "${WITHDRAWAL_SIGNER_CACHE_PATH}" 2>/dev/null || true)"
+    if [[ -n "${cached_address}" ]]; then
+      WITHDRAWAL_SIGNER_ADDRESS="${cached_address}"
+    fi
+  fi
+
+  if [[ -z "${candidate}" ]]; then
+    generated="$(openssl rand -hex 32)"
+    candidate="0x${generated}"
+  fi
+
+  candidate="$(normalize_private_key_hex "${candidate}")" \
+    || fatal "${EXIT_PRECHECK}" "invalid FIBER_WITHDRAWAL_CKB_PRIVATE_KEY format"
+  WITHDRAWAL_PRIVATE_KEY="${candidate}"
+
+  if [[ -z "${WITHDRAWAL_SIGNER_ADDRESS}" ]]; then
+    derived_address="$(derive_ckb_testnet_address_from_private_key "${WITHDRAWAL_PRIVATE_KEY}" | tail -n1 | tr -d '\r')"
+    [[ "${derived_address}" =~ ^ckt1 ]] \
+      || fatal "${EXIT_PRECHECK}" "failed to derive testnet signer address from withdrawal private key"
+    WITHDRAWAL_SIGNER_ADDRESS="${derived_address}"
+  fi
+
+  mkdir -p "$(dirname "${WITHDRAWAL_SIGNER_CACHE_PATH}")"
+  jq -n \
+    --arg privateKey "${WITHDRAWAL_PRIVATE_KEY}" \
+    --arg address "${WITHDRAWAL_SIGNER_ADDRESS}" \
+    --arg updatedAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    '{privateKey:$privateKey,address:$address,updatedAt:$updatedAt}' > "${WITHDRAWAL_SIGNER_CACHE_PATH}"
+  chmod 600 "${WITHDRAWAL_SIGNER_CACHE_PATH}" || true
+
+  request_ckb_faucet_for_address "${WITHDRAWAL_SIGNER_ADDRESS}" "withdrawal-signer"
+}
+
+sign_payload() {
+  local payload="$1"
+  local ts="$2"
+  local nonce="$3"
+  printf '%s' "${ts}.${nonce}.${payload}" \
+    | openssl dgst -sha256 -hmac "${APP_SECRET}" -hex \
+    | awk '{print $2}'
+}
+
+rpc_call_signed() {
+  local payload="$1"
+  local nonce="$2"
+  local ts sig
+  ts="$(date +%s)"
+  sig="$(sign_payload "${payload}" "${ts}" "${nonce}")"
+  curl -fsS "http://127.0.0.1:${WORKFLOW_RPC_PORT}/rpc" \
+    -H "content-type: application/json" \
+    -H "x-app-id: ${APP_ID}" \
+    -H "x-ts: ${ts}" \
+    -H "x-nonce: ${nonce}" \
+    -H "x-signature: ${sig}" \
+    -d "${payload}"
+}
+
+dashboard_summary_admin() {
+  local payload
+  payload="$(jq -cn \
+    --arg id "dash-admin-$(date +%s)-$RANDOM" \
+    --arg userId "${AUTHOR_USER_ID}" \
+    '{jsonrpc:"2.0",id:$id,method:"dashboard.summary",params:{userId:$userId,includeAdmin:true,filters:{withdrawalState:"ALL",settlementState:"ALL"},limit:50}}')"
+  rpc_call_signed "${payload}" "dash-admin-$(date +%s)-$RANDOM"
+}
+
+wait_withdrawal_completed() {
+  local withdrawal_id="$1"
+  local timeout_seconds="${2:-420}"
+  local poll_log="${ARTIFACTS_DIR}/flow4-withdrawal-admin.poll.log"
+  local started now response row state tx_hash
+
+  : > "${poll_log}"
+  started="$(date +%s)"
+
+  while true; do
+    response="$(dashboard_summary_admin)"
+    printf '%s\n' "${response}" >> "${poll_log}"
+
+    row="$(printf '%s' "${response}" | jq -c --arg wid "${withdrawal_id}" '.result.admin.withdrawals[]? | select(.id == $wid)' | head -n1 || true)"
+    state="$(printf '%s' "${row}" | jq -r '.state // empty' 2>/dev/null || true)"
+    tx_hash="$(printf '%s' "${row}" | jq -r '.txHash // .tx_hash // empty' 2>/dev/null || true)"
+
+    if [[ "${state}" == "COMPLETED" ]]; then
+      WITHDRAWAL_STATE="${state}"
+      WITHDRAWAL_TX_HASH="${tx_hash}"
+      return 0
+    fi
+
+    if [[ "${state}" == "FAILED" ]]; then
+      WITHDRAWAL_STATE="${state}"
+      WITHDRAWAL_TX_HASH="${tx_hash}"
+      return 1
+    fi
+
+    now="$(date +%s)"
+    if (( now - started >= timeout_seconds )); then
+      WITHDRAWAL_STATE="${state}"
+      WITHDRAWAL_TX_HASH="${tx_hash}"
+      return 2
+    fi
+
+    sleep 5
+  done
+}
+
+assert_tip_log_settled() {
+  local log_file="$1"
+  local final_state
+  [[ -s "${log_file}" ]] || return 1
+  final_state="$(jq -r '.result.state // empty' "${log_file}" | tail -n1)"
+  [[ "${final_state}" == "SETTLED" ]]
+}
+
+set_worker_strategy() {
+  local strategy="$1"
+  record_cmd "WORKER_SETTLEMENT_STRATEGY=${strategy} docker compose --env-file ${COMPOSE_ENV_FILE} -f ${COMPOSE_FILE} up -d --no-deps --force-recreate worker"
+  if [[ -n "${WITHDRAWAL_PRIVATE_KEY}" ]]; then
+    record_cmd "worker restart includes FIBER_WITHDRAWAL_CKB_PRIVATE_KEY=<redacted>"
+  fi
+  (
+    cd "${ROOT_DIR}"
+    export WORKER_SETTLEMENT_STRATEGY="${strategy}"
+    if [[ -n "${WITHDRAWAL_PRIVATE_KEY}" ]]; then
+      export FIBER_WITHDRAWAL_CKB_PRIVATE_KEY="${WITHDRAWAL_PRIVATE_KEY}"
+    fi
+    docker compose \
+      --env-file "${COMPOSE_ENV_FILE}" \
+      -f "${COMPOSE_FILE}" \
+      up -d --no-deps --force-recreate worker
+  ) > "${LOGS_DIR}/worker-${strategy}.log" 2>&1 \
+    || fatal "${EXIT_PRECHECK}" "failed to restart worker with strategy=${strategy}"
+
+  wait_container_healthy fiber-link-worker 180 \
+    || fatal "${EXIT_PRECHECK}" "worker did not become healthy after strategy=${strategy}"
+}

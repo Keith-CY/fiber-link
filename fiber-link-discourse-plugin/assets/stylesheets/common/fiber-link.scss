@@ -38,6 +38,11 @@
   color: var(--primary);
 }
 
+.fiber-link-tip-alert.is-success {
+  background: var(--success-low);
+  color: var(--success);
+}
+
 .fiber-link-tip-form {
   display: grid;
   gap: 0.35rem;
@@ -203,6 +208,91 @@
   padding: 0.95rem 1rem;
 }
 
+.fiber-link-dashboard__content-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.fiber-link-dashboard__withdrawal {
+  display: grid;
+  gap: 0.85rem;
+  border: 1px solid var(--primary-low-mid);
+  border-radius: 16px;
+  padding: 1rem;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--secondary) 80%, white 20%) 0%, var(--secondary) 100%);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.05);
+}
+
+.fiber-link-dashboard__withdrawal-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.8rem;
+  align-items: start;
+}
+
+.fiber-link-dashboard__withdrawal-header h3 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.fiber-link-dashboard__withdrawal-header p {
+  margin: 0.35rem 0 0;
+  color: var(--primary-medium);
+  font-size: 0.92rem;
+}
+
+.fiber-link-dashboard__withdrawal-badge {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 96px;
+  padding: 0.65rem 0.75rem;
+  border-radius: 14px;
+  background: var(--primary-low);
+  text-align: right;
+}
+
+.fiber-link-dashboard__withdrawal-badge span {
+  color: var(--primary-medium);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.fiber-link-dashboard__withdrawal-badge strong {
+  font-size: 1rem;
+}
+
+.fiber-link-dashboard__withdrawal-form {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.fiber-link-dashboard__withdrawal-input {
+  max-width: none;
+}
+
+.fiber-link-dashboard__withdrawal-input.is-address {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 0.86rem;
+}
+
+.fiber-link-dashboard__withdrawal-actions {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.fiber-link-dashboard__withdrawal-submit {
+  justify-content: center;
+}
+
+.fiber-link-dashboard__withdrawal-meta,
+.fiber-link-dashboard__withdrawal-success {
+  margin: 0;
+}
+
 .fiber-link-dashboard__activity-header {
   display: flex;
   align-items: baseline;
@@ -289,6 +379,10 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .fiber-link-dashboard__content-grid {
+    grid-template-columns: 1fr;
+  }
+
   .fiber-link-dashboard__activity-header {
     display: grid;
     gap: 0.35rem;
@@ -298,6 +392,14 @@
 @media (max-width: 680px) {
   .fiber-link-dashboard__metrics {
     grid-template-columns: 1fr;
+  }
+
+  .fiber-link-dashboard__withdrawal-header {
+    display: grid;
+  }
+
+  .fiber-link-dashboard__withdrawal-badge {
+    text-align: left;
   }
 
   .fiber-link-tip-feed-table {

@@ -158,6 +158,46 @@ RSpec.describe ::FiberLink::RpcController, type: :request do
       }
     end
 
+    it "server-enforces withdrawal.request params" do
+      sign_in(user)
+
+      stub_request(:post, "https://fiber-link.example/rpc").to_return(
+        status: 200,
+        body: {
+          jsonrpc: "2.0",
+          id: "withdraw-req",
+          result: { id: "wd-1", state: "PENDING" },
+        }.to_json,
+        headers: { "Content-Type" => "application/json" },
+      )
+
+      post "/fiber-link/rpc",
+           params: {
+             jsonrpc: "2.0",
+             id: "withdraw-req",
+             method: "withdrawal.request",
+             params: {
+               userId: "-1",
+               asset: "CKB",
+               amount: "61",
+               toAddress: "ckt1qyqg5xa84dfwfy76tptw2sy0k9q98xaeka9q5tvdlm",
+             },
+           },
+           as: :json
+
+      expect(response).to have_http_status(:ok)
+      expect(JSON.parse(response.body).dig("result", "id")).to eq("wd-1")
+
+      expect(WebMock).to have_requested(:post, "https://fiber-link.example/rpc").with { |request|
+        body = JSON.parse(request.body)
+        body.fetch("method") == "withdrawal.request" &&
+          body.dig("params", "userId") == user.id.to_s &&
+          body.dig("params", "asset") == "CKB" &&
+          body.dig("params", "amount") == "61" &&
+          body.dig("params", "toAddress") == "ckt1qyqg5xa84dfwfy76tptw2sy0k9q98xaeka9q5tvdlm"
+      }
+    end
+
     it "rejects unknown methods without forwarding" do
       sign_in(user)
 

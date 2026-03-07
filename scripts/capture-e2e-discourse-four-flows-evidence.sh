@@ -8,6 +8,7 @@ EXIT_RUN_FAILURE=11
 EXIT_ARCHIVE_FAILURE=12
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ORCHESTRATOR_SCRIPT="${E2E_FOUR_FLOWS_ORCHESTRATOR_SCRIPT:-${ROOT_DIR}/scripts/e2e-discourse-four-flows.sh}"
 TIMESTAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 OUTPUT_ROOT="${ROOT_DIR}/deploy/compose/evidence/e2e-discourse-four-flows"
 EVIDENCE_DIR="${OUTPUT_ROOT}/${TIMESTAMP}"
@@ -119,7 +120,7 @@ if [[ "${RUN_E2E}" -eq 1 ]]; then
     env
     "E2E_EXPLORER_TX_URL_TEMPLATE=${EXPLORER_TEMPLATE}"
     "E2E_SETTLEMENT_MODES=${SETTLEMENT_MODES}"
-    scripts/e2e-discourse-four-flows.sh
+    "${ORCHESTRATOR_SCRIPT}"
     --artifact-dir "${SOURCE_ARTIFACT_DIR}"
   )
 

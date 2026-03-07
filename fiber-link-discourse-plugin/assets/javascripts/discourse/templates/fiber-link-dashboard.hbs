@@ -38,23 +38,27 @@
     </article>
   </section>
 
-  <section class="fiber-link-dashboard__activity">
-    <div class="fiber-link-dashboard__activity-header">
-      <h3>Recent Tips</h3>
-      <p class="fiber-link-dashboard__meta">
-        {{#if this.model.generatedAt}}
-          Generated: {{this.model.generatedAt}}
-        {{/if}}
-        {{#if this.model.refreshedAt}}
-          · Refreshed: {{this.model.refreshedAt}}
-        {{/if}}
-      </p>
-    </div>
+  <div class="fiber-link-dashboard__content-grid">
+    <FiberLinkWithdrawalPanel />
 
-    <FiberLinkTipFeed
-      @tips={{this.model.tipFeedItems}}
-      @isLoading={{this.model.isFeedLoading}}
-      @errorMessage={{this.model.feedErrorMessage}}
-    />
-  </section>
+    <section class="fiber-link-dashboard__activity">
+      <div class="fiber-link-dashboard__activity-header">
+        <h3>Recent Tips</h3>
+        <p class="fiber-link-dashboard__meta">
+          {{#if this.model.generatedAt}}
+            Generated: {{this.model.generatedAt}}
+          {{/if}}
+          {{#if this.model.refreshedAt}}
+            · Refreshed: {{this.model.refreshedAt}}
+          {{/if}}
+        </p>
+      </div>
+
+      <FiberLinkTipFeed
+        @tips={{this.model.tipFeedItems}}
+        @isLoading={{this.model.isFeedLoading}}
+        @errorMessage={{this.model.feedErrorMessage}}
+      />
+    </section>
+  </div>
 </section>

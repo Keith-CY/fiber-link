@@ -69,3 +69,11 @@ export async function getTipStatus({ invoice }) {
 export async function getDashboardSummary({ limit = 20, includeAdmin = false, filters = {} } = {}) {
   return rpcCall("dashboard.summary", { limit, includeAdmin, filters });
 }
+
+export async function requestWithdrawal({ amount, asset = "CKB", toAddress }) {
+  return rpcCall("withdrawal.request", {
+    amount,
+    asset,
+    toAddress,
+  });
+}
