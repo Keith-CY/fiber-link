@@ -22,6 +22,7 @@ describe("getHotWalletInventory", () => {
       { capacity: ckbToHexShannons(61n), data: encodeUdtAmount(200n) },
       { capacity: ckbToHexShannons(58n), data: encodeUdtAmount(300n) },
     ],
+    getUsdiDecimals: async () => 0,
     estimateUsdiFeeShannons: async () => (1n * 100_000_000n).toString(),
   };
 
@@ -56,6 +57,41 @@ describe("getHotWalletInventory", () => {
 
     expect(inventory.availableAmount).toBe("500");
     expect(inventory.supportingCkbAmount).toBe("119");
+  });
+
+  it("throws when USDI decimals dependency is missing", async () => {
+    const { getUsdiDecimals: _getUsdiDecimals, ...depsWithoutDecimals } = deps;
+
+    await expect(
+      getHotWalletInventory(
+        { asset: "USDI", network: "AGGRON4" },
+        depsWithoutDecimals as Parameters<typeof getHotWalletInventory>[1],
+      ),
+    ).rejects.toThrow("getUsdiDecimals is required for USDI inventory");
+  });
+
+  it("throws when USDI decimals are negative", async () => {
+    await expect(
+      getHotWalletInventory(
+        { asset: "USDI", network: "AGGRON4" },
+        {
+          ...deps,
+          getUsdiDecimals: async () => -1,
+        },
+      ),
+    ).rejects.toThrow("invalid decimals: -1");
+  });
+
+  it("throws when USDI decimals are not integers", async () => {
+    await expect(
+      getHotWalletInventory(
+        { asset: "USDI", network: "AGGRON4" },
+        {
+          ...deps,
+          getUsdiDecimals: async () => 1.5,
+        },
+      ),
+    ).rejects.toThrow("invalid decimals: 1.5");
   });
 
   it("throws when a cell capacity is malformed", async () => {

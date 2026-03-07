@@ -9,7 +9,7 @@ export type HotWalletCell = {
 export type GetHotWalletInventoryDeps = {
   getNativeCells: (network: CkbNetwork) => Promise<readonly HotWalletCell[]>;
   getUsdiCells: (network: CkbNetwork) => Promise<readonly HotWalletCell[]>;
-  getUsdiDecimals?: (network: CkbNetwork) => Promise<number> | number;
+  getUsdiDecimals: (network: CkbNetwork) => Promise<number> | number;
   estimateUsdiFeeShannons?: (network: CkbNetwork, cells: readonly HotWalletCell[]) => Promise<string> | string;
 };
 
@@ -24,10 +24,7 @@ function parseQuantity(value: string): bigint {
   throw new Error(`invalid quantity: ${value}`);
 }
 
-function normalizeDecimals(value: number | undefined): number {
-  if (value === undefined) {
-    return 0;
-  }
+function normalizeDecimals(value: number): number {
   if (!Number.isInteger(value) || value < 0) {
     throw new Error(`invalid decimals: ${value}`);
   }
@@ -90,9 +87,10 @@ export async function getHotWalletInventory(
   }
 
   const usdiCells = await deps.getUsdiCells(network);
-  const usdiDecimals = normalizeDecimals(
-    deps.getUsdiDecimals ? await deps.getUsdiDecimals(network) : undefined,
-  );
+  if (typeof deps.getUsdiDecimals !== "function") {
+    throw new Error("getUsdiDecimals is required for USDI inventory");
+  }
+  const usdiDecimals = normalizeDecimals(await deps.getUsdiDecimals(network));
   const feeShannons = deps.estimateUsdiFeeShannons
     ? parseQuantity(await deps.estimateUsdiFeeShannons(network, usdiCells))
     : 0n;
