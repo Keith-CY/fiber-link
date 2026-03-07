@@ -1,6 +1,7 @@
-import { createAdapterProvider } from "@fiber-link/fiber-adapter";
+import { createAdapterProvider, createDefaultHotWalletInventoryProvider } from "@fiber-link/fiber-adapter";
 import type { TipIntentListCursor } from "@fiber-link/db";
 import { parseWorkerConfig } from "./config";
+import { runLiquidityBatch } from "./liquidity-batch";
 import { runSettlementDiscovery } from "./settlement-discovery";
 import { createFileSettlementCursorStore } from "./settlement-cursor-store";
 import {
@@ -25,12 +26,21 @@ async function main() {
         : { enabled: false },
   });
   const cursorStore = createFileSettlementCursorStore(config.settlementCursorFile);
+  const inventoryProvider = createDefaultHotWalletInventoryProvider();
   let settlementCursor: TipIntentListCursor | undefined = await cursorStore.load();
   let subscriptionRunner: SettlementSubscriptionRunner | null = null;
 
   const runtime = createWorkerRuntime({
     intervalMs: Math.min(config.withdrawalIntervalMs, config.settlementIntervalMs),
     withdrawalIntervalMs: config.withdrawalIntervalMs,
+    runLiquidityBatch: () =>
+      runLiquidityBatch({
+        liquidityProvider: {
+          ensureChainLiquidity: fiberAdapter.ensureChainLiquidity,
+          getRebalanceStatus: fiberAdapter.getRebalanceStatus,
+        },
+        inventoryProvider,
+      }),
     maxRetries: config.maxRetries,
     retryDelayMs: config.retryDelayMs,
     shutdownTimeoutMs: config.shutdownTimeoutMs,

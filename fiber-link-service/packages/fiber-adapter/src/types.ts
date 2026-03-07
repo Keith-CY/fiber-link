@@ -16,6 +16,31 @@ export type ExecuteWithdrawalArgs = {
   requestId: string;
 };
 
+export type EnsureChainLiquidityArgs = {
+  requestId: string;
+  asset: Asset;
+  network: CkbNetwork;
+  requiredAmount: string;
+  sourceKind: "FIBER_TO_CKB_CHAIN";
+};
+
+export type RebalanceStatusState = "IDLE" | "PENDING" | "FUNDED" | "FAILED";
+
+export type EnsureChainLiquidityResult = {
+  state: Exclude<RebalanceStatusState, "IDLE">;
+  started: boolean;
+  error?: string;
+};
+
+export type GetRebalanceStatusArgs = {
+  requestId: string;
+};
+
+export type GetRebalanceStatusResult = {
+  state: RebalanceStatusState;
+  error?: string;
+};
+
 export type SubscribeSettlementsArgs = {
   onSettled: (invoice: string) => void | Promise<void>;
   onError?: (error: unknown) => void;
@@ -66,4 +91,6 @@ export type FiberAdapter = {
   getInvoiceStatus: (args: { invoice: string }) => Promise<{ state: InvoiceState }>;
   subscribeSettlements: (args: SubscribeSettlementsArgs) => Promise<SettlementSubscriptionHandle>;
   executeWithdrawal: (args: ExecuteWithdrawalArgs) => Promise<{ txHash: string }>;
+  ensureChainLiquidity: (args: EnsureChainLiquidityArgs) => Promise<EnsureChainLiquidityResult>;
+  getRebalanceStatus: (args: GetRebalanceStatusArgs) => Promise<GetRebalanceStatusResult>;
 };

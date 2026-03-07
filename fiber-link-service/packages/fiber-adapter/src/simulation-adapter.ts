@@ -2,8 +2,11 @@ import { createHash } from "node:crypto";
 import { resolveSimulationScenario, type SimulationScenario } from "./simulation-scenarios";
 import type {
   CreateInvoiceArgs,
+  EnsureChainLiquidityArgs,
   ExecuteWithdrawalArgs,
   FiberAdapter,
+  GetRebalanceStatusArgs,
+  GetRebalanceStatusResult,
   InvoiceState,
   SettlementSubscriptionHandle,
   SubscribeSettlementsArgs,
@@ -80,6 +83,7 @@ export function createSimulationAdapter(args: CreateSimulationAdapterArgs = {}):
 
   let invoiceIndex = 0;
   const invoices = new Map<string, SimulatedInvoice>();
+  const rebalances = new Map<string, GetRebalanceStatusResult>();
 
   function getOrCreateInvoiceState(invoice: string): SimulatedInvoice {
     const existing = invoices.get(invoice);
@@ -146,6 +150,17 @@ export function createSimulationAdapter(args: CreateSimulationAdapterArgs = {}):
           requestId: resolvedRequestId,
         }),
       };
+    },
+    async ensureChainLiquidity({ requestId }: EnsureChainLiquidityArgs) {
+      const existing = rebalances.get(requestId);
+      if (existing?.state === "FUNDED") {
+        return { state: "FUNDED", started: false } as const;
+      }
+      rebalances.set(requestId, { state: "PENDING" });
+      return { state: "PENDING", started: !existing } as const;
+    },
+    async getRebalanceStatus({ requestId }: GetRebalanceStatusArgs) {
+      return rebalances.get(requestId) ?? { state: "IDLE" as const };
     },
   };
 }

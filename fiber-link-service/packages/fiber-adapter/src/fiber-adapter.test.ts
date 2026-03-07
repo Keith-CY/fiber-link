@@ -287,6 +287,66 @@ describe("fiber adapter", () => {
     );
   });
 
+  it("ensureChainLiquidity starts a rebalance request and returns pending status", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        jsonrpc: "2.0",
+        id: 1,
+        result: { status: "pending", started: true },
+      }),
+    } as Response);
+
+    const adapter = createAdapter({ endpoint: "http://localhost:8119" });
+    const result = await adapter.ensureChainLiquidity({
+      requestId: "liq-1",
+      asset: "CKB",
+      network: "AGGRON4",
+      requiredAmount: "100",
+      sourceKind: "FIBER_TO_CKB_CHAIN",
+    });
+
+    expect(result).toEqual({
+      state: "PENDING",
+      started: true,
+    });
+    expect(fetchSpy.mock.calls[0]?.[1]).toEqual(
+      expect.objectContaining({
+        body: expect.stringContaining("\"method\":\"rebalance_to_ckb_chain\""),
+      }),
+    );
+    expect(fetchSpy.mock.calls[0]?.[1]).toEqual(
+      expect.objectContaining({
+        body: expect.stringContaining("\"request_id\":\"liq-1\""),
+      }),
+    );
+  });
+
+  it("getRebalanceStatus maps funded responses", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        jsonrpc: "2.0",
+        id: 1,
+        result: { status: "funded" },
+      }),
+    } as Response);
+
+    const adapter = createAdapter({ endpoint: "http://localhost:8119" });
+    const result = await adapter.getRebalanceStatus({
+      requestId: "liq-1",
+    });
+
+    expect(result).toEqual({
+      state: "FUNDED",
+    });
+    expect(fetchSpy.mock.calls[0]?.[1]).toEqual(
+      expect.objectContaining({
+        body: expect.stringContaining("\"method\":\"get_rebalance_status\""),
+      }),
+    );
+  });
+
   it("executeWithdrawal keeps explicit requestId in send_payment", async () => {
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
