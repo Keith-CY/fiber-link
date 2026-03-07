@@ -66,9 +66,9 @@ module ::FiberLink
           {
             amount: params["amount"],
             asset: params["asset"],
-            postId: post_id,
-            fromUserId: current_user.id,
-            toUserId: post.user_id,
+            postId: post_id.to_s,
+            fromUserId: current_user.id.to_s,
+            toUserId: post.user_id.to_s,
           }
         when "tip.status"
           { invoice: params["invoice"] }

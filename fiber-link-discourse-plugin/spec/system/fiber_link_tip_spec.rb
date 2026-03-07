@@ -50,9 +50,9 @@ RSpec.describe "Fiber Link Tip", type: :system do
     expect(WebMock).to have_requested(:post, "https://fiber-link.example/rpc").with { |request|
       body = JSON.parse(request.body)
       body.fetch("method") == "tip.create" &&
-        body.dig("params", "postId") == topic.first_post.id &&
-        body.dig("params", "fromUserId") == user.id &&
-        body.dig("params", "toUserId") == topic.first_post.user_id
+        body.dig("params", "postId") == topic.first_post.id.to_s &&
+        body.dig("params", "fromUserId") == user.id.to_s &&
+        body.dig("params", "toUserId") == topic.first_post.user_id.to_s
     }
 
     click_button "Check status"

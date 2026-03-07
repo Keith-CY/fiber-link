@@ -46,9 +46,9 @@ RSpec.describe ::FiberLink::RpcController, type: :request do
       expect(WebMock).to have_requested(:post, "https://fiber-link.example/rpc").with { |request|
         body = JSON.parse(request.body)
         body.fetch("method") == "tip.create" &&
-          body.dig("params", "postId") == post_id &&
-          body.dig("params", "fromUserId") == user.id &&
-          body.dig("params", "toUserId") == to_user_id
+          body.dig("params", "postId") == post_id.to_s &&
+          body.dig("params", "fromUserId") == user.id.to_s &&
+          body.dig("params", "toUserId") == to_user_id.to_s
       }
     end
 
@@ -204,8 +204,8 @@ RSpec.describe ::FiberLink::RpcController, type: :request do
     end
 
     it "rejects tip.create when current user tips their own post" do
-      sign_in(user)
-      self_topic = Fabricate(:topic, user: user)
+      self_post = Fabricate(:post)
+      sign_in(self_post.user)
 
       stub_request(:post, "https://fiber-link.example/rpc").to_return(status: 200, body: "{}")
 
@@ -217,7 +217,7 @@ RSpec.describe ::FiberLink::RpcController, type: :request do
              params: {
                amount: "1",
                asset: "CKB",
-               postId: self_topic.first_post.id,
+               postId: self_post.id,
              },
            },
            as: :json

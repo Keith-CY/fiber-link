@@ -3,21 +3,12 @@ import { action } from "@ember/object";
 import { service } from "@ember/service";
 import DButton from "discourse/components/d-button";
 
-import FiberLinkTipModal from "./modal/fiber-link-tip-modal";
+import FiberLinkTipModal from "../modal/fiber-link-tip-modal";
 
-export default class FiberLinkTipEntry extends Component {
+export default class FiberLinkTipPostMenuButton extends Component {
   @service modal;
   @service siteSettings;
   @service currentUser;
-
-  get shouldShow() {
-    return (
-      this.siteSettings.fiber_link_enabled &&
-      !!this.currentUser &&
-      !!this.postId &&
-      !this.isSelfTip
-    );
-  }
 
   get post() {
     return this.args?.post ?? null;
@@ -57,6 +48,15 @@ export default class FiberLinkTipEntry extends Component {
     return currentUserId === targetUserId;
   }
 
+  get shouldShow() {
+    return (
+      this.siteSettings.fiber_link_enabled &&
+      !!this.currentUser &&
+      !!this.postId &&
+      !this.isSelfTip
+    );
+  }
+
   @action
   openTipModal() {
     if (!this.postId) {
@@ -76,13 +76,13 @@ export default class FiberLinkTipEntry extends Component {
 
   <template>
     {{#if this.shouldShow}}
-      <div class="fiber-link-tip-entry">
-        <DButton
-          @translatedLabel="Tip"
-          @action={{this.openTipModal}}
-          class="fiber-link-tip-entry__button"
-        />
-      </div>
+      <DButton
+        class="post-action-menu__fiber-link-tip"
+        @translatedLabel="Tip"
+        @icon="hand-holding-dollar"
+        @action={{this.openTipModal}}
+        ...attributes
+      />
     {{/if}}
   </template>
 }

@@ -52,8 +52,14 @@ async function rpcCall(method, params = {}) {
   return data?.result;
 }
 
-export async function createTip({ amount, asset, postId }) {
-  return rpcCall("tip.create", { amount, asset, postId });
+export async function createTip({ amount, asset, postId, fromUserId, toUserId }) {
+  return rpcCall("tip.create", {
+    amount,
+    asset,
+    postId,
+    fromUserId,
+    toUserId,
+  });
 }
 
 export async function getTipStatus({ invoice }) {

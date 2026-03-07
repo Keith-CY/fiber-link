@@ -21,6 +21,13 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
 END $$;
 
+DO $$
+BEGIN
+  CREATE TYPE withdrawal_destination_kind AS ENUM ('CKB_ADDRESS', 'PAYMENT_REQUEST');
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
+
 CREATE TABLE IF NOT EXISTS apps (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   app_id TEXT NOT NULL UNIQUE,
@@ -80,6 +87,7 @@ CREATE TABLE IF NOT EXISTS withdrawals (
   asset TEXT NOT NULL,
   amount NUMERIC NOT NULL,
   to_address TEXT NOT NULL,
+  destination_kind withdrawal_destination_kind NOT NULL DEFAULT 'PAYMENT_REQUEST',
   state withdrawal_state NOT NULL,
   retry_count INTEGER NOT NULL DEFAULT 0,
   next_retry_at TIMESTAMP,
@@ -90,5 +98,21 @@ CREATE TABLE IF NOT EXISTS withdrawals (
   tx_hash TEXT
 );
 
+CREATE TABLE IF NOT EXISTS withdrawal_policies (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  app_id TEXT NOT NULL,
+  allowed_assets JSONB NOT NULL,
+  max_per_request NUMERIC NOT NULL,
+  per_user_daily_max NUMERIC NOT NULL,
+  per_app_daily_max NUMERIC NOT NULL,
+  cooldown_seconds INTEGER NOT NULL DEFAULT 0,
+  updated_by TEXT,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
 CREATE INDEX IF NOT EXISTS idx_tip_intents_invoice_state ON tip_intents(invoice_state);
 CREATE INDEX IF NOT EXISTS idx_withdrawals_state ON withdrawals(state);
+CREATE INDEX IF NOT EXISTS withdrawals_state_next_retry_at_idx ON withdrawals(state, next_retry_at, created_at);
+CREATE INDEX IF NOT EXISTS withdrawals_account_asset_state_idx ON withdrawals(app_id, user_id, asset, state);
+CREATE UNIQUE INDEX IF NOT EXISTS withdrawal_policies_app_id_unique ON withdrawal_policies(app_id);

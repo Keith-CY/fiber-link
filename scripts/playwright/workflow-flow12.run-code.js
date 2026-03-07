@@ -77,13 +77,15 @@ async (page) => {
 
     if (!directFormVisible) {
       const openLoginButton = page.getByRole("button", { name: /log in/i }).first();
-      await openLoginButton.waitFor({ timeout: 20_000 });
-      await openLoginButton.click();
+      const openLoginButtonVisible = await openLoginButton.isVisible().catch(() => false);
+      if (openLoginButtonVisible) {
+        await openLoginButton.click();
+      }
       usernameInput = page.locator("#login-account-name:visible, #signin-account-name:visible, input[name='login']:visible").first();
       passwordInput = page.locator("#login-password:visible, #signin_password:visible, input[type='password']:visible").first();
     }
 
-    await usernameInput.waitFor({ timeout: 20_000 });
+    await usernameInput.waitFor({ timeout: 30_000 });
     await usernameInput.fill(username);
     await passwordInput.fill(password);
 

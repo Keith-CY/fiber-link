@@ -19,7 +19,7 @@ TIMESTAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 ARTIFACT_DIR="${E2E_ARTIFACT_DIR:-${ROOT_DIR}/.tmp/e2e-discourse-four-flows/${TIMESTAMP}}"
 SETTLEMENT_MODES="${E2E_SETTLEMENT_MODES:-subscription,polling}"
 EXPLORER_TX_URL_TEMPLATE="${E2E_EXPLORER_TX_URL_TEMPLATE:-}"
-DISCOURSE_UI_BASE_URL="${E2E_DISCOURSE_UI_BASE_URL:-http://127.0.0.1:4200}"
+DISCOURSE_UI_BASE_URL="${E2E_DISCOURSE_UI_BASE_URL:-http://127.0.0.1:9292}"
 
 SKIP_SERVICES=0
 SKIP_DISCOURSE=0
@@ -72,6 +72,7 @@ CKB_FAUCET_ENABLE_FALLBACK="${CKB_FAUCET_ENABLE_FALLBACK:-1}"
 CKB_FAUCET_AMOUNT="${CKB_FAUCET_AMOUNT:-100000}"
 CKB_FAUCET_WAIT_SECONDS="${CKB_FAUCET_WAIT_SECONDS:-20}"
 WITHDRAWAL_SIGNER_CACHE_PATH="${E2E_WITHDRAWAL_SIGNER_CACHE_PATH:-${ROOT_DIR}/.tmp/e2e-discourse-four-flows/withdrawal-signer.json}"
+WORKFLOW_RPC_PORT="${E2E_WORKFLOW_RPC_PORT:-13001}"
 
 refresh_paths() {
   PHASE1_DIR="${ARTIFACT_DIR}/workflow-phase1-subscription"
@@ -215,6 +216,58 @@ wait_container_healthy() {
     fi
     sleep 2
   done
+}
+
+docker_container_env_value() {
+  local container="$1"
+  local key="$2"
+  docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "${container}" 2>/dev/null \
+    | awk -F= -v wanted_key="${key}" '$1 == wanted_key {print substr($0, length(wanted_key) + 2); exit}'
+}
+
+resolve_runtime_app_secret() {
+  [[ "${SKIP_SERVICES}" -eq 1 ]] || return 0
+
+  local runtime_secret
+  runtime_secret="$(docker_container_env_value "fiber-link-rpc" "FIBER_LINK_HMAC_SECRET")"
+  if [[ -z "${runtime_secret}" ]]; then
+    return 0
+  fi
+
+  if [[ "${APP_SECRET}" != "${runtime_secret}" ]]; then
+    log "detected running rpc secret mismatch under --skip-services; using runtime rpc secret"
+  fi
+  APP_SECRET="${runtime_secret}"
+}
+
+sync_rpc_app_secret_record() {
+  local pg_container="fiber-link-postgres"
+  local pg_user="${POSTGRES_USER:-$(get_env_value POSTGRES_USER)}"
+  local pg_db="${POSTGRES_DB:-$(get_env_value POSTGRES_DB)}"
+  pg_user="${pg_user:-fiber}"
+  pg_db="${pg_db:-fiber_link}"
+
+  if ! docker ps --format '{{.Names}}' | grep -qx "${pg_container}"; then
+    vlog "postgres container '${pg_container}' is not running; skip app secret sync"
+    return 0
+  fi
+
+  local app_id_sql app_secret_sql upsert_sql
+  app_id_sql="$(printf '%s' "${APP_ID}" | sed "s/'/''/g")"
+  app_secret_sql="$(printf '%s' "${APP_SECRET}" | sed "s/'/''/g")"
+  upsert_sql="INSERT INTO apps (app_id, hmac_secret) VALUES ('${app_id_sql}', '${app_secret_sql}') ON CONFLICT (app_id) DO UPDATE SET hmac_secret = EXCLUDED.hmac_secret;"
+
+  if docker exec "${pg_container}" psql \
+    -v ON_ERROR_STOP=1 \
+    -U "${pg_user}" \
+    -d "${pg_db}" \
+    -c "${upsert_sql}" >/dev/null 2>&1; then
+    vlog "synced rpc app secret row for app_id='${APP_ID}'"
+    return 0
+  fi
+
+  log "warning: failed to sync rpc app secret row for app_id='${APP_ID}'"
+  return 0
 }
 
 resolve_runtime_rpc_port() {
@@ -499,11 +552,12 @@ set_worker_strategy() {
 run_phase1_with_flow12() {
   local pause_cmd=(
     env
+    "RPC_PORT=${WORKFLOW_RPC_PORT}"
+    "WORKFLOW_PAUSE_START_EMBER_CLI=0"
     "WORKFLOW_ARTIFACT_DIR=${PHASE1_DIR}"
     "WORKFLOW_RESULT_METADATA_PATH=${PHASE1_METADATA_PATH}"
     scripts/local-workflow-automation.sh
     --verbose
-    --with-ember-cli
     --pause-at-step4
     --skip-withdrawal
   )
@@ -572,11 +626,11 @@ EXPECT
 run_phase2_subscription() {
   local cmd=(
     env
+    "RPC_PORT=${WORKFLOW_RPC_PORT}"
     "WORKFLOW_ARTIFACT_DIR=${PHASE2_DIR}"
     "WORKFLOW_RESULT_METADATA_PATH=${PHASE2_METADATA_PATH}"
     scripts/local-workflow-automation.sh
     --verbose
-    --with-ember-cli
     --skip-services
     --skip-discourse
     --skip-withdrawal
@@ -610,6 +664,7 @@ run_polling_mode_verification() {
   local polling_app_id="${APP_ID}-polling"
   local cmd=(
     env
+    "RPC_PORT=${WORKFLOW_RPC_PORT}"
     "FIBER_LINK_APP_ID=${polling_app_id}"
     "WORKFLOW_ARTIFACT_DIR=${POLLING_DIR}"
     "WORKFLOW_RESULT_METADATA_PATH=${POLLING_METADATA_PATH}"
@@ -748,6 +803,20 @@ if [[ -z "${FIBER_LINK_APP_ID:-}" ]]; then
   export FIBER_LINK_APP_ID="e2e-four-flows-${TIMESTAMP}"
 fi
 APP_ID="${FIBER_LINK_APP_ID}"
+resolve_runtime_app_secret
+
+if [[ -z "${WORKFLOW_TOPIC_TITLE:-}" ]]; then
+  export WORKFLOW_TOPIC_TITLE="Fiber Link Local Workflow Topic ${TIMESTAMP}"
+fi
+if [[ -z "${WORKFLOW_TOPIC_BODY:-}" ]]; then
+  export WORKFLOW_TOPIC_BODY="This topic is created by local workflow automation (${TIMESTAMP})."
+fi
+if [[ -z "${WORKFLOW_REPLY_BODY:-}" ]]; then
+  export WORKFLOW_REPLY_BODY="This reply is created by local workflow automation (${TIMESTAMP})."
+fi
+if [[ -z "${PW_FLOW12_TOPIC_TITLE:-}" ]]; then
+  export PW_FLOW12_TOPIC_TITLE="${WORKFLOW_TOPIC_TITLE}"
+fi
 
 log "artifacts: ${ARTIFACT_DIR}"
 log "app id: ${APP_ID}"
@@ -793,6 +862,7 @@ if [[ "${RUN_SUBSCRIPTION}" -eq 1 ]]; then
   ensure_withdrawal_signer_private_key
   set_worker_strategy subscription
   resolve_runtime_rpc_port
+  sync_rpc_app_secret_record
   request_withdrawal_via_rpc "${AUTHOR_USER_ID}" "${WITHDRAW_TO_ADDRESS}" "${WORKFLOW_WITHDRAW_AMOUNT:-61}"
 
   run_postcheck_with_withdrawal
@@ -811,6 +881,7 @@ if [[ "${RUN_SUBSCRIPTION}" -eq 1 ]]; then
   [[ -n "${WITHDRAWAL_ID}" ]] || fatal "${EXIT_POSTCHECK}" "postcheck did not return withdrawal id"
 
   resolve_runtime_rpc_port
+  sync_rpc_app_secret_record
 
   if ! wait_withdrawal_completed "${WITHDRAWAL_ID}" 420; then
     if [[ "${WITHDRAWAL_STATE}" == "FAILED" ]]; then

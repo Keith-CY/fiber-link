@@ -88,6 +88,18 @@ export default class FiberLinkTipModal extends Component {
     return Number.isFinite(parsed) && parsed > 0 ? Math.trunc(parsed) : null;
   }
 
+  get fromUserId() {
+    const rawValue = this.args?.model?.fromUserId;
+    const parsed = Number(rawValue);
+    return Number.isFinite(parsed) && parsed > 0 ? Math.trunc(parsed) : null;
+  }
+
+  get targetUserId() {
+    const rawValue = this.args?.model?.targetUserId;
+    const parsed = Number(rawValue);
+    return Number.isFinite(parsed) && parsed > 0 ? Math.trunc(parsed) : null;
+  }
+
   get targetUsername() {
     const value = normalizeMessage(this.args?.model?.targetUsername);
     return value || "post author";
@@ -118,7 +130,9 @@ export default class FiberLinkTipModal extends Component {
       this.isChecking ||
       this.isSelfTip ||
       !!this.amountErrorMessage ||
-      !this.postId
+      !this.postId ||
+      !this.fromUserId ||
+      !this.targetUserId
     );
   }
 
@@ -151,8 +165,8 @@ export default class FiberLinkTipModal extends Component {
       return;
     }
 
-    if (!this.postId) {
-      this.errorMessage = "Missing post context. Please refresh and retry.";
+    if (!this.postId || !this.fromUserId || !this.targetUserId) {
+      this.errorMessage = "Missing tip context. Please refresh and retry.";
       return;
     }
 
@@ -162,7 +176,9 @@ export default class FiberLinkTipModal extends Component {
       const result = await createTip({
         amount: this.amount.trim(),
         asset: "CKB",
-        postId: this.postId,
+        postId: String(this.postId),
+        fromUserId: String(this.fromUserId),
+        toUserId: String(this.targetUserId),
       });
 
       if (!normalizeMessage(result?.invoice)) {
