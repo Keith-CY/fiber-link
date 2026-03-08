@@ -21,6 +21,10 @@ describe("parseWorkerConfig", () => {
     expect(config.subscriptionConcurrency).toBe(1);
     expect(config.subscriptionMaxPendingEvents).toBe(1000);
     expect(config.subscriptionRecentInvoiceDedupeSize).toBe(256);
+    expect(config.liquidityFallbackMode).toBe("channel_rotation");
+    expect(config.channelRotationBootstrapReserve).toBe("61");
+    expect(config.channelRotationMinRecoverableAmount).toBe("61");
+    expect(config.channelRotationMaxConcurrent).toBe(1);
   });
 
   it("normalizes settlement strategy and cursor file", () => {

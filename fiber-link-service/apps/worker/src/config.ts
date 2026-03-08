@@ -49,7 +49,7 @@ function parseStrategy(env: NodeJS.ProcessEnv): WorkerSettlementStrategy {
 }
 
 function parseLiquidityFallbackMode(env: NodeJS.ProcessEnv): WorkerLiquidityFallbackMode {
-  const raw = (env.FIBER_LIQUIDITY_FALLBACK_MODE ?? "none").trim().toLowerCase();
+  const raw = (env.FIBER_LIQUIDITY_FALLBACK_MODE ?? "channel_rotation").trim().toLowerCase();
   if (raw === "none" || raw === "channel_rotation") {
     return raw;
   }
@@ -122,12 +122,12 @@ export function parseWorkerConfig(env: NodeJS.ProcessEnv = process.env): WorkerC
   const channelRotationBootstrapReserve = parseDecimalString(
     env,
     "FIBER_CHANNEL_ROTATION_BOOTSTRAP_RESERVE",
-    "0",
+    "61",
   );
   const channelRotationMinRecoverableAmount = parseDecimalString(
     env,
     "FIBER_CHANNEL_ROTATION_MIN_RECOVERABLE_AMOUNT",
-    "0",
+    "61",
   );
   const channelRotationMaxConcurrent = parseInteger(
     env,

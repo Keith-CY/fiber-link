@@ -1,7 +1,10 @@
 <section class="fiber-link-dashboard">
   <header class="fiber-link-dashboard__header">
-    <h2>Fiber Link Dashboard</h2>
-    <p>Track your balance, payment progress, and recent tip activity from Discourse.</p>
+    <div>
+      <h2>Fiber Link Dashboard</h2>
+      <p>Monitor creator payouts, queued payments, and recent activity from Discourse.</p>
+    </div>
+    <p class="fiber-link-dashboard__meta">Auto-refresh every 10s</p>
   </header>
 
   {{#if this.model.summaryErrorMessage}}
@@ -12,51 +15,61 @@
 
   <section class="fiber-link-dashboard__metrics">
     <article class="fiber-link-dashboard__metric-card">
-      <p class="fiber-link-dashboard__metric-label">Available Balance</p>
-      {{#if this.model.isSummaryLoading}}
+      <p class="fiber-link-dashboard__metric-label">Balance</p>
+      {{#if this.model.isInitialLoading}}
         <p class="fiber-link-dashboard__metric-value">Loading…</p>
       {{else}}
         <p class="fiber-link-dashboard__metric-value">
-          {{this.model.balance}} {{this.model.balanceAsset}}
+          {{this.model.availableBalance}} {{this.model.balanceAsset}}
         </p>
       {{/if}}
     </article>
 
     <article class="fiber-link-dashboard__metric-card">
-      <p class="fiber-link-dashboard__metric-label">Awaiting Payment</p>
-      <p class="fiber-link-dashboard__metric-value">{{this.model.pendingTipCount}}</p>
+      <p class="fiber-link-dashboard__metric-label">Pending</p>
+      <p class="fiber-link-dashboard__metric-value">
+        {{this.model.pendingBalance}} {{this.model.balanceAsset}}
+      </p>
     </article>
 
     <article class="fiber-link-dashboard__metric-card">
-      <p class="fiber-link-dashboard__metric-label">Paid</p>
-      <p class="fiber-link-dashboard__metric-value">{{this.model.settledTipCount}}</p>
+      <p class="fiber-link-dashboard__metric-label">Completed</p>
+      <p class="fiber-link-dashboard__metric-value">{{this.model.completedCount}}</p>
     </article>
 
     <article class="fiber-link-dashboard__metric-card">
       <p class="fiber-link-dashboard__metric-label">Failed</p>
-      <p class="fiber-link-dashboard__metric-value">{{this.model.failedTipCount}}</p>
+      <p class="fiber-link-dashboard__metric-value">{{this.model.failedCount}}</p>
     </article>
   </section>
 
   <div class="fiber-link-dashboard__content-grid">
-    <FiberLinkWithdrawalPanel />
+    <FiberLinkWithdrawalPanel
+      @asset={{this.model.balanceAsset}}
+      @availableBalance={{this.model.availableBalance}}
+      @lockedBalance={{this.model.lockedBalance}}
+    />
 
     <section class="fiber-link-dashboard__activity">
       <div class="fiber-link-dashboard__activity-header">
-        <h3>Recent Tips</h3>
-        <p class="fiber-link-dashboard__meta">
-          {{#if this.model.generatedAt}}
-            Generated: {{this.model.generatedAt}}
-          {{/if}}
-          {{#if this.model.refreshedAt}}
-            · Refreshed: {{this.model.refreshedAt}}
-          {{/if}}
-        </p>
+        <div>
+          <h3>Payments</h3>
+          <p class="fiber-link-dashboard__subtle">
+            {{#if this.model.isRefreshing}}
+              Refreshing in background…
+            {{else}}
+              Settled and pending creator payments.
+            {{/if}}
+          </p>
+        </div>
+        {{#if this.model.generatedAt}}
+          <p class="fiber-link-dashboard__meta">Generated {{this.model.generatedAt}}</p>
+        {{/if}}
       </div>
 
       <FiberLinkTipFeed
         @tips={{this.model.tipFeedItems}}
-        @isLoading={{this.model.isFeedLoading}}
+        @isLoading={{this.model.isInitialLoading}}
         @errorMessage={{this.model.feedErrorMessage}}
       />
     </section>

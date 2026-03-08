@@ -1,6 +1,7 @@
 export { FiberRpcError } from "./fiber-client";
 export {
   getCkbAddressMinCellCapacityShannons,
+  resolveFeeRateShannonsPerKb,
   resolveCkbNetworkConfig,
   shannonsToCkbDecimal,
   WithdrawalExecutionError,

@@ -1,0 +1,10 @@
+en:
+  js:
+    notifications:
+      alt:
+        fiber_link:
+          tip_received_notification: "received a tip"
+    fiber_link:
+      tip_received_notification: "<p><span>%{username}</span> tipped you <span>%{amount} %{asset}</span>.</p>"
+      notification:
+        title: "you received a tip"

@@ -21,6 +21,7 @@ export type CreateTipIntentInput = {
   asset: TipAsset;
   amount: string;
   invoice: string;
+  message?: string | null;
 };
 
 export type TipIntentRecord = CreateTipIntentInput & {
@@ -40,6 +41,11 @@ export type TipIntentListCursor = {
   id: string;
 };
 
+export type TipIntentSettledCursor = {
+  settledAt: Date;
+  id: string;
+};
+
 export type TipIntentListOptions = {
   appId?: string;
   createdAtFrom?: Date;
@@ -49,6 +55,12 @@ export type TipIntentListOptions = {
 };
 
 export type TipIntentCountOptions = Omit<TipIntentListOptions, "limit" | "after">;
+
+export type TipIntentSettledListOptions = {
+  appId: string;
+  limit?: number;
+  after?: TipIntentSettledCursor;
+};
 
 export class TipIntentNotFoundError extends Error {
   constructor(public readonly invoice: string) {
@@ -92,6 +104,7 @@ export type TipIntentRepo = {
     params: { now: Date; reason: SettlementFailureReason; error: string },
   ): Promise<TipIntentRecord>;
   listByInvoiceState(state: InvoiceState, options?: TipIntentListOptions): Promise<TipIntentRecord[]>;
+  listSettled(options: TipIntentSettledListOptions): Promise<TipIntentRecord[]>;
   countByInvoiceState(state: InvoiceState, options?: TipIntentCountOptions): Promise<number>;
   __resetForTests?: () => void;
 };
@@ -108,6 +121,7 @@ function toRecord(row: TipIntentRow): TipIntentRecord {
     asset: row.asset as TipAsset,
     amount: typeof row.amount === "string" ? row.amount : String(row.amount),
     invoice: row.invoice,
+    message: row.message ?? null,
     invoiceState: row.invoiceState as InvoiceState,
     settlementRetryCount: row.settlementRetryCount ?? 0,
     settlementNextRetryAt: row.settlementNextRetryAt ?? null,
@@ -175,6 +189,7 @@ export function createDbTipIntentRepo(db: DbClient): TipIntentRepo {
             asset: input.asset,
             amount: input.amount,
             invoice: input.invoice,
+            message: input.message ?? null,
             invoiceState: "UNPAID",
             settlementRetryCount: 0,
             settlementNextRetryAt: null,
@@ -309,6 +324,29 @@ export function createDbTipIntentRepo(db: DbClient): TipIntentRepo {
       return rows.map(toRecord);
     },
 
+    async listSettled(options) {
+      const filters = [eq(tipIntents.appId, options.appId), eq(tipIntents.invoiceState, "SETTLED"), sql`${tipIntents.settledAt} IS NOT NULL`];
+      if (options.after) {
+        filters.push(
+          or(
+            gt(tipIntents.settledAt, options.after.settledAt),
+            and(eq(tipIntents.settledAt, options.after.settledAt), gt(tipIntents.id, options.after.id)),
+          )!,
+        );
+      }
+
+      let query = db
+        .select()
+        .from(tipIntents)
+        .where(and(...filters))
+        .orderBy(asc(tipIntents.settledAt), asc(tipIntents.id));
+      if (options.limit && options.limit > 0) {
+        query = query.limit(options.limit);
+      }
+      const rows = await query;
+      return rows.map(toRecord);
+    },
+
     async countByInvoiceState(state, options = {}) {
       const filters = buildStateFilters(state, options);
       const [row] = await db.select({ count: sql<number>`count(*)` }).from(tipIntents).where(and(...filters));
@@ -339,6 +377,7 @@ export function createInMemoryTipIntentRepo(): TipIntentRepo {
       const now = new Date();
       const record: TipIntentRecord = {
         ...input,
+        message: input.message ?? null,
         id: randomUUID(),
         invoiceState: "UNPAID",
         settlementRetryCount: 0,
@@ -456,6 +495,28 @@ export function createInMemoryTipIntentRepo(): TipIntentRepo {
         const createdAtDiff = left.createdAt.getTime() - right.createdAt.getTime();
         if (createdAtDiff !== 0) {
           return createdAtDiff;
+        }
+        return left.id.localeCompare(right.id);
+      });
+      if (options.limit && options.limit > 0) {
+        items = items.slice(0, options.limit);
+      }
+      return items.map(clone);
+    },
+
+    async listSettled(options) {
+      let items = records.filter((item) => item.appId === options.appId && item.invoiceState === "SETTLED" && item.settledAt);
+      if (options.after) {
+        const cursorTime = options.after.settledAt.getTime();
+        items = items.filter((item) => {
+          const settledAt = item.settledAt?.getTime() ?? 0;
+          return settledAt > cursorTime || (settledAt === cursorTime && item.id > options.after.id);
+        });
+      }
+      items = items.sort((left, right) => {
+        const settledDiff = (left.settledAt?.getTime() ?? 0) - (right.settledAt?.getTime() ?? 0);
+        if (settledDiff !== 0) {
+          return settledDiff;
         }
         return left.id.localeCompare(right.id);
       });

@@ -12,26 +12,6 @@ import { createTip, getTipStatus } from "../../services/fiber-link-api";
 const AMOUNT_PATTERN = /^(?:\d+)(?:\.\d{1,8})?$/;
 const TIP_STATUS_AUTO_POLL_INTERVAL_MS = 1000;
 
-function mapTipStateToLabel(state) {
-  if (state === "SETTLED") {
-    return "Paid";
-  }
-  if (state === "FAILED") {
-    return "Failed";
-  }
-  return "Awaiting payment";
-}
-
-function mapTipStateToClass(state) {
-  if (state === "SETTLED") {
-    return "fiber-link-tip-status-badge is-success";
-  }
-  if (state === "FAILED") {
-    return "fiber-link-tip-status-badge is-danger";
-  }
-  return "fiber-link-tip-status-badge is-warning";
-}
-
 function normalizeMessage(value) {
   if (typeof value !== "string") {
     return "";
@@ -47,6 +27,26 @@ function isTransientNetworkError(message) {
     value.includes("failed to fetch") ||
     value.includes("service unavailable")
   );
+}
+
+function mapTipStateToLabel(state) {
+  if (state === "SETTLED") {
+    return "Payment received";
+  }
+  if (state === "FAILED") {
+    return "Payment failed";
+  }
+  return "Awaiting payment";
+}
+
+function mapTipStateToClass(state) {
+  if (state === "SETTLED") {
+    return "fiber-link-tip-status-badge is-success";
+  }
+  if (state === "FAILED") {
+    return "fiber-link-tip-status-badge is-danger";
+  }
+  return "fiber-link-tip-status-badge is-warning";
 }
 
 function mapCreateTipErrorToMessage(error) {
@@ -74,17 +74,24 @@ function mapStatusErrorToMessage(error) {
   return message || "Failed to check status.";
 }
 
+function buildWalletHref(invoice) {
+  const value = normalizeMessage(invoice);
+  return value ? `fiber://invoice/${value}` : null;
+}
+
 export default class FiberLinkTipModal extends Component {
   @tracked amount = "1";
+  @tracked message = "";
   @tracked invoice;
   @tracked invoiceQrDataUrl;
-  @tracked statusLabel = "Awaiting payment";
+  @tracked statusLabel = mapTipStateToLabel("UNPAID");
   @tracked statusClass = mapTipStateToClass("UNPAID");
   @tracked isGenerating = false;
   @tracked isChecking = false;
   @tracked errorMessage;
   @tracked copyFeedback;
   @tracked autoPollMessage;
+  @tracked showAdvanced = false;
 
   _pollTimer = null;
 
@@ -135,6 +142,10 @@ export default class FiberLinkTipModal extends Component {
     return null;
   }
 
+  get displayAmount() {
+    return normalizeMessage(this.amount) || "0";
+  }
+
   get isGenerateInvoiceDisabled() {
     return (
       this.isGenerating ||
@@ -157,6 +168,10 @@ export default class FiberLinkTipModal extends Component {
 
   get shouldShowInvoiceQr() {
     return typeof this.invoiceQrDataUrl === "string" && this.invoiceQrDataUrl.trim().startsWith("data:image/");
+  }
+
+  get walletHref() {
+    return buildWalletHref(this.invoice);
   }
 
   _clearStatusPollTimer() {
@@ -183,6 +198,16 @@ export default class FiberLinkTipModal extends Component {
     this.amount = event?.target?.value ?? "";
     this.copyFeedback = null;
     this.autoPollMessage = null;
+  }
+
+  @action
+  onMessageInput(event) {
+    this.message = event?.target?.value ?? "";
+  }
+
+  @action
+  toggleAdvanced() {
+    this.showAdvanced = !this.showAdvanced;
   }
 
   @action
@@ -222,6 +247,7 @@ export default class FiberLinkTipModal extends Component {
         postId: String(this.postId),
         fromUserId: String(this.fromUserId),
         toUserId: String(this.targetUserId),
+        message: normalizeMessage(this.message) || null,
       });
 
       if (!normalizeMessage(result?.invoice)) {
@@ -230,9 +256,10 @@ export default class FiberLinkTipModal extends Component {
 
       this.invoice = result?.invoice;
       this.invoiceQrDataUrl = normalizeMessage(result?.invoiceQrDataUrl) || null;
-      this.statusLabel = "Awaiting payment";
+      this.statusLabel = mapTipStateToLabel("UNPAID");
       this.statusClass = mapTipStateToClass("UNPAID");
-      this.autoPollMessage = "Scan or copy this invoice in your Fiber wallet. Status refreshes automatically while this dialog is open.";
+      this.autoPollMessage = "Status updates automatically";
+      this.showAdvanced = false;
       scheduleAutoPoll = true;
     } catch (e) {
       this.errorMessage = mapCreateTipErrorToMessage(e);
@@ -268,7 +295,7 @@ export default class FiberLinkTipModal extends Component {
       this.errorMessage = null;
 
       if (state === "UNPAID") {
-        this.autoPollMessage = "Still waiting for payment. We’ll keep checking automatically.";
+        this.autoPollMessage = "Status updates automatically";
         scheduleAutoPoll = true;
       } else {
         this.autoPollMessage = null;
@@ -276,7 +303,7 @@ export default class FiberLinkTipModal extends Component {
       }
     } catch (e) {
       if (isAutoPoll && isTransientNetworkError(normalizeMessage(e?.message))) {
-        this.autoPollMessage = "Automatic refresh hit a network issue. We’ll keep retrying in the background.";
+        this.autoPollMessage = "Status updates automatically";
         scheduleAutoPoll = true;
       } else {
         this.errorMessage = mapStatusErrorToMessage(e);
@@ -312,9 +339,11 @@ export default class FiberLinkTipModal extends Component {
     <DModal @closeModal={{@closeModal}} @title="Pay with Fiber" class="fiber-link-tip-modal">
       <:body>
         <div class="fiber-link-tip-modal__content">
-          <p class="fiber-link-tip-modal__recipient">
-            Recipient: <strong>@{{this.targetUsername}}</strong>
-          </p>
+          <header class="fiber-link-tip-modal__header">
+            <p class="fiber-link-tip-modal__recipient">Recipient</p>
+            <strong class="fiber-link-tip-modal__recipient-name">@{{this.targetUsername}}</strong>
+            <p class="fiber-link-tip-modal__amount">{{this.displayAmount}} CKB</p>
+          </header>
 
           {{#if this.errorMessage}}
             <p class="fiber-link-tip-alert is-error">{{this.errorMessage}}</p>
@@ -324,24 +353,49 @@ export default class FiberLinkTipModal extends Component {
             <p class="fiber-link-tip-alert is-warning">You can’t tip your own post.</p>
           {{/if}}
 
-          <div class="fiber-link-tip-form">
-            <label class="fiber-link-tip-field">
-              <span class="fiber-link-tip-label">Amount (CKB)</span>
-              <input
-                class="fiber-link-tip-input"
-                inputmode="decimal"
-                value={{this.amount}}
-                {{on "input" this.onAmountInput}}
-              />
-            </label>
-            {{#if this.amountErrorMessage}}
-              <p class="fiber-link-tip-input-error">{{this.amountErrorMessage}}</p>
-            {{/if}}
-          </div>
+          <section class="fiber-link-tip-step-card" data-fiber-link-tip-modal-step="generate">
+            <div class="fiber-link-tip-step-card__header">
+              <p class="fiber-link-tip-step-card__eyebrow">Step 1</p>
+              <h3>Generate Invoice</h3>
+            </div>
+            <div class="fiber-link-tip-form">
+              <label class="fiber-link-tip-field">
+                <span class="fiber-link-tip-label">Amount</span>
+                <input
+                  class="fiber-link-tip-input"
+                  inputmode="decimal"
+                  value={{this.amount}}
+                  {{on "input" this.onAmountInput}}
+                />
+              </label>
+              {{#if this.amountErrorMessage}}
+                <p class="fiber-link-tip-input-error">{{this.amountErrorMessage}}</p>
+              {{/if}}
+              <label class="fiber-link-tip-field">
+                <span class="fiber-link-tip-label">Tip message (optional)</span>
+                <textarea
+                  class="fiber-link-tip-input fiber-link-tip-textarea"
+                  rows="3"
+                  value={{this.message}}
+                  {{on "input" this.onMessageInput}}
+                ></textarea>
+              </label>
+            </div>
+            <DButton
+              class="btn-primary fiber-link-tip-step-card__action"
+              @action={{this.generateInvoice}}
+              @disabled={{this.isGenerateInvoiceDisabled}}
+              @translatedLabel="Generate Invoice"
+            />
+          </section>
 
-          {{#if this.invoice}}
-            <div class="fiber-link-tip-invoice-card">
-              <p class="fiber-link-tip-invoice-label">Invoice</p>
+          <section class="fiber-link-tip-step-card" data-fiber-link-tip-modal-step="pay">
+            <div class="fiber-link-tip-step-card__header">
+              <p class="fiber-link-tip-step-card__eyebrow">Step 2</p>
+              <h3>Pay with Wallet</h3>
+            </div>
+            {{#if this.invoice}}
+              <p class="fiber-link-tip-step-card__caption">Scan with Fiber Wallet</p>
               {{#if this.shouldShowInvoiceQr}}
                 <div class="fiber-link-tip-invoice-visual">
                   <img
@@ -352,40 +406,61 @@ export default class FiberLinkTipModal extends Component {
                   />
                 </div>
               {{/if}}
-              <code class="fiber-link-tip-invoice" title={{this.invoice}}>{{this.invoice}}</code>
-              <div class="fiber-link-tip-invoice-meta">
-                <span class={{this.statusClass}}>{{this.statusLabel}}</span>
-                <DButton @translatedLabel="Copy invoice" @action={{this.copyInvoice}} />
-                {{#if this.copyFeedback}}
-                  <span class="fiber-link-tip-copy-feedback">{{this.copyFeedback}}</span>
+              <div class="fiber-link-tip-step-card__actions">
+                <DButton @translatedLabel="Copy Invoice" @action={{this.copyInvoice}} />
+                {{#if this.walletHref}}
+                  <a
+                    class="btn fiber-link-tip-wallet-link"
+                    data-fiber-link-tip-modal="wallet-link"
+                    href={{this.walletHref}}
+                  >
+                    Open Fiber Wallet
+                  </a>
                 {{/if}}
               </div>
-              {{#if this.autoPollMessage}}
-                <p class="fiber-link-tip-invoice-note">{{this.autoPollMessage}}</p>
+              {{#if this.copyFeedback}}
+                <span class="fiber-link-tip-copy-feedback">{{this.copyFeedback}}</span>
               {{/if}}
+              <button
+                type="button"
+                class="btn-link fiber-link-tip-advanced-toggle"
+                {{on "click" this.toggleAdvanced}}
+              >
+                Advanced
+              </button>
+              {{#if this.showAdvanced}}
+                <div class="fiber-link-tip-advanced-panel">
+                  <p class="fiber-link-tip-invoice-label">Invoice</p>
+                  <code class="fiber-link-tip-invoice" title={{this.invoice}}>{{this.invoice}}</code>
+                  <DButton
+                    class="fiber-link-tip-advanced-action"
+                    @action={{this.checkStatus}}
+                    @translatedLabel={{this.checkStatusLabel}}
+                    @disabled={{this.isCheckStatusDisabled}}
+                  />
+                </div>
+              {{/if}}
+            {{else}}
+              <p class="fiber-link-tip-step-card__placeholder">
+                Generate an invoice first. Then scan it in your Fiber wallet or copy it manually.
+              </p>
+            {{/if}}
+          </section>
+
+          <section class="fiber-link-tip-step-card" data-fiber-link-tip-modal-step="status">
+            <div class="fiber-link-tip-step-card__header">
+              <p class="fiber-link-tip-step-card__eyebrow">Step 3</p>
+              <h3>Payment Confirmed</h3>
             </div>
-          {{else}}
-            <p class="fiber-link-tip-help">
-              Generate an invoice, scan it in your Fiber wallet, and the modal will refresh status automatically.
-            </p>
-          {{/if}}
+            <div class="fiber-link-tip-status-row">
+              <span class={{this.statusClass}}>{{this.statusLabel}}</span>
+              <p class="fiber-link-tip-step-card__caption">{{this.autoPollMessage}}</p>
+            </div>
+          </section>
         </div>
       </:body>
 
       <:footer>
-        <DButton
-          @action={{this.generateInvoice}}
-          @translatedLabel="Generate Invoice"
-          class="btn-primary"
-          @disabled={{this.isGenerateInvoiceDisabled}}
-        />
-
-        <DButton
-          @action={{this.checkStatus}}
-          @translatedLabel={{this.checkStatusLabel}}
-          @disabled={{this.isCheckStatusDisabled}}
-        />
-
         <DModalCancel @close={{@closeModal}} />
       </:footer>
     </DModal>

@@ -131,6 +131,9 @@ if [[ "${ATTEMPT_LABEL}" != "primary" ]]; then
 fi
 
 copy_or_fail "${FLOW12_DIR}/playwright-flow1-tip-button.png" "${SCREENSHOT_DIR}/flow1-tip-button.png"
+copy_or_fail "${FLOW12_DIR}/playwright-flow1-tip-modal-step1-generate.png" "${SCREENSHOT_DIR}/flow1-tip-modal-step1-generate.png"
+copy_or_fail "${FLOW12_DIR}/playwright-flow1-tip-modal-step2-pay.png" "${SCREENSHOT_DIR}/flow1-tip-modal-step2-pay.png"
+copy_or_fail "${FLOW12_DIR}/playwright-flow1-tip-modal-step3-confirmed.png" "${SCREENSHOT_DIR}/flow1-tip-modal-step3-confirmed.png"
 copy_or_fail "${FLOW12_DIR}/playwright-flow1-tip-modal-invoice.png" "${SCREENSHOT_DIR}/flow1-tip-modal-invoice.png"
 copy_or_fail "${attempt_postcheck_dir}/playwright-step5-author-dashboard.png" "${SCREENSHOT_DIR}/flow4-author-balance-history.png"
 copy_or_fail "${attempt_postcheck_dir}/playwright-step7-admin-withdrawal.png" "${SCREENSHOT_DIR}/flow4-admin-withdrawal.png"
@@ -180,8 +183,14 @@ flow1_ok=false
 if [[ -n "${FLOW12_RESULT_JSON}" ]]; then
   flow1_ok="$(printf '%s' "${FLOW12_RESULT_JSON}" | jq -r '
     ((.screenshots.tipButton // "") != "")
+    and ((.screenshots.tipModalStepGenerate // "") != "")
+    and ((.screenshots.tipModalStepPay // "") != "")
+    and ((.screenshots.tipModalStepConfirmed // "") != "")
     and ((.screenshots.tipModal // "") != "")
+    and ((.invoiceQrVisible // false) == true)
+    and ((.payment.settled // false) == true)
     and ((.rpc.dashboardSummary.ok // false) == true)
+    and ((.rpc.tipStatus.response.result.state // "") == "SETTLED")
   ')"
 fi
 
@@ -225,6 +234,9 @@ jq -n \
         ok: $flow1Ok,
         screenshots: {
           tipButton: "screenshots/flow1-tip-button.png",
+          step1Generate: "screenshots/flow1-tip-modal-step1-generate.png",
+          step2Pay: "screenshots/flow1-tip-modal-step2-pay.png",
+          step3Confirmed: "screenshots/flow1-tip-modal-step3-confirmed.png",
           tipModal: "screenshots/flow1-tip-modal-invoice.png"
         }
       },

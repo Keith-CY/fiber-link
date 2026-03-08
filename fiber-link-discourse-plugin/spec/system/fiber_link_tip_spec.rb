@@ -1,18 +1,23 @@
+require "rails_helper"
+
 # frozen_string_literal: true
 
 RSpec.describe "Fiber Link Tip", type: :system do
   fab!(:user)
   fab!(:topic, :topic_with_op)
 
-  it "shows invoice qr and auto-refreshes settled state" do
+  before do
     SiteSetting.fiber_link_enabled = true
     SiteSetting.fiber_link_service_url = "https://fiber-link.example"
     SiteSetting.fiber_link_app_id = "app1"
     SiteSetting.fiber_link_app_secret = "secret"
 
     sign_in(user)
+  end
 
+  it "shows a compact 3-step payment flow with qr, deep link, and advanced invoice details" do
     stub_request(:post, "https://fiber-link.example/rpc")
+      .with { |request| JSON.parse(request.body).fetch("method") == "tip.create" }
       .to_return(
         status: 200,
         body: {
@@ -24,9 +29,7 @@ RSpec.describe "Fiber Link Tip", type: :system do
       )
 
     stub_request(:post, "https://fiber-link.example/rpc")
-      .with do |request|
-        JSON.parse(request.body).fetch("method") == "tip.status"
-      end
+      .with { |request| JSON.parse(request.body).fetch("method") == "tip.status" }
       .to_return(
         {
           status: 200,
@@ -42,32 +45,44 @@ RSpec.describe "Fiber Link Tip", type: :system do
 
     visit "/t/#{topic.id}"
     click_button "Tip", match: :first
+
     expect(page).to have_content("Pay with Fiber")
+    expect(page).to have_content("@#{topic.first_post.user.username}")
+    expect(page).to have_content("Step 1")
+    expect(page).to have_content("Step 2")
+    expect(page).to have_content("Step 3")
+
+    fill_in "Amount", with: "31"
+    fill_in "Tip message (optional)", with: "Great post"
     click_button "Generate Invoice"
-    expect(page).to have_content("inv-tip-1")
-    expect(page).to have_content("Awaiting payment")
+
+    expect(page).to have_content("31 CKB")
+    expect(page).to have_content("Scan with Fiber Wallet")
+    expect(page).to have_content("Status updates automatically")
     expect(page).to have_css("img[data-fiber-link-tip-modal=invoice-qr]")
+    expect(page).to have_button("Copy Invoice")
+    expect(page).to have_link("Open Fiber Wallet", href: "fiber://invoice/inv-tip-1")
+    expect(page).to have_no_text("inv-tip-1")
+
+    click_button "Advanced"
+    expect(page).to have_text("inv-tip-1")
+    expect(page).to have_button("Check status")
 
     expect(WebMock).to have_requested(:post, "https://fiber-link.example/rpc").with { |request|
       body = JSON.parse(request.body)
       body.fetch("method") == "tip.create" &&
         body.dig("params", "postId") == topic.first_post.id.to_s &&
         body.dig("params", "fromUserId") == user.id.to_s &&
-        body.dig("params", "toUserId") == topic.first_post.user_id.to_s
+        body.dig("params", "toUserId") == topic.first_post.user_id.to_s &&
+        body.dig("params", "message") == "Great post"
     }
 
-    expect(page).to have_content("Paid")
+    expect(page).to have_content("Payment received")
   end
 
-  it "keeps manual status checks as a fallback" do
-    SiteSetting.fiber_link_enabled = true
-    SiteSetting.fiber_link_service_url = "https://fiber-link.example"
-    SiteSetting.fiber_link_app_id = "app1"
-    SiteSetting.fiber_link_app_secret = "secret"
-
-    sign_in(user)
-
+  it "keeps manual status checks available inside advanced details" do
     stub_request(:post, "https://fiber-link.example/rpc")
+      .with { |request| JSON.parse(request.body).fetch("method") == "tip.create" }
       .to_return(
         status: 200,
         body: {
@@ -89,8 +104,9 @@ RSpec.describe "Fiber Link Tip", type: :system do
     visit "/t/#{topic.id}"
     click_button "Tip", match: :first
     click_button "Generate Invoice"
+    click_button "Advanced"
     click_button "Check status"
 
-    expect(page).to have_content("Paid")
+    expect(page).to have_content("Payment received")
   end
 end

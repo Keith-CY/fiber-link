@@ -144,11 +144,13 @@ test_default_runtime_preferences() {
   local defaults_output
   defaults_output="$(
     env -u E2E_DISCOURSE_UI_BASE_URL -u E2E_SETTLEMENT_MODES \
-      bash -lc "source '${ROOT_DIR}/scripts/lib/e2e-discourse-four-flows-common.sh'; printf 'ui=%s\nsettlement=%s\n' \"\$DEFAULT_DISCOURSE_UI_BASE_URL\" \"\$DEFAULT_SETTLEMENT_MODES\""
+      bash -lc "source '${ROOT_DIR}/scripts/lib/e2e-discourse-four-flows-common.sh'; printf 'ui=%s\nsettlement=%s\nfallback=%s\ndefaultTarget=%s\n' \"\$DEFAULT_DISCOURSE_UI_BASE_URL\" \"\$DEFAULT_SETTLEMENT_MODES\" \"\$LIQUIDITY_FALLBACK_MODE\" \"\$(default_withdrawal_signer_target_shannons)\""
   )"
 
   assert_contains "${defaults_output}" "ui=http://127.0.0.1:9292"
   assert_contains "${defaults_output}" "settlement=subscription"
+  assert_contains "${defaults_output}" "fallback=channel_rotation"
+  assert_contains "${defaults_output}" "defaultTarget=6100000000"
 }
 
 test_orchestrator_calls_phase_scripts_in_order() {
@@ -167,6 +169,7 @@ test_orchestrator_calls_phase_scripts_in_order() {
   diff -u <(cat <<'EOF'
 e2e-discourse-four-flows.phase1-prepare-and-open.sh
 e2e-discourse-four-flows.phase2-tip-and-settlement.sh
+e2e-channel-rotation-seed-legacy-channel.sh
 e2e-discourse-four-flows.phase3-author-withdrawal.sh
 e2e-discourse-four-flows.phase4-postcheck.sh
 e2e-discourse-four-flows.phase5-explorer-and-finalize.sh
@@ -191,6 +194,7 @@ test_orchestrator_calls_optional_liquidity_regression_when_enabled() {
   diff -u <(cat <<'EOF'
 e2e-discourse-four-flows.phase1-prepare-and-open.sh
 e2e-discourse-four-flows.phase2-tip-and-settlement.sh
+e2e-channel-rotation-seed-legacy-channel.sh
 e2e-discourse-four-flows.phase3-author-withdrawal.sh
 e2e-discourse-four-flows.phase4-postcheck.sh
 e2e-discourse-four-flows.phase5-explorer-and-finalize.sh

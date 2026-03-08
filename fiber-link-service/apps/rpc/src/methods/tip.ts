@@ -92,10 +92,20 @@ export type HandleTipCreateInput = {
   toUserId: string;
   asset: "CKB" | "USDI";
   amount: string;
+  message?: string | null;
 };
 
 export type HandleTipStatusInput = {
   invoice: string;
+};
+
+export type HandleTipSettledFeedInput = {
+  appId: string;
+  limit?: number;
+  after?: {
+    settledAt: string;
+    id: string;
+  };
 };
 
 type HandleTipStatusOptions = {
@@ -155,6 +165,7 @@ export async function handleTipCreate(
     asset: input.asset,
     amount: input.amount,
     invoice: invoice.invoice,
+    message: input.message ?? null,
   });
   await appendTipTimelineEvent(eventRepo, {
     tipIntentId: tipIntent.id,
@@ -272,4 +283,42 @@ export async function handleTipStatus(
     },
   });
   return { state: tipIntent.invoiceState };
+}
+
+export async function handleTipSettledFeed(
+  input: HandleTipSettledFeedInput,
+  options: { tipIntentRepo?: TipIntentRepo } = {},
+) {
+  const tipIntentRepo = options.tipIntentRepo ?? getDefaultTipIntentRepo();
+  const items = await tipIntentRepo.listSettled({
+    appId: input.appId,
+    limit: input.limit ?? 20,
+    after: input.after
+      ? {
+          settledAt: new Date(input.after.settledAt),
+          id: input.after.id,
+        }
+      : undefined,
+  });
+
+  return {
+    items: items.map((item) => ({
+      tipIntentId: item.id,
+      postId: item.postId,
+      invoice: item.invoice,
+      amount: item.amount,
+      asset: item.asset,
+      fromUserId: item.fromUserId,
+      toUserId: item.toUserId,
+      message: item.message ?? null,
+      settledAt: (item.settledAt ?? item.createdAt).toISOString(),
+    })),
+    nextCursor:
+      items.length > 0
+        ? {
+            settledAt: (items[items.length - 1].settledAt ?? items[items.length - 1].createdAt).toISOString(),
+            id: items[items.length - 1].id,
+          }
+        : null,
+  };
 }

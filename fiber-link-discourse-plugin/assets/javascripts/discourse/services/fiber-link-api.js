@@ -48,17 +48,20 @@ async function rpcCall(method, params = {}) {
       params,
     }),
   });
-  if (data?.error) throw data.error;
+  if (data?.error) {
+    throw data.error;
+  }
   return data?.result;
 }
 
-export async function createTip({ amount, asset, postId, fromUserId, toUserId }) {
+export async function createTip({ amount, asset, postId, fromUserId, toUserId, message }) {
   return rpcCall("tip.create", {
     amount,
     asset,
     postId,
     fromUserId,
     toUserId,
+    message,
   });
 }
 
@@ -70,10 +73,18 @@ export async function getDashboardSummary({ limit = 20, includeAdmin = false, fi
   return rpcCall("dashboard.summary", { limit, includeAdmin, filters });
 }
 
-export async function requestWithdrawal({ amount, asset = "CKB", toAddress }) {
+export async function quoteWithdrawal({ amount, asset = "CKB", destination }) {
+  return rpcCall("withdrawal.quote", {
+    amount,
+    asset,
+    destination,
+  });
+}
+
+export async function requestWithdrawal({ amount, asset = "CKB", destination }) {
   return rpcCall("withdrawal.request", {
     amount,
     asset,
-    toAddress,
+    destination,
   });
 }

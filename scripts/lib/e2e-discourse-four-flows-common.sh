@@ -19,15 +19,28 @@ DEFAULT_RUN_DIR="${ROOT_DIR}/.tmp/e2e-discourse-four-flows/${DEFAULT_RUN_TIMESTA
 DEFAULT_DISCOURSE_UI_BASE_URL="${E2E_DISCOURSE_UI_BASE_URL:-http://127.0.0.1:9292}"
 DEFAULT_SETTLEMENT_MODES="${E2E_SETTLEMENT_MODES:-subscription}"
 DEFAULT_WORKFLOW_RPC_PORT="${E2E_WORKFLOW_RPC_PORT:-13001}"
+DEFAULT_WORKFLOW_WITHDRAW_AMOUNT_CKB="${WORKFLOW_WITHDRAW_AMOUNT:-61}"
+DEFAULT_CHANNEL_ROTATION_BOOTSTRAP_RESERVE_CKB="${E2E_CHANNEL_ROTATION_BOOTSTRAP_RESERVE_DEFAULT:-${DEFAULT_WORKFLOW_WITHDRAW_AMOUNT_CKB}}"
+DEFAULT_WITHDRAWAL_LIQUIDITY_FEE_BUFFER_CKB="${E2E_WITHDRAWAL_LIQUIDITY_FEE_BUFFER_DEFAULT:-1}"
+DEFAULT_WITHDRAWAL_LIQUIDITY_POST_TX_RESERVE_CKB="${E2E_WITHDRAWAL_LIQUIDITY_POST_TX_RESERVE_DEFAULT:-0}"
+DEFAULT_WITHDRAWAL_LIQUIDITY_WARM_BUFFER_CKB="${E2E_WITHDRAWAL_LIQUIDITY_WARM_BUFFER_DEFAULT:-${DEFAULT_WORKFLOW_WITHDRAW_AMOUNT_CKB}}"
+DEFAULT_CHANNEL_ROTATION_MIN_RECOVERABLE_AMOUNT_CKB="${E2E_CHANNEL_ROTATION_MIN_RECOVERABLE_AMOUNT_DEFAULT:-$(( DEFAULT_WORKFLOW_WITHDRAW_AMOUNT_CKB + DEFAULT_WITHDRAWAL_LIQUIDITY_FEE_BUFFER_CKB + DEFAULT_WITHDRAWAL_LIQUIDITY_POST_TX_RESERVE_CKB + DEFAULT_WITHDRAWAL_LIQUIDITY_WARM_BUFFER_CKB ))}"
 CKB_FAUCET_API_BASE="${CKB_FAUCET_API_BASE:-https://faucet-api.nervos.org}"
 CKB_FAUCET_FALLBACK_API_BASE="${CKB_FAUCET_FALLBACK_API_BASE:-https://ckb-utilities.random-walk.co.jp/api}"
 CKB_FAUCET_ENABLE_FALLBACK="${CKB_FAUCET_ENABLE_FALLBACK:-1}"
 CKB_FAUCET_AMOUNT="${CKB_FAUCET_AMOUNT:-100000}"
 CKB_FAUCET_WAIT_SECONDS="${CKB_FAUCET_WAIT_SECONDS:-20}"
 WITHDRAWAL_SIGNER_CACHE_PATH="${E2E_WITHDRAWAL_SIGNER_CACHE_PATH:-${ROOT_DIR}/.tmp/e2e-discourse-four-flows/withdrawal-signer.json}"
+WITHDRAWAL_RESERVE_CACHE_PATH="${E2E_WITHDRAWAL_RESERVE_CACHE_PATH:-${ROOT_DIR}/.tmp/e2e-discourse-four-flows/withdrawal-reserve.json}"
 WORKFLOW_RPC_PORT="${WORKFLOW_RPC_PORT:-${DEFAULT_WORKFLOW_RPC_PORT}}"
 E2E_WITHDRAWAL_SIGNER_ROTATE="${E2E_WITHDRAWAL_SIGNER_ROTATE:-0}"
 E2E_WITHDRAWAL_SIGNER_SKIP_FAUCET="${E2E_WITHDRAWAL_SIGNER_SKIP_FAUCET:-0}"
+E2E_WITHDRAWAL_SIGNER_RESERVE_ENABLED="${E2E_WITHDRAWAL_SIGNER_RESERVE_ENABLED:-1}"
+E2E_WITHDRAWAL_SIGNER_RESERVE_TOPUP="${E2E_WITHDRAWAL_SIGNER_RESERVE_TOPUP:-1}"
+E2E_WITHDRAWAL_SIGNER_TRANSFER_FEE_BUFFER_SHANNONS="${E2E_WITHDRAWAL_SIGNER_TRANSFER_FEE_BUFFER_SHANNONS:-100000000}"
+E2E_WITHDRAWAL_SIGNER_TARGET_SHANNONS="${E2E_WITHDRAWAL_SIGNER_TARGET_SHANNONS:-}"
+E2E_WITHDRAWAL_SIGNER_REFILL_SHANNONS="${E2E_WITHDRAWAL_SIGNER_REFILL_SHANNONS:-}"
+E2E_WITHDRAWAL_SIGNER_MAX_SHANNONS="${E2E_WITHDRAWAL_SIGNER_MAX_SHANNONS:-}"
 
 LOG_PREFIX="${LOG_PREFIX:-e2e-four-flows}"
 VERBOSE="${VERBOSE:-0}"
@@ -68,14 +81,16 @@ WITHDRAWAL_STATE="${WITHDRAWAL_STATE:-}"
 WITHDRAWAL_TX_HASH="${WITHDRAWAL_TX_HASH:-}"
 WITHDRAWAL_PRIVATE_KEY="${WITHDRAWAL_PRIVATE_KEY:-}"
 WITHDRAWAL_SIGNER_ADDRESS="${WITHDRAWAL_SIGNER_ADDRESS:-}"
+WITHDRAWAL_RESERVE_PRIVATE_KEY="${WITHDRAWAL_RESERVE_PRIVATE_KEY:-}"
+WITHDRAWAL_RESERVE_ADDRESS="${WITHDRAWAL_RESERVE_ADDRESS:-}"
 AUTHOR_BALANCE="${AUTHOR_BALANCE:-}"
 AUTHOR_TIP_HISTORY_COUNT="${AUTHOR_TIP_HISTORY_COUNT:-}"
 DISCOURSE_UI_BASE_URL="${DISCOURSE_UI_BASE_URL:-${DEFAULT_DISCOURSE_UI_BASE_URL}}"
 SETTLEMENT_MODES="${SETTLEMENT_MODES:-${DEFAULT_SETTLEMENT_MODES}}"
 EXPLORER_TX_URL_TEMPLATE="${EXPLORER_TX_URL_TEMPLATE:-${E2E_EXPLORER_TX_URL_TEMPLATE:-}}"
-LIQUIDITY_FALLBACK_MODE="${LIQUIDITY_FALLBACK_MODE:-${FIBER_LIQUIDITY_FALLBACK_MODE:-none}}"
-CHANNEL_ROTATION_BOOTSTRAP_RESERVE="${CHANNEL_ROTATION_BOOTSTRAP_RESERVE:-${FIBER_CHANNEL_ROTATION_BOOTSTRAP_RESERVE:-0}}"
-CHANNEL_ROTATION_MIN_RECOVERABLE_AMOUNT="${CHANNEL_ROTATION_MIN_RECOVERABLE_AMOUNT:-${FIBER_CHANNEL_ROTATION_MIN_RECOVERABLE_AMOUNT:-0}}"
+LIQUIDITY_FALLBACK_MODE="${LIQUIDITY_FALLBACK_MODE:-${FIBER_LIQUIDITY_FALLBACK_MODE:-channel_rotation}}"
+CHANNEL_ROTATION_BOOTSTRAP_RESERVE="${CHANNEL_ROTATION_BOOTSTRAP_RESERVE:-${FIBER_CHANNEL_ROTATION_BOOTSTRAP_RESERVE:-${DEFAULT_CHANNEL_ROTATION_BOOTSTRAP_RESERVE_CKB}}}"
+CHANNEL_ROTATION_MIN_RECOVERABLE_AMOUNT="${CHANNEL_ROTATION_MIN_RECOVERABLE_AMOUNT:-${FIBER_CHANNEL_ROTATION_MIN_RECOVERABLE_AMOUNT:-${DEFAULT_CHANNEL_ROTATION_MIN_RECOVERABLE_AMOUNT_CKB}}}"
 CHANNEL_ROTATION_MAX_CONCURRENT="${CHANNEL_ROTATION_MAX_CONCURRENT:-${FIBER_CHANNEL_ROTATION_MAX_CONCURRENT:-1}}"
 
 log() {
@@ -107,6 +122,9 @@ write_checklist() {
 
 ## Required Screenshots
 - [ ] screenshots/flow1-tip-button.png
+- [ ] screenshots/flow1-tip-modal-step1-generate.png
+- [ ] screenshots/flow1-tip-modal-step2-pay.png
+- [ ] screenshots/flow1-tip-modal-step3-confirmed.png
 - [ ] screenshots/flow1-tip-modal-invoice.png
 - [ ] screenshots/flow4-author-balance-history.png
 - [ ] screenshots/flow4-admin-withdrawal.png
@@ -214,9 +232,9 @@ EOF_KEYS
 }
 
 sync_liquidity_fallback_env() {
-  export FIBER_LIQUIDITY_FALLBACK_MODE="${LIQUIDITY_FALLBACK_MODE:-none}"
-  export FIBER_CHANNEL_ROTATION_BOOTSTRAP_RESERVE="${CHANNEL_ROTATION_BOOTSTRAP_RESERVE:-0}"
-  export FIBER_CHANNEL_ROTATION_MIN_RECOVERABLE_AMOUNT="${CHANNEL_ROTATION_MIN_RECOVERABLE_AMOUNT:-0}"
+  export FIBER_LIQUIDITY_FALLBACK_MODE="${LIQUIDITY_FALLBACK_MODE:-channel_rotation}"
+  export FIBER_CHANNEL_ROTATION_BOOTSTRAP_RESERVE="${CHANNEL_ROTATION_BOOTSTRAP_RESERVE:-${DEFAULT_CHANNEL_ROTATION_BOOTSTRAP_RESERVE_CKB}}"
+  export FIBER_CHANNEL_ROTATION_MIN_RECOVERABLE_AMOUNT="${CHANNEL_ROTATION_MIN_RECOVERABLE_AMOUNT:-${DEFAULT_CHANNEL_ROTATION_MIN_RECOVERABLE_AMOUNT_CKB}}"
   export FIBER_CHANNEL_ROTATION_MAX_CONCURRENT="${CHANNEL_ROTATION_MAX_CONCURRENT:-1}"
 }
 
@@ -579,7 +597,229 @@ const address = helpers.encodeToConfigAddress(
   { config: config.predefined.AGGRON4 },
 );
 console.log(address);
+	'"'"''
+}
+
+default_withdrawal_signer_target_shannons() {
+  local withdraw_amount_ckb="${WORKFLOW_WITHDRAW_AMOUNT:-61}"
+  [[ "${withdraw_amount_ckb}" =~ ^[0-9]+$ ]] || withdraw_amount_ckb=61
+  if [[ "${LIQUIDITY_FALLBACK_MODE:-channel_rotation}" == "channel_rotation" ]]; then
+    printf '%s' "$(( withdraw_amount_ckb * 100000000 ))"
+    return 0
+  fi
+  printf '%s' "$(( (withdraw_amount_ckb * 2 + 1) * 100000000 ))"
+}
+
+resolve_shannons_setting() {
+  local name="$1"
+  local fallback="$2"
+  local raw="${!name:-}"
+  if [[ -z "${raw}" ]]; then
+    printf '%s' "${fallback}"
+    return 0
+  fi
+  [[ "${raw}" =~ ^[0-9]+$ ]] || fatal "${EXIT_PRECHECK}" "${name} must be a non-negative integer in shannons"
+  printf '%s' "${raw}"
+}
+
+get_ckb_wallet_inventory_json_for_private_key() {
+  local private_key="$1"
+  docker exec \
+    -e "FIBER_WITHDRAWAL_CKB_PRIVATE_KEY=${private_key}" \
+    -w /app \
+    fiber-link-rpc \
+    sh -lc 'bun -e '"'"'import { createDefaultHotWalletInventoryProvider } from "@fiber-link/fiber-adapter";
+const provider = createDefaultHotWalletInventoryProvider();
+const inventory = await provider({ asset: "CKB", network: "AGGRON4" });
+function parseCkbToShannons(input) {
+  const value = String(input ?? "0").trim();
+  if (!/^\d+(?:\.\d+)?$/.test(value)) {
+    throw new Error(`invalid CKB amount: ${value}`);
+  }
+  const [intPartRaw, fracPartRaw = ""] = value.split(".");
+  const intPart = BigInt(intPartRaw);
+  const fracPart = BigInt((fracPartRaw + "00000000").slice(0, 8));
+  return intPart * 100000000n + fracPart;
+}
+console.log(JSON.stringify({
+  asset: inventory.asset,
+  network: inventory.network,
+  availableAmount: String(inventory.availableAmount ?? "0"),
+  availableShannons: parseCkbToShannons(inventory.availableAmount ?? "0").toString(),
+}));
 '"'"''
+}
+
+get_ckb_wallet_available_shannons_for_private_key() {
+  local private_key="$1"
+  local inventory_json
+  inventory_json="$(get_ckb_wallet_inventory_json_for_private_key "${private_key}")" \
+    || fatal "${EXIT_PRECHECK}" "failed to query hot wallet inventory"
+  printf '%s' "${inventory_json}" | jq -r '.availableShannons'
+}
+
+transfer_ckb_between_private_keys() {
+  local label="$1"
+  local source_private_key="$2"
+  local destination_address="$3"
+  local amount_shannons="$4"
+  local output_path="${ARTIFACTS_DIR}/${label}.json"
+  local error_path="${output_path%.json}.stderr.log"
+
+  [[ "${amount_shannons}" =~ ^[0-9]+$ ]] || fatal "${EXIT_PRECHECK}" "invalid transfer amount shannons: ${amount_shannons}"
+  [[ "${amount_shannons}" -gt 0 ]] || fatal "${EXIT_PRECHECK}" "transfer amount must be > 0"
+
+  docker exec \
+    -e "FIBER_WITHDRAWAL_CKB_PRIVATE_KEY=${source_private_key}" \
+    -e "E2E_TRANSFER_TO_ADDRESS=${destination_address}" \
+    -e "E2E_TRANSFER_AMOUNT_SHANNONS=${amount_shannons}" \
+    -w /app \
+    fiber-link-rpc \
+    sh -lc 'bun -e '"'"'import { executeCkbOnchainWithdrawal, shannonsToCkbDecimal } from "./packages/fiber-adapter/src/ckb-onchain-withdrawal.ts";
+const amountShannons = BigInt(process.env.E2E_TRANSFER_AMOUNT_SHANNONS ?? "0");
+const toAddress = String(process.env.E2E_TRANSFER_TO_ADDRESS ?? "");
+if (!toAddress) {
+  throw new Error("missing E2E_TRANSFER_TO_ADDRESS");
+}
+const amount = shannonsToCkbDecimal(amountShannons);
+const result = await executeCkbOnchainWithdrawal({
+  asset: "CKB",
+  amount,
+  destination: { kind: "CKB_ADDRESS", address: toAddress },
+});
+console.log(JSON.stringify({
+  txHash: result.txHash,
+  amount,
+  amountShannons: amountShannons.toString(),
+  destinationAddress: toAddress,
+}));
+'"'"'' > "${output_path}" 2>"${error_path}" \
+    || fatal "${EXIT_PRECHECK}" "failed CKB transfer (${label})"
+}
+
+wait_for_wallet_balance_at_most() {
+  local private_key="$1"
+  local max_shannons="$2"
+  local label="$3"
+  local attempt current
+  for attempt in $(seq 1 20); do
+    current="$(get_ckb_wallet_available_shannons_for_private_key "${private_key}")"
+    if (( current <= max_shannons )); then
+      return 0
+    fi
+    vlog "waiting ${label}: current=${current} max=${max_shannons} attempt=${attempt}"
+    sleep 3
+  done
+  return 1
+}
+
+wait_for_wallet_balance_at_least() {
+  local private_key="$1"
+  local min_shannons="$2"
+  local label="$3"
+  local attempt current
+  for attempt in $(seq 1 20); do
+    current="$(get_ckb_wallet_available_shannons_for_private_key "${private_key}")"
+    if (( current >= min_shannons )); then
+      return 0
+    fi
+    vlog "waiting ${label}: current=${current} min=${min_shannons} attempt=${attempt}"
+    sleep 3
+  done
+  return 1
+}
+
+ensure_withdrawal_reserve_private_key() {
+  local candidate cached_address generated derived_address
+
+  if [[ "${E2E_WITHDRAWAL_SIGNER_RESERVE_ENABLED}" != "1" ]]; then
+    return 0
+  fi
+
+  candidate="${E2E_WITHDRAWAL_RESERVE_CKB_PRIVATE_KEY:-}"
+  if [[ -z "${candidate}" && -s "${WITHDRAWAL_RESERVE_CACHE_PATH}" ]]; then
+    candidate="$(jq -r '.privateKey // empty' "${WITHDRAWAL_RESERVE_CACHE_PATH}" 2>/dev/null || true)"
+    cached_address="$(jq -r '.address // empty' "${WITHDRAWAL_RESERVE_CACHE_PATH}" 2>/dev/null || true)"
+    if [[ -n "${cached_address}" ]]; then
+      WITHDRAWAL_RESERVE_ADDRESS="${cached_address}"
+    fi
+  fi
+
+  if [[ -z "${candidate}" ]]; then
+    generated="$(openssl rand -hex 32)"
+    candidate="0x${generated}"
+  fi
+
+  candidate="$(normalize_private_key_hex "${candidate}")" \
+    || fatal "${EXIT_PRECHECK}" "invalid E2E_WITHDRAWAL_RESERVE_CKB_PRIVATE_KEY format"
+  WITHDRAWAL_RESERVE_PRIVATE_KEY="${candidate}"
+
+  if [[ -z "${WITHDRAWAL_RESERVE_ADDRESS}" ]]; then
+    derived_address="$(derive_ckb_testnet_address_from_private_key "${WITHDRAWAL_RESERVE_PRIVATE_KEY}" | tail -n1 | tr -d '\r')"
+    [[ "${derived_address}" =~ ^ckt1 ]] \
+      || fatal "${EXIT_PRECHECK}" "failed to derive testnet reserve address from withdrawal reserve private key"
+    WITHDRAWAL_RESERVE_ADDRESS="${derived_address}"
+  fi
+
+  mkdir -p "$(dirname "${WITHDRAWAL_RESERVE_CACHE_PATH}")"
+  jq -n \
+    --arg privateKey "${WITHDRAWAL_RESERVE_PRIVATE_KEY}" \
+    --arg address "${WITHDRAWAL_RESERVE_ADDRESS}" \
+    --arg updatedAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    '{privateKey:$privateKey,address:$address,updatedAt:$updatedAt}' > "${WITHDRAWAL_RESERVE_CACHE_PATH}"
+  chmod 600 "${WITHDRAWAL_RESERVE_CACHE_PATH}" || true
+}
+
+rebalance_withdrawal_signer_balance() {
+  local fee_buffer_shannons target_shannons refill_shannons max_shannons
+  local signer_balance reserve_balance sweep_amount desired_balance_after_topup
+
+  if [[ "${E2E_WITHDRAWAL_SIGNER_RESERVE_ENABLED}" != "1" ]]; then
+    return 0
+  fi
+
+  ensure_withdrawal_reserve_private_key
+
+  fee_buffer_shannons="$(resolve_shannons_setting "E2E_WITHDRAWAL_SIGNER_TRANSFER_FEE_BUFFER_SHANNONS" "100000000")"
+  target_shannons="$(resolve_shannons_setting "E2E_WITHDRAWAL_SIGNER_TARGET_SHANNONS" "$(default_withdrawal_signer_target_shannons)")"
+  refill_shannons="$(resolve_shannons_setting "E2E_WITHDRAWAL_SIGNER_REFILL_SHANNONS" "${target_shannons}")"
+  max_shannons="$(resolve_shannons_setting "E2E_WITHDRAWAL_SIGNER_MAX_SHANNONS" "$(( target_shannons + refill_shannons ))")"
+
+  signer_balance="$(get_ckb_wallet_available_shannons_for_private_key "${WITHDRAWAL_PRIVATE_KEY}")"
+  vlog "withdrawal signer balance before reserve rebalance: ${signer_balance} shannons"
+
+  if (( signer_balance > max_shannons )); then
+    sweep_amount=$(( signer_balance - target_shannons - fee_buffer_shannons ))
+    if (( sweep_amount > 0 )); then
+      log "withdrawal signer overfunded; sweeping ${sweep_amount} shannons to reserve wallet"
+      transfer_ckb_between_private_keys \
+        "withdrawal-signer-sweep-to-reserve" \
+        "${WITHDRAWAL_PRIVATE_KEY}" \
+        "${WITHDRAWAL_RESERVE_ADDRESS}" \
+        "${sweep_amount}"
+      wait_for_wallet_balance_at_most "${WITHDRAWAL_PRIVATE_KEY}" "${max_shannons}" "withdrawal-signer-sweep" \
+        || fatal "${EXIT_PRECHECK}" "withdrawal signer balance did not drop after reserve sweep"
+      signer_balance="$(get_ckb_wallet_available_shannons_for_private_key "${WITHDRAWAL_PRIVATE_KEY}")"
+    fi
+  fi
+
+  if [[ "${E2E_WITHDRAWAL_SIGNER_RESERVE_TOPUP}" == "1" ]] && (( signer_balance < target_shannons )); then
+    reserve_balance="$(get_ckb_wallet_available_shannons_for_private_key "${WITHDRAWAL_RESERVE_PRIVATE_KEY}")"
+    if (( reserve_balance > refill_shannons + fee_buffer_shannons )); then
+      log "withdrawal signer under target; topping up ${refill_shannons} shannons from reserve wallet"
+      desired_balance_after_topup=$(( signer_balance + refill_shannons ))
+      transfer_ckb_between_private_keys \
+        "withdrawal-signer-topup-from-reserve" \
+        "${WITHDRAWAL_RESERVE_PRIVATE_KEY}" \
+        "${WITHDRAWAL_SIGNER_ADDRESS}" \
+        "${refill_shannons}"
+      wait_for_wallet_balance_at_least "${WITHDRAWAL_PRIVATE_KEY}" "${desired_balance_after_topup}" "withdrawal-signer-topup" \
+        || fatal "${EXIT_PRECHECK}" "withdrawal signer balance did not recover after reserve top-up"
+      signer_balance="$(get_ckb_wallet_available_shannons_for_private_key "${WITHDRAWAL_PRIVATE_KEY}")"
+    fi
+  fi
+
+  vlog "withdrawal signer balance after reserve rebalance: ${signer_balance} shannons"
 }
 
 request_ckb_faucet_for_address() {
@@ -635,7 +875,7 @@ request_ckb_faucet_for_address() {
 }
 
 ensure_withdrawal_signer_private_key() {
-  local candidate cached_address generated derived_address
+  local candidate cached_address generated derived_address signer_target_shannons signer_balance
   candidate="${FIBER_WITHDRAWAL_CKB_PRIVATE_KEY:-${FIBER_WITHDRAW_CKB_PRIVATE_KEY:-}}"
   if [[ -z "${candidate}" ]]; then
     candidate="$(get_env_value FIBER_WITHDRAWAL_CKB_PRIVATE_KEY)"
@@ -673,8 +913,15 @@ ensure_withdrawal_signer_private_key() {
     '{privateKey:$privateKey,address:$address,updatedAt:$updatedAt}' > "${WITHDRAWAL_SIGNER_CACHE_PATH}"
   chmod 600 "${WITHDRAWAL_SIGNER_CACHE_PATH}" || true
 
-  if [[ "${E2E_WITHDRAWAL_SIGNER_SKIP_FAUCET}" != "1" ]]; then
+  rebalance_withdrawal_signer_balance
+  signer_target_shannons="$(resolve_shannons_setting "E2E_WITHDRAWAL_SIGNER_TARGET_SHANNONS" "$(default_withdrawal_signer_target_shannons)")"
+  signer_balance="$(get_ckb_wallet_available_shannons_for_private_key "${WITHDRAWAL_PRIVATE_KEY}")"
+
+  if [[ "${E2E_WITHDRAWAL_SIGNER_SKIP_FAUCET}" != "1" ]] && (( signer_balance < signer_target_shannons )); then
     request_ckb_faucet_for_address "${WITHDRAWAL_SIGNER_ADDRESS}" "withdrawal-signer"
+    rebalance_withdrawal_signer_balance
+  elif [[ "${E2E_WITHDRAWAL_SIGNER_SKIP_FAUCET}" != "1" ]]; then
+    vlog "withdrawal signer already funded above target; skipping faucet"
   fi
 }
 
@@ -692,12 +939,12 @@ restart_withdrawal_runtime() {
     if [[ -n "${WITHDRAWAL_PRIVATE_KEY}" ]]; then
       export FIBER_WITHDRAWAL_CKB_PRIVATE_KEY="${WITHDRAWAL_PRIVATE_KEY}"
     fi
-    export FIBER_WITHDRAWAL_CKB_LIQUIDITY_FEE_BUFFER="${FIBER_WITHDRAWAL_CKB_LIQUIDITY_FEE_BUFFER:-0}"
-    export FIBER_WITHDRAWAL_CKB_LIQUIDITY_POST_TX_RESERVE="${FIBER_WITHDRAWAL_CKB_LIQUIDITY_POST_TX_RESERVE:-0}"
-    export FIBER_WITHDRAWAL_CKB_LIQUIDITY_WARM_BUFFER="${FIBER_WITHDRAWAL_CKB_LIQUIDITY_WARM_BUFFER:-0}"
-    export FIBER_LIQUIDITY_FALLBACK_MODE="${LIQUIDITY_FALLBACK_MODE:-none}"
-    export FIBER_CHANNEL_ROTATION_BOOTSTRAP_RESERVE="${CHANNEL_ROTATION_BOOTSTRAP_RESERVE:-0}"
-    export FIBER_CHANNEL_ROTATION_MIN_RECOVERABLE_AMOUNT="${CHANNEL_ROTATION_MIN_RECOVERABLE_AMOUNT:-0}"
+    export FIBER_WITHDRAWAL_CKB_LIQUIDITY_FEE_BUFFER="${FIBER_WITHDRAWAL_CKB_LIQUIDITY_FEE_BUFFER:-${DEFAULT_WITHDRAWAL_LIQUIDITY_FEE_BUFFER_CKB}}"
+    export FIBER_WITHDRAWAL_CKB_LIQUIDITY_POST_TX_RESERVE="${FIBER_WITHDRAWAL_CKB_LIQUIDITY_POST_TX_RESERVE:-${DEFAULT_WITHDRAWAL_LIQUIDITY_POST_TX_RESERVE_CKB}}"
+    export FIBER_WITHDRAWAL_CKB_LIQUIDITY_WARM_BUFFER="${FIBER_WITHDRAWAL_CKB_LIQUIDITY_WARM_BUFFER:-${DEFAULT_WITHDRAWAL_LIQUIDITY_WARM_BUFFER_CKB}}"
+    export FIBER_LIQUIDITY_FALLBACK_MODE="${LIQUIDITY_FALLBACK_MODE:-channel_rotation}"
+    export FIBER_CHANNEL_ROTATION_BOOTSTRAP_RESERVE="${CHANNEL_ROTATION_BOOTSTRAP_RESERVE:-${DEFAULT_CHANNEL_ROTATION_BOOTSTRAP_RESERVE_CKB}}"
+    export FIBER_CHANNEL_ROTATION_MIN_RECOVERABLE_AMOUNT="${CHANNEL_ROTATION_MIN_RECOVERABLE_AMOUNT:-${DEFAULT_CHANNEL_ROTATION_MIN_RECOVERABLE_AMOUNT_CKB}}"
     export FIBER_CHANNEL_ROTATION_MAX_CONCURRENT="${CHANNEL_ROTATION_MAX_CONCURRENT:-1}"
     docker compose \
       --env-file "${COMPOSE_ENV_FILE}" \
@@ -805,9 +1052,12 @@ set_worker_strategy() {
     if [[ -n "${WITHDRAWAL_PRIVATE_KEY}" ]]; then
       export FIBER_WITHDRAWAL_CKB_PRIVATE_KEY="${WITHDRAWAL_PRIVATE_KEY}"
     fi
-    export FIBER_LIQUIDITY_FALLBACK_MODE="${LIQUIDITY_FALLBACK_MODE:-none}"
-    export FIBER_CHANNEL_ROTATION_BOOTSTRAP_RESERVE="${CHANNEL_ROTATION_BOOTSTRAP_RESERVE:-0}"
-    export FIBER_CHANNEL_ROTATION_MIN_RECOVERABLE_AMOUNT="${CHANNEL_ROTATION_MIN_RECOVERABLE_AMOUNT:-0}"
+    export FIBER_WITHDRAWAL_CKB_LIQUIDITY_FEE_BUFFER="${FIBER_WITHDRAWAL_CKB_LIQUIDITY_FEE_BUFFER:-${DEFAULT_WITHDRAWAL_LIQUIDITY_FEE_BUFFER_CKB}}"
+    export FIBER_WITHDRAWAL_CKB_LIQUIDITY_POST_TX_RESERVE="${FIBER_WITHDRAWAL_CKB_LIQUIDITY_POST_TX_RESERVE:-${DEFAULT_WITHDRAWAL_LIQUIDITY_POST_TX_RESERVE_CKB}}"
+    export FIBER_WITHDRAWAL_CKB_LIQUIDITY_WARM_BUFFER="${FIBER_WITHDRAWAL_CKB_LIQUIDITY_WARM_BUFFER:-${DEFAULT_WITHDRAWAL_LIQUIDITY_WARM_BUFFER_CKB}}"
+    export FIBER_LIQUIDITY_FALLBACK_MODE="${LIQUIDITY_FALLBACK_MODE:-channel_rotation}"
+    export FIBER_CHANNEL_ROTATION_BOOTSTRAP_RESERVE="${CHANNEL_ROTATION_BOOTSTRAP_RESERVE:-${DEFAULT_CHANNEL_ROTATION_BOOTSTRAP_RESERVE_CKB}}"
+    export FIBER_CHANNEL_ROTATION_MIN_RECOVERABLE_AMOUNT="${CHANNEL_ROTATION_MIN_RECOVERABLE_AMOUNT:-${DEFAULT_CHANNEL_ROTATION_MIN_RECOVERABLE_AMOUNT_CKB}}"
     export FIBER_CHANNEL_ROTATION_MAX_CONCURRENT="${CHANNEL_ROTATION_MAX_CONCURRENT:-1}"
     docker compose \
       --env-file "${COMPOSE_ENV_FILE}" \

@@ -3,26 +3,23 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 type MockSelectQueue = unknown[][];
 
 function createMockDb(selectQueue: MockSelectQueue) {
+  const resolveNext = (label: string) => {
+    const next = selectQueue.shift();
+    if (!next) {
+      throw new Error(`mock select queue underflow on ${label}`);
+    }
+    return next;
+  };
+
   return {
     select: vi.fn(() => {
       const chain = {
         from: vi.fn(() => chain),
         where: vi.fn(() => chain),
         orderBy: vi.fn(() => chain),
-        limit: vi.fn(async () => {
-          const next = selectQueue.shift();
-          if (!next) {
-            throw new Error("mock select queue underflow on limit()");
-          }
-          return next;
-        }),
-        groupBy: vi.fn(async () => {
-          const next = selectQueue.shift();
-          if (!next) {
-            throw new Error("mock select queue underflow on groupBy()");
-          }
-          return next;
-        }),
+        limit: vi.fn(async () => resolveNext('limit()')),
+        groupBy: vi.fn(async () => resolveNext('groupBy()')),
+        then: (resolve) => Promise.resolve(resolveNext('await query')).then(resolve),
       };
       return chain;
     }),
@@ -39,10 +36,12 @@ describe("handleDashboardSummary", () => {
     const selectQueue: MockSelectQueue = [];
     const mockDb = createMockDb(selectQueue);
     const getBalance = vi.fn();
+    const getPendingTotal = vi.fn();
 
     const dbModule = await import("@fiber-link/db");
     vi.spyOn(dbModule, "createDbClient").mockReturnValue(mockDb as never);
     vi.spyOn(dbModule, "createDbLedgerRepo").mockReturnValue({ getBalance } as never);
+    vi.spyOn(dbModule, "createDbWithdrawalRepo").mockReturnValue({ getPendingTotal } as never);
 
     const { handleDashboardSummary } = await import("./dashboard");
 
@@ -57,7 +56,9 @@ describe("handleDashboardSummary", () => {
         invoiceState: "SETTLED",
         fromUserId: "u-alice",
         toUserId: "u-bob",
+        message: "Great post",
         createdAt: firstTipCreatedAt,
+        settledAt: new Date("2026-02-27T10:01:00.000Z"),
       },
       {
         id: "tip-out",
@@ -68,10 +69,15 @@ describe("handleDashboardSummary", () => {
         invoiceState: "UNPAID",
         fromUserId: "u-bob",
         toUserId: "u-charlie",
+        message: null,
         createdAt: new Date("2026-02-27T09:00:00.000Z"),
+        settledAt: null,
       },
-    ]);
+    ],
+      [{ pendingAmount: '0', pendingCount: 1, completedCount: 1, failedCount: 0 }],
+    );
     getBalance.mockResolvedValueOnce(88n);
+    getPendingTotal.mockResolvedValueOnce('0');
 
     const userOnly = await handleDashboardSummary({
       appId: "app-1",
@@ -80,6 +86,17 @@ describe("handleDashboardSummary", () => {
     });
 
     expect(userOnly.balance).toBe("88");
+    expect(userOnly.balances).toEqual({
+      available: "88",
+      pending: "0",
+      locked: "0",
+      asset: "CKB",
+    });
+    expect(userOnly.stats).toEqual({
+      pendingCount: 1,
+      completedCount: 1,
+      failedCount: 0,
+    });
     expect(userOnly.tips).toEqual([
       {
         id: "tip-in",
@@ -90,7 +107,9 @@ describe("handleDashboardSummary", () => {
         state: "SETTLED",
         direction: "IN",
         counterpartyUserId: "u-alice",
+        message: "Great post",
         createdAt: firstTipCreatedAt.toISOString(),
+        settledAt: new Date("2026-02-27T10:01:00.000Z").toISOString(),
       },
       {
         id: "tip-out",
@@ -101,7 +120,9 @@ describe("handleDashboardSummary", () => {
         state: "UNPAID",
         direction: "OUT",
         counterpartyUserId: "u-charlie",
+        message: null,
         createdAt: new Date("2026-02-27T09:00:00.000Z").toISOString(),
+        settledAt: null,
       },
     ]);
     expect(userOnly.admin).toBeUndefined();
@@ -119,9 +140,12 @@ describe("handleDashboardSummary", () => {
           invoiceState: "FAILED",
           fromUserId: "u-bob",
           toUserId: "u-dave",
+          message: "oops",
           createdAt: adminTipCreatedAt,
+          settledAt: null,
         },
       ],
+      [{ pendingAmount: '0', pendingCount: 0, completedCount: 0, failedCount: 1 }],
       [{ appId: "app-1", createdAt: new Date("2026-01-01T00:00:00.000Z") }],
       [
         {
@@ -173,6 +197,7 @@ describe("handleDashboardSummary", () => {
       ],
     );
     getBalance.mockResolvedValueOnce("91.2");
+    getPendingTotal.mockResolvedValueOnce('5');
 
     const withAdmin = await handleDashboardSummary({
       appId: "app-1",

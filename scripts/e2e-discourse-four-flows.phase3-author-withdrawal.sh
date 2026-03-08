@@ -73,6 +73,10 @@ ensure_withdrawal_signer_private_key
 restart_withdrawal_runtime subscription
 ensure_discourse_ui_proxy
 
+signer_target_shannons="$(resolve_shannons_setting "E2E_WITHDRAWAL_SIGNER_TARGET_SHANNONS" "$(default_withdrawal_signer_target_shannons)")"
+signer_refill_shannons="$(resolve_shannons_setting "E2E_WITHDRAWAL_SIGNER_REFILL_SHANNONS" "${signer_target_shannons}")"
+signer_max_shannons="$(resolve_shannons_setting "E2E_WITHDRAWAL_SIGNER_MAX_SHANNONS" "$(( signer_target_shannons + signer_refill_shannons ))")"
+
 attempt_dir="${PHASE3_DIR}"
 if [[ "${ATTEMPT_LABEL}" != "primary" ]]; then
   attempt_dir="${RUN_DIR}/withdrawal-browser-${ATTEMPT_LABEL}"
@@ -82,12 +86,24 @@ attempt_prefix="withdrawal-${ATTEMPT_LABEL}"
 
 jq -n \
   --arg address "${WITHDRAWAL_SIGNER_ADDRESS}" \
+  --arg reserveAddress "${WITHDRAWAL_RESERVE_ADDRESS:-}" \
   --arg rotateRequested "${E2E_WITHDRAWAL_SIGNER_ROTATE:-0}" \
   --arg skipFaucet "${E2E_WITHDRAWAL_SIGNER_SKIP_FAUCET:-0}" \
+  --arg reserveEnabled "${E2E_WITHDRAWAL_SIGNER_RESERVE_ENABLED:-1}" \
+  --arg reserveTopupEnabled "${E2E_WITHDRAWAL_SIGNER_RESERVE_TOPUP:-1}" \
+  --arg targetShannons "${signer_target_shannons}" \
+  --arg refillShannons "${signer_refill_shannons}" \
+  --arg maxShannons "${signer_max_shannons}" \
   '{
     withdrawalSignerAddress: $address,
+    withdrawalReserveAddress: ($reserveAddress | select(length > 0)),
     rotateRequested: ($rotateRequested == "1"),
-    skipFaucet: ($skipFaucet == "1")
+    skipFaucet: ($skipFaucet == "1"),
+    reserveEnabled: ($reserveEnabled == "1"),
+    reserveTopupEnabled: ($reserveTopupEnabled == "1"),
+    signerTargetShannons: ($targetShannons | select(length > 0)),
+    signerRefillShannons: ($refillShannons | select(length > 0)),
+    signerMaxShannons: ($maxShannons | select(length > 0))
   }' > "${ARTIFACTS_DIR}/${attempt_prefix}.signer.json"
 
 capture_hot_wallet_inventory "${ARTIFACTS_DIR}/${attempt_prefix}.hot-wallet.before.json"
