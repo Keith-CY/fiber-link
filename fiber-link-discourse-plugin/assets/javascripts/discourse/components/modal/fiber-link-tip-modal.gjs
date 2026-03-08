@@ -1,4 +1,5 @@
 import Component from "@glimmer/component";
+import { registerDestructor } from "@ember/destroyable";
 import { tracked } from "@glimmer/tracking";
 import { action } from "@ember/object";
 import { on } from "@ember/modifier";
@@ -9,6 +10,7 @@ import DModalCancel from "discourse/components/d-modal-cancel";
 import { createTip, getTipStatus } from "../../services/fiber-link-api";
 
 const AMOUNT_PATTERN = /^(?:\d+)(?:\.\d{1,8})?$/;
+const TIP_STATUS_AUTO_POLL_INTERVAL_MS = 1000;
 
 function mapTipStateToLabel(state) {
   if (state === "SETTLED") {
@@ -75,12 +77,21 @@ function mapStatusErrorToMessage(error) {
 export default class FiberLinkTipModal extends Component {
   @tracked amount = "1";
   @tracked invoice;
+  @tracked invoiceQrDataUrl;
   @tracked statusLabel = "Awaiting payment";
   @tracked statusClass = mapTipStateToClass("UNPAID");
   @tracked isGenerating = false;
   @tracked isChecking = false;
   @tracked errorMessage;
   @tracked copyFeedback;
+  @tracked autoPollMessage;
+
+  _pollTimer = null;
+
+  constructor(owner, args) {
+    super(owner, args);
+    registerDestructor(this, () => this._clearStatusPollTimer());
+  }
 
   get postId() {
     const rawValue = this.args?.model?.postId;
@@ -140,20 +151,52 @@ export default class FiberLinkTipModal extends Component {
     return !this.invoice || this.isChecking || this.isGenerating;
   }
 
+  get checkStatusLabel() {
+    return this.isChecking ? "Checking..." : "Check status";
+  }
+
+  get shouldShowInvoiceQr() {
+    return typeof this.invoiceQrDataUrl === "string" && this.invoiceQrDataUrl.trim().startsWith("data:image/");
+  }
+
+  _clearStatusPollTimer() {
+    if (this._pollTimer) {
+      clearTimeout(this._pollTimer);
+      this._pollTimer = null;
+    }
+  }
+
+  _scheduleStatusPoll() {
+    this._clearStatusPollTimer();
+    if (!this.invoice || this.isGenerating || this.isChecking) {
+      return;
+    }
+
+    this._pollTimer = setTimeout(() => {
+      this._pollTimer = null;
+      void this.checkStatus({ isAutoPoll: true });
+    }, TIP_STATUS_AUTO_POLL_INTERVAL_MS);
+  }
+
   @action
   onAmountInput(event) {
     this.amount = event?.target?.value ?? "";
     this.copyFeedback = null;
+    this.autoPollMessage = null;
   }
 
   @action
   async generateInvoice() {
+    let scheduleAutoPoll = false;
+
     if (this.isGenerating) {
       return;
     }
 
     this.errorMessage = null;
     this.copyFeedback = null;
+    this.autoPollMessage = null;
+    this._clearStatusPollTimer();
 
     if (this.isSelfTip) {
       this.errorMessage = "You can’t tip your own post.";
@@ -186,22 +229,34 @@ export default class FiberLinkTipModal extends Component {
       }
 
       this.invoice = result?.invoice;
+      this.invoiceQrDataUrl = normalizeMessage(result?.invoiceQrDataUrl) || null;
       this.statusLabel = "Awaiting payment";
       this.statusClass = mapTipStateToClass("UNPAID");
+      this.autoPollMessage = "Scan or copy this invoice in your Fiber wallet. Status refreshes automatically while this dialog is open.";
+      scheduleAutoPoll = true;
     } catch (e) {
       this.errorMessage = mapCreateTipErrorToMessage(e);
     } finally {
       this.isGenerating = false;
+      if (scheduleAutoPoll) {
+        this._scheduleStatusPoll();
+      }
     }
   }
 
   @action
-  async checkStatus() {
+  async checkStatus(options = {}) {
+    const isAutoPoll = options.isAutoPoll === true;
+    let scheduleAutoPoll = false;
+
     if (!this.invoice || this.isChecking) {
       return;
     }
 
-    this.errorMessage = null;
+    if (!isAutoPoll) {
+      this.errorMessage = null;
+      this._clearStatusPollTimer();
+    }
     this.copyFeedback = null;
     this.isChecking = true;
 
@@ -210,10 +265,27 @@ export default class FiberLinkTipModal extends Component {
       const state = normalizeMessage(result?.state).toUpperCase();
       this.statusLabel = mapTipStateToLabel(state);
       this.statusClass = mapTipStateToClass(state);
+      this.errorMessage = null;
+
+      if (state === "UNPAID") {
+        this.autoPollMessage = "Still waiting for payment. We’ll keep checking automatically.";
+        scheduleAutoPoll = true;
+      } else {
+        this.autoPollMessage = null;
+        this._clearStatusPollTimer();
+      }
     } catch (e) {
-      this.errorMessage = mapStatusErrorToMessage(e);
+      if (isAutoPoll && isTransientNetworkError(normalizeMessage(e?.message))) {
+        this.autoPollMessage = "Automatic refresh hit a network issue. We’ll keep retrying in the background.";
+        scheduleAutoPoll = true;
+      } else {
+        this.errorMessage = mapStatusErrorToMessage(e);
+      }
     } finally {
       this.isChecking = false;
+      if (scheduleAutoPoll) {
+        this._scheduleStatusPoll();
+      }
     }
   }
 
@@ -270,6 +342,16 @@ export default class FiberLinkTipModal extends Component {
           {{#if this.invoice}}
             <div class="fiber-link-tip-invoice-card">
               <p class="fiber-link-tip-invoice-label">Invoice</p>
+              {{#if this.shouldShowInvoiceQr}}
+                <div class="fiber-link-tip-invoice-visual">
+                  <img
+                    class="fiber-link-tip-invoice-qr"
+                    data-fiber-link-tip-modal="invoice-qr"
+                    src={{this.invoiceQrDataUrl}}
+                    alt="Invoice QR code"
+                  />
+                </div>
+              {{/if}}
               <code class="fiber-link-tip-invoice" title={{this.invoice}}>{{this.invoice}}</code>
               <div class="fiber-link-tip-invoice-meta">
                 <span class={{this.statusClass}}>{{this.statusLabel}}</span>
@@ -278,10 +360,13 @@ export default class FiberLinkTipModal extends Component {
                   <span class="fiber-link-tip-copy-feedback">{{this.copyFeedback}}</span>
                 {{/if}}
               </div>
+              {{#if this.autoPollMessage}}
+                <p class="fiber-link-tip-invoice-note">{{this.autoPollMessage}}</p>
+              {{/if}}
             </div>
           {{else}}
             <p class="fiber-link-tip-help">
-              Generate an invoice, complete payment in your wallet, then check status.
+              Generate an invoice, scan it in your Fiber wallet, and the modal will refresh status automatically.
             </p>
           {{/if}}
         </div>
@@ -297,7 +382,7 @@ export default class FiberLinkTipModal extends Component {
 
         <DButton
           @action={{this.checkStatus}}
-          @translatedLabel="Check status"
+          @translatedLabel={{this.checkStatusLabel}}
           @disabled={{this.isCheckStatusDisabled}}
         />
 

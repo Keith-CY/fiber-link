@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "rqrcode"
+
 module ::FiberLink
   class RpcController < ::ApplicationController
     requires_plugin "fiber-link"
@@ -168,7 +170,7 @@ module ::FiberLink
 
       begin
         response = Excon.post("#{service_url}/rpc", body: payload, headers: headers)
-        render body: response.body, status: response.status, content_type: "application/json"
+        render body: enrich_response_body(method, response.body), status: response.status, content_type: "application/json"
       rescue Excon::Error => error
         Rails.logger.error("Fiber Link RPC proxy error: #{error.message}")
         render json: {
@@ -178,6 +180,32 @@ module ::FiberLink
                },
                status: :service_unavailable
       end
+    end
+
+    private
+
+    def enrich_response_body(method, raw_body)
+      return raw_body unless method == "tip.create"
+
+      payload = JSON.parse(raw_body)
+      invoice = payload.dig("result", "invoice")
+      return raw_body if invoice.blank?
+
+      qr_data_url = build_invoice_qr_data_url(invoice)
+      return raw_body if qr_data_url.blank?
+
+      payload["result"]["invoiceQrDataUrl"] = qr_data_url
+      payload.to_json
+    rescue JSON::ParserError => error
+      Rails.logger.warn("Fiber Link RPC proxy response JSON parse failed: #{error.message}")
+      raw_body
+    end
+
+    def build_invoice_qr_data_url(invoice)
+      RQRCode::QRCode.new(invoice).as_png(border_modules: 1, size: 240).to_data_url
+    rescue StandardError => error
+      Rails.logger.warn("Fiber Link invoice QR generation failed: #{error.message}")
+      nil
     end
   end
 end

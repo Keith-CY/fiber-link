@@ -115,6 +115,7 @@ JSON
 cat > "${artifact_dir}/logs.txt" <<LOG
 stub orchestrator called
 E2E_UNIQUE_WITHDRAW_TO_ADDRESS=${E2E_UNIQUE_WITHDRAW_TO_ADDRESS:-}
+E2E_SETTLEMENT_MODES=${E2E_SETTLEMENT_MODES:-}
 LOG
 printf 'RESULT=PASS CODE=0 ARTIFACT_DIR=%s SUMMARY=%s\n' "${artifact_dir}" "${artifact_dir}/artifacts/summary.json"
 EOF
@@ -137,6 +138,17 @@ test_help_outputs() {
   local orchestrator_help
   orchestrator_help="$("${ROOT_DIR}/scripts/e2e-discourse-four-flows.sh" --help 2>&1 || true)"
   assert_contains "${orchestrator_help}" "--liquidity-fallback-mode"
+}
+
+test_default_runtime_preferences() {
+  local defaults_output
+  defaults_output="$(
+    env -u E2E_DISCOURSE_UI_BASE_URL -u E2E_SETTLEMENT_MODES \
+      bash -lc "source '${ROOT_DIR}/scripts/lib/e2e-discourse-four-flows-common.sh'; printf 'ui=%s\nsettlement=%s\n' \"\$DEFAULT_DISCOURSE_UI_BASE_URL\" \"\$DEFAULT_SETTLEMENT_MODES\""
+  )"
+
+  assert_contains "${defaults_output}" "ui=http://127.0.0.1:9292"
+  assert_contains "${defaults_output}" "settlement=subscription"
 }
 
 test_orchestrator_calls_phase_scripts_in_order() {
@@ -224,6 +236,8 @@ test_capture_wrapper_can_use_orchestrator_override() {
 
   latest_summary="$(find "${output_root}" -name summary.json | head -n1 || true)"
   [[ -n "${latest_summary}" ]] || fail "capture wrapper did not package summary.json"
+  grep -q 'E2E_SETTLEMENT_MODES=subscription' "${output_root}"/*/artifact-root/logs.txt \
+    || fail "capture wrapper did not default to subscription settlement mode"
 }
 
 test_channel_rotation_smoke_can_use_orchestrator_override() {
@@ -252,6 +266,7 @@ test_channel_rotation_smoke_can_use_orchestrator_override() {
 }
 
 test_help_outputs
+test_default_runtime_preferences
 test_orchestrator_calls_phase_scripts_in_order
 test_orchestrator_calls_optional_liquidity_regression_when_enabled
 test_orchestrator_seeds_legacy_channel_before_withdrawal_when_channel_rotation_enabled

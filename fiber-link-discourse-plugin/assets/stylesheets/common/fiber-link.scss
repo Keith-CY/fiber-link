@@ -86,6 +86,24 @@
   gap: 0.6rem;
 }
 
+.fiber-link-tip-invoice-visual {
+  display: grid;
+  place-items: center;
+  padding: 0.65rem;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--secondary) 72%, white 28%);
+  border: 1px solid var(--primary-low-mid);
+}
+
+.fiber-link-tip-invoice-qr {
+  width: min(100%, 220px);
+  height: auto;
+  display: block;
+  border-radius: 8px;
+  background: white;
+  padding: 0.5rem;
+}
+
 .fiber-link-tip-invoice-label {
   margin: 0;
   color: var(--primary-medium);
@@ -114,6 +132,13 @@
 .fiber-link-tip-copy-feedback {
   color: var(--primary-medium);
   font-size: 0.82rem;
+}
+
+.fiber-link-tip-invoice-note {
+  margin: 0;
+  color: var(--primary-medium);
+  font-size: 0.86rem;
+  line-height: 1.45;
 }
 
 .fiber-link-tip-status-badge,

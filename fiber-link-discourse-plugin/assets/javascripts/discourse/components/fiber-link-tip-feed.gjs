@@ -243,7 +243,7 @@ export default class FiberLinkTipFeed extends Component {
               </tr>
             </thead>
             <tbody>
-              {{#each this.tips as |tip|}}
+              {{#each this.tips key="id" as |tip|}}
                 <tr data-tip-id={{tip.id}}>
                   <td>
                     <p class="fiber-link-tip-feed-primary">

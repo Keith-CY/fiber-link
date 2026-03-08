@@ -32,7 +32,7 @@ PW_TMPDIR="${PW_TMPDIR:-/tmp/playwright-cli}"
 mkdir -p "${PW_TMPDIR}"
 export TMPDIR="${PW_TMPDIR}"
 
-BASE_URL="${PW_DEMO_URL:-http://127.0.0.1:4200}"
+BASE_URL="${PW_DEMO_URL:-http://127.0.0.1:9292}"
 if [[ "${BASE_URL}" == */login ]]; then
   OPEN_URL="${BASE_URL}"
 else

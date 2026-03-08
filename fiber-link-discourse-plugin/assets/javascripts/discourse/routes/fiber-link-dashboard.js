@@ -48,9 +48,14 @@ function buildTipStats(tips) {
   };
 }
 
+function buildTipFeedSignature(tips) {
+  return JSON.stringify(Array.isArray(tips) ? tips : []);
+}
+
 export default class FiberLinkDashboardRoute extends Route {
   _activeModel = null;
   _pollTimer = null;
+  _lastTipFeedSignature = null;
 
   model() {
     this._clearPollTimer();
@@ -60,6 +65,7 @@ export default class FiberLinkDashboardRoute extends Route {
       summaryErrorMessage: null,
       isFeedLoading: true,
       feedErrorMessage: null,
+      isRefreshing: false,
       balance: "0",
       balanceAsset: "CKB",
       generatedAt: null,
@@ -80,6 +86,7 @@ export default class FiberLinkDashboardRoute extends Route {
   resetController(_controller, isExiting) {
     if (isExiting) {
       this._activeModel = null;
+      this._lastTipFeedSignature = null;
       this._clearPollTimer();
     }
   }
@@ -91,12 +98,23 @@ export default class FiberLinkDashboardRoute extends Route {
 
     this._clearPollTimer();
 
-    model.setProperties({
-      isSummaryLoading: true,
-      summaryErrorMessage: null,
-      isFeedLoading: true,
-      feedErrorMessage: null,
-    });
+    const isInitialLoad = Boolean(model.isSummaryLoading || model.isFeedLoading);
+
+    if (isInitialLoad) {
+      model.setProperties({
+        isSummaryLoading: true,
+        summaryErrorMessage: null,
+        isFeedLoading: true,
+        feedErrorMessage: null,
+        isRefreshing: false,
+      });
+    } else {
+      model.setProperties({
+        summaryErrorMessage: null,
+        feedErrorMessage: null,
+        isRefreshing: true,
+      });
+    }
 
     try {
       const result = await getDashboardSummary({
@@ -111,19 +129,27 @@ export default class FiberLinkDashboardRoute extends Route {
       const tips = Array.isArray(result?.tips) ? result.tips : [];
       const hasUnpaid = tips.some((tip) => tip?.state === "UNPAID");
       const stats = buildTipStats(tips);
+      const nextTipFeedSignature = buildTipFeedSignature(tips);
 
-      model.setProperties({
+      const nextProperties = {
         isSummaryLoading: false,
         summaryErrorMessage: null,
         isFeedLoading: false,
         feedErrorMessage: null,
+        isRefreshing: false,
         balance: typeof result?.balance === "string" ? result.balance : "0",
         balanceAsset: "CKB",
         generatedAt: formatTimestamp(result?.generatedAt),
         refreshedAt: new Date().toISOString(),
-        tipFeedItems: tips,
         ...stats,
-      });
+      };
+
+      if (nextTipFeedSignature !== this._lastTipFeedSignature) {
+        nextProperties.tipFeedItems = tips;
+        this._lastTipFeedSignature = nextTipFeedSignature;
+      }
+
+      model.setProperties(nextProperties);
 
       if (hasUnpaid) {
         this._schedulePoll(model);
@@ -136,8 +162,9 @@ export default class FiberLinkDashboardRoute extends Route {
       const message = error?.message ?? "Failed to load dashboard.summary";
       model.setProperties({
         isSummaryLoading: false,
-        summaryErrorMessage: message,
         isFeedLoading: false,
+        isRefreshing: false,
+        summaryErrorMessage: message,
         feedErrorMessage: message,
       });
     }

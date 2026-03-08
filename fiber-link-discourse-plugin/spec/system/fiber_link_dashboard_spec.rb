@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "timeout"
+
 RSpec.describe "Fiber Link Dashboard", type: :system do
   fab!(:user)
 
@@ -85,6 +87,90 @@ RSpec.describe "Fiber Link Dashboard", type: :system do
     expect(page).to have_content("Recent Tips")
     expect(page).to have_content("fiber_tipper")
     expect(page).to have_content("Awaiting payment")
+    expect(page).to have_content("Paid")
+  end
+
+  it "keeps visible data stable while background polling refreshes" do
+    request_count = 0
+    request_count_mutex = Mutex.new
+
+    stub_request(:post, "https://fiber-link.example/rpc")
+      .with { |request| JSON.parse(request.body).fetch("method") == "dashboard.summary" }
+      .to_return do
+        current_request = request_count_mutex.synchronize do
+          request_count += 1
+        end
+
+        if current_request == 1
+          {
+            status: 200,
+            body: {
+              jsonrpc: "2.0",
+              id: "dash-refresh-1",
+              result: {
+                balance: "12.5",
+                tips: [
+                  {
+                    id: "tip-refresh-1",
+                    invoice: "inv-refresh-1",
+                    postId: "p1",
+                    amount: "31",
+                    asset: "CKB",
+                    state: "UNPAID",
+                    direction: "IN",
+                    counterpartyUserId: "fiber_tipper",
+                    createdAt: "2026-02-16T00:00:00.000Z",
+                  },
+                ],
+                generatedAt: "2026-02-16T00:00:00.000Z",
+              },
+            }.to_json,
+            headers: { "Content-Type" => "application/json" },
+          }
+        else
+          sleep 3
+          {
+            status: 200,
+            body: {
+              jsonrpc: "2.0",
+              id: "dash-refresh-2",
+              result: {
+                balance: "99",
+                tips: [
+                  {
+                    id: "tip-refresh-1",
+                    invoice: "inv-refresh-1",
+                    postId: "p1",
+                    amount: "31",
+                    asset: "CKB",
+                    state: "SETTLED",
+                    direction: "IN",
+                    counterpartyUserId: "fiber_tipper",
+                    createdAt: "2026-02-16T00:00:00.000Z",
+                  },
+                ],
+                generatedAt: "2026-02-16T00:00:05.000Z",
+              },
+            }.to_json,
+            headers: { "Content-Type" => "application/json" },
+          }
+        end
+      end
+
+    visit "/fiber-link"
+
+    expect(page).to have_content("12.5 CKB")
+    expect(page).to have_content("Awaiting payment")
+
+    Timeout.timeout(8) do
+      loop do
+        break if request_count_mutex.synchronize { request_count >= 2 }
+        sleep 0.05
+      end
+    end
+
+    expect(page).to have_no_content("Loading…", wait: 0)
+    expect(page).to have_content("99 CKB")
     expect(page).to have_content("Paid")
   end
 

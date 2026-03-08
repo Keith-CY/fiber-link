@@ -42,6 +42,7 @@ RSpec.describe ::FiberLink::RpcController, type: :request do
 
       expect(response).to have_http_status(:ok)
       expect(JSON.parse(response.body).dig("result", "invoice")).to eq("inv-1")
+      expect(JSON.parse(response.body).dig("result", "invoiceQrDataUrl")).to start_with("data:image/png;base64,")
 
       expect(WebMock).to have_requested(:post, "https://fiber-link.example/rpc").with { |request|
         body = JSON.parse(request.body)

@@ -7,7 +7,7 @@ source "${ROOT_DIR}/scripts/lib/e2e-discourse-four-flows-common.sh"
 
 LOG_PREFIX="e2e-four-flows-phase2"
 VERBOSE=0
-SETTLEMENT_MODES="${E2E_SETTLEMENT_MODES:-subscription,polling}"
+SETTLEMENT_MODES="${E2E_SETTLEMENT_MODES:-subscription}"
 
 usage() {
   cat <<'USAGE'
@@ -20,7 +20,7 @@ Phase 3 of the discourse four-flows workflow:
 
 Options:
   --run-dir <path>            Existing run directory from phase1.
-  --settlement-modes <modes>  subscription,polling | subscription | polling.
+  --settlement-modes <modes>  subscription | polling | subscription,polling.
   --verbose                   Print detailed logs.
   -h, --help                  Show help.
 USAGE

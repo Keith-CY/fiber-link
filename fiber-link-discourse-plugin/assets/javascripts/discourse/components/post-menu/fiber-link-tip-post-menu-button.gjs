@@ -21,7 +21,7 @@ export default class FiberLinkTipPostMenuButton extends Component {
   }
 
   get targetUserId() {
-    const rawUserId = this.post?.user_id ?? this.post?.userId;
+    const rawUserId = this.post?.user_id ?? this.post?.userId ?? this.post?.user?.id;
     const parsed = Number(rawUserId);
     return Number.isFinite(parsed) && parsed > 0 ? Math.trunc(parsed) : null;
   }
@@ -39,13 +39,25 @@ export default class FiberLinkTipPostMenuButton extends Component {
     return Number.isFinite(parsed) && parsed > 0 ? Math.trunc(parsed) : null;
   }
 
+  get currentUsername() {
+    const username = this.currentUser?.username;
+    if (typeof username === "string" && username.trim()) {
+      return username.trim().toLowerCase();
+    }
+
+    return null;
+  }
+
   get isSelfTip() {
     const currentUserId = Number(this.currentUserId);
     const targetUserId = Number(this.targetUserId);
-    if (!Number.isFinite(currentUserId) || !Number.isFinite(targetUserId)) {
-      return false;
+
+    if (Number.isFinite(currentUserId) && Number.isFinite(targetUserId)) {
+      return currentUserId === targetUserId;
     }
-    return currentUserId === targetUserId;
+
+    const targetUsername = this.targetUsername?.toLowerCase?.() ?? null;
+    return !!this.currentUsername && !!targetUsername && this.currentUsername === targetUsername;
   }
 
   get shouldShow() {

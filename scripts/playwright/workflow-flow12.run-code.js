@@ -2,7 +2,7 @@ async (page) => {
   const env = typeof globalThis === "object" && globalThis.__PW_FLOW12_ENV__ && typeof globalThis.__PW_FLOW12_ENV__ === "object"
     ? globalThis.__PW_FLOW12_ENV__
     : {};
-  const baseUrl = String(env.baseUrl ?? "http://127.0.0.1:4200").replace(/\/+$/, "");
+  const baseUrl = String(env.baseUrl ?? "http://127.0.0.1:9292").replace(/\/+$/, "");
   const username = String(env.username ?? "fiber_tipper");
   const password = String(env.password ?? "fiber-local-pass-1");
   const topicTitle = String(env.topicTitle ?? "Fiber Link Local Workflow Topic");
@@ -137,14 +137,31 @@ async (page) => {
     await waitForSessionLoggedIn(30_000);
   }
 
+  async function openTopicByTitle(title) {
+    await page.goto(`${baseUrl}/latest`, { waitUntil: "domcontentloaded" });
+
+    const latestTopicLink = page.getByRole("link", { name: title }).first();
+    try {
+      await latestTopicLink.waitFor({ timeout: 15_000 });
+      await latestTopicLink.click();
+      return;
+    } catch (_error) {
+      // Fallback to search when the latest list has not rendered or the topic is not visible yet.
+    }
+
+    await page.goto(`${baseUrl}/search?q=${encodeURIComponent(title)}`, { waitUntil: "domcontentloaded" });
+    const searchTopicLink = page.getByRole("link", { name: title }).first();
+    await searchTopicLink.waitFor({ timeout: 20_000 });
+    await searchTopicLink.click();
+  }
+
   await login(username, password);
 
   if (topicPath.trim()) {
     const normalizedPath = topicPath.startsWith("/") ? topicPath : `/${topicPath}`;
     await page.goto(`${baseUrl}${normalizedPath}`, { waitUntil: "domcontentloaded" });
   } else {
-    await page.goto(`${baseUrl}/latest`, { waitUntil: "domcontentloaded" });
-    await page.getByRole("link", { name: topicTitle }).first().click();
+    await openTopicByTitle(topicTitle);
   }
 
   const tipButton = page
