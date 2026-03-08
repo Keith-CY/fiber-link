@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   WithdrawalTransitionConflictError,
   createInMemoryLedgerRepo,
@@ -12,6 +12,12 @@ describe("runWithdrawalBatch", () => {
 
   beforeEach(() => {
     repo.__resetForTests();
+  });
+
+  afterEach(() => {
+    delete process.env.FIBER_RPC_URL;
+    vi.unmock("@fiber-link/fiber-adapter");
+    vi.resetModules();
   });
 
   async function createPendingWithdrawal(idSuffix: string) {
@@ -531,5 +537,52 @@ describe("runWithdrawalBatch", () => {
     expect(saved.state).toBe("FAILED");
     expect(saved.retryCount).toBe(0);
     expect(saved.nextRetryAt).toBeNull();
+  });
+
+  it("uses adapter execution for USDI withdrawals to CKB addresses by default", async () => {
+    const adapterExecuteWithdrawal = vi.fn().mockResolvedValue({ txHash: "0xusdi-chain" });
+    const createAdapter = vi.fn(() => ({
+      executeWithdrawal: adapterExecuteWithdrawal,
+    }));
+    process.env.FIBER_RPC_URL = "http://fiber-rpc.test";
+
+    vi.doMock("@fiber-link/fiber-adapter", async () => {
+      const actual = await vi.importActual<typeof import("@fiber-link/fiber-adapter")>("@fiber-link/fiber-adapter");
+      return {
+        ...actual,
+        createAdapter,
+      };
+    });
+
+    const { runWithdrawalBatch: runWithdrawalBatchWithMock } = await import("./withdrawal-batch");
+    const localRepo = createInMemoryWithdrawalRepo();
+    const ledger = createInMemoryLedgerRepo();
+    const created = await localRepo.create({
+      appId: "app1",
+      userId: "u-usdi-chain",
+      asset: "USDI",
+      amount: "10",
+      toAddress: "ckt1qyqwyxfa75whssgkq9ukkdd30d8c7txct0gq5f9mxs",
+    });
+
+    const res = await runWithdrawalBatchWithMock({
+      now: new Date("2026-03-07T12:46:00.000Z"),
+      repo: localRepo,
+      ledgerRepo: ledger,
+    });
+
+    expect(res.completed).toBe(1);
+    expect(createAdapter).toHaveBeenCalledWith({ endpoint: "http://fiber-rpc.test" });
+    expect(adapterExecuteWithdrawal).toHaveBeenCalledWith({
+      amount: "10",
+      asset: "USDI",
+      destination: {
+        kind: "CKB_ADDRESS",
+        address: "ckt1qyqwyxfa75whssgkq9ukkdd30d8c7txct0gq5f9mxs",
+      },
+      requestId: created.id,
+    });
+    const saved = await localRepo.findByIdOrThrow(created.id);
+    expect(saved.state).toBe("COMPLETED");
   });
 });

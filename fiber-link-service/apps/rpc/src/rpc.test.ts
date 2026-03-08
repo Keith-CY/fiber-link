@@ -1,6 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import Fastify from "fastify";
-import { TipIntentNotFoundError } from "@fiber-link/db";
+import {
+  TipIntentNotFoundError,
+  createInMemoryLedgerRepo,
+  createInMemoryLiquidityRequestRepo,
+  createInMemoryWithdrawalRepo,
+} from "@fiber-link/db";
 import { ServerResponse } from "node:http";
 import { buildServer } from "./server";
 import { verifyHmac } from "./auth/hmac";
@@ -47,6 +52,7 @@ ensureBunInjectHeaderCompat();
 
 beforeEach(() => {
   process.env.FIBER_LINK_HMAC_SECRET = "replace-with-lookup";
+  withdrawalMethods.__resetRequestWithdrawalDefaultsForTests?.();
 });
 
 function buildServerWithAppRepo() {
@@ -723,6 +729,81 @@ describe("json-rpc", () => {
     } finally {
       withdrawalSpy.mockRestore();
     }
+  });
+
+  it("routes withdrawal.request through the real liquidity gating path", async () => {
+    const repo = createInMemoryWithdrawalRepo();
+    const ledgerRepo = createInMemoryLedgerRepo();
+    const liquidityRequestRepo = createInMemoryLiquidityRequestRepo();
+    await ledgerRepo.creditOnce({
+      appId: "app1",
+      userId: "u1",
+      asset: "CKB",
+      amount: "100",
+      refId: "t1",
+      idempotencyKey: "credit:t1",
+    });
+    withdrawalMethods.__setRequestWithdrawalDefaultsForTests?.({
+      repo,
+      ledgerRepo,
+      policyRepo: null,
+      liquidityRequestRepo,
+      hotWalletInventoryProvider: async () => ({
+        asset: "CKB",
+        network: "AGGRON4",
+        availableAmount: "60",
+      }),
+    });
+
+    const app = buildServer();
+    const payload = {
+      jsonrpc: "2.0",
+      id: "wd-req-live-liquidity",
+      method: "withdrawal.request",
+      params: {
+        userId: "u1",
+        asset: "CKB",
+        amount: "61",
+        destination: {
+          kind: "CKB_ADDRESS",
+          address: "ckt1qyqfth8m4fevfzh5hhd088s78qcdjjp8cehs7z8jhw",
+        },
+      },
+    };
+    const ts = String(Math.floor(Date.now() / 1000));
+    const nonce = "withdrawal-request-live-liquidity";
+    const signature = verifyHmac.sign({
+      secret: "replace-with-lookup",
+      payload: JSON.stringify(payload),
+      ts,
+      nonce,
+    });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/rpc",
+      payload,
+      headers: {
+        "content-type": "application/json",
+        "x-app-id": "app1",
+        "x-ts": ts,
+        "x-nonce": nonce,
+        "x-signature": signature,
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({
+      jsonrpc: "2.0",
+      id: "wd-req-live-liquidity",
+      result: {
+        id: expect.any(String),
+        state: "LIQUIDITY_PENDING",
+      },
+    });
+    const created = repo.__resetForTests ? await repo.findByIdOrThrow(res.json().result.id) : null;
+    expect(created?.state).toBe("LIQUIDITY_PENDING");
+    expect(liquidityRequestRepo.__listForTests?.()).toHaveLength(1);
   });
 
   it("returns invalid params when withdrawal policy rejects request", async () => {

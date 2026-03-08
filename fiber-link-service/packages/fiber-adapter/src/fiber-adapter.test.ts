@@ -14,6 +14,9 @@ async function waitForCondition(condition: () => boolean, timeoutMs = 500) {
 describe("fiber adapter", () => {
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unmock("./udt-onchain-withdrawal");
+    vi.unmock("./ckb-onchain-withdrawal");
+    vi.resetModules();
     delete process.env.FIBER_INVOICE_CURRENCY;
     delete process.env.FIBER_INVOICE_CURRENCY_CKB;
     delete process.env.FIBER_INVOICE_CURRENCY_USDI;
@@ -285,6 +288,241 @@ describe("fiber adapter", () => {
         body: expect.stringContaining("\"currency\":\"Fibt\""),
       }),
     );
+  });
+
+  it("executeWithdrawal routes USDI CKB_ADDRESS payouts to the xUDT executor", async () => {
+    const executeUdtOnchainWithdrawal = vi.fn().mockResolvedValue({ txHash: "0xudt" });
+    const executeCkbOnchainWithdrawal = vi.fn().mockResolvedValue({ txHash: "0xckb" });
+
+    vi.doMock("./udt-onchain-withdrawal", () => ({
+      executeUdtOnchainWithdrawal,
+    }));
+    vi.doMock("./ckb-onchain-withdrawal", async () => {
+      const actual = await vi.importActual<typeof import("./ckb-onchain-withdrawal")>("./ckb-onchain-withdrawal");
+      return {
+        ...actual,
+        executeCkbOnchainWithdrawal,
+      };
+    });
+
+    process.env.FIBER_USDI_UDT_TYPE_SCRIPT_JSON = JSON.stringify({
+      code_hash: "0x01",
+      hash_type: "type",
+      args: "0x02",
+    });
+
+    const { createAdapter: createAdapterWithMocks } = await import("./index");
+    const adapter = createAdapterWithMocks({ endpoint: "http://localhost:8119" });
+    const result = await adapter.executeWithdrawal({
+      amount: "10",
+      asset: "USDI",
+      destination: {
+        kind: "CKB_ADDRESS",
+        address: "ckt1qyqwyxfa75whssgkq9ukkdd30d8c7txct0gq5f9mxs",
+      },
+      requestId: "w-usdi-chain",
+    });
+
+    expect(result).toEqual({ txHash: "0xudt" });
+    expect(executeUdtOnchainWithdrawal).toHaveBeenCalledWith({
+      amount: "10",
+      asset: "USDI",
+      destination: {
+        kind: "CKB_ADDRESS",
+        address: "ckt1qyqwyxfa75whssgkq9ukkdd30d8c7txct0gq5f9mxs",
+      },
+      requestId: "w-usdi-chain",
+      udtTypeScript: {
+        codeHash: "0x01",
+        hashType: "type",
+        args: "0x02",
+      },
+    });
+    expect(executeCkbOnchainWithdrawal).not.toHaveBeenCalled();
+  });
+
+  it("ensureChainLiquidity starts a rebalance request and returns pending status", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        jsonrpc: "2.0",
+        id: 1,
+        result: { status: "pending", started: true },
+      }),
+    } as Response);
+
+    const adapter = createAdapter({ endpoint: "http://localhost:8119" });
+    const result = await adapter.ensureChainLiquidity({
+      requestId: "liq-1",
+      asset: "CKB",
+      network: "AGGRON4",
+      requiredAmount: "100",
+      sourceKind: "FIBER_TO_CKB_CHAIN",
+    });
+
+    expect(result).toEqual({
+      state: "PENDING",
+      started: true,
+    });
+    expect(fetchSpy.mock.calls[0]?.[1]).toEqual(
+      expect.objectContaining({
+        body: expect.stringContaining("\"method\":\"rebalance_to_ckb_chain\""),
+      }),
+    );
+    expect(fetchSpy.mock.calls[0]?.[1]).toEqual(
+      expect.objectContaining({
+        body: expect.stringContaining("\"request_id\":\"liq-1\""),
+      }),
+    );
+  });
+
+  it("getRebalanceStatus maps funded responses", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        jsonrpc: "2.0",
+        id: 1,
+        result: { status: "funded" },
+      }),
+    } as Response);
+
+    const adapter = createAdapter({ endpoint: "http://localhost:8119" });
+    const result = await adapter.getRebalanceStatus({
+      requestId: "liq-1",
+    });
+
+    expect(result).toEqual({
+      state: "FUNDED",
+    });
+    expect(fetchSpy.mock.calls[0]?.[1]).toEqual(
+      expect.objectContaining({
+        body: expect.stringContaining("\"method\":\"get_rebalance_status\""),
+      }),
+    );
+  });
+
+  it("lists ready channels with local balances", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        jsonrpc: "2.0",
+        id: 1,
+        result: {
+          channels: [
+            {
+              channel_id: "0xlegacy",
+              state: { state_name: "ChannelReady" },
+              local_balance: "123",
+              remote_balance: "77",
+              remote_pubkey: "0xpeer",
+              pending_tlc_count: "0",
+            },
+          ],
+        },
+      }),
+    } as Response);
+
+    const adapter = createAdapter({ endpoint: "http://localhost:8119" });
+    const result = await adapter.listChannels({ includeClosed: false });
+
+    expect(result.channels[0]).toMatchObject({
+      channelId: "0xlegacy",
+      state: "CHANNEL_READY",
+      localBalance: "123",
+      remotePubkey: "0xpeer",
+      pendingTlcCount: 0,
+    });
+    expect(fetchSpy.mock.calls[0]?.[1]).toEqual(
+      expect.objectContaining({
+        body: expect.stringContaining("\"method\":\"list_channels\""),
+      }),
+    );
+  });
+
+  it("accepts channel with funding amount and returns new channel id when present", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        jsonrpc: "2.0",
+        id: 1,
+        result: {
+          new_channel_id: "0xaccepted",
+        },
+      }),
+    } as Response);
+
+    const adapter = createAdapter({ endpoint: "http://localhost:8119" });
+    const result = await adapter.acceptChannel({
+      temporaryChannelId: "0xtemp",
+      fundingAmount: "9900000000",
+    });
+
+    expect(result).toEqual({ newChannelId: "0xaccepted" });
+    expect(fetchSpy.mock.calls[0]?.[1]).toEqual(
+      expect.objectContaining({
+        body: expect.stringContaining("\"method\":\"accept_channel\""),
+      }),
+    );
+    expect(fetchSpy.mock.calls[0]?.[1]).toEqual(
+      expect.objectContaining({
+        body: expect.stringContaining("\"temporary_channel_id\":\"0xtemp\""),
+      }),
+    );
+  });
+
+  it("reads CKB channel acceptance policy from node_info", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        jsonrpc: "2.0",
+        id: 1,
+        result: {
+          open_channel_auto_accept_min_ckb_funding_amount: "0x2540be400",
+          auto_accept_channel_ckb_funding_amount: "0x24e160300",
+        },
+      }),
+    } as Response);
+
+    const adapter = createAdapter({ endpoint: "http://localhost:8119" });
+    const result = await adapter.getCkbChannelAcceptancePolicy();
+
+    expect(result).toEqual({
+      openChannelAutoAcceptMinFundingAmount: "10000000000",
+      acceptChannelFundingAmount: "9900000000",
+    });
+    expect(fetchSpy.mock.calls[0]?.[1]).toEqual(
+      expect.objectContaining({
+        body: expect.stringContaining("\"method\":\"node_info\""),
+      }),
+    );
+  });
+
+  it("detects unsupported direct rebalance and falls back cleanly", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          jsonrpc: "2.0",
+          id: 1,
+          error: { code: -32999, message: "Unauthorized" },
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          jsonrpc: "2.0",
+          id: 1,
+          result: { channels: [] },
+        }),
+      } as Response);
+
+    const adapter = createAdapter({ endpoint: "http://localhost:8119" });
+    const result = await adapter.getLiquidityCapabilities();
+
+    expect(result.directRebalance).toBe(false);
+    expect(result.channelLifecycle).toBe(true);
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
   });
 
   it("executeWithdrawal keeps explicit requestId in send_payment", async () => {

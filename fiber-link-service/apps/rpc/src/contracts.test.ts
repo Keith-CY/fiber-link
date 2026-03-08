@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  DashboardWithdrawalStateFilterSchema,
   DashboardSummaryResultSchema,
   RpcErrorCode,
   RpcRequestSchema,
@@ -87,11 +88,30 @@ describe("rpc contracts", () => {
       }).success,
     ).toBe(true);
     expect(
-      WithdrawalRequestResultSchema.safeParse({
+      WithdrawalRequestResultSchema.parse({
         id: "wd-1",
         state: "PENDING",
+      }).state,
+    ).toBe("PENDING");
+    expect(
+      WithdrawalRequestResultSchema.parse({
+        id: "w1",
+        state: "LIQUIDITY_PENDING",
+      }).state,
+    ).toBe("LIQUIDITY_PENDING");
+    expect(
+      WithdrawalRequestResultSchema.safeParse({
+        id: "w2",
+        state: "RETRY_PENDING",
       }).success,
-    ).toBe(true);
+    ).toBe(false);
+    expect(
+      WithdrawalRequestResultSchema.safeParse({
+        id: "w3",
+        state: "COMPLETED",
+      }).success,
+    ).toBe(false);
+    expect(DashboardWithdrawalStateFilterSchema.options).toContain("LIQUIDITY_PENDING");
     expect(
       DashboardSummaryResultSchema.safeParse({
         balance: "10",
@@ -113,7 +133,7 @@ describe("rpc contracts", () => {
     ).toBe(true);
 
     expect(
-      DashboardSummaryResultSchema.safeParse({
+      DashboardSummaryResultSchema.parse({
         balance: "0",
         tips: [],
         admin: {
@@ -122,7 +142,21 @@ describe("rpc contracts", () => {
             settlementState: "ALL",
           },
           apps: [],
-          withdrawals: [],
+          withdrawals: [
+            {
+              id: "wd-liquidity",
+              userId: "u-liquidity",
+              asset: "CKB",
+              amount: "61",
+              state: "LIQUIDITY_PENDING",
+              retryCount: 0,
+              createdAt: "2026-02-16T00:00:00.000Z",
+              updatedAt: "2026-02-16T00:00:00.000Z",
+              txHash: null,
+              nextRetryAt: null,
+              lastError: null,
+            },
+          ],
           settlements: [],
           pipelineBoard: {
             stageCounts: [
@@ -145,8 +179,8 @@ describe("rpc contracts", () => {
           },
         },
         generatedAt: "2026-02-16T00:00:00.000Z",
-      }).success,
-    ).toBe(true);
+      }).admin?.withdrawals[0]?.state,
+    ).toBe("LIQUIDITY_PENDING");
   });
 
   it("keeps rpc error code constants stable", () => {

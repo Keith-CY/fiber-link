@@ -25,6 +25,30 @@ export type SettlementUpdateEvent = {
   error?: string;
 };
 
+export type LiquidityRebalanceOutcome =
+  | "REBALANCE_STARTED"
+  | "REBALANCE_PENDING"
+  | "REBALANCE_FUNDED"
+  | "REBALANCE_FAILED";
+
+export type LiquidityRebalanceEvent = {
+  type: "liquidity.rebalance";
+  liquidityRequestId: string;
+  previousState: "REQUESTED" | "REBALANCING" | "FUNDED" | "FAILED";
+  nextState: "REQUESTED" | "REBALANCING" | "FUNDED" | "FAILED";
+  outcome: LiquidityRebalanceOutcome;
+  promotedCount: number;
+  error?: string;
+};
+
+export type LiquidityChannelRotationEvent = {
+  type: "liquidity.channel_rotation";
+  liquidityRequestId: string;
+  legacyChannelId: string;
+  replacementChannelId: string;
+  expectedRecoveredAmount: string;
+};
+
 export function createSettlementUpdateEvent(input: {
   invoice: string;
   previousState: SettlementState;
@@ -61,4 +85,43 @@ export function createSettlementUpdateEvent(input: {
   }
 
   return event;
+}
+
+export function createLiquidityRebalanceEvent(input: {
+  liquidityRequestId: string;
+  previousState: "REQUESTED" | "REBALANCING" | "FUNDED" | "FAILED";
+  nextState: "REQUESTED" | "REBALANCING" | "FUNDED" | "FAILED";
+  outcome: LiquidityRebalanceOutcome;
+  promotedCount: number;
+  error?: string;
+}): LiquidityRebalanceEvent {
+  const event: LiquidityRebalanceEvent = {
+    type: "liquidity.rebalance",
+    liquidityRequestId: input.liquidityRequestId,
+    previousState: input.previousState,
+    nextState: input.nextState,
+    outcome: input.outcome,
+    promotedCount: input.promotedCount,
+  };
+
+  if (input.error !== undefined) {
+    event.error = input.error;
+  }
+
+  return event;
+}
+
+export function createLiquidityChannelRotationEvent(input: {
+  liquidityRequestId: string;
+  legacyChannelId: string;
+  replacementChannelId: string;
+  expectedRecoveredAmount: string;
+}): LiquidityChannelRotationEvent {
+  return {
+    type: "liquidity.channel_rotation",
+    liquidityRequestId: input.liquidityRequestId,
+    legacyChannelId: input.legacyChannelId,
+    replacementChannelId: input.replacementChannelId,
+    expectedRecoveredAmount: input.expectedRecoveredAmount,
+  };
 }

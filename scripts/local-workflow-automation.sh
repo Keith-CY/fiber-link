@@ -825,7 +825,12 @@ if [[ "${SKIP_DISCOURSE}" -eq 0 ]]; then
     git checkout "${DISCOURSE_REF}"
     mkdir -p plugins tmp
     ln -sfn "${ROOT_DIR}/fiber-link-discourse-plugin" plugins/fiber-link
-    ./bin/docker/boot_dev
+    if docker ps -a --format '{{.Names}}' | grep -qx discourse_dev; then
+      docker start discourse_dev >/dev/null 2>&1 || true
+    else
+      ./bin/docker/boot_dev
+    fi
+    ./bin/docker/exec git config --global --add safe.directory /src || true
     ./bin/docker/exec env \
       LOAD_PLUGINS=1 \
       RAILS_ENV=development \

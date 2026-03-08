@@ -3,6 +3,7 @@ export * from "./client";
 export * from "./idempotency";
 export * from "./withdrawal-repo";
 export * from "./withdrawal-policy-repo";
+export * from "./liquidity-request-repo";
 export * from "./tip-intent-repo";
 export * from "./tip-intent-event-repo";
 export * from "./ledger-repo";

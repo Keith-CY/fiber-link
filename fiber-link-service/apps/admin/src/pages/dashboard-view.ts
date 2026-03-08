@@ -1,7 +1,12 @@
-import { WITHDRAWAL_STATE_ORDER, type DashboardReadyState, type DashboardState } from "./dashboard-model";
+import {
+  WITHDRAWAL_STATE_ORDER,
+  type DashboardReadyState,
+  type DashboardState,
+  type DashboardWithdrawalState,
+} from "./dashboard-model";
 
 type SummaryRow = {
-  state: string;
+  state: DashboardWithdrawalState;
   count: number;
 };
 
@@ -16,7 +21,7 @@ type WithdrawalRow = {
   userId: string;
   asset: string;
   amount: string;
-  state: string;
+  state: DashboardWithdrawalState;
   retryCount: number;
   lastError: string;
   createdAt: string;
@@ -64,7 +69,7 @@ function toReadyRenderModel(state: DashboardReadyState): DashboardReadyRenderMod
     totalWithdrawals: state.statusSummary.total,
     summaryRows: WITHDRAWAL_STATE_ORDER.map((withdrawalState) => ({
       state: withdrawalState,
-      count: state.statusSummary.byState[withdrawalState],
+      count: state.statusSummary.byState[withdrawalState] ?? 0,
     })),
     appRows: state.apps.map((app) => ({
       appId: app.appId,

@@ -11,6 +11,7 @@ export type DashboardWithdrawal = WithdrawalListOutput[number];
 export type DashboardWithdrawalState = DashboardWithdrawal["state"];
 
 export const WITHDRAWAL_STATE_ORDER: DashboardWithdrawalState[] = [
+  "LIQUIDITY_PENDING",
   "PENDING",
   "PROCESSING",
   "RETRY_PENDING",
@@ -58,7 +59,7 @@ export function summarizeWithdrawalStates(withdrawals: DashboardWithdrawal[]): W
   );
 
   for (const row of withdrawals) {
-    byState[row.state] += 1;
+    byState[row.state] = (byState[row.state] ?? 0) + 1;
   }
 
   return {

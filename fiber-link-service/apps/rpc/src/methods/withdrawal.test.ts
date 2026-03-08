@@ -1,7 +1,8 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   InsufficientFundsError,
   createInMemoryLedgerRepo,
+  createInMemoryLiquidityRequestRepo,
   createInMemoryWithdrawalPolicyRepo,
   createInMemoryWithdrawalRepo,
 } from "@fiber-link/db";
@@ -14,6 +15,12 @@ describe("requestWithdrawal", () => {
   beforeEach(() => {
     repo.__resetForTests?.();
     policyRepo.__resetForTests?.();
+  });
+
+  afterEach(() => {
+    delete process.env.FIBER_WITHDRAWAL_CKB_LIQUIDITY_FEE_BUFFER;
+    delete process.env.FIBER_WITHDRAWAL_CKB_LIQUIDITY_POST_TX_RESERVE;
+    delete process.env.FIBER_WITHDRAWAL_CKB_LIQUIDITY_WARM_BUFFER;
   });
 
   it("creates PENDING withdrawal request", async () => {
@@ -453,6 +460,261 @@ describe("requestWithdrawal", () => {
     expect(saved.toAddress).toBe("ckt1qyqfth8m4fevfzh5hhd088s78qcdjjp8cehs7z8jhw");
   });
 
+  it("returns PENDING when hot wallet liquidity is sufficient", async () => {
+    const ledger = createInMemoryLedgerRepo();
+    await ledger.creditOnce({
+      appId: "app1",
+      userId: "u1",
+      asset: "CKB",
+      amount: "100",
+      refId: "t1",
+      idempotencyKey: "credit:t1",
+    });
+    const hotWalletInventoryProvider = vi.fn(async () => ({
+      asset: "CKB" as const,
+      network: "AGGRON4" as const,
+      availableAmount: "61",
+    }));
+
+    const result = await requestWithdrawal(
+      {
+        appId: "app1",
+        userId: "u1",
+        asset: "CKB",
+        amount: "61",
+        destination: {
+          kind: "CKB_ADDRESS",
+          address: "ckt1qyqfth8m4fevfzh5hhd088s78qcdjjp8cehs7z8jhw",
+        },
+      },
+      { repo, ledgerRepo: ledger, hotWalletInventoryProvider },
+    );
+
+    expect(result.state).toBe("PENDING");
+    const saved = await repo.findByIdOrThrow(result.id);
+    expect(saved.state).toBe("PENDING");
+    expect(saved.liquidityRequestId).toBeNull();
+    expect(hotWalletInventoryProvider).toHaveBeenCalledWith({ asset: "CKB", network: "AGGRON4" });
+  });
+
+  it("returns LIQUIDITY_PENDING and creates liquidity request when hot wallet is underfunded", async () => {
+    const ledger = createInMemoryLedgerRepo();
+    const liquidityRequestRepo = createInMemoryLiquidityRequestRepo();
+    await ledger.creditOnce({
+      appId: "app1",
+      userId: "u1",
+      asset: "CKB",
+      amount: "100",
+      refId: "t1",
+      idempotencyKey: "credit:t1",
+    });
+    const hotWalletInventoryProvider = vi.fn(async () => ({
+      asset: "CKB" as const,
+      network: "AGGRON4" as const,
+      availableAmount: "60",
+    }));
+
+    const result = await requestWithdrawal(
+      {
+        appId: "app1",
+        userId: "u1",
+        asset: "CKB",
+        amount: "61",
+        destination: {
+          kind: "CKB_ADDRESS",
+          address: "ckt1qyqfth8m4fevfzh5hhd088s78qcdjjp8cehs7z8jhw",
+        },
+      },
+      { repo, ledgerRepo: ledger, liquidityRequestRepo, hotWalletInventoryProvider },
+    );
+
+    expect(result.state).toBe("LIQUIDITY_PENDING");
+    const saved = await repo.findByIdOrThrow(result.id);
+    expect(saved.state).toBe("LIQUIDITY_PENDING");
+    expect(saved.liquidityRequestId).toBeTruthy();
+    const requests = liquidityRequestRepo.__listForTests?.() ?? [];
+    expect(requests).toHaveLength(1);
+    expect(saved.liquidityRequestId).toBe(requests[0]?.id);
+  });
+
+  it("uses the configured CKB liquidity buffers to raise the hot wallet target", async () => {
+    process.env.FIBER_WITHDRAWAL_CKB_LIQUIDITY_FEE_BUFFER = "1";
+    process.env.FIBER_WITHDRAWAL_CKB_LIQUIDITY_WARM_BUFFER = "61";
+
+    const ledger = createInMemoryLedgerRepo();
+    const liquidityRequestRepo = createInMemoryLiquidityRequestRepo();
+    await ledger.creditOnce({
+      appId: "app1",
+      userId: "u1",
+      asset: "CKB",
+      amount: "200",
+      refId: "t1",
+      idempotencyKey: "credit:t1",
+    });
+    const hotWalletInventoryProvider = vi.fn(async () => ({
+      asset: "CKB" as const,
+      network: "AGGRON4" as const,
+      availableAmount: "61.5",
+    }));
+
+    const result = await requestWithdrawal(
+      {
+        appId: "app1",
+        userId: "u1",
+        asset: "CKB",
+        amount: "61",
+        destination: {
+          kind: "CKB_ADDRESS",
+          address: "ckt1qyqfth8m4fevfzh5hhd088s78qcdjjp8cehs7z8jhw",
+        },
+      },
+      { repo, ledgerRepo: ledger, liquidityRequestRepo, hotWalletInventoryProvider },
+    );
+
+    expect(result.state).toBe("LIQUIDITY_PENDING");
+    const saved = await repo.findByIdOrThrow(result.id);
+    const request = await liquidityRequestRepo.findByIdOrThrow(saved.liquidityRequestId ?? "");
+    expect(request.requiredAmount).toBe("61.5");
+    expect(request.metadata).toMatchObject({
+      targetAvailableAmount: "123",
+      requestedRebalanceAmount: "61.5",
+      feeBufferAmount: "1",
+      warmBufferAmount: "61",
+    });
+  });
+
+  it("rejects before liquidity routing when creator balance is insufficient", async () => {
+    const ledger = createInMemoryLedgerRepo();
+    const liquidityRequestRepo = createInMemoryLiquidityRequestRepo();
+    await ledger.creditOnce({
+      appId: "app1",
+      userId: "u1",
+      asset: "CKB",
+      amount: "60",
+      refId: "t1",
+      idempotencyKey: "credit:t1",
+    });
+    const hotWalletInventoryProvider = vi.fn(async () => ({
+      asset: "CKB" as const,
+      network: "AGGRON4" as const,
+      availableAmount: "0",
+    }));
+
+    await expect(
+      requestWithdrawal(
+        {
+          appId: "app1",
+          userId: "u1",
+          asset: "CKB",
+          amount: "61",
+          destination: {
+            kind: "CKB_ADDRESS",
+            address: "ckt1qyqfth8m4fevfzh5hhd088s78qcdjjp8cehs7z8jhw",
+          },
+        },
+        { repo, ledgerRepo: ledger, liquidityRequestRepo, hotWalletInventoryProvider },
+      ),
+    ).rejects.toBeInstanceOf(InsufficientFundsError);
+
+    expect(liquidityRequestRepo.__listForTests?.()).toHaveLength(0);
+  });
+
+  it("attaches an existing open liquidity request when hot wallet is underfunded", async () => {
+    const ledger = createInMemoryLedgerRepo();
+    const liquidityRequestRepo = createInMemoryLiquidityRequestRepo();
+    const existing = await liquidityRequestRepo.create({
+      appId: "app1",
+      asset: "CKB",
+      network: "AGGRON4",
+      sourceKind: "FIBER_TO_CKB_CHAIN",
+      requiredAmount: "90",
+    });
+    await ledger.creditOnce({
+      appId: "app1",
+      userId: "u1",
+      asset: "CKB",
+      amount: "100",
+      refId: "t1",
+      idempotencyKey: "credit:t1",
+    });
+    const hotWalletInventoryProvider = vi.fn(async () => ({
+      asset: "CKB" as const,
+      network: "AGGRON4" as const,
+      availableAmount: "60",
+    }));
+
+    const result = await requestWithdrawal(
+      {
+        appId: "app1",
+        userId: "u1",
+        asset: "CKB",
+        amount: "61",
+        destination: {
+          kind: "CKB_ADDRESS",
+          address: "ckt1qyqfth8m4fevfzh5hhd088s78qcdjjp8cehs7z8jhw",
+        },
+      },
+      { repo, ledgerRepo: ledger, liquidityRequestRepo, hotWalletInventoryProvider },
+    );
+
+    expect(result.state).toBe("LIQUIDITY_PENDING");
+    const saved = await repo.findByIdOrThrow(result.id);
+    expect(saved.liquidityRequestId).toBe(existing.id);
+    expect(liquidityRequestRepo.__listForTests?.()).toHaveLength(1);
+  });
+
+  it("routes to LIQUIDITY_PENDING when active chain reservations consume the remaining hot wallet inventory", async () => {
+    const ledger = createInMemoryLedgerRepo();
+    const liquidityRequestRepo = createInMemoryLiquidityRequestRepo();
+    await ledger.creditOnce({
+      appId: "app1",
+      userId: "u-existing",
+      asset: "CKB",
+      amount: "200",
+      refId: "t-existing",
+      idempotencyKey: "credit:t-existing",
+    });
+    await ledger.creditOnce({
+      appId: "app1",
+      userId: "u1",
+      asset: "CKB",
+      amount: "200",
+      refId: "t1",
+      idempotencyKey: "credit:t1",
+    });
+    await repo.createWithBalanceCheck(
+      {
+        appId: "app1",
+        userId: "u-existing",
+        asset: "CKB",
+        amount: "40",
+        toAddress: "ckt1qreserved",
+      },
+      { ledgerRepo: ledger },
+    );
+    const hotWalletInventoryProvider = vi.fn(async () => ({
+      asset: "CKB" as const,
+      network: "AGGRON4" as const,
+      availableAmount: "100",
+    }));
+
+    const result = await requestWithdrawal(
+      {
+        appId: "app1",
+        userId: "u1",
+        asset: "CKB",
+        amount: "61",
+        destination: {
+          kind: "CKB_ADDRESS",
+          address: "ckt1qyqfth8m4fevfzh5hhd088s78qcdjjp8cehs7z8jhw",
+        },
+      },
+      { repo, ledgerRepo: ledger, liquidityRequestRepo, hotWalletInventoryProvider },
+    );
+
+    expect(result.state).toBe("LIQUIDITY_PENDING");
+  });
+
   it("falls back to defaults when env allowed-assets has no valid values", async () => {
     const ledger = createInMemoryLedgerRepo();
     await ledger.creditOnce({
@@ -551,6 +813,119 @@ describe("requestWithdrawal", () => {
       ).rejects.toThrow("FIBER_WITHDRAWAL_POLICY_MAX_PER_REQUEST must be a positive decimal");
     } finally {
       process.env.FIBER_WITHDRAWAL_POLICY_MAX_PER_REQUEST = prevMax;
+    }
+  });
+
+  it("serializes CKB-address liquidity decisions across concurrent creators", async () => {
+    const concurrentRepo = createInMemoryWithdrawalRepo();
+    const ledger = createInMemoryLedgerRepo();
+    const liquidityRequestRepo = createInMemoryLiquidityRequestRepo();
+    const previousAllowedAssets = process.env.FIBER_WITHDRAWAL_POLICY_ALLOWED_ASSETS;
+    const previousMaxPerRequest = process.env.FIBER_WITHDRAWAL_POLICY_MAX_PER_REQUEST;
+    const previousPerUserDailyMax = process.env.FIBER_WITHDRAWAL_POLICY_PER_USER_DAILY_MAX;
+    const previousPerAppDailyMax = process.env.FIBER_WITHDRAWAL_POLICY_PER_APP_DAILY_MAX;
+    const previousCooldown = process.env.FIBER_WITHDRAWAL_POLICY_COOLDOWN_SECONDS;
+    process.env.FIBER_WITHDRAWAL_POLICY_ALLOWED_ASSETS = "";
+    process.env.FIBER_WITHDRAWAL_POLICY_MAX_PER_REQUEST = "";
+    process.env.FIBER_WITHDRAWAL_POLICY_PER_USER_DAILY_MAX = "";
+    process.env.FIBER_WITHDRAWAL_POLICY_PER_APP_DAILY_MAX = "";
+    process.env.FIBER_WITHDRAWAL_POLICY_COOLDOWN_SECONDS = "";
+
+    try {
+      await ledger.creditOnce({
+        appId: "app1",
+        userId: "u1",
+        asset: "CKB",
+        amount: "100",
+        refId: "t1",
+        idempotencyKey: "credit:t1",
+      });
+      await ledger.creditOnce({
+        appId: "app1",
+        userId: "u2",
+        asset: "CKB",
+        amount: "100",
+        refId: "t2",
+        idempotencyKey: "credit:t2",
+      });
+
+      let releaseFirstInventoryCall: (() => void) | null = null;
+      const firstInventoryCallStarted = new Promise<void>((resolve) => {
+        releaseFirstInventoryCall = resolve;
+      });
+      let inventoryCallCount = 0;
+      const hotWalletInventoryProvider = vi.fn(async () => {
+        inventoryCallCount += 1;
+        if (inventoryCallCount === 1) {
+          await firstInventoryCallStarted;
+        }
+        return {
+          asset: "CKB" as const,
+          network: "AGGRON4" as const,
+          availableAmount: "100",
+        };
+      });
+
+      const firstRequest = requestWithdrawal(
+        {
+          appId: "app1",
+          userId: "u1",
+          asset: "CKB",
+          amount: "61",
+          destination: {
+            kind: "CKB_ADDRESS",
+            address: "ckt1qyqfth8m4fevfzh5hhd088s78qcdjjp8cehs7z8jhw",
+          },
+        },
+        {
+          repo: concurrentRepo,
+          ledgerRepo: ledger,
+          liquidityRequestRepo,
+          hotWalletInventoryProvider,
+          policyRepo: null,
+        },
+      );
+
+      await Promise.resolve();
+      const secondRequest = requestWithdrawal(
+        {
+          appId: "app1",
+          userId: "u2",
+          asset: "CKB",
+          amount: "61",
+          destination: {
+            kind: "CKB_ADDRESS",
+            address: "ckt1qyqfth8m4fevfzh5hhd088s78qcdjjp8cehs7z8jhw",
+          },
+        },
+        {
+          repo: concurrentRepo,
+          ledgerRepo: ledger,
+          liquidityRequestRepo,
+          hotWalletInventoryProvider,
+          policyRepo: null,
+        },
+      );
+
+      await vi.waitFor(() => {
+        expect(hotWalletInventoryProvider).toHaveBeenCalledTimes(1);
+      });
+      releaseFirstInventoryCall?.();
+
+      const [firstResult, secondResult] = await Promise.all([firstRequest, secondRequest]);
+      expect([firstResult.state, secondResult.state].sort()).toEqual(["LIQUIDITY_PENDING", "PENDING"]);
+      expect(liquidityRequestRepo.__listForTests?.()).toHaveLength(1);
+    } finally {
+      if (previousAllowedAssets === undefined) delete process.env.FIBER_WITHDRAWAL_POLICY_ALLOWED_ASSETS;
+      else process.env.FIBER_WITHDRAWAL_POLICY_ALLOWED_ASSETS = previousAllowedAssets;
+      if (previousMaxPerRequest === undefined) delete process.env.FIBER_WITHDRAWAL_POLICY_MAX_PER_REQUEST;
+      else process.env.FIBER_WITHDRAWAL_POLICY_MAX_PER_REQUEST = previousMaxPerRequest;
+      if (previousPerUserDailyMax === undefined) delete process.env.FIBER_WITHDRAWAL_POLICY_PER_USER_DAILY_MAX;
+      else process.env.FIBER_WITHDRAWAL_POLICY_PER_USER_DAILY_MAX = previousPerUserDailyMax;
+      if (previousPerAppDailyMax === undefined) delete process.env.FIBER_WITHDRAWAL_POLICY_PER_APP_DAILY_MAX;
+      else process.env.FIBER_WITHDRAWAL_POLICY_PER_APP_DAILY_MAX = previousPerAppDailyMax;
+      if (previousCooldown === undefined) delete process.env.FIBER_WITHDRAWAL_POLICY_COOLDOWN_SECONDS;
+      else process.env.FIBER_WITHDRAWAL_POLICY_COOLDOWN_SECONDS = previousCooldown;
     }
   });
 });

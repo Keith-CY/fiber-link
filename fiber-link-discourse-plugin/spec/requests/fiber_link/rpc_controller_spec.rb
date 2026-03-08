@@ -142,7 +142,7 @@ RSpec.describe ::FiberLink::RpcController, type: :request do
              method: "dashboard.summary",
              params: {
                includeAdmin: true,
-               filters: { withdrawalState: "NOT_A_STATE", settlementState: "FAILED" },
+               filters: { withdrawalState: "LIQUIDITY_PENDING", settlementState: "FAILED" },
              },
            },
            as: :json
@@ -153,7 +153,7 @@ RSpec.describe ::FiberLink::RpcController, type: :request do
         body.fetch("method") == "dashboard.summary" &&
           body.dig("params", "userId") == admin.id.to_s &&
           body.dig("params", "includeAdmin") == true &&
-          body.dig("params", "filters", "withdrawalState") == "ALL" &&
+          body.dig("params", "filters", "withdrawalState") == "LIQUIDITY_PENDING" &&
           body.dig("params", "filters", "settlementState") == "FAILED"
       }
     end
@@ -166,7 +166,7 @@ RSpec.describe ::FiberLink::RpcController, type: :request do
         body: {
           jsonrpc: "2.0",
           id: "withdraw-req",
-          result: { id: "wd-1", state: "PENDING" },
+          result: { id: "wd-1", state: "LIQUIDITY_PENDING" },
         }.to_json,
         headers: { "Content-Type" => "application/json" },
       )
@@ -187,6 +187,7 @@ RSpec.describe ::FiberLink::RpcController, type: :request do
 
       expect(response).to have_http_status(:ok)
       expect(JSON.parse(response.body).dig("result", "id")).to eq("wd-1")
+      expect(JSON.parse(response.body).dig("result", "state")).to eq("LIQUIDITY_PENDING")
 
       expect(WebMock).to have_requested(:post, "https://fiber-link.example/rpc").with { |request|
         body = JSON.parse(request.body)
@@ -194,7 +195,8 @@ RSpec.describe ::FiberLink::RpcController, type: :request do
           body.dig("params", "userId") == user.id.to_s &&
           body.dig("params", "asset") == "CKB" &&
           body.dig("params", "amount") == "61" &&
-          body.dig("params", "toAddress") == "ckt1qyqg5xa84dfwfy76tptw2sy0k9q98xaeka9q5tvdlm"
+          body.dig("params", "toAddress") == "ckt1qyqg5xa84dfwfy76tptw2sy0k9q98xaeka9q5tvdlm" &&
+          body.dig("params", "destinationKind") == "CKB_ADDRESS"
       }
     end
 

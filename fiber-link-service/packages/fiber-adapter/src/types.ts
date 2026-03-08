@@ -1,4 +1,5 @@
 export type Asset = "CKB" | "USDI";
+export type CkbNetwork = "AGGRON4" | "LINA";
 
 export type CreateInvoiceArgs = { amount: string; asset: Asset };
 export type InvoiceState = "UNPAID" | "SETTLED" | "FAILED";
@@ -8,11 +9,104 @@ export type WithdrawalDestination =
   | { kind: "CKB_ADDRESS"; address: string }
   | { kind: "PAYMENT_REQUEST"; paymentRequest: string };
 
+export type UdtTypeScript = {
+  codeHash: string;
+  hashType: string;
+  args: string;
+};
+
 export type ExecuteWithdrawalArgs = {
   amount: string;
   asset: Asset;
   destination: WithdrawalDestination;
   requestId: string;
+  udtTypeScript?: UdtTypeScript;
+};
+
+export type EnsureChainLiquidityArgs = {
+  requestId: string;
+  asset: Asset;
+  network: CkbNetwork;
+  requiredAmount: string;
+  sourceKind: "FIBER_TO_CKB_CHAIN";
+};
+
+export type LiquidityCapabilities = {
+  directRebalance: boolean;
+  channelLifecycle: boolean;
+};
+
+export type ListChannelsArgs = {
+  includeClosed?: boolean;
+  peerId?: string;
+};
+
+export type ChannelState = "CHANNEL_READY" | "CLOSED" | string;
+
+export type ChannelRecord = {
+  channelId: string;
+  state: ChannelState;
+  localBalance: string;
+  remoteBalance: string;
+  remotePubkey: string | null;
+  pendingTlcCount: number;
+};
+
+export type ListChannelsResult = {
+  channels: ChannelRecord[];
+};
+
+export type OpenChannelArgs = {
+  peerId: string;
+  fundingAmount: string;
+  fundingUdtTypeScript?: UdtTypeScript;
+  tlcFeeProportionalMillionths?: string;
+};
+
+export type OpenChannelResult = {
+  temporaryChannelId: string;
+};
+
+export type AcceptChannelArgs = {
+  temporaryChannelId: string;
+  fundingAmount: string;
+};
+
+export type AcceptChannelResult = {
+  newChannelId?: string;
+};
+
+export type CkbChannelAcceptancePolicy = {
+  openChannelAutoAcceptMinFundingAmount: string;
+  acceptChannelFundingAmount: string;
+};
+
+export type ShutdownChannelArgs = {
+  channelId: string;
+  closeScript?: Record<string, unknown>;
+  feeRate?: string;
+  force?: boolean;
+};
+
+export type ShutdownChannelResult = {
+  txHash?: string;
+};
+
+export type RebalanceStatusState = "IDLE" | "PENDING" | "FUNDED" | "FAILED";
+
+export type EnsureChainLiquidityResult = {
+  state: Exclude<RebalanceStatusState, "IDLE">;
+  started: boolean;
+  error?: string;
+};
+
+export type GetRebalanceStatusArgs = {
+  requestId: string;
+};
+
+export type GetRebalanceStatusResult = {
+  state: RebalanceStatusState;
+  error?: string;
 };
 
 export type SubscribeSettlementsArgs = {
@@ -37,9 +131,40 @@ export type CreateAdapterArgs = {
   fetchFn?: typeof fetch;
 };
 
+export type GetHotWalletInventoryArgs = {
+  asset: Asset;
+  network: CkbNetwork;
+};
+
+export type CkbHotWalletInventory = {
+  asset: "CKB";
+  network: CkbNetwork;
+  // Canonical decimal string in asset units.
+  availableAmount: string;
+};
+
+export type UsdiHotWalletInventory = {
+  asset: "USDI";
+  network: CkbNetwork;
+  // Canonical decimal string in asset units.
+  availableAmount: string;
+  supportingCkbAmount: string;
+};
+
+export type HotWalletInventory = CkbHotWalletInventory | UsdiHotWalletInventory;
+export type HotWalletInventoryProvider = (args: GetHotWalletInventoryArgs) => Promise<HotWalletInventory>;
+
 export type FiberAdapter = {
   createInvoice: (args: CreateInvoiceArgs) => Promise<{ invoice: string }>;
   getInvoiceStatus: (args: { invoice: string }) => Promise<{ state: InvoiceState }>;
   subscribeSettlements: (args: SubscribeSettlementsArgs) => Promise<SettlementSubscriptionHandle>;
   executeWithdrawal: (args: ExecuteWithdrawalArgs) => Promise<{ txHash: string }>;
+  getLiquidityCapabilities: () => Promise<LiquidityCapabilities>;
+  listChannels: (args: ListChannelsArgs) => Promise<ListChannelsResult>;
+  openChannel: (args: OpenChannelArgs) => Promise<OpenChannelResult>;
+  acceptChannel: (args: AcceptChannelArgs) => Promise<AcceptChannelResult>;
+  getCkbChannelAcceptancePolicy: () => Promise<CkbChannelAcceptancePolicy>;
+  shutdownChannel: (args: ShutdownChannelArgs) => Promise<ShutdownChannelResult>;
+  ensureChainLiquidity: (args: EnsureChainLiquidityArgs) => Promise<EnsureChainLiquidityResult>;
+  getRebalanceStatus: (args: GetRebalanceStatusArgs) => Promise<GetRebalanceStatusResult>;
 };

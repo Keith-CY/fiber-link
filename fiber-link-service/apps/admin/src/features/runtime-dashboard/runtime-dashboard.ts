@@ -7,6 +7,7 @@ export type RuntimeSignal = {
   failureCount24h: number;
   topErrorClass: string | null;
   retryBackoffActive: boolean;
+  liquidityPendingCount?: number;
 };
 
 export type DashboardSummary = {
@@ -15,6 +16,7 @@ export type DashboardSummary = {
   failureCount24h: number;
   topErrorClass: string;
   retryBackoffActive: boolean;
+  liquidityPendingCount: number;
   severity: RuntimeSeverity;
 };
 
@@ -26,6 +28,7 @@ export function redactSecrets(input: string): string {
 
 export function classifySeverity(signal: RuntimeSignal): RuntimeSeverity {
   if (signal.runtimeState === "down" || signal.failureCount24h > 10) return "critical";
+  if ((signal.liquidityPendingCount ?? 0) > 0) return "warning";
   if (signal.runtimeState === "degraded" || signal.retryBackoffActive) return "warning";
   return "info";
 }
@@ -37,6 +40,7 @@ export function buildDashboardSummary(signal: RuntimeSignal): DashboardSummary {
     failureCount24h: signal.failureCount24h,
     topErrorClass: signal.topErrorClass ?? "none",
     retryBackoffActive: signal.retryBackoffActive,
+    liquidityPendingCount: signal.liquidityPendingCount ?? 0,
     severity: classifySeverity(signal),
   };
 }

@@ -77,6 +77,7 @@ export type DashboardDataDependencies = {
 };
 
 const WITHDRAWAL_STATE_ORDER: WithdrawalState[] = [
+  "LIQUIDITY_PENDING",
   "PENDING",
   "PROCESSING",
   "RETRY_PENDING",
@@ -136,6 +137,7 @@ export function summarizeWithdrawalStates(withdrawals: DashboardWithdrawal[]): D
       return acc;
     },
     {
+      LIQUIDITY_PENDING: 0,
       PENDING: 0,
       PROCESSING: 0,
       RETRY_PENDING: 0,

@@ -1,19 +1,37 @@
 import { createHash } from "node:crypto";
 import { FiberRpcError, rpcCall } from "./fiber-client";
 import { executeCkbOnchainWithdrawal } from "./ckb-onchain-withdrawal";
+import { executeUdtOnchainWithdrawal } from "./udt-onchain-withdrawal";
 import type {
+  AcceptChannelArgs,
+  AcceptChannelResult,
   Asset,
+  CkbChannelAcceptancePolicy,
+  ChannelRecord,
   CreateAdapterArgs,
   CreateInvoiceArgs,
+  EnsureChainLiquidityArgs,
+  EnsureChainLiquidityResult,
   ExecuteWithdrawalArgs,
   FiberAdapter,
+  GetRebalanceStatusArgs,
+  GetRebalanceStatusResult,
   InvoiceState,
+  ListChannelsArgs,
+  ListChannelsResult,
+  LiquidityCapabilities,
+  OpenChannelArgs,
+  OpenChannelResult,
+  RebalanceStatusState,
   SettlementSubscriptionConfig,
   SettlementSubscriptionHandle,
+  ShutdownChannelArgs,
+  ShutdownChannelResult,
   SubscribeSettlementsArgs,
+  UdtTypeScript,
 } from "./types";
 
-type UdtTypeScript = {
+type RpcUdtTypeScript = {
   code_hash: string;
   hash_type: string;
   args: string;
@@ -78,7 +96,7 @@ function normalizeOptionalName(input: unknown): string {
   return input.trim().toLowerCase();
 }
 
-function isUdtTypeScript(value: unknown): value is UdtTypeScript {
+function isUdtTypeScript(value: unknown): value is RpcUdtTypeScript {
   if (!value || typeof value !== "object") {
     return false;
   }
@@ -112,7 +130,7 @@ async function rpcCallWithoutParams(endpoint: string, method: string): Promise<u
   return payload?.result;
 }
 
-function pickUsdiUdtScript(nodeInfo: unknown): UdtTypeScript | null {
+function pickUsdiUdtScript(nodeInfo: unknown): RpcUdtTypeScript | null {
   if (!nodeInfo || typeof nodeInfo !== "object") {
     return null;
   }
@@ -142,7 +160,7 @@ function pickUsdiUdtScript(nodeInfo: unknown): UdtTypeScript | null {
   return script;
 }
 
-async function resolveUsdiUdtScript(endpoint: string): Promise<UdtTypeScript> {
+async function resolveUsdiUdtScript(endpoint: string): Promise<RpcUdtTypeScript> {
   const envJson = process.env.FIBER_USDI_UDT_TYPE_SCRIPT_JSON;
   if (typeof envJson === "string" && envJson.trim()) {
     let parsed: unknown;
@@ -165,6 +183,22 @@ async function resolveUsdiUdtScript(endpoint: string): Promise<UdtTypeScript> {
   return script;
 }
 
+function toWithdrawalUdtTypeScript(script: RpcUdtTypeScript): UdtTypeScript {
+  return {
+    codeHash: script.code_hash,
+    hashType: script.hash_type,
+    args: script.args,
+  };
+}
+
+function toRpcUdtTypeScript(script: UdtTypeScript): RpcUdtTypeScript {
+  return {
+    code_hash: script.codeHash,
+    hash_type: script.hashType,
+    args: script.args,
+  };
+}
+
 function pickPaymentHash(result: Record<string, unknown> | undefined): string | null {
   const invoice = result?.invoice as Record<string, unknown> | undefined;
   const data = invoice?.data as Record<string, unknown> | undefined;
@@ -183,6 +217,179 @@ function pickTxEvidence(result: Record<string, unknown> | undefined): string | n
     }
   }
   return null;
+}
+
+function mapRebalanceStatus(value: unknown): RebalanceStatusState {
+  if (typeof value !== "string") {
+    return "IDLE";
+  }
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "funded" || normalized === "completed" || normalized === "satisfied") {
+    return "FUNDED";
+  }
+  if (normalized === "pending" || normalized === "requested" || normalized === "rebalancing") {
+    return "PENDING";
+  }
+  if (normalized === "failed" || normalized === "error") {
+    return "FAILED";
+  }
+  return "IDLE";
+}
+
+function parseEnsureChainLiquidityResult(result: Record<string, unknown> | undefined): EnsureChainLiquidityResult {
+  const state = mapRebalanceStatus(result?.status ?? result?.state);
+  if (state === "IDLE") {
+    return {
+      state: "PENDING",
+      started: Boolean(result?.started),
+    };
+  }
+  return {
+    state,
+    started: Boolean(result?.started),
+    error: typeof result?.error === "string" ? result.error : undefined,
+  };
+}
+
+function parseGetRebalanceStatusResult(result: Record<string, unknown> | undefined): GetRebalanceStatusResult {
+  return {
+    state: mapRebalanceStatus(result?.status ?? result?.state),
+    error: typeof result?.error === "string" ? result.error : undefined,
+  };
+}
+
+function normalizeRpcChannelState(value: unknown): string {
+  const candidate =
+    typeof value === "string"
+      ? value
+      : value && typeof value === "object" && typeof (value as Record<string, unknown>).state_name === "string"
+        ? ((value as Record<string, unknown>).state_name as string)
+        : "";
+  const normalized = candidate.trim();
+  if (!normalized) {
+    return "UNKNOWN";
+  }
+  if (normalized === "ChannelReady" || normalized === "CHANNEL_READY") {
+    return "CHANNEL_READY";
+  }
+  if (normalized === "Closed" || normalized === "CLOSED") {
+    return "CLOSED";
+  }
+  return normalized;
+}
+
+function normalizeRpcAmount(value: unknown): string {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(value);
+  }
+  if (typeof value !== "string") {
+    return "0";
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "0";
+  }
+  if (/^0x[0-9a-f]+$/i.test(trimmed)) {
+    return BigInt(trimmed).toString(10);
+  }
+  return trimmed;
+}
+
+function pickRequiredAmount(result: Record<string, unknown> | undefined, key: string): string {
+  const normalized = normalizeRpcAmount(result?.[key]);
+  if (normalized === "0") {
+    return "0";
+  }
+  return normalized;
+}
+
+function normalizeRpcInteger(value: unknown): number {
+  if (typeof value === "number" && Number.isInteger(value)) {
+    return value;
+  }
+  if (typeof value !== "string") {
+    return 0;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return 0;
+  }
+  if (/^0x[0-9a-f]+$/i.test(trimmed)) {
+    return Number(BigInt(trimmed));
+  }
+  const parsed = Number(trimmed);
+  return Number.isInteger(parsed) ? parsed : 0;
+}
+
+function parseChannelRecord(value: unknown): ChannelRecord | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const raw = value as Record<string, unknown>;
+  const channelId = pickStringCandidate(raw.channel_id) ?? pickStringCandidate(raw.channelId);
+  if (!channelId) {
+    return null;
+  }
+  return {
+    channelId,
+    state: normalizeRpcChannelState(raw.state),
+    localBalance: normalizeRpcAmount(raw.local_balance ?? raw.localBalance),
+    remoteBalance: normalizeRpcAmount(raw.remote_balance ?? raw.remoteBalance),
+    remotePubkey:
+      pickStringCandidate(raw.remote_pubkey) ??
+      pickStringCandidate(raw.remotePubkey) ??
+      pickStringCandidate(raw.peer_id) ??
+      pickStringCandidate(raw.peerId),
+    pendingTlcCount: normalizeRpcInteger(raw.pending_tlc_count ?? raw.pendingTlcCount),
+  };
+}
+
+function parseCkbChannelAcceptancePolicy(result: Record<string, unknown> | undefined): CkbChannelAcceptancePolicy {
+  return {
+    openChannelAutoAcceptMinFundingAmount: pickRequiredAmount(
+      result,
+      "open_channel_auto_accept_min_ckb_funding_amount",
+    ),
+    acceptChannelFundingAmount: pickRequiredAmount(result, "auto_accept_channel_ckb_funding_amount"),
+  };
+}
+
+function isUnsupportedRpcMethodError(error: unknown): boolean {
+  if (!(error instanceof FiberRpcError)) {
+    return false;
+  }
+  if (error.code === -32601) {
+    return true;
+  }
+
+  const message = error.message.trim().toLowerCase();
+  return message === "unauthorized" || message.includes("method not found") || message.includes("unknown method");
+}
+
+async function probeDirectRebalanceSupport(endpoint: string): Promise<boolean> {
+  try {
+    await rpcCall(endpoint, "get_rebalance_status", {
+      request_id: "__capability_probe__",
+    });
+    return true;
+  } catch (error) {
+    if (isUnsupportedRpcMethodError(error)) {
+      return false;
+    }
+    throw error;
+  }
+}
+
+async function probeChannelLifecycleSupport(endpoint: string): Promise<boolean> {
+  try {
+    await rpcCall(endpoint, "list_channels", {});
+    return true;
+  } catch (error) {
+    if (isUnsupportedRpcMethodError(error)) {
+      return false;
+    }
+    throw error;
+  }
 }
 
 const DEFAULT_SETTLEMENT_SUBSCRIPTION_RECONNECT_DELAY_MS = 3_000;
@@ -553,6 +760,15 @@ export function createAdapter({ endpoint, settlementSubscription, fetchFn }: Cre
     },
     async executeWithdrawal({ amount, asset, destination, requestId }: ExecuteWithdrawalArgs) {
       if (destination.kind === "CKB_ADDRESS") {
+        if (asset === "USDI") {
+          return executeUdtOnchainWithdrawal({
+            amount,
+            asset,
+            destination,
+            requestId,
+            udtTypeScript: toWithdrawalUdtTypeScript(await resolveUsdiUdtScript(endpoint)),
+          });
+        }
         return executeCkbOnchainWithdrawal({ amount, asset, destination, requestId });
       }
 
@@ -578,6 +794,103 @@ export function createAdapter({ endpoint, settlementSubscription, fetchFn }: Cre
         throw new Error("send_payment response is missing transaction evidence");
       }
       return { txHash };
+    },
+    async getLiquidityCapabilities(): Promise<LiquidityCapabilities> {
+      const [directRebalance, channelLifecycle] = await Promise.all([
+        probeDirectRebalanceSupport(endpoint),
+        probeChannelLifecycleSupport(endpoint),
+      ]);
+      return {
+        directRebalance,
+        channelLifecycle,
+      };
+    },
+    async listChannels({ includeClosed = false, peerId }: ListChannelsArgs): Promise<ListChannelsResult> {
+      const payload: Record<string, unknown> = {};
+      if (includeClosed) {
+        payload.include_closed = true;
+      }
+      if (peerId?.trim()) {
+        payload.peer_id = peerId.trim();
+      }
+
+      const result = (await rpcCall(endpoint, "list_channels", payload)) as Record<string, unknown> | undefined;
+      const rawChannels = Array.isArray(result?.channels) ? result.channels : [];
+      const channels = rawChannels
+        .map(parseChannelRecord)
+        .filter((channel): channel is ChannelRecord => channel !== null)
+        .filter((channel) => includeClosed || channel.state !== "CLOSED");
+      return { channels };
+    },
+    async openChannel({
+      peerId,
+      fundingAmount,
+      fundingUdtTypeScript,
+      tlcFeeProportionalMillionths,
+    }: OpenChannelArgs): Promise<OpenChannelResult> {
+      const payload: Record<string, unknown> = {
+        peer_id: peerId,
+        funding_amount: toHexQuantity(fundingAmount),
+      };
+      if (fundingUdtTypeScript) {
+        payload.funding_udt_type_script = toRpcUdtTypeScript(fundingUdtTypeScript);
+      }
+      if (tlcFeeProportionalMillionths) {
+        payload.tlc_fee_proportional_millionths = tlcFeeProportionalMillionths;
+      }
+
+      const result = (await rpcCall(endpoint, "open_channel", payload)) as Record<string, unknown> | undefined;
+      const temporaryChannelId = pickStringCandidate(result?.temporary_channel_id);
+      if (!temporaryChannelId) {
+        throw new Error("open_channel response is missing 'temporary_channel_id' string");
+      }
+      return { temporaryChannelId };
+    },
+    async acceptChannel({ temporaryChannelId, fundingAmount }: AcceptChannelArgs): Promise<AcceptChannelResult> {
+      const result = (await rpcCall(endpoint, "accept_channel", {
+        temporary_channel_id: temporaryChannelId,
+        funding_amount: toHexQuantity(fundingAmount),
+      })) as Record<string, unknown> | undefined;
+      const newChannelId = pickStringCandidate(result?.new_channel_id);
+      return newChannelId ? { newChannelId } : {};
+    },
+    async getCkbChannelAcceptancePolicy(): Promise<CkbChannelAcceptancePolicy> {
+      const result = (await rpcCallWithoutParams(endpoint, "node_info")) as Record<string, unknown> | undefined;
+      return parseCkbChannelAcceptancePolicy(result);
+    },
+    async shutdownChannel({ channelId, closeScript, feeRate, force }: ShutdownChannelArgs): Promise<ShutdownChannelResult> {
+      const payload: Record<string, unknown> = {
+        channel_id: channelId,
+      };
+      if (closeScript) {
+        payload.close_script = closeScript;
+      }
+      if (feeRate) {
+        payload.fee_rate = feeRate;
+      }
+      if (force !== undefined) {
+        payload.force = force;
+      }
+
+      const result = (await rpcCall(endpoint, "shutdown_channel", payload)) as Record<string, unknown> | undefined;
+      const txHash = pickTxEvidence(result) ?? undefined;
+      return txHash ? { txHash } : {};
+    },
+    async ensureChainLiquidity({ requestId, asset, network, requiredAmount, sourceKind }: EnsureChainLiquidityArgs) {
+      const result = (await rpcCall(endpoint, "rebalance_to_ckb_chain", {
+        request_id: requestId,
+        asset,
+        network,
+        required_amount: toHexQuantity(requiredAmount),
+        source_kind: sourceKind,
+      })) as Record<string, unknown> | undefined;
+      return parseEnsureChainLiquidityResult(result);
+    },
+    async getRebalanceStatus({ requestId }: GetRebalanceStatusArgs) {
+      const result = (await rpcCall(endpoint, "get_rebalance_status", {
+        request_id: requestId,
+      })) as Record<string, unknown> | undefined;
+      return parseGetRebalanceStatusResult(result);
     },
   };
 }

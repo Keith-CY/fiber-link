@@ -35,12 +35,17 @@ export_workflow_ids() {
 }
 
 run_subscription_phase() {
+  if should_use_unique_withdraw_to_address; then
+    WITHDRAW_TO_ADDRESS="$(generate_unique_testnet_withdraw_to_address primary)"
+  fi
+
   local cmd=(
     env
     "FIBER_LINK_APP_ID=${APP_ID}"
     "RPC_PORT=${WORKFLOW_RPC_PORT}"
     "WORKFLOW_ARTIFACT_DIR=${PHASE2_DIR}"
     "WORKFLOW_RESULT_METADATA_PATH=${PHASE2_METADATA_PATH}"
+    "WORKFLOW_WITHDRAW_TO_ADDRESS=${WITHDRAW_TO_ADDRESS:-}"
     scripts/local-workflow-automation.sh
     --verbose
     --skip-services
@@ -60,7 +65,11 @@ run_subscription_phase() {
   fi
   [[ -f "${summary_path}" ]] || fatal "${EXIT_PHASE2}" "missing phase2 summary: ${summary_path}"
 
-  WITHDRAW_TO_ADDRESS="$(jq -r '.withdrawal.destinationAddress // empty' "${summary_path}")"
+  local resolved_withdraw_to_address
+  resolved_withdraw_to_address="$(jq -r '.withdrawal.destinationAddress // empty' "${summary_path}")"
+  if [[ -n "${resolved_withdraw_to_address}" ]]; then
+    WITHDRAW_TO_ADDRESS="${resolved_withdraw_to_address}"
+  fi
   TOPIC_TX_HASH="$(jq -r '.tips[]? | select(.label == "topic-post") | .txHash // empty' "${summary_path}" | head -n1)"
   REPLY_TX_HASH="$(jq -r '.tips[]? | select(.label == "reply-post") | .txHash // empty' "${summary_path}" | head -n1)"
   AUTHOR_BALANCE="$(jq -r '.balanceAfterTips // empty' "${summary_path}")"

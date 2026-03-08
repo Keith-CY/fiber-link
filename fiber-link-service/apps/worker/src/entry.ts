@@ -1,6 +1,7 @@
-import { createAdapterProvider } from "@fiber-link/fiber-adapter";
+import { createAdapterProvider, createDefaultHotWalletInventoryProvider } from "@fiber-link/fiber-adapter";
 import type { TipIntentListCursor } from "@fiber-link/db";
 import { parseWorkerConfig } from "./config";
+import { runLiquidityBatch } from "./liquidity-batch";
 import { runSettlementDiscovery } from "./settlement-discovery";
 import { createFileSettlementCursorStore } from "./settlement-cursor-store";
 import {
@@ -24,13 +25,44 @@ async function main() {
           }
         : { enabled: false },
   });
+  const channelAcceptAdapter =
+    config.channelAcceptRpcUrl === config.fiberRpcUrl
+      ? fiberAdapter
+      : createAdapterProvider({
+          endpoint: config.channelAcceptRpcUrl,
+        });
   const cursorStore = createFileSettlementCursorStore(config.settlementCursorFile);
+  const inventoryProvider = createDefaultHotWalletInventoryProvider();
   let settlementCursor: TipIntentListCursor | undefined = await cursorStore.load();
   let subscriptionRunner: SettlementSubscriptionRunner | null = null;
+  const liquidityFallback = {
+    mode: config.liquidityFallbackMode,
+    channelAcceptRpcUrl: config.channelAcceptRpcUrl,
+    channelRotationBootstrapReserve: config.channelRotationBootstrapReserve,
+    channelRotationMinRecoverableAmount: config.channelRotationMinRecoverableAmount,
+    channelRotationMaxConcurrent: config.channelRotationMaxConcurrent,
+  };
 
   const runtime = createWorkerRuntime({
     intervalMs: Math.min(config.withdrawalIntervalMs, config.settlementIntervalMs),
     withdrawalIntervalMs: config.withdrawalIntervalMs,
+    runLiquidityBatch: () =>
+      runLiquidityBatch({
+        liquidityProvider: {
+          getLiquidityCapabilities: fiberAdapter.getLiquidityCapabilities,
+          listChannels: fiberAdapter.listChannels,
+          openChannel: fiberAdapter.openChannel,
+          acceptChannel: channelAcceptAdapter.acceptChannel,
+          getCkbChannelAcceptancePolicy: channelAcceptAdapter.getCkbChannelAcceptancePolicy,
+          shutdownChannel: fiberAdapter.shutdownChannel,
+          ensureChainLiquidity: fiberAdapter.ensureChainLiquidity,
+          getRebalanceStatus: fiberAdapter.getRebalanceStatus,
+        },
+        fallbackMode: config.liquidityFallbackMode,
+        channelRotationBootstrapReserve: config.channelRotationBootstrapReserve,
+        channelRotationMinRecoverableAmount: config.channelRotationMinRecoverableAmount,
+        inventoryProvider,
+      }),
     maxRetries: config.maxRetries,
     retryDelayMs: config.retryDelayMs,
     shutdownTimeoutMs: config.shutdownTimeoutMs,
@@ -94,6 +126,7 @@ async function main() {
         subscriptionConcurrency: config.subscriptionConcurrency,
         maxPendingEvents: config.subscriptionMaxPendingEvents,
         recentInvoiceDedupeSize: config.subscriptionRecentInvoiceDedupeSize,
+        liquidityFallback,
       });
     } catch (error) {
       console.error("[worker] settlement subscription startup failed; continuing with polling fallback", error);
@@ -102,6 +135,7 @@ async function main() {
     console.info("[worker] settlement strategy enabled", {
       strategy: "polling",
       pollingFallback: false,
+      liquidityFallback,
     });
   }
 

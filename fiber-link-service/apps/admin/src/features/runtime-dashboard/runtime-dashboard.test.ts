@@ -9,11 +9,26 @@ describe("runtime dashboard", () => {
       failureCount24h: 3,
       topErrorClass: "NETWORK_TIMEOUT",
       retryBackoffActive: true,
+      liquidityPendingCount: 0,
     });
 
     expect(summary.runtimeState).toBe("degraded");
     expect(summary.severity).toBe("warning");
     expect(summary.topErrorClass).toBe("NETWORK_TIMEOUT");
+  });
+
+  it("surfaces liquidity-pending withdrawals as a warning signal", () => {
+    const summary = buildDashboardSummary({
+      runtimeState: "running",
+      lastSuccessAt: "2026-03-07T00:00:00.000Z",
+      failureCount24h: 0,
+      topErrorClass: null,
+      retryBackoffActive: false,
+      liquidityPendingCount: 2,
+    });
+
+    expect(summary.liquidityPendingCount).toBe(2);
+    expect(summary.severity).toBe("warning");
   });
 
   it("redacts sensitive values in whitespace-delimited text", () => {

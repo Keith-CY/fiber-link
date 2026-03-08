@@ -7,6 +7,7 @@ type WorkerLogger = {
   error: (event: string, context?: WorkerLogContext) => void;
 };
 
+type RunLiquidityBatchFn = () => Promise<unknown>;
 type RunWithdrawalBatchFn = (options: { maxRetries: number; retryDelayMs: number }) => Promise<unknown>;
 type PollSettlementsFn = (options: { limit: number }) => Promise<unknown>;
 
@@ -18,6 +19,7 @@ export type CreateWorkerRuntimeOptions = {
   shutdownTimeoutMs: number;
   settlementIntervalMs?: number;
   settlementBatchSize?: number;
+  runLiquidityBatch?: RunLiquidityBatchFn;
   runWithdrawalBatch?: RunWithdrawalBatchFn;
   pollSettlements?: PollSettlementsFn;
   setIntervalFn?: typeof setInterval;
@@ -54,6 +56,7 @@ async function waitForDrain(batchPromise: Promise<void>, timeoutMs: number): Pro
 }
 
 export function createWorkerRuntime(options: CreateWorkerRuntimeOptions): WorkerRuntime {
+  const runLiquidityBatch = options.runLiquidityBatch;
   const runWithdrawalBatch = options.runWithdrawalBatch ?? runWithdrawalBatchDefault;
   const pollSettlements = options.pollSettlements;
   const hasExplicitWithdrawalInterval = options.withdrawalIntervalMs !== undefined;
@@ -100,6 +103,17 @@ export function createWorkerRuntime(options: CreateWorkerRuntimeOptions): Worker
     inFlightBatch = (async () => {
       try {
         if (shouldRunWithdrawal) {
+          if (runLiquidityBatch) {
+            try {
+              const liquidityResult = await runLiquidityBatch();
+              logger.info("worker.liquidity.batch.succeeded", {
+                result: liquidityResult,
+              });
+            } catch (error) {
+              logger.error("worker.liquidity.batch.failed", { error });
+            }
+          }
+
           try {
             const result = await runWithdrawalBatch({
               maxRetries: options.maxRetries,
@@ -145,6 +159,7 @@ export function createWorkerRuntime(options: CreateWorkerRuntimeOptions): Worker
     logger.info("worker.runtime.started", {
       tickIntervalMs: options.intervalMs,
       withdrawalIntervalMs,
+      liquidityBatchEnabled: Boolean(runLiquidityBatch),
       maxRetries: options.maxRetries,
       retryDelayMs: options.retryDelayMs,
       settlementIntervalMs: pollSettlements ? settlementIntervalMs : null,

@@ -163,4 +163,44 @@ RSpec.describe "Fiber Link Dashboard", type: :system do
         body.dig("params", "amount") == "61"
     }
   end
+
+  it "shows distinct liquidity pending feedback when liquidity is not yet available" do
+    stub_request(:post, "https://fiber-link.example/rpc")
+      .with { |request| JSON.parse(request.body).fetch("method") == "dashboard.summary" }
+      .to_return(
+        status: 200,
+        body: {
+          jsonrpc: "2.0",
+          id: "dash-4",
+          result: {
+            balance: "124",
+            tips: [],
+            generatedAt: "2026-02-16T00:00:00.000Z",
+          },
+        }.to_json,
+        headers: { "Content-Type" => "application/json" },
+      )
+
+    stub_request(:post, "https://fiber-link.example/rpc")
+      .with { |request| JSON.parse(request.body).fetch("method") == "withdrawal.request" }
+      .to_return(
+        status: 200,
+        body: {
+          jsonrpc: "2.0",
+          id: "withdraw-2",
+          result: { id: "wd-liquidity", state: "LIQUIDITY_PENDING" },
+        }.to_json,
+        headers: { "Content-Type" => "application/json" },
+      )
+
+    visit "/fiber-link"
+
+    fill_in "Amount (CKB)", with: "61"
+    fill_in "Destination Address", with: "ckt1qyqg5xa84dfwfy76tptw2sy0k9q98xaeka9q5tvdlm"
+    click_button "Request Withdrawal"
+
+    expect(page).to have_content("Withdrawal queued until liquidity is available.")
+    expect(page).to have_content("Liquidity Pending")
+    expect(page).to have_content("Requested withdrawal wd-liquidity")
+  end
 end

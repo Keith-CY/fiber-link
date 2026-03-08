@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { and, eq, lte, or, sql } from "drizzle-orm";
+import { and, eq, inArray, lte, or, sql } from "drizzle-orm";
 import type { DbClient } from "./client";
 import { assertPositiveAmount, formatDecimal, parseDecimal, pow10 } from "./amount";
 import { withdrawalDebitIdempotencyKey } from "./idempotency";
@@ -17,6 +17,11 @@ export type CreateWithdrawalInput = {
   destinationKind?: WithdrawalDestinationKind;
 };
 
+export type CreateLiquidityPendingWithdrawalInput = CreateWithdrawalInput & {
+  liquidityRequestId: string;
+  liquidityPendingReason: string;
+};
+
 export type WithdrawalRecord = CreateWithdrawalInput & {
   id: string;
   destinationKind: WithdrawalDestinationKind;
@@ -28,6 +33,9 @@ export type WithdrawalRecord = CreateWithdrawalInput & {
   updatedAt: Date;
   completedAt: Date | null;
   txHash: string | null;
+  liquidityRequestId: string | null;
+  liquidityPendingReason: string | null;
+  liquidityCheckedAt: Date | null;
 };
 
 export class WithdrawalNotFoundError extends Error {
@@ -70,16 +78,30 @@ export type BalanceCheckDeps = {
   ledgerRepo: LedgerRepo;
 };
 
+export type ActiveCkbAddressReservationTotalInput = {
+  appId: string;
+  asset: WithdrawalAsset;
+  network: "AGGRON4" | "LINA";
+};
+
 export type CompletionDeps = {
   ledgerRepo: LedgerRepo;
 };
 
 export type WithdrawalRepo = {
   create(input: CreateWithdrawalInput): Promise<WithdrawalRecord>;
+  createLiquidityPending(input: CreateLiquidityPendingWithdrawalInput): Promise<WithdrawalRecord>;
+  createLiquidityPendingWithBalanceCheck(
+    input: CreateLiquidityPendingWithdrawalInput,
+    deps: BalanceCheckDeps,
+  ): Promise<WithdrawalRecord>;
   createWithBalanceCheck(input: CreateWithdrawalInput, deps: BalanceCheckDeps): Promise<WithdrawalRecord>;
   getPendingTotal(input: PendingTotalInput): Promise<string>;
+  getActiveCkbAddressReservationTotal(input: ActiveCkbAddressReservationTotalInput): Promise<string>;
   findByIdOrThrow(id: string): Promise<WithdrawalRecord>;
+  listLiquidityPending(): Promise<WithdrawalRecord[]>;
   listReadyForProcessing(now: Date): Promise<WithdrawalRecord[]>;
+  markPendingFromLiquidity(id: string, now: Date): Promise<WithdrawalRecord>;
   markProcessing(id: string, now: Date): Promise<WithdrawalRecord>;
   markCompleted(id: string, params: { now: Date; txHash: string }): Promise<WithdrawalRecord>;
   markCompletedWithDebit(id: string, params: { now: Date; txHash: string }, deps: CompletionDeps): Promise<WithdrawalRecord>;
@@ -89,6 +111,7 @@ export type WithdrawalRepo = {
 };
 
 type WithdrawalRow = typeof withdrawals.$inferSelect;
+const reservedWithdrawalStates: WithdrawalState[] = ["LIQUIDITY_PENDING", "PENDING", "PROCESSING", "RETRY_PENDING"];
 
 function toRecord(row: WithdrawalRow): WithdrawalRecord {
   return {
@@ -107,6 +130,9 @@ function toRecord(row: WithdrawalRow): WithdrawalRecord {
     updatedAt: row.updatedAt,
     completedAt: row.completedAt,
     txHash: row.txHash,
+    liquidityRequestId: row.liquidityRequestId,
+    liquidityPendingReason: row.liquidityPendingReason,
+    liquidityCheckedAt: row.liquidityCheckedAt,
   };
 }
 
@@ -138,6 +164,10 @@ function isInsufficient(balance: string, pending: string, amount: string): boole
   return available < required;
 }
 
+function ckbAddressPrefixForNetwork(network: "AGGRON4" | "LINA"): "ckt1%" | "ckb1%" {
+  return network === "AGGRON4" ? "ckt1%" : "ckb1%";
+}
+
 async function getPendingTotalWithClient(client: DbClient, input: PendingTotalInput): Promise<string> {
   const [row] = await client
     .select({
@@ -149,11 +179,29 @@ async function getPendingTotalWithClient(client: DbClient, input: PendingTotalIn
         eq(withdrawals.appId, input.appId),
         eq(withdrawals.userId, input.userId),
         eq(withdrawals.asset, input.asset),
-        or(
-          eq(withdrawals.state, "PENDING"),
-          eq(withdrawals.state, "PROCESSING"),
-          eq(withdrawals.state, "RETRY_PENDING"),
-        ),
+        inArray(withdrawals.state, reservedWithdrawalStates),
+      ),
+    );
+
+  return row ? String(row.total) : "0";
+}
+
+async function getActiveCkbAddressReservationTotalWithClient(
+  client: DbClient,
+  input: ActiveCkbAddressReservationTotalInput,
+): Promise<string> {
+  const [row] = await client
+    .select({
+      total: sql<string>`COALESCE(SUM(${withdrawals.amount}), 0)`,
+    })
+    .from(withdrawals)
+    .where(
+      and(
+        eq(withdrawals.appId, input.appId),
+        eq(withdrawals.asset, input.asset),
+        eq(withdrawals.destinationKind, "CKB_ADDRESS"),
+        inArray(withdrawals.state, ["PENDING", "PROCESSING", "RETRY_PENDING"]),
+        sql`${withdrawals.toAddress} ILIKE ${ckbAddressPrefixForNetwork(input.network)}`,
       ),
     );
 
@@ -193,6 +241,83 @@ export function createDbWithdrawalRepo(db: DbClient): WithdrawalRepo {
         })
         .returning();
       return toRecord(row);
+    },
+
+    async createLiquidityPending(input) {
+      assertPositiveAmount(input.amount);
+      const now = new Date();
+      const [row] = await db
+        .insert(withdrawals)
+        .values({
+          appId: input.appId,
+          userId: input.userId,
+          asset: input.asset,
+          amount: input.amount,
+          destinationKind: input.destinationKind ?? inferDestinationKind(input.toAddress),
+          toAddress: input.toAddress,
+          state: "LIQUIDITY_PENDING",
+          retryCount: 0,
+          nextRetryAt: null,
+          lastError: null,
+          createdAt: now,
+          updatedAt: now,
+          completedAt: null,
+          txHash: null,
+          liquidityRequestId: input.liquidityRequestId,
+          liquidityPendingReason: input.liquidityPendingReason,
+          liquidityCheckedAt: now,
+        })
+        .returning();
+      return toRecord(row);
+    },
+
+    async createLiquidityPendingWithBalanceCheck(input, _deps) {
+      assertPositiveAmount(input.amount);
+      return db.transaction(async (tx) => {
+        const lockKey = `${input.appId}:${input.userId}:${input.asset}`;
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${lockKey}))`);
+
+        const ledgerRepo = createDbLedgerRepo(tx);
+        const balance = await ledgerRepo.getBalance({
+          appId: input.appId,
+          userId: input.userId,
+          asset: input.asset,
+        });
+        const pending = await getPendingTotalWithClient(tx, {
+          appId: input.appId,
+          userId: input.userId,
+          asset: input.asset,
+        });
+        if (isInsufficient(balance, pending, input.amount)) {
+          throw new InsufficientFundsError(input.appId, input.userId, input.asset, input.amount);
+        }
+
+        const now = new Date();
+        const [row] = await tx
+          .insert(withdrawals)
+          .values({
+            appId: input.appId,
+            userId: input.userId,
+            asset: input.asset,
+            amount: input.amount,
+            destinationKind: input.destinationKind ?? inferDestinationKind(input.toAddress),
+            toAddress: input.toAddress,
+            state: "LIQUIDITY_PENDING",
+            retryCount: 0,
+            nextRetryAt: null,
+            lastError: null,
+            createdAt: now,
+            updatedAt: now,
+            completedAt: null,
+            txHash: null,
+            liquidityRequestId: input.liquidityRequestId,
+            liquidityPendingReason: input.liquidityPendingReason,
+            liquidityCheckedAt: now,
+          })
+          .returning();
+
+        return toRecord(row);
+      });
     },
 
     async createWithBalanceCheck(input, _deps) {
@@ -245,12 +370,21 @@ export function createDbWithdrawalRepo(db: DbClient): WithdrawalRepo {
       return getPendingTotalWithClient(db, input);
     },
 
+    async getActiveCkbAddressReservationTotal(input) {
+      return getActiveCkbAddressReservationTotalWithClient(db, input);
+    },
+
     async findByIdOrThrow(id) {
       const [row] = await db.select().from(withdrawals).where(eq(withdrawals.id, id)).limit(1);
       if (!row) {
         throw new WithdrawalNotFoundError(id);
       }
       return toRecord(row);
+    },
+
+    async listLiquidityPending() {
+      const rows = await db.select().from(withdrawals).where(eq(withdrawals.state, "LIQUIDITY_PENDING"));
+      return rows.map(toRecord);
     },
 
     async listReadyForProcessing(now) {
@@ -262,6 +396,22 @@ export function createDbWithdrawalRepo(db: DbClient): WithdrawalRepo {
           .where(and(eq(withdrawals.state, "RETRY_PENDING"), lte(withdrawals.nextRetryAt, now))),
       ]);
       return [...pendingRows, ...retryReadyRows].map(toRecord);
+    },
+
+    async markPendingFromLiquidity(id, now) {
+      const [row] = await db
+        .update(withdrawals)
+        .set({
+          state: "PENDING",
+          updatedAt: now,
+          liquidityCheckedAt: now,
+        })
+        .where(and(eq(withdrawals.id, id), eq(withdrawals.state, "LIQUIDITY_PENDING")))
+        .returning();
+      if (!row) {
+        await throwInvalidTransition(db, id, "PENDING");
+      }
+      return toRecord(row);
     },
 
     async markProcessing(id, now) {
@@ -376,7 +526,7 @@ export function createDbWithdrawalRepo(db: DbClient): WithdrawalRepo {
 
 export function createInMemoryWithdrawalRepo(): WithdrawalRepo {
   const records: WithdrawalRecord[] = [];
-  const pendingStates = new Set<WithdrawalState>(["PENDING", "PROCESSING", "RETRY_PENDING"]);
+  const pendingStates = new Set<WithdrawalState>(reservedWithdrawalStates);
 
   function clone(record: WithdrawalRecord): WithdrawalRecord {
     return {
@@ -385,6 +535,7 @@ export function createInMemoryWithdrawalRepo(): WithdrawalRepo {
       createdAt: new Date(record.createdAt),
       updatedAt: new Date(record.updatedAt),
       completedAt: record.completedAt ? new Date(record.completedAt) : null,
+      liquidityCheckedAt: record.liquidityCheckedAt ? new Date(record.liquidityCheckedAt) : null,
     };
   }
 
@@ -404,9 +555,52 @@ export function createInMemoryWithdrawalRepo(): WithdrawalRepo {
         updatedAt: now,
         completedAt: null,
         txHash: null,
+        liquidityRequestId: null,
+        liquidityPendingReason: null,
+        liquidityCheckedAt: null,
       };
       records.push(record);
       return clone(record);
+    },
+
+    async createLiquidityPending(input) {
+      assertPositiveAmount(input.amount);
+      const now = new Date();
+      const record: WithdrawalRecord = {
+        ...input,
+        destinationKind: input.destinationKind ?? inferDestinationKind(input.toAddress),
+        id: randomUUID(),
+        state: "LIQUIDITY_PENDING",
+        retryCount: 0,
+        nextRetryAt: null,
+        lastError: null,
+        createdAt: now,
+        updatedAt: now,
+        completedAt: null,
+        txHash: null,
+        liquidityRequestId: input.liquidityRequestId,
+        liquidityPendingReason: input.liquidityPendingReason,
+        liquidityCheckedAt: now,
+      };
+      records.push(record);
+      return clone(record);
+    },
+
+    async createLiquidityPendingWithBalanceCheck(input, deps) {
+      const pending = await this.getPendingTotal({
+        appId: input.appId,
+        userId: input.userId,
+        asset: input.asset,
+      });
+      const balance = await deps.ledgerRepo.getBalance({
+        appId: input.appId,
+        userId: input.userId,
+        asset: input.asset,
+      });
+      if (isInsufficient(balance, pending, input.amount)) {
+        throw new InsufficientFundsError(input.appId, input.userId, input.asset, input.amount);
+      }
+      return this.createLiquidityPending(input);
     },
 
     async createWithBalanceCheck(input, deps) {
@@ -437,12 +631,29 @@ export function createInMemoryWithdrawalRepo(): WithdrawalRepo {
       return sumAmounts(pending.map((item) => item.amount));
     },
 
+    async getActiveCkbAddressReservationTotal(input) {
+      const prefix = input.network === "AGGRON4" ? "ckt1" : "ckb1";
+      const active = records.filter(
+        (item) =>
+          item.appId === input.appId &&
+          item.asset === input.asset &&
+          item.destinationKind === "CKB_ADDRESS" &&
+          item.toAddress.toLowerCase().startsWith(prefix) &&
+          (item.state === "PENDING" || item.state === "PROCESSING" || item.state === "RETRY_PENDING"),
+      );
+      return sumAmounts(active.map((item) => item.amount));
+    },
+
     async findByIdOrThrow(id) {
       const record = records.find((item) => item.id === id);
       if (!record) {
         throw new WithdrawalNotFoundError(id);
       }
       return clone(record);
+    },
+
+    async listLiquidityPending() {
+      return records.filter((item) => item.state === "LIQUIDITY_PENDING").map(clone);
     },
 
     async listReadyForProcessing(now) {
@@ -453,6 +664,20 @@ export function createInMemoryWithdrawalRepo(): WithdrawalRepo {
             (item.state === "RETRY_PENDING" && item.nextRetryAt !== null && item.nextRetryAt <= now),
         )
         .map(clone);
+    },
+
+    async markPendingFromLiquidity(id, now) {
+      const record = records.find((item) => item.id === id);
+      if (!record) {
+        throw new WithdrawalNotFoundError(id);
+      }
+      if (record.state !== "LIQUIDITY_PENDING") {
+        throw new WithdrawalTransitionConflictError("PENDING", record.state, id);
+      }
+      record.state = "PENDING";
+      record.updatedAt = now;
+      record.liquidityCheckedAt = now;
+      return clone(record);
     },
 
     async markProcessing(id, now) {

@@ -355,6 +355,25 @@ get_env_value() {
   printf '%s' "${line#*=}"
 }
 
+run_service_db_migrations() {
+  local pg_user pg_db sql_dir sql_file
+  pg_user="${POSTGRES_USER:-$(get_env_value POSTGRES_USER)}"
+  pg_db="${POSTGRES_DB:-$(get_env_value POSTGRES_DB)}"
+  pg_user="${pg_user:-fiber}"
+  pg_db="${pg_db:-fiber_link}"
+  sql_dir="${ROOT_DIR}/fiber-link-service/packages/db/drizzle"
+  [[ -d "${sql_dir}" ]] || fatal "${EXIT_PRECHECK}" "missing db migration dir: ${sql_dir}"
+
+  log "applying service db migrations"
+  : > "${ARTIFACT_DIR}/db-migrate.log"
+  for sql_file in "${sql_dir}"/*.sql; do
+    printf '==> %s\n' "$(basename "${sql_file}")" >> "${ARTIFACT_DIR}/db-migrate.log"
+    docker exec -i fiber-link-postgres \
+      psql -v ON_ERROR_STOP=1 -U "${pg_user}" -d "${pg_db}" < "${sql_file}" >> "${ARTIFACT_DIR}/db-migrate.log" 2>&1 \
+      || fatal "${EXIT_STARTUP_TIMEOUT}" "service db migration failed on $(basename "${sql_file}") (see ${ARTIFACT_DIR}/db-migrate.log)"
+  done
+}
+
 wait_for_state() {
   local container="$1"
   local expected="$2"
@@ -2104,6 +2123,7 @@ wait_for_state "fiber-link-redis" "healthy" || fatal "${EXIT_STARTUP_TIMEOUT}" "
 wait_for_state "fiber-link-fnn" "healthy" || fatal "${EXIT_STARTUP_TIMEOUT}" "fnn startup timeout"
 wait_for_state "fiber-link-fnn2" "healthy" || fatal "${EXIT_STARTUP_TIMEOUT}" "fnn2 startup timeout"
 wait_for_state "fiber-link-rpc" "healthy" || fatal "${EXIT_STARTUP_TIMEOUT}" "rpc startup timeout"
+run_service_db_migrations
 wait_for_state "fiber-link-worker" "healthy" || fatal "${EXIT_STARTUP_TIMEOUT}" "worker startup timeout"
 
 if [[ -z "${CKB_TOPUP_ADDRESS}" ]]; then

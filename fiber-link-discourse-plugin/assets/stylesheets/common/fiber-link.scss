@@ -147,6 +147,11 @@
   color: var(--primary-high);
 }
 
+.fiber-link-status-badge.is-liquidity-pending {
+  background: color-mix(in srgb, var(--tertiary) 14%, white 86%);
+  color: var(--tertiary);
+}
+
 .fiber-link-dashboard {
   max-width: 1080px;
   margin: 0 auto;
@@ -291,6 +296,11 @@
 .fiber-link-dashboard__withdrawal-meta,
 .fiber-link-dashboard__withdrawal-success {
   margin: 0;
+}
+
+.fiber-link-dashboard__withdrawal-note {
+  margin: 0.35rem 0 0;
+  font-size: 0.88rem;
 }
 
 .fiber-link-dashboard__activity-header {
