@@ -68,6 +68,12 @@ module ::FiberLink
 
         mark_seen(tip_intent_id)
         true
+      rescue ActiveRecord::RecordInvalid => error
+        Rails.logger.error(
+          "Failed to create tip notification for tip #{tip_intent_id}: #{error.class} #{error.message}"
+        )
+        mark_seen(tip_intent_id)
+        false
       end
 
       def seen?(tip_intent_id)

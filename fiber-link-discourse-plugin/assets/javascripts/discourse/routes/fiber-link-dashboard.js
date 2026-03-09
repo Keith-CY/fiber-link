@@ -19,30 +19,6 @@ function formatIsoTimestamp(rawValue) {
   return value.toISOString();
 }
 
-function formatRelativeTime(rawValue, referenceValue) {
-  const value = new Date(rawValue);
-  const reference = new Date(referenceValue || Date.now());
-  if (Number.isNaN(value.getTime()) || Number.isNaN(reference.getTime())) {
-    return rawValue;
-  }
-
-  const diffMs = value.getTime() - reference.getTime();
-  const units = [
-    ["day", 24 * 60 * 60 * 1000],
-    ["hour", 60 * 60 * 1000],
-    ["minute", 60 * 1000],
-  ];
-  const formatter = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
-
-  for (const [unit, unitMs] of units) {
-    if (Math.abs(diffMs) >= unitMs || unit === "minute") {
-      return formatter.format(Math.round(diffMs / unitMs), unit);
-    }
-  }
-
-  return "just now";
-}
-
 function mapTipStateToPresentation(state) {
   if (state === "SETTLED") {
     return {
@@ -70,7 +46,7 @@ function buildTipFeedSignature(tips) {
   return JSON.stringify(Array.isArray(tips) ? tips : []);
 }
 
-function normalizeTips(tips, generatedAt) {
+function normalizeTips(tips) {
   const rows = Array.isArray(tips) ? tips : [];
   return rows.map((tip) => {
     const status = mapTipStateToPresentation(tip?.state);
@@ -79,6 +55,7 @@ function normalizeTips(tips, generatedAt) {
       id: typeof tip?.id === "string" ? tip.id : "unknown",
       amount: typeof tip?.amount === "string" ? tip.amount : "0",
       asset: tip?.asset === "USDI" ? "USDI" : "CKB",
+      createdAt: typeof tip?.createdAt === "string" ? tip.createdAt : null,
       statusLabel: status.label,
       statusClassName: status.className,
       directionLabel: mapDirectionLabel(tip?.direction),
@@ -88,7 +65,6 @@ function normalizeTips(tips, generatedAt) {
           : typeof tip?.counterpartyUserId === "string"
             ? tip.counterpartyUserId
             : "unknown",
-      relativeTimeLabel: formatRelativeTime(tip?.createdAt, generatedAt),
       absoluteTimeLabel: absoluteTime,
       message: typeof tip?.message === "string" && tip.message.trim() ? tip.message.trim() : null,
     };
@@ -159,7 +135,7 @@ export default class FiberLinkDashboardRoute extends Route {
       }
 
       const generatedAt = formatIsoTimestamp(result?.generatedAt) || new Date().toISOString();
-      const normalizedTips = normalizeTips(result?.tips, generatedAt);
+      const normalizedTips = normalizeTips(result?.tips);
       const nextTipFeedSignature = buildTipFeedSignature(normalizedTips);
 
       const nextProperties = {

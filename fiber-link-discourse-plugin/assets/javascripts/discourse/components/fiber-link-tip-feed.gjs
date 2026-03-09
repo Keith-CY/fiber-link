@@ -58,7 +58,7 @@ export default class FiberLinkTipFeed extends Component {
                   </td>
                   <td><span class={{tip.statusClassName}}>{{tip.statusLabel}}</span></td>
                   <td>@{{tip.counterpartyUsername}}</td>
-                  <td title={{tip.absoluteTimeLabel}}>{{tip.relativeTimeLabel}}</td>
+                  <td title={{tip.absoluteTimeLabel}}>{{format-date tip.createdAt}}</td>
                 </tr>
               {{/each}}
             </tbody>
