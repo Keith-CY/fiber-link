@@ -115,6 +115,7 @@ JSON
 cat > "${artifact_dir}/logs.txt" <<LOG
 stub orchestrator called
 E2E_UNIQUE_WITHDRAW_TO_ADDRESS=${E2E_UNIQUE_WITHDRAW_TO_ADDRESS:-}
+E2E_SETTLEMENT_MODES=${E2E_SETTLEMENT_MODES:-}
 LOG
 printf 'RESULT=PASS CODE=0 ARTIFACT_DIR=%s SUMMARY=%s\n' "${artifact_dir}" "${artifact_dir}/artifacts/summary.json"
 EOF
@@ -139,6 +140,19 @@ test_help_outputs() {
   assert_contains "${orchestrator_help}" "--liquidity-fallback-mode"
 }
 
+test_default_runtime_preferences() {
+  local defaults_output
+  defaults_output="$(
+    env -u E2E_DISCOURSE_UI_BASE_URL -u E2E_SETTLEMENT_MODES \
+      bash -lc "source '${ROOT_DIR}/scripts/lib/e2e-discourse-four-flows-common.sh'; printf 'ui=%s\nsettlement=%s\nfallback=%s\ndefaultTarget=%s\n' \"\$DEFAULT_DISCOURSE_UI_BASE_URL\" \"\$DEFAULT_SETTLEMENT_MODES\" \"\$LIQUIDITY_FALLBACK_MODE\" \"\$(default_withdrawal_signer_target_shannons)\""
+  )"
+
+  assert_contains "${defaults_output}" "ui=http://127.0.0.1:9292"
+  assert_contains "${defaults_output}" "settlement=subscription"
+  assert_contains "${defaults_output}" "fallback=channel_rotation"
+  assert_contains "${defaults_output}" "defaultTarget=6100000000"
+}
+
 test_orchestrator_calls_phase_scripts_in_order() {
   local phase_dir="${TMP_DIR}/phase-bin"
   local artifact_dir="${TMP_DIR}/run-artifacts"
@@ -155,6 +169,7 @@ test_orchestrator_calls_phase_scripts_in_order() {
   diff -u <(cat <<'EOF'
 e2e-discourse-four-flows.phase1-prepare-and-open.sh
 e2e-discourse-four-flows.phase2-tip-and-settlement.sh
+e2e-channel-rotation-seed-legacy-channel.sh
 e2e-discourse-four-flows.phase3-author-withdrawal.sh
 e2e-discourse-four-flows.phase4-postcheck.sh
 e2e-discourse-four-flows.phase5-explorer-and-finalize.sh
@@ -179,6 +194,7 @@ test_orchestrator_calls_optional_liquidity_regression_when_enabled() {
   diff -u <(cat <<'EOF'
 e2e-discourse-four-flows.phase1-prepare-and-open.sh
 e2e-discourse-four-flows.phase2-tip-and-settlement.sh
+e2e-channel-rotation-seed-legacy-channel.sh
 e2e-discourse-four-flows.phase3-author-withdrawal.sh
 e2e-discourse-four-flows.phase4-postcheck.sh
 e2e-discourse-four-flows.phase5-explorer-and-finalize.sh
@@ -224,6 +240,8 @@ test_capture_wrapper_can_use_orchestrator_override() {
 
   latest_summary="$(find "${output_root}" -name summary.json | head -n1 || true)"
   [[ -n "${latest_summary}" ]] || fail "capture wrapper did not package summary.json"
+  grep -q 'E2E_SETTLEMENT_MODES=subscription' "${output_root}"/*/artifact-root/logs.txt \
+    || fail "capture wrapper did not default to subscription settlement mode"
 }
 
 test_channel_rotation_smoke_can_use_orchestrator_override() {
@@ -252,6 +270,7 @@ test_channel_rotation_smoke_can_use_orchestrator_override() {
 }
 
 test_help_outputs
+test_default_runtime_preferences
 test_orchestrator_calls_phase_scripts_in_order
 test_orchestrator_calls_optional_liquidity_regression_when_enabled
 test_orchestrator_seeds_legacy_channel_before_withdrawal_when_channel_rotation_enabled

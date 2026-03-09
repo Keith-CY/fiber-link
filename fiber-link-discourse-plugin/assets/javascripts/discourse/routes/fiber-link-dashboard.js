@@ -3,10 +3,10 @@ import EmberObject from "@ember/object";
 
 import { getDashboardSummary } from "../services/fiber-link-api";
 
-const POLL_INTERVAL_MS = 4000;
+const POLL_INTERVAL_MS = 10000;
 const DASHBOARD_LIMIT = 20;
 
-function formatTimestamp(rawValue) {
+function formatIsoTimestamp(rawValue) {
   if (typeof rawValue !== "string" || !rawValue.trim()) {
     return null;
   }
@@ -19,56 +19,81 @@ function formatTimestamp(rawValue) {
   return value.toISOString();
 }
 
-function buildTipStats(tips) {
-  const rows = Array.isArray(tips) ? tips : [];
-  let pendingCount = 0;
-  let settledCount = 0;
-  let failedCount = 0;
-
-  for (const tip of rows) {
-    const state = typeof tip?.state === "string" ? tip.state.toUpperCase() : "UNKNOWN";
-    if (state === "UNPAID") {
-      pendingCount += 1;
-      continue;
-    }
-    if (state === "SETTLED") {
-      settledCount += 1;
-      continue;
-    }
-    if (state === "FAILED") {
-      failedCount += 1;
-    }
+function mapTipStateToPresentation(state) {
+  if (state === "SETTLED") {
+    return {
+      label: "Payment received",
+      className: "fiber-link-status-badge is-success",
+    };
   }
-
+  if (state === "FAILED") {
+    return {
+      label: "Failed",
+      className: "fiber-link-status-badge is-danger",
+    };
+  }
   return {
-    totalTipCount: rows.length,
-    pendingTipCount: pendingCount,
-    settledTipCount: settledCount,
-    failedTipCount: failedCount,
+    label: "Awaiting payment",
+    className: "fiber-link-status-badge is-warning",
   };
+}
+
+function mapDirectionLabel(direction) {
+  return direction === "OUT" ? "Outgoing" : "Incoming";
+}
+
+function buildTipFeedSignature(tips) {
+  return JSON.stringify(Array.isArray(tips) ? tips : []);
+}
+
+function normalizeTips(tips) {
+  const rows = Array.isArray(tips) ? tips : [];
+  return rows.map((tip) => {
+    const status = mapTipStateToPresentation(tip?.state);
+    const absoluteTime = formatIsoTimestamp(tip?.createdAt);
+    return {
+      id: typeof tip?.id === "string" ? tip.id : "unknown",
+      amount: typeof tip?.amount === "string" ? tip.amount : "0",
+      asset: tip?.asset === "USDI" ? "USDI" : "CKB",
+      createdAt: typeof tip?.createdAt === "string" ? tip.createdAt : null,
+      statusLabel: status.label,
+      statusClassName: status.className,
+      directionLabel: mapDirectionLabel(tip?.direction),
+      counterpartyUsername:
+        typeof tip?.counterpartyUsername === "string" && tip.counterpartyUsername.trim()
+          ? tip.counterpartyUsername.trim()
+          : typeof tip?.counterpartyUserId === "string"
+            ? tip.counterpartyUserId
+            : "unknown",
+      absoluteTimeLabel: absoluteTime,
+      message: typeof tip?.message === "string" && tip.message.trim() ? tip.message.trim() : null,
+    };
+  });
 }
 
 export default class FiberLinkDashboardRoute extends Route {
   _activeModel = null;
   _pollTimer = null;
+  _lastTipFeedSignature = null;
 
   model() {
     this._clearPollTimer();
 
     const model = EmberObject.create({
-      isSummaryLoading: true,
+      isInitialLoading: true,
+      isRefreshing: false,
       summaryErrorMessage: null,
-      isFeedLoading: true,
       feedErrorMessage: null,
-      balance: "0",
+      availableBalance: "0",
+      pendingBalance: "0",
+      lockedBalance: "0",
       balanceAsset: "CKB",
+      pendingCount: 0,
+      completedCount: 0,
+      failedCount: 0,
       generatedAt: null,
       refreshedAt: null,
       tipFeedItems: [],
-      totalTipCount: 0,
-      pendingTipCount: 0,
-      settledTipCount: 0,
-      failedTipCount: 0,
     });
 
     this._activeModel = model;
@@ -80,6 +105,7 @@ export default class FiberLinkDashboardRoute extends Route {
   resetController(_controller, isExiting) {
     if (isExiting) {
       this._activeModel = null;
+      this._lastTipFeedSignature = null;
       this._clearPollTimer();
     }
   }
@@ -91,11 +117,11 @@ export default class FiberLinkDashboardRoute extends Route {
 
     this._clearPollTimer();
 
+    const isInitialLoad = Boolean(model.isInitialLoading);
     model.setProperties({
-      isSummaryLoading: true,
       summaryErrorMessage: null,
-      isFeedLoading: true,
       feedErrorMessage: null,
+      isRefreshing: !isInitialLoad,
     });
 
     try {
@@ -108,26 +134,32 @@ export default class FiberLinkDashboardRoute extends Route {
         return;
       }
 
-      const tips = Array.isArray(result?.tips) ? result.tips : [];
-      const hasUnpaid = tips.some((tip) => tip?.state === "UNPAID");
-      const stats = buildTipStats(tips);
+      const generatedAt = formatIsoTimestamp(result?.generatedAt) || new Date().toISOString();
+      const normalizedTips = normalizeTips(result?.tips);
+      const nextTipFeedSignature = buildTipFeedSignature(normalizedTips);
 
-      model.setProperties({
-        isSummaryLoading: false,
+      const nextProperties = {
+        isInitialLoading: false,
+        isRefreshing: false,
         summaryErrorMessage: null,
-        isFeedLoading: false,
         feedErrorMessage: null,
-        balance: typeof result?.balance === "string" ? result.balance : "0",
-        balanceAsset: "CKB",
-        generatedAt: formatTimestamp(result?.generatedAt),
+        availableBalance: typeof result?.balances?.available === "string" ? result.balances.available : typeof result?.balance === "string" ? result.balance : "0",
+        pendingBalance: typeof result?.balances?.pending === "string" ? result.balances.pending : "0",
+        lockedBalance: typeof result?.balances?.locked === "string" ? result.balances.locked : "0",
+        balanceAsset: result?.balances?.asset === "USDI" ? "USDI" : "CKB",
+        pendingCount: Number(result?.stats?.pendingCount ?? 0),
+        completedCount: Number(result?.stats?.completedCount ?? 0),
+        failedCount: Number(result?.stats?.failedCount ?? 0),
+        generatedAt,
         refreshedAt: new Date().toISOString(),
-        tipFeedItems: tips,
-        ...stats,
-      });
+      };
 
-      if (hasUnpaid) {
-        this._schedulePoll(model);
+      if (nextTipFeedSignature !== this._lastTipFeedSignature) {
+        nextProperties.tipFeedItems = normalizedTips;
+        this._lastTipFeedSignature = nextTipFeedSignature;
       }
+
+      model.setProperties(nextProperties);
     } catch (error) {
       if (model !== this._activeModel) {
         return;
@@ -135,11 +167,15 @@ export default class FiberLinkDashboardRoute extends Route {
 
       const message = error?.message ?? "Failed to load dashboard.summary";
       model.setProperties({
-        isSummaryLoading: false,
+        isInitialLoading: false,
+        isRefreshing: false,
         summaryErrorMessage: message,
-        isFeedLoading: false,
         feedErrorMessage: message,
       });
+    } finally {
+      if (model === this._activeModel) {
+        this._schedulePoll(model);
+      }
     }
   }
 

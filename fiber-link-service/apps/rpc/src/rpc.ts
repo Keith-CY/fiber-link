@@ -9,15 +9,19 @@ import {
   RpcRequestSchema,
   TipCreateParamsSchema,
   TipCreateResultSchema,
+  TipSettledFeedParamsSchema,
+  TipSettledFeedResultSchema,
   TipStatusParamsSchema,
   TipStatusResultSchema,
+  WithdrawalQuoteParamsSchema,
+  WithdrawalQuoteResultSchema,
   WithdrawalRequestParamsSchema,
   WithdrawalRequestResultSchema,
   type RpcId,
 } from "./contracts";
-import { handleTipCreate, handleTipStatus } from "./methods/tip";
+import { handleTipCreate, handleTipSettledFeed, handleTipStatus } from "./methods/tip";
 import { handleDashboardSummary } from "./methods/dashboard";
-import { WithdrawalPolicyViolationError, requestWithdrawal } from "./methods/withdrawal";
+import { WithdrawalPolicyViolationError, quoteWithdrawal, requestWithdrawal } from "./methods/withdrawal";
 import { createNonceStore } from "./nonce-store";
 import {
   InMemoryRateLimitStore,
@@ -324,6 +328,26 @@ export function registerRpc(
           return reply.send(rpcErrorResponse(rpc.id, RpcErrorCode.INTERNAL_ERROR, "Internal error"));
         }
       }
+      if (rpc.method === "tip.settled_feed") {
+        const parsed = TipSettledFeedParamsSchema.safeParse(rpc.params);
+        if (!parsed.success) {
+          return reply.send(
+            rpcErrorResponse(rpc.id, RpcErrorCode.INVALID_PARAMS, "Invalid params", parsed.error.issues),
+          );
+        }
+        try {
+          const result = await handleTipSettledFeed({ appId, ...parsed.data });
+          const validated = TipSettledFeedResultSchema.safeParse(result);
+          if (!validated.success) {
+            req.log.error(validated.error, "tip.settled_feed produced invalid response payload");
+            return reply.send(rpcErrorResponse(rpc.id, RpcErrorCode.INTERNAL_ERROR, "Internal error"));
+          }
+          return reply.send(rpcResultResponse(rpc.id, validated.data));
+        } catch (error) {
+          req.log.error(error);
+          return reply.send(rpcErrorResponse(rpc.id, RpcErrorCode.INTERNAL_ERROR, "Internal error"));
+        }
+      }
       if (rpc.method === "dashboard.summary") {
         const parsed = DashboardSummaryParamsSchema.safeParse(rpc.params);
         if (!parsed.success) {
@@ -340,6 +364,29 @@ export function registerRpc(
           }
           return reply.send(rpcResultResponse(rpc.id, validated.data));
         } catch (error) {
+          req.log.error(error);
+          return reply.send(rpcErrorResponse(rpc.id, RpcErrorCode.INTERNAL_ERROR, "Internal error"));
+        }
+      }
+      if (rpc.method === "withdrawal.quote") {
+        const parsed = WithdrawalQuoteParamsSchema.safeParse(rpc.params);
+        if (!parsed.success) {
+          return reply.send(
+            rpcErrorResponse(rpc.id, RpcErrorCode.INVALID_PARAMS, "Invalid params", parsed.error.issues),
+          );
+        }
+        try {
+          const result = await quoteWithdrawal({ appId, ...parsed.data });
+          const validated = WithdrawalQuoteResultSchema.safeParse(result);
+          if (!validated.success) {
+            req.log.error(validated.error, "withdrawal.quote produced invalid response payload");
+            return reply.send(rpcErrorResponse(rpc.id, RpcErrorCode.INTERNAL_ERROR, "Internal error"));
+          }
+          return reply.send(rpcResultResponse(rpc.id, validated.data));
+        } catch (error) {
+          if (error instanceof WithdrawalPolicyViolationError) {
+            return reply.send(rpcErrorResponse(rpc.id, RpcErrorCode.INVALID_PARAMS, error.message));
+          }
           req.log.error(error);
           return reply.send(rpcErrorResponse(rpc.id, RpcErrorCode.INTERNAL_ERROR, "Internal error"));
         }

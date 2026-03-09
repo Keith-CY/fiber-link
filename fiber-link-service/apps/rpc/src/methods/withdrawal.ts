@@ -22,6 +22,7 @@ import {
   createDefaultHotWalletInventoryProvider,
   type HotWalletInventoryProvider,
   resolveCkbNetworkConfig,
+  resolveFeeRateShannonsPerKb,
   WithdrawalExecutionError,
   getCkbAddressMinCellCapacityShannons,
   shannonsToCkbDecimal,
@@ -348,6 +349,87 @@ function getHotWalletReservationKey(input: RequestWithdrawalInput): string | nul
   } catch {
     return null;
   }
+}
+
+function subtractDecimalStrings(left: string, right: string): string {
+  const parsedLeft = parseDecimal(left);
+  const parsedRight = parseDecimal(right);
+  const scale = Math.max(parsedLeft.scale, parsedRight.scale);
+  const value =
+    parsedLeft.value * 10n ** BigInt(scale - parsedLeft.scale) -
+    parsedRight.value * 10n ** BigInt(scale - parsedRight.scale);
+  return formatDecimal(value > 0n ? value : 0n, scale);
+}
+
+function estimateNetworkFee(input: RequestWithdrawalInput): string {
+  if (input.destination.kind !== "CKB_ADDRESS") {
+    return "0";
+  }
+
+  if (input.asset === "CKB") {
+    return shannonsToCkbDecimal(resolveFeeRateShannonsPerKb());
+  }
+
+  return "0";
+}
+
+export async function quoteWithdrawal(
+  input: RequestWithdrawalInput,
+  options: Pick<RequestWithdrawalOptions, "repo" | "ledgerRepo"> = {},
+) {
+  const repo = options.repo ?? getDefaultRepo();
+  const ledgerRepo = options.ledgerRepo ?? getDefaultLedgerRepo();
+  const [availableBalance, lockedBalance] = await Promise.all([
+    ledgerRepo.getBalance({
+      appId: input.appId,
+      userId: input.userId,
+      asset: input.asset,
+    }),
+    repo.getPendingTotal({
+      appId: input.appId,
+      userId: input.userId,
+      asset: input.asset,
+    }),
+  ]);
+
+  let minimumAmount = "0";
+  let destinationValid = true;
+  let validationMessage: string | null = null;
+
+  try {
+    minimumAmount = await resolveMinimumRequiredAmount(input);
+  } catch (error) {
+    if (error instanceof WithdrawalPolicyViolationError) {
+      destinationValid = false;
+      validationMessage = error.message;
+    } else {
+      throw error;
+    }
+  }
+
+  const networkFee = estimateNetworkFee(input);
+  const receiveAmount = subtractDecimalStrings(input.amount, networkFee);
+  const spendableBalance = subtractDecimalStrings(availableBalance, lockedBalance);
+
+  if (destinationValid && compareDecimalStrings(input.amount, minimumAmount) < 0) {
+    validationMessage = `Minimum withdrawal is ${minimumAmount} ${input.asset}.`;
+  } else if (destinationValid && compareDecimalStrings(input.amount, spendableBalance) > 0) {
+    validationMessage = "Amount exceeds your available balance.";
+  } else if (destinationValid && compareDecimalStrings(receiveAmount, "0") <= 0) {
+    validationMessage = "Amount must be greater than the estimated network fee.";
+  }
+
+  return {
+    asset: input.asset,
+    amount: input.amount,
+    minimumAmount,
+    availableBalance,
+    lockedBalance,
+    networkFee,
+    receiveAmount,
+    destinationValid,
+    validationMessage,
+  };
 }
 
 export async function requestWithdrawal(input: RequestWithdrawalInput, options: RequestWithdrawalOptions = {}) {

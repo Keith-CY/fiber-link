@@ -1,5 +1,5 @@
 import { and, desc, eq, or, sql } from "drizzle-orm";
-import { apps, createDbClient, createDbLedgerRepo, tipIntents, withdrawals } from "@fiber-link/db";
+import { apps, createDbClient, createDbLedgerRepo, createDbWithdrawalRepo, tipIntents, withdrawals } from "@fiber-link/db";
 import type {
   DashboardSummaryResult,
   DashboardSettlementStateFilterSchema,
@@ -40,10 +40,16 @@ function getDefaultDbClient() {
 export async function handleDashboardSummary(input: HandleDashboardSummaryInput) {
   const db = getDefaultDbClient();
   const ledgerRepo = createDbLedgerRepo(db);
+  const withdrawalRepo = createDbWithdrawalRepo(db);
   const limit = input.limit ?? 20;
 
-  const [balance, recentTips] = await Promise.all([
+  const [balance, lockedBalance, recentTips, tipSummary] = await Promise.all([
     ledgerRepo.getBalance({
+      appId: input.appId,
+      userId: input.userId,
+      asset: "CKB",
+    }),
+    withdrawalRepo.getPendingTotal({
       appId: input.appId,
       userId: input.userId,
       asset: "CKB",
@@ -59,6 +65,24 @@ export async function handleDashboardSummary(input: HandleDashboardSummaryInput)
       )
       .orderBy(desc(tipIntents.createdAt), desc(tipIntents.id))
       .limit(limit),
+    (async () => {
+      const [row] = await db
+        .select({
+          pendingAmount:
+            sql<string>`COALESCE(SUM(CASE WHEN ${tipIntents.toUserId} = ${input.userId} AND ${tipIntents.invoiceState} = 'UNPAID' THEN ${tipIntents.amount} ELSE 0 END), 0)`,
+          pendingCount: sql<number>`COALESCE(SUM(CASE WHEN ${tipIntents.invoiceState} = 'UNPAID' THEN 1 ELSE 0 END), 0)::int`,
+          completedCount: sql<number>`COALESCE(SUM(CASE WHEN ${tipIntents.invoiceState} = 'SETTLED' THEN 1 ELSE 0 END), 0)::int`,
+          failedCount: sql<number>`COALESCE(SUM(CASE WHEN ${tipIntents.invoiceState} = 'FAILED' THEN 1 ELSE 0 END), 0)::int`,
+        })
+        .from(tipIntents)
+        .where(
+          and(
+            eq(tipIntents.appId, input.appId),
+            or(eq(tipIntents.fromUserId, input.userId), eq(tipIntents.toUserId, input.userId)),
+          ),
+        );
+      return row ?? null;
+    })(),
   ]);
 
   let admin: DashboardAdminResult | undefined;
@@ -212,6 +236,17 @@ export async function handleDashboardSummary(input: HandleDashboardSummaryInput)
 
   return {
     balance: String(balance),
+    balances: {
+      available: String(balance),
+      pending: String(tipSummary?.pendingAmount ?? "0"),
+      locked: String(lockedBalance),
+      asset: "CKB" as const,
+    },
+    stats: {
+      pendingCount: Number(tipSummary?.pendingCount ?? 0),
+      completedCount: Number(tipSummary?.completedCount ?? 0),
+      failedCount: Number(tipSummary?.failedCount ?? 0),
+    },
     tips: recentTips.map((row) => ({
       id: row.id,
       invoice: row.invoice,
@@ -221,7 +256,9 @@ export async function handleDashboardSummary(input: HandleDashboardSummaryInput)
       state: row.invoiceState,
       direction: row.toUserId === input.userId ? ("IN" as const) : ("OUT" as const),
       counterpartyUserId: row.toUserId === input.userId ? row.fromUserId : row.toUserId,
+      message: row.message ?? null,
       createdAt: row.createdAt.toISOString(),
+      settledAt: row.settledAt ? row.settledAt.toISOString() : null,
     })),
     ...(admin ? { admin } : {}),
     generatedAt: new Date().toISOString(),

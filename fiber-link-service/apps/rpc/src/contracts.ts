@@ -23,6 +23,7 @@ export const TipCreateParamsSchema = z.object({
   toUserId: z.string().min(1),
   asset: z.enum(["CKB", "USDI"]),
   amount: PositiveAmountStringSchema,
+  message: z.string().trim().max(280).optional().nullable(),
 });
 
 export const TipCreateResultSchema = z.object({
@@ -104,6 +105,25 @@ export const WithdrawalRequestResultSchema = z.object({
   state: WithdrawalRequestAcceptedStateSchema,
 });
 
+export const WithdrawalQuoteParamsSchema = z.object({
+  userId: z.string().min(1),
+  asset: z.enum(["CKB", "USDI"]),
+  amount: PositiveAmountStringSchema,
+  destination: WithdrawalDestinationSchema,
+});
+
+export const WithdrawalQuoteResultSchema = z.object({
+  asset: z.enum(["CKB", "USDI"]),
+  amount: z.string().min(1),
+  minimumAmount: z.string().min(1),
+  availableBalance: z.string().min(1),
+  lockedBalance: z.string().min(1),
+  networkFee: z.string().min(1),
+  receiveAmount: z.string().min(1),
+  destinationValid: z.boolean(),
+  validationMessage: z.string().nullable(),
+});
+
 export const DashboardWithdrawalStateFilterSchema = z.enum([
   "ALL",
   "LIQUIDITY_PENDING",
@@ -131,6 +151,17 @@ export const DashboardSummaryParamsSchema = z.object({
 
 export const DashboardSummaryResultSchema = z.object({
   balance: z.string().min(1),
+  balances: z.object({
+    available: z.string().min(1),
+    pending: z.string().min(1),
+    locked: z.string().min(1),
+    asset: z.enum(["CKB", "USDI"]),
+  }),
+  stats: z.object({
+    pendingCount: z.number().int().min(0),
+    completedCount: z.number().int().min(0),
+    failedCount: z.number().int().min(0),
+  }),
   tips: z.array(
     z.object({
       id: z.string().min(1),
@@ -141,7 +172,9 @@ export const DashboardSummaryResultSchema = z.object({
       state: z.enum(["UNPAID", "SETTLED", "FAILED"]),
       direction: z.enum(["IN", "OUT"]),
       counterpartyUserId: z.string().min(1),
+      message: z.string().nullable(),
       createdAt: z.string().datetime(),
+      settledAt: z.string().datetime().nullable(),
     }),
   ),
   admin: z
@@ -214,6 +247,33 @@ export const DashboardSummaryResultSchema = z.object({
   generatedAt: z.string().datetime(),
 });
 export type DashboardSummaryResult = z.infer<typeof DashboardSummaryResultSchema>;
+
+export const TipSettledFeedCursorSchema = z.object({
+  settledAt: z.string().datetime(),
+  id: z.string().min(1),
+});
+
+export const TipSettledFeedParamsSchema = z.object({
+  limit: z.number().int().min(1).max(100).optional(),
+  after: TipSettledFeedCursorSchema.optional(),
+});
+
+export const TipSettledFeedResultSchema = z.object({
+  items: z.array(
+    z.object({
+      tipIntentId: z.string().min(1),
+      postId: z.string().min(1),
+      invoice: z.string().min(1),
+      amount: z.string().min(1),
+      asset: z.enum(["CKB", "USDI"]),
+      fromUserId: z.string().min(1),
+      toUserId: z.string().min(1),
+      message: z.string().nullable(),
+      settledAt: z.string().datetime(),
+    }),
+  ),
+  nextCursor: TipSettledFeedCursorSchema.nullable(),
+});
 
 export const RpcErrorCode = {
   INVALID_REQUEST: -32600,

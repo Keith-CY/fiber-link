@@ -2,12 +2,18 @@ async (page) => {
   const env = typeof globalThis === "object" && globalThis.__PW_AUTHOR_WITHDRAWAL_ENV__ && typeof globalThis.__PW_AUTHOR_WITHDRAWAL_ENV__ === "object"
     ? globalThis.__PW_AUTHOR_WITHDRAWAL_ENV__
     : {};
-  const baseUrl = String(env.baseUrl ?? "http://127.0.0.1:4200").replace(/\/+$/, "");
+  const baseUrl = String(env.baseUrl ?? "http://127.0.0.1:9292").replace(/\/+$/, "");
   const authorUser = String(env.authorUser ?? "fiber_author");
   const authorPassword = String(env.authorPassword ?? "fiber-local-pass-1");
   const withdrawAmount = String(env.withdrawAmount ?? "61");
   const withdrawToAddress = String(env.withdrawToAddress ?? "");
   const artifactDir = String(env.artifactDir ?? ".");
+  const viewportWidth = Number.parseInt(String(env.viewportWidth ?? "2560"), 10);
+  const viewportHeight = Number.parseInt(String(env.viewportHeight ?? "1440"), 10);
+  const viewport = {
+    width: Number.isFinite(viewportWidth) && viewportWidth > 0 ? viewportWidth : 2560,
+    height: Number.isFinite(viewportHeight) && viewportHeight > 0 ? viewportHeight : 1440,
+  };
   const authorBalanceScreenshotPath = `${artifactDir}/playwright-step5-author-dashboard.png`;
   const authorWithdrawalScreenshotPath = `${artifactDir}/playwright-step6-author-withdrawal.png`;
 
@@ -204,6 +210,7 @@ async (page) => {
   }
 
   try {
+    await page.setViewportSize(viewport);
     await login(authorUser, authorPassword);
     await openDashboard();
     const authorDashboard = await readAuthorDashboard();

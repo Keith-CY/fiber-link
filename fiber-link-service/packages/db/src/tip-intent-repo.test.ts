@@ -18,6 +18,7 @@ function createDbRow(overrides: Record<string, unknown> = {}) {
     asset: "USDI",
     amount: "10",
     invoice: "inv-1",
+    message: null,
     invoiceState: "UNPAID",
     settlementRetryCount: 0,
     settlementNextRetryAt: null,
@@ -103,6 +104,7 @@ describe("tipIntentRepo (db transition guards)", () => {
         asset: "USDI",
         amount: "10",
         invoice: "inv-dup-db",
+        message: null,
       }),
     ).rejects.toThrow("duplicate invoice");
   });
@@ -200,9 +202,11 @@ describe("tipIntentRepo (in-memory)", () => {
       asset: "USDI",
       amount: "10",
       invoice: "inv-1",
+      message: "Great post",
     });
 
     expect(created.invoiceState).toBe("UNPAID");
+    expect(created.message).toBe("Great post");
     expect(created.settledAt).toBeNull();
     expect(created.settlementRetryCount).toBe(0);
     expect(created.settlementNextRetryAt).toBeNull();

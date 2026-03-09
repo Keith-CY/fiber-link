@@ -821,6 +821,18 @@ if [[ "${SKIP_DISCOURSE}" -eq 0 ]]; then
 
   (
     cd "${DISCOURSE_DEV_ROOT}"
+    discourse_exec=(
+      docker exec
+      -u discourse:discourse
+      -w /src
+      -e RUBY_GLOBAL_METHOD_CACHE_SIZE=131072
+      -e LD_PRELOAD=/usr/lib/libjemalloc.so
+      -e CI
+      -e RAILS_ENV
+      -e NO_EMBER_CLI
+      -e QUNIT_RAILS_ENV
+      discourse_dev
+    )
     git fetch --depth=1 origin "${DISCOURSE_REF}"
     git checkout "${DISCOURSE_REF}"
     mkdir -p plugins tmp
@@ -830,8 +842,8 @@ if [[ "${SKIP_DISCOURSE}" -eq 0 ]]; then
     else
       ./bin/docker/boot_dev
     fi
-    ./bin/docker/exec git config --global --add safe.directory /src || true
-    ./bin/docker/exec env \
+    "${discourse_exec[@]}" git config --global --add safe.directory /src || true
+    "${discourse_exec[@]}" env \
       LOAD_PLUGINS=1 \
       RAILS_ENV=development \
       bundle exec rake db:create db:migrate
@@ -843,7 +855,14 @@ if [[ "${SKIP_DISCOURSE}" -eq 0 ]]; then
   rm -f "${seed_output_host_path}"
   (
     cd "${DISCOURSE_DEV_ROOT}"
-    ./bin/docker/exec env \
+    docker exec \
+      -u discourse:discourse \
+      -w /src \
+      -e RUBY_GLOBAL_METHOD_CACHE_SIZE=131072 \
+      -e LD_PRELOAD=/usr/lib/libjemalloc.so \
+      -e CI \
+      discourse_dev \
+      env \
       FLOW_TOPIC_TITLE="${TOPIC_LABEL}" \
       FLOW_TOPIC_RAW="${TOPIC_BODY}" \
       FLOW_REPLY_RAW="${REPLY_BODY}" \
@@ -883,8 +902,12 @@ if [[ "${PAUSE_AT_STEP4}" -eq 1 ]]; then
   fi
   [[ -t 0 ]] || fatal "${EXIT_USAGE}" "--pause-at-step4 requires an interactive terminal"
   log "paused before step 4 (tip actions). Check browser now."
-  if [[ "${START_EMBER_CLI}" -eq 1 ]]; then
+  if [[ -n "${WORKFLOW_PAUSE_BROWSER_URL:-}" ]]; then
+    log "browser URL: ${WORKFLOW_PAUSE_BROWSER_URL}"
+  elif [[ "${START_EMBER_CLI}" -eq 1 ]]; then
     log "browser URL: http://127.0.0.1:4200/login (ember proxy)"
+  else
+    log "browser URL: http://127.0.0.1:9292/login (backend)"
   fi
   read -r -p "Press Enter to continue workflow... " _
 fi

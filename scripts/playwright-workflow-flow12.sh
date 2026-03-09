@@ -32,7 +32,7 @@ PW_TMPDIR="${PW_TMPDIR:-/tmp/playwright-cli}"
 mkdir -p "${PW_TMPDIR}"
 export TMPDIR="${PW_TMPDIR}"
 
-BASE_URL="${PW_FLOW12_URL:-${PW_DEMO_URL:-http://127.0.0.1:4200}}"
+BASE_URL="${PW_FLOW12_URL:-${PW_DEMO_URL:-http://127.0.0.1:9292}}"
 if [[ "${BASE_URL}" == */login ]]; then
   OPEN_URL="${BASE_URL}"
 else
@@ -68,6 +68,12 @@ password="${PW_FLOW12_PASSWORD:-${PW_DEMO_TIPPER_PASSWORD:-fiber-local-pass-1}}"
 topic_title="${PW_FLOW12_TOPIC_TITLE:-${PW_DEMO_TOPIC_TITLE:-Fiber Link Local Workflow Topic}}"
 topic_path="${PW_FLOW12_TOPIC_PATH:-${PW_DEMO_TOPIC_PATH:-}}"
 tip_amount="${PW_FLOW12_TIP_AMOUNT:-${PW_DEMO_TIP_AMOUNT:-31}}"
+tip_message="${PW_FLOW12_TIP_MESSAGE:-${PW_DEMO_TIP_MESSAGE:-Great post!}}"
+payer_rpc_url="${PW_FLOW12_PAYER_RPC_URL:-${PW_DEMO_PAYER_RPC_URL:-http://127.0.0.1:${FNN2_RPC_PORT:-9227}}}"
+payment_currency="${PW_FLOW12_PAYMENT_CURRENCY:-${PW_DEMO_PAYMENT_CURRENCY:-${FIBER_INVOICE_CURRENCY_CKB:-${FIBER_INVOICE_CURRENCY:-Fibt}}}}"
+settle_invoice="${PW_FLOW12_SETTLE_INVOICE:-${PW_DEMO_SETTLE_INVOICE:-1}}"
+viewport_width="${PW_FLOW12_VIEWPORT_WIDTH:-${E2E_SCREENSHOT_VIEWPORT_WIDTH:-2560}}"
+viewport_height="${PW_FLOW12_VIEWPORT_HEIGHT:-${E2E_SCREENSHOT_VIEWPORT_HEIGHT:-1440}}"
 
 demo_env_json="$(
   jq -cn \
@@ -77,6 +83,12 @@ demo_env_json="$(
     --arg topicTitle "${topic_title}" \
     --arg topicPath "${topic_path}" \
     --arg tipAmount "${tip_amount}" \
+    --arg tipMessage "${tip_message}" \
+    --arg payerRpcUrl "${payer_rpc_url}" \
+    --arg paymentCurrency "${payment_currency}" \
+    --arg settleInvoice "${settle_invoice}" \
+    --arg viewportWidth "${viewport_width}" \
+    --arg viewportHeight "${viewport_height}" \
     --arg artifactDir "${ARTIFACT_DIR}" \
     '{
       baseUrl: $baseUrl,
@@ -85,6 +97,12 @@ demo_env_json="$(
       topicTitle: $topicTitle,
       topicPath: $topicPath,
       tipAmount: $tipAmount,
+      tipMessage: $tipMessage,
+      payerRpcUrl: $payerRpcUrl,
+      paymentCurrency: $paymentCurrency,
+      settleInvoice: $settleInvoice,
+      viewportWidth: $viewportWidth,
+      viewportHeight: $viewportHeight,
       artifactDir: $artifactDir
     }'
 )"

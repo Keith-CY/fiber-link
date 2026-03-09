@@ -29,7 +29,7 @@ beforeEach(() => {
   invoiceStatusByInvoice = {};
 });
 
-it("creates a tip intent with invoice", async () => {
+it("creates a tip intent with invoice and optional message", async () => {
   const res = await handleTipCreate({
     appId: "app1",
     postId: "p1",
@@ -37,12 +37,14 @@ it("creates a tip intent with invoice", async () => {
     toUserId: "u2",
     asset: "USDI",
     amount: "10",
+    message: "Great post",
   }, { tipIntentRepo, tipIntentEventRepo, adapter });
 
   expect(res.invoice).toBe("inv-tip-1");
   const saved = await tipIntentRepo.findByInvoiceOrThrow("inv-tip-1");
   expect(saved.invoiceState).toBe("UNPAID");
   expect(saved.postId).toBe("p1");
+  expect(saved.message).toBe("Great post");
   expect(tipIntentEventRepo.__listForTests?.()).toEqual(
     expect.arrayContaining([
       expect.objectContaining({
@@ -254,6 +256,63 @@ it("returns latest intent state when upstream transition becomes invalid after s
 
   expect(retried.state).toBe("FAILED");
   expect(ledgerRepo.__listForTests?.()).toHaveLength(1);
+});
+
+it("lists newly settled tip notifications with a stable cursor", async () => {
+  let invoiceCounter = 0;
+  const feedAdapter = {
+    ...adapter,
+    async createInvoice() {
+      invoiceCounter += 1;
+      return { invoice: `inv-tip-feed-${invoiceCounter}` };
+    },
+  };
+
+  const first = await handleTipCreate({
+    appId: "app1",
+    postId: "post-1",
+    fromUserId: "u1",
+    toUserId: "u2",
+    asset: "CKB",
+    amount: "31",
+    message: "Great post",
+  }, { tipIntentRepo, tipIntentEventRepo, adapter: feedAdapter });
+  invoiceStatusByInvoice[first.invoice] = "SETTLED";
+  await handleTipStatus({ invoice: first.invoice }, { tipIntentRepo, ledgerRepo, tipIntentEventRepo, adapter });
+
+  await new Promise((resolve) => setTimeout(resolve, 5));
+
+  const second = await handleTipCreate({
+    appId: "app1",
+    postId: "post-2",
+    fromUserId: "u3",
+    toUserId: "u2",
+    asset: "CKB",
+    amount: "15",
+    message: "Second",
+  }, { tipIntentRepo, tipIntentEventRepo, adapter: feedAdapter });
+  invoiceStatusByInvoice[second.invoice] = "SETTLED";
+  await handleTipStatus({ invoice: second.invoice }, { tipIntentRepo, ledgerRepo, tipIntentEventRepo, adapter });
+
+  const { handleTipSettledFeed } = await import("./tip");
+  const fullFeed = await handleTipSettledFeed({ appId: "app1", limit: 10 }, { tipIntentRepo });
+  expect(fullFeed.items).toHaveLength(2);
+  expect(fullFeed.items[0]).toMatchObject({
+    postId: "post-1",
+    toUserId: "u2",
+    message: "Great post",
+  });
+
+  const afterFirst = await handleTipSettledFeed({
+    appId: "app1",
+    after: {
+      settledAt: fullFeed.items[0].settledAt,
+      id: fullFeed.items[0].tipIntentId,
+    },
+    limit: 10,
+  }, { tipIntentRepo });
+  expect(afterFirst.items).toHaveLength(1);
+  expect(afterFirst.items[0]).toMatchObject({ postId: "post-2", message: "Second" });
 });
 
 it("fails status when invoice is unknown", async () => {

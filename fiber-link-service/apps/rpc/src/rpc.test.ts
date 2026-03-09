@@ -499,6 +499,17 @@ describe("json-rpc", () => {
     const app = buildServer();
     const dashboardSpy = vi.spyOn(dashboardMethods, "handleDashboardSummary").mockResolvedValue({
       balance: "12.5",
+      balances: {
+        available: "12.5",
+        pending: "0",
+        locked: "0",
+        asset: "CKB",
+      },
+      stats: {
+        pendingCount: 0,
+        completedCount: 0,
+        failedCount: 0,
+      },
       tips: [
         {
           id: "tip-1",
@@ -510,6 +521,8 @@ describe("json-rpc", () => {
           direction: "IN",
           counterpartyUserId: "u2",
           createdAt: "2026-02-16T00:00:00.000Z",
+          message: null,
+          settledAt: null,
         },
       ],
       admin: {
@@ -577,6 +590,17 @@ describe("json-rpc", () => {
         id: "dash-1",
         result: {
           balance: "12.5",
+          balances: {
+            available: "12.5",
+            pending: "0",
+            locked: "0",
+            asset: "CKB",
+          },
+          stats: {
+            pendingCount: 0,
+            completedCount: 0,
+            failedCount: 0,
+          },
           tips: [
             {
               id: "tip-1",
@@ -588,6 +612,8 @@ describe("json-rpc", () => {
               direction: "IN",
               counterpartyUserId: "u2",
               createdAt: "2026-02-16T00:00:00.000Z",
+              message: null,
+              settledAt: null,
             },
           ],
           admin: {

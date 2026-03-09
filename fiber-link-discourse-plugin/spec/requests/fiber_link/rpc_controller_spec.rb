@@ -3,6 +3,7 @@ require "rails_helper"
 RSpec.describe ::FiberLink::RpcController, type: :request do
   fab!(:user)
   fab!(:topic, :topic_with_op)
+  fab!(:tipper) { Fabricate(:user, username: "fiber_tipper") }
 
   before do
     SiteSetting.fiber_link_enabled = true
@@ -12,7 +13,7 @@ RSpec.describe ::FiberLink::RpcController, type: :request do
   end
 
   describe "POST /fiber-link/rpc" do
-    it "server-enforces sensitive tip.create params" do
+    it "server-enforces sensitive tip.create params and forwards tip message" do
       sign_in(user)
 
       post_id = topic.first_post.id
@@ -24,35 +25,38 @@ RSpec.describe ::FiberLink::RpcController, type: :request do
         headers: { "Content-Type" => "application/json" },
       )
 
-      # Attempt to spoof user identities from the client side; server should ignore these.
       post "/fiber-link/rpc",
            params: {
              jsonrpc: "2.0",
              id: "req1",
              method: "tip.create",
              params: {
-               amount: "1",
+               amount: "31",
                asset: "CKB",
                postId: post_id,
                fromUserId: -1,
                toUserId: -1,
+               message: "Great post",
              },
            },
            as: :json
 
       expect(response).to have_http_status(:ok)
-      expect(JSON.parse(response.body).dig("result", "invoice")).to eq("inv-1")
+      payload = JSON.parse(response.body)
+      expect(payload.dig("result", "invoice")).to eq("inv-1")
+      expect(payload.dig("result", "invoiceQrDataUrl")).to start_with("data:image/svg+xml;base64,")
 
       expect(WebMock).to have_requested(:post, "https://fiber-link.example/rpc").with { |request|
         body = JSON.parse(request.body)
         body.fetch("method") == "tip.create" &&
           body.dig("params", "postId") == post_id.to_s &&
           body.dig("params", "fromUserId") == user.id.to_s &&
-          body.dig("params", "toUserId") == to_user_id.to_s
+          body.dig("params", "toUserId") == to_user_id.to_s &&
+          body.dig("params", "message") == "Great post"
       }
     end
 
-    it "server-enforces dashboard.summary params" do
+    it "server-enforces dashboard.summary params and enriches local usernames" do
       sign_in(user)
 
       stub_request(:post, "https://fiber-link.example/rpc").to_return(
@@ -62,7 +66,32 @@ RSpec.describe ::FiberLink::RpcController, type: :request do
           id: "dash-req",
           result: {
             balance: "12.5",
-            tips: [],
+            balances: {
+              available: "12.5",
+              pending: "4",
+              locked: "1",
+              asset: "CKB",
+            },
+            stats: {
+              pendingCount: 1,
+              completedCount: 2,
+              failedCount: 0,
+            },
+            tips: [
+              {
+                id: "tip-1",
+                invoice: "inv-1",
+                postId: topic.first_post.id.to_s,
+                amount: "31",
+                asset: "CKB",
+                state: "SETTLED",
+                direction: "IN",
+                counterpartyUserId: tipper.id.to_s,
+                message: "Great post",
+                createdAt: "2026-02-16T00:00:00.000Z",
+                settledAt: "2026-02-16T00:01:00.000Z",
+              },
+            ],
             generatedAt: "2026-02-16T00:00:00.000Z",
           },
         }.to_json,
@@ -82,7 +111,9 @@ RSpec.describe ::FiberLink::RpcController, type: :request do
            as: :json
 
       expect(response).to have_http_status(:ok)
-      expect(JSON.parse(response.body).dig("result", "balance")).to eq("12.5")
+      payload = JSON.parse(response.body)
+      expect(payload.dig("result", "balance")).to eq("12.5")
+      expect(payload.dig("result", "tips", 0, "counterpartyUsername")).to eq("fiber_tipper")
 
       expect(WebMock).to have_requested(:post, "https://fiber-link.example/rpc").with { |request|
         body = JSON.parse(request.body)
@@ -130,7 +161,14 @@ RSpec.describe ::FiberLink::RpcController, type: :request do
         body: {
           jsonrpc: "2.0",
           id: "dash-admin-ok",
-          result: { balance: "0", tips: [], generatedAt: "2026-02-16T00:00:00.000Z", admin: { apps: [], withdrawals: [], settlements: [], filtersApplied: { withdrawalState: "ALL", settlementState: "ALL" } } },
+          result: {
+            balance: "0",
+            balances: { available: "0", pending: "0", locked: "0", asset: "CKB" },
+            stats: { pendingCount: 0, completedCount: 0, failedCount: 0 },
+            tips: [],
+            generatedAt: "2026-02-16T00:00:00.000Z",
+            admin: { apps: [], withdrawals: [], settlements: [], filtersApplied: { withdrawalState: "ALL", settlementState: "ALL" } },
+          },
         }.to_json,
         headers: { "Content-Type" => "application/json" },
       )
@@ -158,6 +196,57 @@ RSpec.describe ::FiberLink::RpcController, type: :request do
       }
     end
 
+    it "server-enforces withdrawal.quote params" do
+      sign_in(user)
+
+      stub_request(:post, "https://fiber-link.example/rpc").to_return(
+        status: 200,
+        body: {
+          jsonrpc: "2.0",
+          id: "withdraw-quote",
+          result: {
+            asset: "CKB",
+            amount: "61",
+            minimumAmount: "61",
+            availableBalance: "124",
+            lockedBalance: "61",
+            networkFee: "0.1",
+            receiveAmount: "60.9",
+            destinationValid: true,
+            validationMessage: nil,
+          },
+        }.to_json,
+        headers: { "Content-Type" => "application/json" },
+      )
+
+      post "/fiber-link/rpc",
+           params: {
+             jsonrpc: "2.0",
+             id: "withdraw-quote",
+             method: "withdrawal.quote",
+             params: {
+               userId: "-1",
+               asset: "CKB",
+               amount: "61",
+               destination: {
+                 kind: "CKB_ADDRESS",
+                 address: "ckt1qyqg5xa84dfwfy76tptw2sy0k9q98xaeka9q5tvdlm",
+               },
+             },
+           },
+           as: :json
+
+      expect(response).to have_http_status(:ok)
+      expect(JSON.parse(response.body).dig("result", "receiveAmount")).to eq("60.9")
+      expect(WebMock).to have_requested(:post, "https://fiber-link.example/rpc").with { |request|
+        body = JSON.parse(request.body)
+        body.fetch("method") == "withdrawal.quote" &&
+          body.dig("params", "userId") == user.id.to_s &&
+          body.dig("params", "destination", "kind") == "CKB_ADDRESS" &&
+          body.dig("params", "destination", "address") == "ckt1qyqg5xa84dfwfy76tptw2sy0k9q98xaeka9q5tvdlm"
+      }
+    end
+
     it "server-enforces withdrawal.request params" do
       sign_in(user)
 
@@ -180,7 +269,10 @@ RSpec.describe ::FiberLink::RpcController, type: :request do
                userId: "-1",
                asset: "CKB",
                amount: "61",
-               toAddress: "ckt1qyqg5xa84dfwfy76tptw2sy0k9q98xaeka9q5tvdlm",
+               destination: {
+                 kind: "CKB_ADDRESS",
+                 address: "ckt1qyqg5xa84dfwfy76tptw2sy0k9q98xaeka9q5tvdlm",
+               },
              },
            },
            as: :json
@@ -195,8 +287,8 @@ RSpec.describe ::FiberLink::RpcController, type: :request do
           body.dig("params", "userId") == user.id.to_s &&
           body.dig("params", "asset") == "CKB" &&
           body.dig("params", "amount") == "61" &&
-          body.dig("params", "toAddress") == "ckt1qyqg5xa84dfwfy76tptw2sy0k9q98xaeka9q5tvdlm" &&
-          body.dig("params", "destinationKind") == "CKB_ADDRESS"
+          body.dig("params", "destination", "kind") == "CKB_ADDRESS" &&
+          body.dig("params", "destination", "address") == "ckt1qyqg5xa84dfwfy76tptw2sy0k9q98xaeka9q5tvdlm"
       }
     end
 

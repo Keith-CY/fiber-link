@@ -5,6 +5,12 @@ async (page) => {
   const txHash = String(env.txHash ?? "").trim();
   const template = String(env.explorerTxUrlTemplate ?? "").trim();
   const artifactDir = String(env.artifactDir ?? ".");
+  const viewportWidth = Number.parseInt(String(env.viewportWidth ?? "2560"), 10);
+  const viewportHeight = Number.parseInt(String(env.viewportHeight ?? "1440"), 10);
+  const viewport = {
+    width: Number.isFinite(viewportWidth) && viewportWidth > 0 ? viewportWidth : 2560,
+    height: Number.isFinite(viewportHeight) && viewportHeight > 0 ? viewportHeight : 1440,
+  };
   const screenshotPath = `${artifactDir}/playwright-flow4-explorer-withdrawal-tx.png`;
 
   function buildExplorerUrl(rawTemplate, hash) {
@@ -28,6 +34,7 @@ async (page) => {
   }
 
   const explorerUrl = buildExplorerUrl(template, txHash);
+  await page.setViewportSize(viewport);
   await page.goto(explorerUrl, { waitUntil: "domcontentloaded" });
 
   const txPrefix = txHash.slice(0, 12);

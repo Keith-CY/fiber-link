@@ -32,7 +32,7 @@ PW_TMPDIR="${PW_TMPDIR:-/tmp/playwright-cli}"
 mkdir -p "${PW_TMPDIR}"
 export TMPDIR="${PW_TMPDIR}"
 
-BASE_URL="${PW_AUTHOR_WITHDRAWAL_URL:-http://127.0.0.1:4200}"
+BASE_URL="${PW_AUTHOR_WITHDRAWAL_URL:-http://127.0.0.1:9292}"
 if [[ "${BASE_URL}" == */login ]]; then
   OPEN_URL="${BASE_URL}"
 else
@@ -67,6 +67,8 @@ author_user="${PW_AUTHOR_WITHDRAWAL_AUTHOR_USERNAME:-fiber_author}"
 author_password="${PW_AUTHOR_WITHDRAWAL_AUTHOR_PASSWORD:-fiber-local-pass-1}"
 withdraw_amount="${PW_AUTHOR_WITHDRAWAL_WITHDRAW_AMOUNT:-61}"
 withdraw_to_address="${PW_AUTHOR_WITHDRAWAL_WITHDRAW_TO_ADDRESS:-}"
+viewport_width="${PW_AUTHOR_WITHDRAWAL_VIEWPORT_WIDTH:-${E2E_SCREENSHOT_VIEWPORT_WIDTH:-2560}}"
+viewport_height="${PW_AUTHOR_WITHDRAWAL_VIEWPORT_HEIGHT:-${E2E_SCREENSHOT_VIEWPORT_HEIGHT:-1440}}"
 
 [[ -n "${withdraw_to_address}" ]] || {
   echo "[playwright-author-withdrawal] PW_AUTHOR_WITHDRAWAL_WITHDRAW_TO_ADDRESS is required" >&2
@@ -80,6 +82,8 @@ demo_env_json="$({
     --arg authorPassword "${author_password}" \
     --arg withdrawAmount "${withdraw_amount}" \
     --arg withdrawToAddress "${withdraw_to_address}" \
+    --arg viewportWidth "${viewport_width}" \
+    --arg viewportHeight "${viewport_height}" \
     --arg artifactDir "${ARTIFACT_DIR}" \
     '{
       baseUrl: $baseUrl,
@@ -87,6 +91,8 @@ demo_env_json="$({
       authorPassword: $authorPassword,
       withdrawAmount: $withdrawAmount,
       withdrawToAddress: $withdrawToAddress,
+      viewportWidth: $viewportWidth,
+      viewportHeight: $viewportHeight,
       artifactDir: $artifactDir
     }'
 })"

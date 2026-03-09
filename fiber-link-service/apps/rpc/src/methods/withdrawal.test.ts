@@ -8,6 +8,83 @@ import {
 } from "@fiber-link/db";
 import { WithdrawalPolicyViolationError, requestWithdrawal } from "./withdrawal";
 
+describe("quoteWithdrawal", () => {
+  const repo = createInMemoryWithdrawalRepo();
+
+  beforeEach(() => {
+    repo.__resetForTests?.();
+  });
+
+  afterEach(() => {
+    delete process.env.FIBER_WITHDRAWAL_CKB_FEE_RATE_SHANNONS_PER_KB;
+  });
+
+  it("returns available, locked, fee, receive, and destination validation", async () => {
+    const ledger = createInMemoryLedgerRepo();
+    await ledger.creditOnce({
+      appId: "app1",
+      userId: "u1",
+      asset: "CKB",
+      amount: "124",
+      refId: "credit-1",
+      idempotencyKey: "credit-1",
+    });
+    await repo.create({
+      appId: "app1",
+      userId: "u1",
+      asset: "CKB",
+      amount: "61",
+      toAddress: "ckt1qyqg5xa84dfwfy76tptw2sy0k9q98xaeka9q5tvdlm",
+    });
+
+    const { quoteWithdrawal } = await import("./withdrawal");
+    const quote = await quoteWithdrawal({
+      appId: "app1",
+      userId: "u1",
+      asset: "CKB",
+      amount: "62",
+      destination: {
+        kind: "CKB_ADDRESS",
+        address: "ckt1qyqfth8m4fevfzh5hhd088s78qcdjjp8cehs7z8jhw",
+      },
+    }, { repo, ledgerRepo: ledger });
+
+    expect(quote.availableBalance).toBe("124");
+    expect(quote.lockedBalance).toBe("61");
+    expect(quote.destinationValid).toBe(true);
+    expect(quote.validationMessage).toBeNull();
+    expect(Number(quote.networkFee)).toBeGreaterThan(0);
+    expect(Number(quote.receiveAmount)).toBeLessThan(62);
+  });
+
+  it("returns invalid destination feedback without creating side effects", async () => {
+    const ledger = createInMemoryLedgerRepo();
+    await ledger.creditOnce({
+      appId: "app1",
+      userId: "u1",
+      asset: "CKB",
+      amount: "124",
+      refId: "credit-1",
+      idempotencyKey: "credit-1",
+    });
+
+    const { quoteWithdrawal } = await import("./withdrawal");
+    const quote = await quoteWithdrawal({
+      appId: "app1",
+      userId: "u1",
+      asset: "CKB",
+      amount: "61",
+      destination: {
+        kind: "CKB_ADDRESS",
+        address: "bad-address",
+      },
+    }, { repo, ledgerRepo: ledger });
+
+    expect(quote.destinationValid).toBe(false);
+    expect(quote.validationMessage).toContain("CKB address");
+  });
+});
+
 describe("requestWithdrawal", () => {
   const repo = createInMemoryWithdrawalRepo();
   const policyRepo = createInMemoryWithdrawalPolicyRepo();

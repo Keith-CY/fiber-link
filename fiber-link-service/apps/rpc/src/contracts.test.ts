@@ -6,7 +6,11 @@ import {
   RpcRequestSchema,
   TipCreateParamsSchema,
   TipCreateResultSchema,
+  TipSettledFeedParamsSchema,
+  TipSettledFeedResultSchema,
   TipStatusResultSchema,
+  WithdrawalQuoteParamsSchema,
+  WithdrawalQuoteResultSchema,
   WithdrawalRequestParamsSchema,
   WithdrawalRequestResultSchema,
 } from "./contracts";
@@ -32,6 +36,7 @@ describe("rpc contracts", () => {
         toUserId: "u2",
         asset: "USDI",
         amount: "10",
+        message: "Great post",
       }).success,
     ).toBe(true);
     expect(
@@ -115,6 +120,17 @@ describe("rpc contracts", () => {
     expect(
       DashboardSummaryResultSchema.safeParse({
         balance: "10",
+        balances: {
+          available: "10",
+          pending: "2",
+          locked: "1",
+          asset: "CKB",
+        },
+        stats: {
+          pendingCount: 1,
+          completedCount: 3,
+          failedCount: 0,
+        },
         tips: [
           {
             id: "tip-1",
@@ -125,7 +141,9 @@ describe("rpc contracts", () => {
             state: "UNPAID",
             direction: "IN",
             counterpartyUserId: "u2",
+            message: "Great post",
             createdAt: "2026-02-16T00:00:00.000Z",
+            settledAt: null,
           },
         ],
         generatedAt: "2026-02-16T00:00:00.000Z",
@@ -133,8 +151,68 @@ describe("rpc contracts", () => {
     ).toBe(true);
 
     expect(
+      WithdrawalQuoteParamsSchema.safeParse({
+        userId: "u1",
+        asset: "CKB",
+        amount: "61",
+        destination: {
+          kind: "CKB_ADDRESS",
+          address: "ckt1qyqfth8m4fevfzh5hhd088s78qcdjjp8cehs7z8jhw",
+        },
+      }).success,
+    ).toBe(true);
+    expect(
+      WithdrawalQuoteResultSchema.safeParse({
+        asset: "CKB",
+        amount: "61",
+        minimumAmount: "61",
+        availableBalance: "124",
+        lockedBalance: "61",
+        networkFee: "0.00001",
+        receiveAmount: "60.99999",
+        destinationValid: true,
+        validationMessage: null,
+      }).success,
+    ).toBe(true);
+    expect(
+      TipSettledFeedParamsSchema.safeParse({
+        limit: 20,
+        after: { settledAt: "2026-02-16T00:00:00.000Z", id: "tip-1" },
+      }).success,
+    ).toBe(true);
+    expect(
+      TipSettledFeedResultSchema.safeParse({
+        items: [
+          {
+            tipIntentId: "tip-1",
+            postId: "p1",
+            invoice: "inv-1",
+            amount: "31",
+            asset: "CKB",
+            fromUserId: "u1",
+            toUserId: "u2",
+            message: "Great post",
+            settledAt: "2026-02-16T00:00:01.000Z",
+          },
+        ],
+        nextCursor: { settledAt: "2026-02-16T00:00:01.000Z", id: "tip-1" },
+      }).success,
+    ).toBe(true);
+
+    expect(
       DashboardSummaryResultSchema.parse({
         balance: "0",
+        balances: {
+          available: "0",
+          pending: "0",
+          locked: "0",
+          asset: "CKB",
+        },
+        stats: {
+          pendingCount: 0,
+          completedCount: 0,
+          failedCount: 0,
+        },
         tips: [],
         admin: {
           filtersApplied: {

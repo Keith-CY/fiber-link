@@ -138,6 +138,7 @@ export const tipIntents = pgTable(
     asset: assetEnum("asset").notNull(),
     amount: numeric("amount").notNull(),
     invoice: text("invoice").notNull(),
+    message: text("message"),
     invoiceState: invoiceStateEnum("invoice_state").notNull(),
     settlementRetryCount: integer("settlement_retry_count").notNull().default(0),
     settlementNextRetryAt: timestamp("settlement_next_retry_at"),
@@ -156,6 +157,7 @@ export const tipIntents = pgTable(
       table.createdAt,
       table.id,
     ),
+    byAppSettledAt: index("tip_intents_app_settled_at_idx").on(table.appId, table.settledAt, table.id),
   }),
 );
 

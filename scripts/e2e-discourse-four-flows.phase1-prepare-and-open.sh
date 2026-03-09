@@ -37,6 +37,10 @@ export_workflow_ids_from_state() {
   return 0
 }
 
+should_start_ember_cli() {
+  [[ "${DISCOURSE_UI_BASE_URL%/}" == "http://127.0.0.1:4200" ]]
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --run-dir)
@@ -88,7 +92,8 @@ pause_cmd=(
   env
   "FIBER_LINK_APP_ID=${APP_ID}"
   "RPC_PORT=${WORKFLOW_RPC_PORT}"
-  "WORKFLOW_PAUSE_START_EMBER_CLI=1"
+  "WORKFLOW_PAUSE_START_EMBER_CLI=0"
+  "WORKFLOW_PAUSE_BROWSER_URL=${DISCOURSE_UI_BASE_URL%/}/login"
   "WORKFLOW_ARTIFACT_DIR=${PHASE1_DIR}"
   "WORKFLOW_RESULT_METADATA_PATH=${PHASE1_METADATA_PATH}"
   scripts/local-workflow-automation.sh
@@ -96,6 +101,10 @@ pause_cmd=(
   --pause-at-step4
   --skip-withdrawal
 )
+
+if should_start_ember_cli; then
+  pause_cmd[3]="WORKFLOW_PAUSE_START_EMBER_CLI=1"
+fi
 
 if [[ "${SKIP_SERVICES}" -eq 1 ]]; then
   pause_cmd+=(--skip-services)
@@ -106,7 +115,7 @@ fi
 
 pause_cmd_escaped="$(printf '%q ' "${pause_cmd[@]}")"
 PAUSE_CMD_ESCAPED="${pause_cmd_escaped}"
-export ROOT_DIR PAUSE_CMD_ESCAPED FLOW12_DIR
+export ROOT_DIR PAUSE_CMD_ESCAPED FLOW12_DIR PHASE1_DIR
 export FLOW12_HEADED="${HEADED}"
 export FLOW12_URL="${DISCOURSE_UI_BASE_URL}"
 
@@ -125,8 +134,16 @@ while {1} {
       puts ""
       puts {[e2e-four-flows-phase1] pause reached; running flow1/flow2 playwright step...}
       puts ""
+      set flow12TopicPath ""
+      set seedPath "$env(PHASE1_DIR)/discourse-seed.json"
+      if {[file exists $seedPath]} {
+        set topicId [string trim [exec jq -r ".topic.id // empty" $seedPath]]
+        if {$topicId ne ""} {
+          set flow12TopicPath "/t/-/$topicId"
+        }
+      }
       set rc [catch {
-        exec env PW_FLOW12_ARTIFACT_DIR=$env(FLOW12_DIR) PW_FLOW12_HEADED=$env(FLOW12_HEADED) PW_FLOW12_URL=$env(FLOW12_URL) $env(ROOT_DIR)/scripts/playwright-workflow-flow12.sh 2>@1
+        exec env PW_FLOW12_ARTIFACT_DIR=$env(FLOW12_DIR) PW_FLOW12_HEADED=$env(FLOW12_HEADED) PW_FLOW12_URL=$env(FLOW12_URL) PW_FLOW12_TOPIC_PATH=$flow12TopicPath $env(ROOT_DIR)/scripts/playwright-workflow-flow12.sh 2>@1
       } out]
       puts $out
       if {$rc != 0} {
