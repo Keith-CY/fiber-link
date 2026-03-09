@@ -71,6 +71,8 @@ withdrawal_id="${PW_DEMO_WITHDRAWAL_ID:-}"
 withdraw_amount="${PW_DEMO_WITHDRAW_AMOUNT:-61}"
 withdraw_to_address="${PW_DEMO_WITHDRAW_TO_ADDRESS:-}"
 initiate_withdrawal="${PW_DEMO_INITIATE_WITHDRAWAL:-0}"
+viewport_width="${PW_DEMO_VIEWPORT_WIDTH:-${E2E_SCREENSHOT_VIEWPORT_WIDTH:-2560}}"
+viewport_height="${PW_DEMO_VIEWPORT_HEIGHT:-${E2E_SCREENSHOT_VIEWPORT_HEIGHT:-1440}}"
 
 demo_env_json="$(
   jq -cn \
@@ -83,6 +85,8 @@ demo_env_json="$(
     --arg withdrawAmount "${withdraw_amount}" \
     --arg withdrawToAddress "${withdraw_to_address}" \
     --arg initiateWithdrawal "${initiate_withdrawal}" \
+    --arg viewportWidth "${viewport_width}" \
+    --arg viewportHeight "${viewport_height}" \
     --arg artifactDir "${ARTIFACT_DIR}" \
     '{
       baseUrl: $baseUrl,
@@ -94,6 +98,8 @@ demo_env_json="$(
       withdrawAmount: $withdrawAmount,
       withdrawToAddress: $withdrawToAddress,
       initiateWithdrawal: $initiateWithdrawal,
+      viewportWidth: $viewportWidth,
+      viewportHeight: $viewportHeight,
       artifactDir: $artifactDir
     }'
 )"

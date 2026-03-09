@@ -44,6 +44,8 @@ mkdir -p "${PW_TMPDIR}"
 export TMPDIR="${PW_TMPDIR}"
 
 open_url="${template}"
+viewport_width="${PW_EXPLORER_VIEWPORT_WIDTH:-${E2E_SCREENSHOT_VIEWPORT_WIDTH:-2560}}"
+viewport_height="${PW_EXPLORER_VIEWPORT_HEIGHT:-${E2E_SCREENSHOT_VIEWPORT_HEIGHT:-1440}}"
 if [[ "${template}" == *"{txHash}"* ]]; then
   open_url="${template//\{txHash\}/${tx_hash}}"
 elif [[ "${template}" == *"%s"* ]]; then
@@ -54,10 +56,14 @@ demo_env_json="$(
   jq -cn \
     --arg txHash "${tx_hash}" \
     --arg explorerTxUrlTemplate "${template}" \
+    --arg viewportWidth "${viewport_width}" \
+    --arg viewportHeight "${viewport_height}" \
     --arg artifactDir "${ARTIFACT_DIR}" \
     '{
       txHash: $txHash,
       explorerTxUrlTemplate: $explorerTxUrlTemplate,
+      viewportWidth: $viewportWidth,
+      viewportHeight: $viewportHeight,
       artifactDir: $artifactDir
     }'
 )"

@@ -89,10 +89,12 @@ export default class FiberLinkTipPostMenuButton extends Component {
   <template>
     {{#if this.shouldShow}}
       <DButton
-        class="post-action-menu__fiber-link-tip"
-        @translatedLabel="Tip"
-        @icon="hand-holding-dollar"
+        @class="post-action-menu__fiber-link-tip fiber-link-tip-button--icon-only"
+        @translatedTitle="Tip"
+        @translatedAriaLabel="Tip"
+        @icon="gift"
         @action={{this.openTipModal}}
+        data-fiber-link-tip-button="post-menu"
         ...attributes
       />
     {{/if}}

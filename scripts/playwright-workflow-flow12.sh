@@ -72,6 +72,8 @@ tip_message="${PW_FLOW12_TIP_MESSAGE:-${PW_DEMO_TIP_MESSAGE:-Great post!}}"
 payer_rpc_url="${PW_FLOW12_PAYER_RPC_URL:-${PW_DEMO_PAYER_RPC_URL:-http://127.0.0.1:${FNN2_RPC_PORT:-9227}}}"
 payment_currency="${PW_FLOW12_PAYMENT_CURRENCY:-${PW_DEMO_PAYMENT_CURRENCY:-${FIBER_INVOICE_CURRENCY_CKB:-${FIBER_INVOICE_CURRENCY:-Fibt}}}}"
 settle_invoice="${PW_FLOW12_SETTLE_INVOICE:-${PW_DEMO_SETTLE_INVOICE:-1}}"
+viewport_width="${PW_FLOW12_VIEWPORT_WIDTH:-${E2E_SCREENSHOT_VIEWPORT_WIDTH:-2560}}"
+viewport_height="${PW_FLOW12_VIEWPORT_HEIGHT:-${E2E_SCREENSHOT_VIEWPORT_HEIGHT:-1440}}"
 
 demo_env_json="$(
   jq -cn \
@@ -85,6 +87,8 @@ demo_env_json="$(
     --arg payerRpcUrl "${payer_rpc_url}" \
     --arg paymentCurrency "${payment_currency}" \
     --arg settleInvoice "${settle_invoice}" \
+    --arg viewportWidth "${viewport_width}" \
+    --arg viewportHeight "${viewport_height}" \
     --arg artifactDir "${ARTIFACT_DIR}" \
     '{
       baseUrl: $baseUrl,
@@ -97,6 +101,8 @@ demo_env_json="$(
       payerRpcUrl: $payerRpcUrl,
       paymentCurrency: $paymentCurrency,
       settleInvoice: $settleInvoice,
+      viewportWidth: $viewportWidth,
+      viewportHeight: $viewportHeight,
       artifactDir: $artifactDir
     }'
 )"

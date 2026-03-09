@@ -12,6 +12,12 @@ async (page) => {
   const withdrawToAddress = String(env.withdrawToAddress ?? "");
   const initiateWithdrawal = String(env.initiateWithdrawal ?? "0") === "1";
   const artifactDir = String(env.artifactDir ?? ".");
+  const viewportWidth = Number.parseInt(String(env.viewportWidth ?? "2560"), 10);
+  const viewportHeight = Number.parseInt(String(env.viewportHeight ?? "1440"), 10);
+  const viewport = {
+    width: Number.isFinite(viewportWidth) && viewportWidth > 0 ? viewportWidth : 2560,
+    height: Number.isFinite(viewportHeight) && viewportHeight > 0 ? viewportHeight : 1440,
+  };
   const authorBalanceScreenshotPath = `${artifactDir}/playwright-step5-author-dashboard.png`;
   const authorWithdrawalScreenshotPath = `${artifactDir}/playwright-step6-author-withdrawal.png`;
   const adminScreenshotPath = `${artifactDir}/playwright-step7-admin-withdrawal.png`;
@@ -386,6 +392,7 @@ async (page) => {
   }
 
   try {
+    await page.setViewportSize(viewport);
     await login(authorUser, authorPassword);
     await openDashboard();
     const authorDashboard = await readAuthorDashboard();

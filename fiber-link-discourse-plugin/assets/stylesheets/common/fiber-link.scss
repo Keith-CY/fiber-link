@@ -11,6 +11,37 @@
   font-weight: 600;
 }
 
+.fiber-link-tip-button--icon-only {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  padding-inline: 0.8rem;
+  gap: 0;
+}
+
+.fiber-link-tip-button--icon-only .d-icon {
+  margin: 0;
+}
+
+.fiber-link-tip-button--icon-only .d-button-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.fiber-link-tip-entry__button.fiber-link-tip-button--icon-only {
+  border-radius: 999px;
+}
+
 .fiber-link-tip-modal .d-modal__container {
   max-width: 420px;
 }

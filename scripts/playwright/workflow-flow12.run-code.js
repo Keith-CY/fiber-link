@@ -13,6 +13,12 @@ async (page) => {
   const payerRpcUrl = String(env.payerRpcUrl ?? "http://127.0.0.1:9227").trim();
   const paymentCurrency = String(env.paymentCurrency ?? "Fibt").trim() || "Fibt";
   const settleInvoice = String(env.settleInvoice ?? "1") !== "0";
+  const viewportWidth = Number.parseInt(String(env.viewportWidth ?? "2560"), 10);
+  const viewportHeight = Number.parseInt(String(env.viewportHeight ?? "1440"), 10);
+  const viewport = {
+    width: Number.isFinite(viewportWidth) && viewportWidth > 0 ? viewportWidth : 2560,
+    height: Number.isFinite(viewportHeight) && viewportHeight > 0 ? viewportHeight : 1440,
+  };
 
   const tipButtonScreenshotPath = `${artifactDir}/playwright-flow1-tip-button.png`;
   const tipModalStepGenerateScreenshotPath = `${artifactDir}/playwright-flow1-tip-modal-step1-generate.png`;
@@ -247,6 +253,7 @@ async (page) => {
     await searchTopicLink.click();
   }
 
+  await page.setViewportSize(viewport);
   await login(username, password);
 
   if (topicPath.trim()) {
@@ -258,15 +265,43 @@ async (page) => {
 
   const tipButton = page
     .locator(
-      ".fiber-link-tip-entry__button:visible, .post-action-menu__fiber-link-tip:visible, button[aria-label='Tip']:visible",
+      "[data-fiber-link-tip-button]:visible, .fiber-link-tip-entry__button:visible, .post-action-menu__fiber-link-tip:visible, button[aria-label='Tip']:visible",
     )
     .first();
   await tipButton.waitFor({ timeout: 20_000 });
-  await page.screenshot({ path: tipButtonScreenshotPath, fullPage: false });
+  await tipButton.evaluate((element) => {
+    element.scrollIntoView({ block: "center", inline: "center", behavior: "instant" });
+  });
+  await page.waitForTimeout(300);
+  await tipButton.evaluate((element) => {
+    const screenshotTarget =
+      element.closest(".topic-post") ??
+      element.closest(".topic-body") ??
+      element.closest("article") ??
+      element;
+    screenshotTarget.setAttribute("data-fiber-link-tip-screenshot-target", "true");
+  });
+  const tipPostScreenshotTarget = page
+    .locator("[data-fiber-link-tip-screenshot-target='true']")
+    .first();
+  await tipPostScreenshotTarget.screenshot({ path: tipButtonScreenshotPath });
+  await tipPostScreenshotTarget.evaluate((element) => {
+    element.removeAttribute("data-fiber-link-tip-screenshot-target");
+  });
   await tipButton.click();
 
-  const modal = page.locator(".fiber-link-tip-modal").first();
+  const modal = page.locator(".fiber-link-tip-modal .d-modal__container").first();
   await modal.waitFor({ timeout: 15_000 });
+  const generateStep = modal.locator("[data-fiber-link-tip-modal-step='generate']").first();
+  const payStep = modal.locator("[data-fiber-link-tip-modal-step='pay']").first();
+  const confirmedStep = modal.locator("[data-fiber-link-tip-modal-step='confirmed']").first();
+  await generateStep.waitFor({ timeout: 15_000 });
+  if (await payStep.isVisible().catch(() => false)) {
+    throw new Error("pay step should not be visible before invoice generation");
+  }
+  if (await confirmedStep.isVisible().catch(() => false)) {
+    throw new Error("confirmed step should not be visible before invoice generation");
+  }
 
   const amountInput = page.getByLabel(/amount/i).first();
   await amountInput.waitFor({ timeout: 15_000 });
@@ -277,9 +312,16 @@ async (page) => {
     await messageInput.fill(tipMessage);
   }
 
-  await page.screenshot({ path: tipModalStepGenerateScreenshotPath, fullPage: false });
+  await modal.screenshot({ path: tipModalStepGenerateScreenshotPath });
 
   await page.getByRole("button", { name: /generate invoice/i }).first().click();
+  await payStep.waitFor({ timeout: 30_000 });
+  if (await generateStep.isVisible().catch(() => false)) {
+    throw new Error("generate step should not remain visible after invoice generation");
+  }
+  if (await confirmedStep.isVisible().catch(() => false)) {
+    throw new Error("confirmed step should not be visible before settlement");
+  }
 
   const walletLink = page.locator("[data-fiber-link-tip-modal='wallet-link']").first();
   const invoice = await walletLink
@@ -307,8 +349,8 @@ async (page) => {
     throw new Error("invoice QR did not become visible");
   }
 
-  await page.screenshot({ path: tipModalStepPayScreenshotPath, fullPage: false });
-  await page.screenshot({ path: tipModalScreenshotPath, fullPage: false });
+  await modal.screenshot({ path: tipModalStepPayScreenshotPath });
+  await modal.screenshot({ path: tipModalScreenshotPath });
 
   let payment = {
     attempted: settleInvoice,
@@ -330,15 +372,19 @@ async (page) => {
 
     await page.waitForFunction(
       () => {
-        const badge = document.querySelector(".fiber-link-tip-status-badge");
-        return badge?.textContent?.includes("Payment received") === true;
+        const confirmedStepElement = document.querySelector("[data-fiber-link-tip-modal-step='confirmed']");
+        const payStepElement = document.querySelector("[data-fiber-link-tip-modal-step='pay']");
+        const badge = confirmedStepElement?.querySelector(".fiber-link-tip-status-badge");
+        return Boolean(confirmedStepElement) &&
+          !payStepElement &&
+          badge?.textContent?.includes("Payment received") === true;
       },
       undefined,
       { timeout: 45_000 },
     );
 
     await page.waitForTimeout(500);
-    await page.screenshot({ path: tipModalStepConfirmedScreenshotPath, fullPage: false });
+    await modal.screenshot({ path: tipModalStepConfirmedScreenshotPath });
   }
 
   const dashboardSummary = await rpcCall("dashboard.summary", {});
