@@ -60,12 +60,12 @@ async (page) => {
         .first()
         .getAttribute("href")) || "";
       const match = href.match(/fiber:\/\/invoice\/(fib[a-z0-9]{40,})/i);
-      return match ? match[0] : null;
+      return match ? match[1] : null;
     })
     .catch(() => null);
 
   if (invoiceFromWalletHref) {
-    invoice = invoiceFromWalletHref.replace(/^fiber:\/\/invoice\//i, "");
+    invoice = invoiceFromWalletHref;
   } else {
     const advancedToggle = payStep.locator(".fiber-link-tip-advanced-toggle").first();
     const advancedPanel = payStep.locator(".fiber-link-tip-advanced-panel").first();
