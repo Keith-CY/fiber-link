@@ -1,4 +1,5 @@
 import Component from "@glimmer/component";
+import formatDate from "discourse/helpers/format-date";
 
 export default class FiberLinkTipFeed extends Component {
   get isLoading() {
@@ -58,7 +59,7 @@ export default class FiberLinkTipFeed extends Component {
                   </td>
                   <td><span class={{tip.statusClassName}}>{{tip.statusLabel}}</span></td>
                   <td>@{{tip.counterpartyUsername}}</td>
-                  <td title={{tip.absoluteTimeLabel}}>{{format-date tip.createdAt}}</td>
+                  <td title={{tip.absoluteTimeLabel}}>{{formatDate tip.createdAt}}</td>
                 </tr>
               {{/each}}
             </tbody>

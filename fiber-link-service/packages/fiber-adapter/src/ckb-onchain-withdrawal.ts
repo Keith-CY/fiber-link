@@ -1,5 +1,5 @@
 import { BI, Indexer, RPC, commons, config, hd, helpers } from "@ckb-lumos/lumos";
-import type { Asset, ExecuteWithdrawalArgs, WithdrawalExecutionKind } from "./types";
+import type { Asset, CkbNetwork, ExecuteWithdrawalArgs, WithdrawalExecutionKind } from "./types";
 
 const SHANNONS_PER_CKB = 100_000_000n;
 const DEFAULT_FEE_RATE_SHANNONS_PER_KB = 1_000n;
@@ -261,6 +261,27 @@ export function getCkbAddressMinCellCapacityShannons(toAddress: string): bigint 
     cellOutput: {
       capacity: "0x0",
       lock: recipientLock,
+    },
+    data: "0x",
+  });
+}
+
+export function getDefaultCkbChangeCellCapacityShannons(network: CkbNetwork): bigint {
+  const cfg = network === "AGGRON4" ? config.predefined.AGGRON4 : config.predefined.LINA;
+  const secpScript = cfg.SCRIPTS?.SECP256K1_BLAKE160;
+  if (!secpScript) {
+    throw new WithdrawalExecutionError("SECP256K1_BLAKE160 script is not configured", "permanent");
+  }
+
+  config.initializeConfig(cfg);
+  return helpers.minimalCellCapacity({
+    cellOutput: {
+      capacity: "0x0",
+      lock: {
+        codeHash: secpScript.CODE_HASH,
+        hashType: secpScript.HASH_TYPE,
+        args: `0x${"00".repeat(20)}`,
+      },
     },
     data: "0x",
   });

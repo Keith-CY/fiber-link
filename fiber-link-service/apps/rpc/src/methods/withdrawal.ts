@@ -47,7 +47,8 @@ export class WithdrawalPolicyViolationError extends Error {
       | "PER_USER_DAILY_LIMIT_EXCEEDED"
       | "PER_APP_DAILY_LIMIT_EXCEEDED"
       | "COOLDOWN_ACTIVE"
-      | "INVALID_DESTINATION_ADDRESS",
+      | "INVALID_DESTINATION_ADDRESS"
+      | "WITHDRAWAL_SIGNER_UNAVAILABLE",
     message: string,
   ) {
     super(message);
@@ -76,6 +77,8 @@ const DEFAULT_MAX_PER_REQUEST = "5000";
 const DEFAULT_PER_USER_DAILY_MAX = "20000";
 const DEFAULT_PER_APP_DAILY_MAX = "200000";
 const DEFAULT_COOLDOWN_SECONDS = 0;
+const WITHDRAWAL_SIGNER_UNAVAILABLE_MESSAGE =
+  "CKB address withdrawals are temporarily unavailable because the withdrawal signer is not configured";
 
 function getDefaultRepo(): WithdrawalRepo {
   if (!defaultRepo) {
@@ -196,6 +199,24 @@ function usageFallback(): WithdrawalPolicyUsage {
     userDailyTotal: "0",
     lastRequestedAt: null,
   };
+}
+
+function assertOnChainWithdrawalReady(
+  input: RequestWithdrawalInput,
+  usesDefaultHotWalletInventoryProvider: boolean,
+) {
+  if (input.destination.kind !== "CKB_ADDRESS" || !usesDefaultHotWalletInventoryProvider) {
+    return;
+  }
+
+  if (process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY?.trim()) {
+    return;
+  }
+
+  throw new WithdrawalPolicyViolationError(
+    "WITHDRAWAL_SIGNER_UNAVAILABLE",
+    WITHDRAWAL_SIGNER_UNAVAILABLE_MESSAGE,
+  );
 }
 
 async function withHotWalletReservationLock<T>(key: string, work: () => Promise<T>): Promise<T> {
@@ -466,6 +487,7 @@ export async function requestWithdrawal(input: RequestWithdrawalInput, options: 
         ? getDefaultHotWalletInventoryProvider()
         : null
       : options.hotWalletInventoryProvider;
+  assertOnChainWithdrawalReady(input, options.hotWalletInventoryProvider === undefined);
   const runCreate = async () => {
     let liquidityDecision;
     try {
