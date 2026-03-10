@@ -31,7 +31,9 @@ Options:
   -h, --help        Show this help text.
 
 Required env:
-  (none in default browser-withdrawal mode)
+  default browser-withdrawal mode:
+    none if this script boots fresh services, or if the reused rpc/worker already have
+    FIBER_WITHDRAWAL_CKB_PRIVATE_KEY configured for the author withdrawal step
 
 Required env with --backend-withdrawal:
   FIBER_WITHDRAWAL_CKB_PRIVATE_KEY=0x... (or legacy alias FIBER_WITHDRAW_CKB_PRIVATE_KEY)

@@ -180,6 +180,29 @@ wait_http_ready() {
   done
 }
 
+wait_discourse_ui_ready() {
+  local url="$1"
+  local timeout_seconds="$2"
+  local started now body
+  started="$(date +%s)"
+
+  while true; do
+    body="$(curl -fsS -m 5 "${url}" 2>/dev/null || true)"
+    if [[ -n "${body}" ]] \
+      && ! printf '%s' "${body}" | grep -q "Ember CLI is Required in Development Mode" \
+      && ! printf '%s' "${body}" | grep -q "Build Error"; then
+      return 0
+    fi
+
+    now="$(date +%s)"
+    if (( now - started >= timeout_seconds )); then
+      return 1
+    fi
+
+    sleep 2
+  done
+}
+
 docker_host_port_for() {
   local container="$1"
   local internal_port="$2"
@@ -234,6 +257,73 @@ resolve_runtime_app_secret() {
   APP_SECRET="${runtime_secret}"
 }
 
+resolve_discourse_site_setting() {
+  local key="$1"
+
+  if ! docker ps --format '{{.Names}}' | grep -qx "discourse_dev"; then
+    return 0
+  fi
+
+  docker exec -u discourse:discourse -w /src discourse_dev sh -lc \
+    "RAILS_ENV=development bundle exec rails runner \"value = SiteSetting.public_send('${key}'); STDOUT.write(value.to_s) unless value.nil?\"" \
+    2>/dev/null || true
+}
+
+resolve_workflow_app_id() {
+  if [[ -n "${FIBER_LINK_APP_ID:-}" ]]; then
+    printf '%s' "${FIBER_LINK_APP_ID}"
+    return 0
+  fi
+
+  if [[ -n "${E2E_APP_ID:-}" ]]; then
+    printf '%s' "${E2E_APP_ID}"
+    return 0
+  fi
+
+  if [[ "${SKIP_DISCOURSE}" -eq 1 ]]; then
+    local discourse_app_id
+    discourse_app_id="$(resolve_discourse_site_setting "fiber_link_app_id")"
+    if [[ -n "${discourse_app_id}" ]]; then
+      printf '[local-workflow] detected discourse plugin app id under --skip-discourse; using %s\n' "${discourse_app_id}" >&2
+      printf '%s' "${discourse_app_id}"
+      return 0
+    fi
+  fi
+
+  printf 'local-dev'
+}
+
+repair_discourse_frontend_runtime() {
+  local assets_log="${ARTIFACT_DIR}/discourse-assets-clobber.log"
+  local constants_log="${ARTIFACT_DIR}/discourse-javascript-update-constants.log"
+
+  log "refreshing discourse frontend runtime (assets:clobber + javascript:update_constants)"
+  docker exec -u discourse:discourse -w /src discourse_dev sh -lc \
+    'bin/rake assets:clobber' > "${assets_log}" 2>&1 || {
+    tail -n 120 "${assets_log}" >&2 || true
+    fatal "${EXIT_DISCOURSE}" "failed to clobber discourse assets (see ${assets_log})"
+  }
+
+  docker exec -u discourse:discourse -w /src discourse_dev sh -lc \
+    'bin/rake javascript:update_constants' > "${constants_log}" 2>&1 || {
+    tail -n 120 "${constants_log}" >&2 || true
+    fatal "${EXIT_DISCOURSE}" "failed to refresh discourse javascript constants (see ${constants_log})"
+  }
+
+  docker exec discourse_dev sh -lc "
+    pkill -f '[e]mber server --proxy http://127.0.0.1:9292' >/dev/null 2>&1 || true
+    if [ -f '/src/tmp/pids/unicorn.pid' ]; then
+      pid=\$(cat '/src/tmp/pids/unicorn.pid' 2>/dev/null || true)
+      if [ -n \"\${pid}\" ] && kill -0 \"\${pid}\" 2>/dev/null; then
+        kill -9 \"\${pid}\" >/dev/null 2>&1 || true
+      fi
+      rm -f '/src/tmp/pids/unicorn.pid' >/dev/null 2>&1 || true
+    fi
+    pkill -f '[u]nicorn master' >/dev/null 2>&1 || true
+    pkill -f '[b]in/unicorn' >/dev/null 2>&1 || true
+  " >/dev/null 2>&1 || true
+}
+
 sync_rpc_app_secret_record() {
   local pg_container="fiber-link-postgres"
   local pg_user="${POSTGRES_USER:-$(get_env_value POSTGRES_USER)}"
@@ -271,7 +361,7 @@ ensure_ember_cli_proxy() {
   local ember_pattern='[e]mber server --proxy http://127.0.0.1:9292'
 
   if docker exec discourse_dev sh -lc "pgrep -f '${ember_pattern}' >/dev/null 2>&1"; then
-    if wait_http_ready "${ember_url}" 20; then
+    if wait_discourse_ui_ready "${ember_url}" 20; then
       log "ember-cli proxy already running (${ember_url})"
       return 0
     fi
@@ -289,7 +379,16 @@ ensure_ember_cli_proxy() {
     vlog "ember-cli logs: ${ember_log}"
   fi
 
-  wait_http_ready "${ember_url}" 420 || fatal "${EXIT_DISCOURSE}" "ember-cli proxy did not become ready at ${ember_url} (see ${ember_log})"
+  if ! wait_discourse_ui_ready "${ember_url}" 180; then
+    log "ember-cli proxy did not become healthy; refreshing frontend runtime and retrying once"
+    repair_discourse_frontend_runtime
+    ensure_discourse_backend_server
+    log "starting ember-cli proxy after frontend runtime refresh"
+    docker exec -u discourse:discourse -w /src discourse_dev sh -lc 'bin/ember-cli --proxy http://127.0.0.1:9292' > "${ember_log}" 2>&1 &
+    vlog "ember-cli logs: ${ember_log}"
+    wait_discourse_ui_ready "${ember_url}" 420 \
+      || fatal "${EXIT_DISCOURSE}" "ember-cli proxy did not become ready at ${ember_url} (see ${ember_log})"
+  fi
   wait_http_ready "${backend_ready_url}" 180 || fatal "${EXIT_DISCOURSE}" "discourse backend did not become ready at ${backend_ready_url} (see ${ember_log})"
 }
 
@@ -780,7 +879,7 @@ if [[ "${SKIP_WITHDRAWAL}" -eq 0 ]]; then
   [[ -n "${WITHDRAWAL_PRIVATE_KEY}" ]] || fatal "${EXIT_PRECHECK}" "FIBER_WITHDRAWAL_CKB_PRIVATE_KEY is required for on-chain withdrawal"
 fi
 
-APP_ID="${FIBER_LINK_APP_ID:-${E2E_APP_ID:-local-dev}}"
+APP_ID="$(resolve_workflow_app_id)"
 RPC_PORT="${RPC_PORT:-$(get_env_value RPC_PORT)}"
 FNN2_RPC_PORT="${FNN2_RPC_PORT:-$(get_env_value FNN2_RPC_PORT)}"
 RPC_PORT="${RPC_PORT:-3000}"

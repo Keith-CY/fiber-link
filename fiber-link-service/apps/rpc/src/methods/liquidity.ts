@@ -10,7 +10,9 @@ import {
   type WithdrawalRepo,
 } from "@fiber-link/db";
 import {
+  getDefaultCkbChangeCellCapacityShannons,
   resolveCkbNetworkConfig,
+  shannonsToCkbDecimal,
   type HotWalletInventoryProvider,
   type WithdrawalDestination,
 } from "@fiber-link/fiber-adapter";
@@ -54,6 +56,8 @@ type CkbHotWalletTarget = {
   targetAvailableAmount: string;
   feeBufferAmount: string;
   postTxReserveAmount: string;
+  changeReserveAmount: string;
+  effectivePostTxReserveAmount: string;
   warmBufferAmount: string;
 };
 
@@ -88,7 +92,7 @@ function parseNonNegativeAmountEnv(name: string, fallback: string): string {
   return formatDecimal(parsed.value, parsed.scale);
 }
 
-function resolveCkbHotWalletTarget(requiredAmount: string): CkbHotWalletTarget {
+function resolveCkbHotWalletTarget(requiredAmount: string, network: "AGGRON4" | "LINA"): CkbHotWalletTarget {
   const feeBufferAmount = parseNonNegativeAmountEnv(
     "FIBER_WITHDRAWAL_CKB_LIQUIDITY_FEE_BUFFER",
     DEFAULT_CKB_LIQUIDITY_BUFFER,
@@ -101,16 +105,23 @@ function resolveCkbHotWalletTarget(requiredAmount: string): CkbHotWalletTarget {
     "FIBER_WITHDRAWAL_CKB_LIQUIDITY_WARM_BUFFER",
     DEFAULT_CKB_LIQUIDITY_BUFFER,
   );
+  const changeReserveAmount = shannonsToCkbDecimal(getDefaultCkbChangeCellCapacityShannons(network));
+  const effectivePostTxReserveAmount =
+    compareDecimalStrings(postTxReserveAmount, changeReserveAmount) >= 0
+      ? postTxReserveAmount
+      : changeReserveAmount;
 
   let targetAvailableAmount = requiredAmount;
   targetAvailableAmount = addDecimalStrings(targetAvailableAmount, feeBufferAmount);
-  targetAvailableAmount = addDecimalStrings(targetAvailableAmount, postTxReserveAmount);
+  targetAvailableAmount = addDecimalStrings(targetAvailableAmount, effectivePostTxReserveAmount);
   targetAvailableAmount = addDecimalStrings(targetAvailableAmount, warmBufferAmount);
 
   return {
     targetAvailableAmount,
     feeBufferAmount,
     postTxReserveAmount,
+    changeReserveAmount,
+    effectivePostTxReserveAmount,
     warmBufferAmount,
   };
 }
@@ -118,6 +129,7 @@ function resolveCkbHotWalletTarget(requiredAmount: string): CkbHotWalletTarget {
 function resolveHotWalletRequirement(
   input: DecideWithdrawalRequestLiquidityInput,
   reservedAmount: string,
+  network: "AGGRON4" | "LINA",
 ): {
   targetAvailableAmount: string;
   metadata: LiquidityRequestMetadata | null;
@@ -130,7 +142,7 @@ function resolveHotWalletRequirement(
     };
   }
 
-  const target = resolveCkbHotWalletTarget(requiredAvailableAmount);
+  const target = resolveCkbHotWalletTarget(requiredAvailableAmount, network);
   return {
     targetAvailableAmount: target.targetAvailableAmount,
     metadata: {
@@ -138,6 +150,8 @@ function resolveHotWalletRequirement(
       targetAvailableAmount: target.targetAvailableAmount,
       feeBufferAmount: target.feeBufferAmount,
       postTxReserveAmount: target.postTxReserveAmount,
+      changeReserveAmount: target.changeReserveAmount,
+      effectivePostTxReserveAmount: target.effectivePostTxReserveAmount,
       warmBufferAmount: target.warmBufferAmount,
     },
   };
@@ -163,7 +177,7 @@ export async function decideWithdrawalRequestLiquidity(
         network,
       })
     : "0";
-  const requirement = resolveHotWalletRequirement(input, reserved);
+  const requirement = resolveHotWalletRequirement(input, reserved, network);
 
   if (compareDecimalStrings(inventory.availableAmount, requirement.targetAvailableAmount) >= 0) {
     return pendingDecision();

@@ -25,7 +25,11 @@ This runbook packages the local end-to-end demo flow into repeatable scripts:
 
 ## Required env
 
-Default mode (`browser` initiates withdrawal) does not require a private key.
+On-chain withdrawals always require a configured backend signer.
+
+Default mode (`browser` initiates withdrawal) does not require the browser wrapper itself to export a key, but the running `rpc`/`worker` services still need `FIBER_WITHDRAWAL_CKB_PRIVATE_KEY` before the author clicks `Withdraw`.
+
+If this runbook boots fresh local services, the compose/runtime helpers can supply that signer for you. If you reuse existing services, verify the signer is already present in the running containers.
 
 If you use backend withdrawal mode:
 
@@ -34,6 +38,12 @@ export FIBER_WITHDRAWAL_CKB_PRIVATE_KEY=0x<ckb_private_key_hex>
 # legacy alias is also accepted:
 export FIBER_WITHDRAW_CKB_PRIVATE_KEY=0x<ckb_private_key_hex>
 ```
+
+## Local port layout
+
+- `discourse_dev` typically occupies host ports `3000`, `4200`, and `9292`.
+- Local Fiber Link demo helpers therefore commonly expose the RPC service on `http://127.0.0.1:13001`.
+- Seeded Discourse plugin settings point to `http://host.docker.internal:13001` so the container can reach that host-side RPC port.
 
 If you skip discourse bootstrap, these IDs are required:
 
@@ -124,6 +134,8 @@ Typical files:
 
 - `Ember CLI is Required in Development Mode`
   - ensure workflow is started with `--with-ember-cli` (already enabled in demo wrapper)
+- `/login`, topic pages, or `/fiber-link` stay on loading / show `Build Error`
+  - rerun the workflow with `--with-ember-cli`; `scripts/local-workflow-automation.sh` now retries once after refreshing `assets:clobber` and `javascript:update_constants`
 - `npx` runtime error
   - verify `node -v` and `npx -v`
   - script prepends common Node install paths automatically, but local shell overrides can still break it

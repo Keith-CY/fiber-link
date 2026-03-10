@@ -92,9 +92,11 @@ describe("requestWithdrawal", () => {
   beforeEach(() => {
     repo.__resetForTests?.();
     policyRepo.__resetForTests?.();
+    process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY = `0x${"11".repeat(32)}`;
   });
 
   afterEach(() => {
+    delete process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY;
     delete process.env.FIBER_WITHDRAWAL_CKB_LIQUIDITY_FEE_BUFFER;
     delete process.env.FIBER_WITHDRAWAL_CKB_LIQUIDITY_POST_TX_RESERVE;
     delete process.env.FIBER_WITHDRAWAL_CKB_LIQUIDITY_WARM_BUFFER;
@@ -537,7 +539,41 @@ describe("requestWithdrawal", () => {
     expect(saved.toAddress).toBe("ckt1qyqfth8m4fevfzh5hhd088s78qcdjjp8cehs7z8jhw");
   });
 
-  it("returns PENDING when hot wallet liquidity is sufficient", async () => {
+  it("rejects CKB address withdrawals when the withdrawal signer is not configured", async () => {
+    delete process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY;
+
+    const ledger = createInMemoryLedgerRepo();
+    await ledger.creditOnce({
+      appId: "app1",
+      userId: "u1",
+      asset: "CKB",
+      amount: "100",
+      refId: "t1",
+      idempotencyKey: "credit:t1",
+    });
+
+    await expect(
+      requestWithdrawal(
+        {
+          appId: "app1",
+          userId: "u1",
+          asset: "CKB",
+          amount: "61",
+          destination: {
+            kind: "CKB_ADDRESS",
+            address: "ckt1qyqfth8m4fevfzh5hhd088s78qcdjjp8cehs7z8jhw",
+          },
+        },
+        { repo, ledgerRepo: ledger },
+      ),
+    ).rejects.toMatchObject<Partial<WithdrawalPolicyViolationError>>({
+      name: "WithdrawalPolicyViolationError",
+      reason: "WITHDRAWAL_SIGNER_UNAVAILABLE",
+      message: expect.stringContaining("withdrawal signer"),
+    });
+  });
+
+  it("returns PENDING when hot wallet liquidity covers withdrawal plus change reserve", async () => {
     const ledger = createInMemoryLedgerRepo();
     await ledger.creditOnce({
       appId: "app1",
@@ -550,7 +586,7 @@ describe("requestWithdrawal", () => {
     const hotWalletInventoryProvider = vi.fn(async () => ({
       asset: "CKB" as const,
       network: "AGGRON4" as const,
-      availableAmount: "61",
+      availableAmount: "122",
     }));
 
     const result = await requestWithdrawal(
@@ -651,12 +687,16 @@ describe("requestWithdrawal", () => {
     expect(result.state).toBe("LIQUIDITY_PENDING");
     const saved = await repo.findByIdOrThrow(result.id);
     const request = await liquidityRequestRepo.findByIdOrThrow(saved.liquidityRequestId ?? "");
-    expect(request.requiredAmount).toBe("61.5");
+    expect(request.requiredAmount).toBe("122.5");
     expect(request.metadata).toMatchObject({
-      targetAvailableAmount: "123",
-      requestedRebalanceAmount: "61.5",
+      targetAvailableAmount: "184",
+      requestedRebalanceAmount: "122.5",
+      changeReserveAmount: "61",
+      effectivePostTxReserveAmount: "61",
       feeBufferAmount: "1",
+      postTxReserveAmount: "0",
       warmBufferAmount: "61",
+      hotWalletAvailableAmount: "61.5",
     });
   });
 
@@ -990,7 +1030,10 @@ describe("requestWithdrawal", () => {
       releaseFirstInventoryCall?.();
 
       const [firstResult, secondResult] = await Promise.all([firstRequest, secondRequest]);
-      expect([firstResult.state, secondResult.state].sort()).toEqual(["LIQUIDITY_PENDING", "PENDING"]);
+      expect([firstResult.state, secondResult.state].sort()).toEqual([
+        "LIQUIDITY_PENDING",
+        "LIQUIDITY_PENDING",
+      ]);
       expect(liquidityRequestRepo.__listForTests?.()).toHaveLength(1);
     } finally {
       if (previousAllowedAssets === undefined) delete process.env.FIBER_WITHDRAWAL_POLICY_ALLOWED_ASSETS;

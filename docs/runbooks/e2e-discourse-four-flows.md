@@ -28,6 +28,12 @@ export E2E_EXPLORER_TX_URL_TEMPLATE='https://pudge.explorer.nervos.org/transacti
 
 Template supports `{txHash}` or `%s` placeholder.
 
+## Local port layout
+
+- `discourse_dev` usually owns host `3000`, `4200`, and `9292`.
+- E2E helpers therefore default Fiber Link RPC to host port `13001`.
+- Seeded plugin service URLs use `http://host.docker.internal:13001` so the Discourse container can reach that RPC endpoint.
+
 ## Run Main E2E Script
 
 ```bash
@@ -63,11 +69,12 @@ scripts/capture-e2e-discourse-four-flows-evidence.sh \
 
 ## Withdrawal Signer Behavior
 
+- Browser-driven withdrawal still needs a signer on the running backend. The browser only submits `withdrawal.request`; `rpc`/`worker` must already have `FIBER_WITHDRAWAL_CKB_PRIVATE_KEY` before the request can succeed.
 - If `FIBER_WITHDRAWAL_CKB_PRIVATE_KEY` is not provided, e2e script will:
   - generate a testnet signer private key,
   - derive `ckt1...` address,
   - request faucet funding (with fallback endpoint),
-  - restart worker with the signer key injected.
+  - restart `rpc`/`worker` with the signer key injected.
 - Signer cache file:
   - `.tmp/e2e-discourse-four-flows/withdrawal-signer.json`
 
@@ -102,4 +109,4 @@ Captured bundle output under:
   - Check worker health and logs after strategy switch in `logs/worker-polling.log`.
 - Withdrawal reaches `FAILED` with signer error:
   - Check `artifacts/flow2-withdrawal-request.response.json` and `logs/worker-subscription.log`.
-  - Ensure faucet endpoints are reachable, or set `FIBER_WITHDRAWAL_CKB_PRIVATE_KEY` explicitly.
+  - Ensure faucet endpoints are reachable, or set `FIBER_WITHDRAWAL_CKB_PRIVATE_KEY` explicitly before the browser tries `withdrawal.request`.
