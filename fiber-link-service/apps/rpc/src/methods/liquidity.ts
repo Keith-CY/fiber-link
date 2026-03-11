@@ -2,9 +2,9 @@ import {
   addDecimalStrings,
   compareDecimalStrings,
   formatDecimal,
-  type LiquidityRequestMetadata,
   parseDecimal,
-  pow10,
+  subtractDecimalStrings,
+  type LiquidityRequestMetadata,
   type Asset,
   type LiquidityRequestRepo,
   type WithdrawalRepo,
@@ -72,14 +72,6 @@ function pendingDecision(): WithdrawalLiquidityDecision {
 function resolveCkbNetwork(address: string): "AGGRON4" | "LINA" {
   const { isTestnet } = resolveCkbNetworkConfig(address);
   return isTestnet ? "AGGRON4" : "LINA";
-}
-
-function subtractDecimalStrings(left: string, right: string): string {
-  const a = parseDecimal(left);
-  const b = parseDecimal(right);
-  const scale = Math.max(a.scale, b.scale);
-  const value = a.value * pow10(scale - a.scale) - b.value * pow10(scale - b.scale);
-  return formatDecimal(value, scale);
 }
 
 function parseNonNegativeAmountEnv(name: string, fallback: string): string {

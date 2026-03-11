@@ -8,3 +8,4 @@ export * from "./tip-intent-repo";
 export * from "./tip-intent-event-repo";
 export * from "./ledger-repo";
 export * from "./amount";
+export * from "./retry";

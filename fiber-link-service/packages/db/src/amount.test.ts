@@ -6,6 +6,8 @@ import {
   compareDecimalStrings,
   formatDecimal,
   parseDecimal,
+  subtractDecimalStrings,
+  toErrorMessage,
 } from "./amount";
 
 describe("amount", () => {
@@ -43,5 +45,33 @@ describe("amount", () => {
   it("adds decimal strings with canonical formatting", () => {
     expect(addDecimalStrings("1", "2.50")).toBe("3.5");
     expect(addDecimalStrings("0.25", "0.75")).toBe("1");
+  });
+
+  it("subtracts decimal strings with signed results", () => {
+    expect(subtractDecimalStrings("10", "3")).toBe("7");
+    expect(subtractDecimalStrings("1.5", "0.25")).toBe("1.25");
+    expect(subtractDecimalStrings("5", "5")).toBe("0");
+    expect(subtractDecimalStrings("3", "10")).toBe("-7");
+    expect(subtractDecimalStrings("0.1", "0.3")).toBe("-0.2");
+  });
+
+  it("subtracts decimal strings with mixed scales", () => {
+    expect(subtractDecimalStrings("10.50", "3")).toBe("7.5");
+    expect(subtractDecimalStrings("100", "0.001")).toBe("99.999");
+    expect(subtractDecimalStrings("0.001", "100")).toBe("-99.999");
+  });
+});
+
+describe("toErrorMessage", () => {
+  it("extracts message from Error instances", () => {
+    expect(toErrorMessage(new Error("boom"))).toBe("boom");
+    expect(toErrorMessage(new TypeError("bad type"))).toBe("bad type");
+  });
+
+  it("converts non-Error values to strings", () => {
+    expect(toErrorMessage("plain string")).toBe("plain string");
+    expect(toErrorMessage(42)).toBe("42");
+    expect(toErrorMessage(null)).toBe("null");
+    expect(toErrorMessage(undefined)).toBe("undefined");
   });
 });

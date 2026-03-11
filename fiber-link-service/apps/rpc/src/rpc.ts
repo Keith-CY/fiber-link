@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { InsufficientFundsError, TipIntentNotFoundError, createDbClient } from "@fiber-link/db";
+import { InsufficientFundsError, TipIntentNotFoundError, createDbClient, toErrorMessage } from "@fiber-link/db";
 import { verifyHmac } from "./auth/hmac";
 import {
   DashboardSummaryParamsSchema,
@@ -23,6 +23,7 @@ import { handleTipCreate, handleTipSettledFeed, handleTipStatus } from "./method
 import { handleDashboardSummary } from "./methods/dashboard";
 import { WithdrawalPolicyViolationError, quoteWithdrawal, requestWithdrawal } from "./methods/withdrawal";
 import { createNonceStore } from "./nonce-store";
+import { dispatchMethod, type MethodDef } from "./rpc-dispatch";
 import {
   InMemoryRateLimitStore,
   parseRpcRateLimitConfig,
@@ -114,7 +115,7 @@ async function runDefaultReadinessProbe(appRepo: AppRepo | null): Promise<Readin
   } catch (error) {
     checks.database = {
       status: "error",
-      message: error instanceof Error ? error.message : String(error),
+      message: toErrorMessage(error),
     };
   }
 
@@ -125,7 +126,7 @@ async function runDefaultReadinessProbe(appRepo: AppRepo | null): Promise<Readin
   } catch (error) {
     checks.redis = {
       status: "error",
-      message: error instanceof Error ? error.message : String(error),
+      message: toErrorMessage(error),
     };
   }
 
@@ -153,7 +154,7 @@ async function runDefaultReadinessProbe(appRepo: AppRepo | null): Promise<Readin
   } catch (error) {
     checks.coreService = {
       status: "error",
-      message: error instanceof Error ? error.message : String(error),
+      message: toErrorMessage(error),
     };
   }
 
@@ -285,139 +286,61 @@ export function registerRpc(
       if (rpc.method === "health.ping") {
         return reply.send(rpcResultResponse(rpc.id, { status: "ok" as const }));
       }
-      if (rpc.method === "tip.create") {
-        const parsed = TipCreateParamsSchema.safeParse(rpc.params);
-        if (!parsed.success) {
-          return reply.send(
-            rpcErrorResponse(rpc.id, RpcErrorCode.INVALID_PARAMS, "Invalid params", parsed.error.issues),
-          );
-        }
-        try {
-          const result = await handleTipCreate({ ...parsed.data, appId });
-          const validated = TipCreateResultSchema.safeParse(result);
-          if (!validated.success) {
-            req.log.error(validated.error, "tip.create produced invalid response payload");
-            return reply.send(rpcErrorResponse(rpc.id, RpcErrorCode.INTERNAL_ERROR, "Internal error"));
-          }
-          return reply.send(rpcResultResponse(rpc.id, validated.data));
-        } catch (error) {
-          req.log.error(error);
-          return reply.send(rpcErrorResponse(rpc.id, RpcErrorCode.INTERNAL_ERROR, "Internal error"));
-        }
-      }
-      if (rpc.method === "tip.status" || rpc.method === "tip.get") {
-        const parsed = TipStatusParamsSchema.safeParse(rpc.params);
-        if (!parsed.success) {
-          return reply.send(
-            rpcErrorResponse(rpc.id, RpcErrorCode.INVALID_PARAMS, "Invalid params", parsed.error.issues),
-          );
-        }
-        try {
-          const result = await handleTipStatus({ ...parsed.data });
-          const validated = TipStatusResultSchema.safeParse(result);
-          if (!validated.success) {
-            req.log.error(validated.error, "tip.status/tip.get produced invalid response payload");
-            return reply.send(rpcErrorResponse(rpc.id, RpcErrorCode.INTERNAL_ERROR, "Internal error"));
-          }
-          return reply.send(rpcResultResponse(rpc.id, validated.data));
-        } catch (error) {
-          if (error instanceof TipIntentNotFoundError) {
-            return reply.send(rpcErrorResponse(rpc.id, RpcErrorCode.TIP_NOT_FOUND, "Tip not found"));
-          }
-          req.log.error(error);
-          return reply.send(rpcErrorResponse(rpc.id, RpcErrorCode.INTERNAL_ERROR, "Internal error"));
-        }
-      }
-      if (rpc.method === "tip.settled_feed") {
-        const parsed = TipSettledFeedParamsSchema.safeParse(rpc.params);
-        if (!parsed.success) {
-          return reply.send(
-            rpcErrorResponse(rpc.id, RpcErrorCode.INVALID_PARAMS, "Invalid params", parsed.error.issues),
-          );
-        }
-        try {
-          const result = await handleTipSettledFeed({ appId, ...parsed.data });
-          const validated = TipSettledFeedResultSchema.safeParse(result);
-          if (!validated.success) {
-            req.log.error(validated.error, "tip.settled_feed produced invalid response payload");
-            return reply.send(rpcErrorResponse(rpc.id, RpcErrorCode.INTERNAL_ERROR, "Internal error"));
-          }
-          return reply.send(rpcResultResponse(rpc.id, validated.data));
-        } catch (error) {
-          req.log.error(error);
-          return reply.send(rpcErrorResponse(rpc.id, RpcErrorCode.INTERNAL_ERROR, "Internal error"));
-        }
-      }
-      if (rpc.method === "dashboard.summary") {
-        const parsed = DashboardSummaryParamsSchema.safeParse(rpc.params);
-        if (!parsed.success) {
-          return reply.send(
-            rpcErrorResponse(rpc.id, RpcErrorCode.INVALID_PARAMS, "Invalid params", parsed.error.issues),
-          );
-        }
-        try {
-          const result = await handleDashboardSummary({ appId, ...parsed.data });
-          const validated = DashboardSummaryResultSchema.safeParse(result);
-          if (!validated.success) {
-            req.log.error(validated.error, "dashboard.summary produced invalid response payload");
-            return reply.send(rpcErrorResponse(rpc.id, RpcErrorCode.INTERNAL_ERROR, "Internal error"));
-          }
-          return reply.send(rpcResultResponse(rpc.id, validated.data));
-        } catch (error) {
-          req.log.error(error);
-          return reply.send(rpcErrorResponse(rpc.id, RpcErrorCode.INTERNAL_ERROR, "Internal error"));
-        }
-      }
-      if (rpc.method === "withdrawal.quote") {
-        const parsed = WithdrawalQuoteParamsSchema.safeParse(rpc.params);
-        if (!parsed.success) {
-          return reply.send(
-            rpcErrorResponse(rpc.id, RpcErrorCode.INVALID_PARAMS, "Invalid params", parsed.error.issues),
-          );
-        }
-        try {
-          const result = await quoteWithdrawal({ appId, ...parsed.data });
-          const validated = WithdrawalQuoteResultSchema.safeParse(result);
-          if (!validated.success) {
-            req.log.error(validated.error, "withdrawal.quote produced invalid response payload");
-            return reply.send(rpcErrorResponse(rpc.id, RpcErrorCode.INTERNAL_ERROR, "Internal error"));
-          }
-          return reply.send(rpcResultResponse(rpc.id, validated.data));
-        } catch (error) {
-          if (error instanceof WithdrawalPolicyViolationError) {
-            return reply.send(rpcErrorResponse(rpc.id, RpcErrorCode.INVALID_PARAMS, error.message));
-          }
-          req.log.error(error);
-          return reply.send(rpcErrorResponse(rpc.id, RpcErrorCode.INTERNAL_ERROR, "Internal error"));
-        }
-      }
-      if (rpc.method === "withdrawal.request") {
-        const parsed = WithdrawalRequestParamsSchema.safeParse(rpc.params);
-        if (!parsed.success) {
-          return reply.send(
-            rpcErrorResponse(rpc.id, RpcErrorCode.INVALID_PARAMS, "Invalid params", parsed.error.issues),
-          );
-        }
-        try {
-          const result = await requestWithdrawal({ appId, ...parsed.data });
-          const validated = WithdrawalRequestResultSchema.safeParse(result);
-          if (!validated.success) {
-            req.log.error(validated.error, "withdrawal.request produced invalid response payload");
-            return reply.send(rpcErrorResponse(rpc.id, RpcErrorCode.INTERNAL_ERROR, "Internal error"));
-          }
-          return reply.send(rpcResultResponse(rpc.id, validated.data));
-        } catch (error) {
-          if (error instanceof InsufficientFundsError) {
-            return reply.send(
-              rpcErrorResponse(rpc.id, RpcErrorCode.INVALID_PARAMS, "Insufficient balance for withdrawal"),
-            );
-          }
-          if (error instanceof WithdrawalPolicyViolationError) {
-            return reply.send(rpcErrorResponse(rpc.id, RpcErrorCode.INVALID_PARAMS, error.message));
-          }
-          req.log.error(error);
-          return reply.send(rpcErrorResponse(rpc.id, RpcErrorCode.INTERNAL_ERROR, "Internal error"));
-        }
+      const methods: Record<string, MethodDef<any, any>> = {
+        "tip.create": {
+          paramsSchema: TipCreateParamsSchema,
+          resultSchema: TipCreateResultSchema,
+          handler: (params) => handleTipCreate({ ...params, appId }),
+          methodLabel: "tip.create",
+        },
+        "tip.status": {
+          paramsSchema: TipStatusParamsSchema,
+          resultSchema: TipStatusResultSchema,
+          handler: (params) => handleTipStatus({ ...params }),
+          errorMap: [
+            { match: (e) => e instanceof TipIntentNotFoundError, code: RpcErrorCode.TIP_NOT_FOUND, message: "Tip not found" },
+          ],
+          methodLabel: "tip.status",
+        },
+        "tip.settled_feed": {
+          paramsSchema: TipSettledFeedParamsSchema,
+          resultSchema: TipSettledFeedResultSchema,
+          handler: (params) => handleTipSettledFeed({ appId, ...params }),
+          methodLabel: "tip.settled_feed",
+        },
+        "dashboard.summary": {
+          paramsSchema: DashboardSummaryParamsSchema,
+          resultSchema: DashboardSummaryResultSchema,
+          handler: (params) => handleDashboardSummary({ appId, ...params }),
+          methodLabel: "dashboard.summary",
+        },
+        "withdrawal.quote": {
+          paramsSchema: WithdrawalQuoteParamsSchema,
+          resultSchema: WithdrawalQuoteResultSchema,
+          handler: (params) => quoteWithdrawal({ appId, ...params }),
+          errorMap: [
+            { match: (e) => e instanceof WithdrawalPolicyViolationError, code: RpcErrorCode.INVALID_PARAMS, message: (e) => e.message },
+          ],
+          methodLabel: "withdrawal.quote",
+        },
+        "withdrawal.request": {
+          paramsSchema: WithdrawalRequestParamsSchema,
+          resultSchema: WithdrawalRequestResultSchema,
+          handler: (params) => requestWithdrawal({ appId, ...params }),
+          errorMap: [
+            { match: (e) => e instanceof InsufficientFundsError, code: RpcErrorCode.INVALID_PARAMS, message: "Insufficient balance for withdrawal" },
+            { match: (e) => e instanceof WithdrawalPolicyViolationError, code: RpcErrorCode.INVALID_PARAMS, message: (e) => e.message },
+          ],
+          methodLabel: "withdrawal.request",
+        },
+      };
+
+      // tip.get is an alias for tip.status
+      methods["tip.get"] = methods["tip.status"];
+
+      const methodDef = methods[rpc.method];
+      if (methodDef) {
+        return dispatchMethod(methodDef, rpc.id, rpc.params, appId, req, reply);
       }
 
       return reply.send(rpcErrorResponse(rpc.id, RpcErrorCode.METHOD_NOT_FOUND, "Method not found"));

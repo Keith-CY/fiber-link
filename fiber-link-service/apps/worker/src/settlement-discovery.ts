@@ -4,6 +4,7 @@ import {
   createDbLedgerRepo,
   createDbTipIntentEventRepo,
   createDbTipIntentRepo,
+  toErrorMessage,
   type DbClient,
   type LedgerRepo,
   type SettlementFailureReason,
@@ -252,7 +253,7 @@ function classifySettlementError(error: unknown): SettlementErrorDecision {
     };
   }
 
-  const message = error instanceof Error ? error.message : String(error);
+  const message = toErrorMessage(error);
   if (TRANSIENT_MESSAGE_PATTERN.test(message)) {
     return {
       kind: "TRANSIENT",
@@ -350,7 +351,7 @@ export async function runSettlementDiscovery(options: SettlementDiscoveryOptions
         invoice: intent.invoice,
         appId: intent.appId,
         requestId: `settlement:${intent.invoice}`,
-        error: error instanceof Error ? error.message : String(error),
+        error: toErrorMessage(error),
       });
     }
   };
@@ -559,8 +560,8 @@ export async function runSettlementDiscovery(options: SettlementDiscoveryOptions
           invoice: intent.invoice,
           appId: intent.appId,
           requestId: `settlement:${intent.invoice}`,
-          error: handlerError instanceof Error ? handlerError.message : String(handlerError),
-          originalError: error instanceof Error ? error.message : String(error),
+          error: toErrorMessage(handlerError),
+          originalError: toErrorMessage(error),
         });
       }
     }

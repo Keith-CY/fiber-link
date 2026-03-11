@@ -14,7 +14,7 @@ export {
   resolveHotWalletLockScript,
 } from "./hot-wallet-inventory";
 
-export { createAdapter } from "./rpc-adapter";
+export { createAdapter } from "./rpc-adapter/index";
 export { createAdapterProvider } from "./provider";
 export { createSimulationAdapter } from "./simulation-adapter";
 export {

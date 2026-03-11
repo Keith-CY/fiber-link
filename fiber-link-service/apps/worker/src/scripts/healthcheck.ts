@@ -1,4 +1,4 @@
-import { createDbClient, createDbWithdrawalRepo } from "@fiber-link/db";
+import { createDbClient, createDbWithdrawalRepo, toErrorMessage } from "@fiber-link/db";
 
 const timeoutRaw = process.env.WORKER_READINESS_TIMEOUT_MS ?? "5000";
 const timeoutMs = Number(timeoutRaw);
@@ -26,7 +26,7 @@ async function checkDatabase(): Promise<CheckResult> {
   } catch (error) {
     return {
       status: "error",
-      message: error instanceof Error ? error.message : String(error),
+      message: toErrorMessage(error),
     };
   }
 }
@@ -48,7 +48,7 @@ async function checkCoreRpc(endpoint: string): Promise<CheckResult> {
   } catch (error) {
     return {
       status: "error",
-      message: error instanceof Error ? error.message : String(error),
+      message: toErrorMessage(error),
     };
   } finally {
     clearTimeout(timeout);

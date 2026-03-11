@@ -4,9 +4,8 @@ import {
   createDbClient,
   createDbLiquidityRequestRepo,
   createDbWithdrawalRepo,
-  formatDecimal,
-  parseDecimal,
-  pow10,
+  subtractDecimalStrings,
+  toErrorMessage,
   type LiquidityRequestRecord,
   type LiquidityRequestRepo,
   type WithdrawalRecord,
@@ -63,14 +62,6 @@ function sortWithdrawalsForPromotion(withdrawals: WithdrawalRecord[]) {
     }
     return left.id.localeCompare(right.id);
   });
-}
-
-function subtractDecimalStrings(left: string, right: string): string {
-  const a = parseDecimal(left);
-  const b = parseDecimal(right);
-  const scale = Math.max(a.scale, b.scale);
-  const value = a.value * pow10(scale - a.scale) - b.value * pow10(scale - b.scale);
-  return formatDecimal(value, scale);
 }
 
 function getMetadataString(metadata: LiquidityRequestRecord["metadata"], key: string): string | null {
@@ -258,7 +249,7 @@ export async function runLiquidityBatch(options: RunLiquidityBatchOptions) {
               metadata: {
                 ...(request.metadata ?? {}),
                 recoveryStrategy: "CHANNEL_ROTATION",
-                lastRotationError: error instanceof Error ? error.message : String(error),
+                lastRotationError: toErrorMessage(error),
               },
             });
           }

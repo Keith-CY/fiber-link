@@ -1,4 +1,4 @@
-import type { LedgerRepo, TipIntentRepo } from "@fiber-link/db";
+import { toErrorMessage, type LedgerRepo, type TipIntentRepo } from "@fiber-link/db";
 import { createComponentLogger, type WorkerLogContext } from "./logger";
 import { markSettled } from "./settlement";
 
@@ -159,7 +159,7 @@ export async function startSettlementSubscriptionRunner(
           logger.error("settlement.subscription.process_failed", {
             invoice,
             requestId: `settlement:${invoice}`,
-            error: error instanceof Error ? error.message : String(error),
+            error: toErrorMessage(error),
           });
         } finally {
           inFlight -= 1;
