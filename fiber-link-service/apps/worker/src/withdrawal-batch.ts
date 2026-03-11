@@ -4,6 +4,7 @@ import {
   createDbClient,
   createDbLedgerRepo,
   createDbWithdrawalRepo,
+  toErrorMessage,
   type LedgerRepo,
   type WithdrawalRecord,
   type WithdrawalRepo,
@@ -164,7 +165,7 @@ function classifyFiberRpcError(error: FiberRpcError): ExecutionFailureKind {
 }
 
 function classifyExecutionError(error: unknown): { kind: "transient" | "permanent"; reason: string } {
-  const message = error instanceof Error ? error.message : String(error);
+  const message = toErrorMessage(error);
   if (error instanceof WithdrawalExecutionError) {
     return { kind: error.kind, reason: message };
   }

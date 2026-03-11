@@ -1,3 +1,7 @@
+export function toErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 export type ParsedDecimal = { value: bigint; scale: number };
 
 export class InvalidAmountError extends Error {
@@ -85,5 +89,13 @@ export function addDecimalStrings(left: string, right: string): string {
   const b = parseDecimal(right);
   const scale = Math.max(a.scale, b.scale);
   const value = a.value * pow10(scale - a.scale) + b.value * pow10(scale - b.scale);
+  return formatDecimal(value, scale);
+}
+
+export function subtractDecimalStrings(left: string, right: string): string {
+  const a = parseDecimal(left);
+  const b = parseDecimal(right);
+  const scale = Math.max(a.scale, b.scale);
+  const value = a.value * pow10(scale - a.scale) - b.value * pow10(scale - b.scale);
   return formatDecimal(value, scale);
 }

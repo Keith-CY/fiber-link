@@ -11,6 +11,7 @@ import {
   createInMemoryLedgerRepo,
   createInMemoryTipIntentRepo,
   createInMemoryWithdrawalRepo,
+  toErrorMessage,
   type LedgerRepo,
   type TipIntentRepo,
   type WithdrawalRepo,
@@ -294,7 +295,7 @@ async function loadFixture(path: string): Promise<Record<string, unknown>> {
   try {
     parsed = JSON.parse(raw);
   } catch (error) {
-    throw new Error(`fixture file '${path}' is not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(`fixture file '${path}' is not valid JSON: ${toErrorMessage(error)}`);
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
     throw new Error(`fixture file '${path}' must contain a JSON object`);

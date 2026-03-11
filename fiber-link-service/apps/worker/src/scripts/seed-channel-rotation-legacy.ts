@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { compareDecimalStrings, formatDecimal, parseDecimal, pow10 } from "@fiber-link/db";
+import { compareDecimalStrings, formatDecimal, parseDecimal, pow10, toErrorMessage } from "@fiber-link/db";
 import { createAdapter, type ChannelRecord } from "@fiber-link/fiber-adapter";
 import { computeRequiredOpenFundingAmount } from "../channel-rotation";
 
@@ -465,6 +465,6 @@ async function main() {
 }
 
 void main().catch((error) => {
-  console.error(error instanceof Error ? error.message : String(error));
+  console.error(toErrorMessage(error));
   process.exit(1);
 });
