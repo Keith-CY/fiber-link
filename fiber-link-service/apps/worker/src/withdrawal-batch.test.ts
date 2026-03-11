@@ -89,7 +89,7 @@ describe("runWithdrawalBatch", () => {
       repo,
     });
     await runWithdrawalBatch({
-      now: new Date("2026-02-07T10:02:00.000Z"),
+      now: new Date("2026-02-07T10:03:00.000Z"),
       maxRetries: 2,
       retryDelayMs: 60_000,
       executeWithdrawal,
@@ -100,6 +100,44 @@ describe("runWithdrawalBatch", () => {
     expect(saved.state).toBe("FAILED");
     expect(saved.retryCount).toBe(2);
     expect(saved.nextRetryAt).toBeNull();
+  });
+
+  it("uses exponential backoff when scheduling a second transient retry", async () => {
+    const created = await repo.create({
+      appId: "app1",
+      userId: "u1",
+      asset: "USDI",
+      amount: "10",
+      toAddress: "ckt1q...",
+    });
+
+    const executeWithdrawal = async () =>
+      ({
+        ok: false,
+        kind: "transient",
+        reason: "temporary network issue",
+      }) as const;
+
+    await runWithdrawalBatch({
+      now: new Date("2026-02-07T10:00:00.000Z"),
+      maxRetries: 3,
+      retryDelayMs: 60_000,
+      executeWithdrawal,
+      repo,
+    });
+
+    await runWithdrawalBatch({
+      now: new Date("2026-02-07T10:01:00.000Z"),
+      maxRetries: 3,
+      retryDelayMs: 60_000,
+      executeWithdrawal,
+      repo,
+    });
+
+    const saved = await repo.findByIdOrThrow(created.id);
+    expect(saved.state).toBe("RETRY_PENDING");
+    expect(saved.retryCount).toBe(2);
+    expect(saved.nextRetryAt?.toISOString()).toBe("2026-02-07T10:03:00.000Z");
   });
 
   it("treats unexpected executor exception as permanent failure", async () => {

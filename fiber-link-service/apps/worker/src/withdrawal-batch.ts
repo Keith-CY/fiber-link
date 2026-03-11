@@ -1,6 +1,7 @@
 import {
   WithdrawalNotFoundError,
   WithdrawalTransitionConflictError,
+  computeRetryDelay,
   createDbClient,
   createDbLedgerRepo,
   createDbWithdrawalRepo,
@@ -260,9 +261,10 @@ export async function runWithdrawalBatch(options: RunWithdrawalBatchOptions = {}
           error: result.reason,
         });
       } else {
+        const computedRetryDelayMs = computeRetryDelay(retryDelayMs, current.retryCount);
         const retryRecord = await repo.markRetryPending(item.id, {
           now,
-          nextRetryAt: new Date(now.getTime() + retryDelayMs),
+          nextRetryAt: new Date(now.getTime() + computedRetryDelayMs),
           error: result.reason,
         });
         retryPending += 1;
@@ -275,7 +277,7 @@ export async function runWithdrawalBatch(options: RunWithdrawalBatchOptions = {}
           asset: retryRecord.asset,
           amount: retryRecord.amount,
           retryCount: retryRecord.retryCount,
-          nextRetryAt: retryRecord.nextRetryAt ?? new Date(now.getTime() + retryDelayMs),
+          nextRetryAt: retryRecord.nextRetryAt ?? new Date(now.getTime() + computedRetryDelayMs),
           error: result.reason,
         });
       }

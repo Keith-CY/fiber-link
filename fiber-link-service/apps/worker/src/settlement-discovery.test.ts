@@ -326,6 +326,57 @@ describe("runSettlementDiscovery", () => {
     expect(saved.settlementFailureReason).toBeNull();
   });
 
+  it("uses exponential backoff when scheduling a second transient settlement retry", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-02-11T15:00:00.000Z"));
+      await tipIntentRepo.create({
+        appId: "app-a",
+        postId: "p-retry-backoff",
+        fromUserId: "u1",
+        toUserId: "u2",
+        asset: "USDI",
+        amount: "10",
+        invoice: "inv-retry-backoff",
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+
+    const adapter = {
+      getInvoiceStatus: vi.fn(async () => {
+        throw new FiberRpcError("internal error", -32603);
+      }),
+    };
+
+    await runDiscovery({
+      limit: 100,
+      tipIntentRepo,
+      ledgerRepo,
+      adapter,
+      maxRetries: 3,
+      retryDelayMs: 60_000,
+      pendingTimeoutMs: 30 * 60_000,
+      nowMsFn: () => new Date("2026-02-11T15:05:00.000Z").getTime(),
+    });
+
+    await runDiscovery({
+      limit: 100,
+      tipIntentRepo,
+      ledgerRepo,
+      adapter,
+      maxRetries: 3,
+      retryDelayMs: 60_000,
+      pendingTimeoutMs: 30 * 60_000,
+      nowMsFn: () => new Date("2026-02-11T15:06:00.000Z").getTime(),
+    });
+
+    const saved = await tipIntentRepo.findByInvoiceOrThrow("inv-retry-backoff");
+    expect(saved.invoiceState).toBe("UNPAID");
+    expect(saved.settlementRetryCount).toBe(2);
+    expect(saved.settlementNextRetryAt?.toISOString()).toBe("2026-02-11T15:08:00.000Z");
+  });
+
   it("marks long-pending unpaid settlements as terminal timeout failures", async () => {
     vi.useFakeTimers();
     try {
