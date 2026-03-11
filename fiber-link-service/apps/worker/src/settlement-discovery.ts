@@ -1,5 +1,6 @@
 import { FiberRpcError, createAdapter } from "@fiber-link/fiber-adapter";
 import {
+  computeRetryDelay,
   createDbClient,
   createDbLedgerRepo,
   createDbTipIntentEventRepo,
@@ -501,7 +502,8 @@ export async function runSettlementDiscovery(options: SettlementDiscoveryOptions
             continue;
           }
 
-          const nextRetryAt = new Date(nowMs + retryDelayMs);
+          const computedRetryDelayMs = computeRetryDelay(retryDelayMs, intent.settlementRetryCount);
+          const nextRetryAt = new Date(nowMs + computedRetryDelayMs);
           await tipIntentRepo.markSettlementRetryPending(intent.invoice, {
             now,
             nextRetryAt,

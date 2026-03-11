@@ -6,6 +6,7 @@ import {
   createInMemoryWithdrawalPolicyRepo,
   createInMemoryWithdrawalRepo,
 } from "@fiber-link/db";
+import { WithdrawalPolicyViolationError as ExtractedWithdrawalPolicyViolationError } from "./withdrawal-policy";
 import { WithdrawalPolicyViolationError, requestWithdrawal } from "./withdrawal";
 
 describe("quoteWithdrawal", () => {
@@ -1047,5 +1048,16 @@ describe("requestWithdrawal", () => {
       if (previousCooldown === undefined) delete process.env.FIBER_WITHDRAWAL_POLICY_COOLDOWN_SECONDS;
       else process.env.FIBER_WITHDRAWAL_POLICY_COOLDOWN_SECONDS = previousCooldown;
     }
+  });
+});
+
+describe("withdrawal module interop", () => {
+  it("re-exports the extracted WithdrawalPolicyViolationError for instanceof compatibility", () => {
+    const error = new ExtractedWithdrawalPolicyViolationError(
+      "MAX_PER_REQUEST_EXCEEDED",
+      "withdrawal amount 999 exceeds per-request limit 5000",
+    );
+
+    expect(error).toBeInstanceOf(WithdrawalPolicyViolationError);
   });
 });
