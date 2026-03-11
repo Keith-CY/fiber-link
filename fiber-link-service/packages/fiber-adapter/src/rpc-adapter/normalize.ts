@@ -82,6 +82,16 @@ export function parseBoolean(input: string | undefined): boolean | undefined {
   return undefined;
 }
 
+export function pickTxEvidence(result: Record<string, unknown> | undefined): string | null {
+  const candidates = [result?.tx_hash, result?.txHash, result?.payment_hash, result?.paymentHash, result?.hash];
+  for (const value of candidates) {
+    if (typeof value === "string" && value) {
+      return value;
+    }
+  }
+  return null;
+}
+
 export function parsePositiveInteger(input: string | undefined): number | undefined {
   if (typeof input !== "string") {
     return undefined;

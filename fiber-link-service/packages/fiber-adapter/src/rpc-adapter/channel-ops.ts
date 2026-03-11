@@ -1,6 +1,6 @@
 import { FiberRpcError, rpcCall } from "../fiber-client";
-import { normalizeRpcAmount, normalizeRpcInteger, pickRequiredAmount, pickStringCandidate, toHexQuantity } from "./normalize";
-import { rpcCallWithoutParams } from "./invoice-ops";
+import { normalizeRpcAmount, normalizeRpcInteger, pickRequiredAmount, pickStringCandidate, pickTxEvidence, toHexQuantity } from "./normalize";
+import { rpcCallWithoutParams, toRpcUdtTypeScript } from "./invoice-ops";
 import type {
   AcceptChannelArgs,
   AcceptChannelResult,
@@ -13,16 +13,7 @@ import type {
   OpenChannelResult,
   ShutdownChannelArgs,
   ShutdownChannelResult,
-  UdtTypeScript,
 } from "../types";
-
-function toRpcUdtTypeScript(script: UdtTypeScript) {
-  return {
-    code_hash: script.codeHash,
-    hash_type: script.hashType,
-    args: script.args,
-  };
-}
 
 function normalizeRpcChannelState(value: unknown): string {
   const candidate =
@@ -113,16 +104,6 @@ async function probeChannelLifecycleSupport(endpoint: string): Promise<boolean> 
     }
     throw error;
   }
-}
-
-function pickTxEvidence(result: Record<string, unknown> | undefined): string | null {
-  const candidates = [result?.tx_hash, result?.txHash, result?.payment_hash, result?.paymentHash, result?.hash];
-  for (const value of candidates) {
-    if (typeof value === "string" && value) {
-      return value;
-    }
-  }
-  return null;
 }
 
 export async function listChannels(

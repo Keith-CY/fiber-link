@@ -2,22 +2,12 @@ import { createHash } from "node:crypto";
 import { rpcCall } from "../fiber-client";
 import { executeCkbOnchainWithdrawal } from "../ckb-onchain-withdrawal";
 import { executeUdtOnchainWithdrawal } from "../udt-onchain-withdrawal";
-import { toHexQuantity } from "./normalize";
+import { pickTxEvidence, toHexQuantity } from "./normalize";
 import { mapAssetToCurrency, pickPaymentHash, resolveUsdiUdtScript, toWithdrawalUdtTypeScript } from "./invoice-ops";
 import type { Asset, ExecuteWithdrawalArgs } from "../types";
 
 function generateFallbackRequestId({ invoice, amount, asset }: { invoice: string; amount: string; asset: Asset }) {
   return `fiber:${createHash("sha256").update(`${invoice}|${amount}|${asset}`).digest("hex").slice(0, 20)}`;
-}
-
-function pickTxEvidence(result: Record<string, unknown> | undefined): string | null {
-  const candidates = [result?.tx_hash, result?.txHash, result?.payment_hash, result?.paymentHash, result?.hash];
-  for (const value of candidates) {
-    if (typeof value === "string" && value) {
-      return value;
-    }
-  }
-  return null;
 }
 
 export async function executeWithdrawal(
@@ -60,5 +50,3 @@ export async function executeWithdrawal(
   }
   return { txHash };
 }
-
-export { pickTxEvidence };
