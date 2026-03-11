@@ -66,7 +66,7 @@ describe("decideWithdrawalRequestLiquidity", () => {
       asset: "CKB",
       network: "AGGRON4",
       sourceKind: "FIBER_TO_CKB_CHAIN",
-      requiredAmount: "1",
+      requiredAmount: "62",
     });
   });
 
@@ -99,11 +99,13 @@ describe("decideWithdrawalRequestLiquidity", () => {
     const requests = liquidityRequestRepo.__listForTests?.() ?? [];
     expect(requests).toHaveLength(1);
     expect(requests[0]).toMatchObject({
-      requiredAmount: "63",
+      requiredAmount: "124",
       metadata: expect.objectContaining({
+        changeReserveAmount: "61",
+        effectivePostTxReserveAmount: "61",
         requiredAvailableAmount: "61",
-        targetAvailableAmount: "123",
-        requestedRebalanceAmount: "63",
+        targetAvailableAmount: "184",
+        requestedRebalanceAmount: "124",
         feeBufferAmount: "1",
         postTxReserveAmount: "0",
         warmBufferAmount: "61",
@@ -176,7 +178,7 @@ describe("decideWithdrawalRequestLiquidity", () => {
     expect(result.state).toBe("LIQUIDITY_PENDING");
     expect(result.liquidityRequestId).toBe(existing.id);
     await expect(liquidityRequestRepo.findByIdOrThrow(existing.id)).resolves.toMatchObject({
-      requiredAmount: "51",
+      requiredAmount: "112",
     });
   });
 

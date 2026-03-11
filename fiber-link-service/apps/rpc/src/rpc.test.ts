@@ -805,31 +805,39 @@ describe("json-rpc", () => {
       nonce,
     });
 
-    const res = await app.inject({
-      method: "POST",
-      url: "/rpc",
-      payload,
-      headers: {
-        "content-type": "application/json",
-        "x-app-id": "app1",
-        "x-ts": ts,
-        "x-nonce": nonce,
-        "x-signature": signature,
-      },
-    });
+    const previousWithdrawalSigner = process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY;
+    process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY = `0x${"11".repeat(32)}`;
 
-    expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({
-      jsonrpc: "2.0",
-      id: "wd-req-live-liquidity",
-      result: {
-        id: expect.any(String),
-        state: "LIQUIDITY_PENDING",
-      },
-    });
-    const created = repo.__resetForTests ? await repo.findByIdOrThrow(res.json().result.id) : null;
-    expect(created?.state).toBe("LIQUIDITY_PENDING");
-    expect(liquidityRequestRepo.__listForTests?.()).toHaveLength(1);
+    try {
+      const res = await app.inject({
+        method: "POST",
+        url: "/rpc",
+        payload,
+        headers: {
+          "content-type": "application/json",
+          "x-app-id": "app1",
+          "x-ts": ts,
+          "x-nonce": nonce,
+          "x-signature": signature,
+        },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({
+        jsonrpc: "2.0",
+        id: "wd-req-live-liquidity",
+        result: {
+          id: expect.any(String),
+          state: "LIQUIDITY_PENDING",
+        },
+      });
+      const created = repo.__resetForTests ? await repo.findByIdOrThrow(res.json().result.id) : null;
+      expect(created?.state).toBe("LIQUIDITY_PENDING");
+      expect(liquidityRequestRepo.__listForTests?.()).toHaveLength(1);
+    } finally {
+      if (previousWithdrawalSigner === undefined) delete process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY;
+      else process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY = previousWithdrawalSigner;
+    }
   });
 
   it("returns invalid params when withdrawal policy rejects request", async () => {
