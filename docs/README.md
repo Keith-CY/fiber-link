@@ -50,7 +50,7 @@
 
 ## Admin installation
 
-- `docs/admin-installation.md` — admin installation and verification flow for Discourse + compose deployment.
+- `docs/admin-installation.md` — admin installation and verification flow for Discourse + compose deployment, including the standalone plugin mirror repo used for operator installs.
 
 ## Milestone acceptance
 

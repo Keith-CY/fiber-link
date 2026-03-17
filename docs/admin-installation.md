@@ -70,18 +70,44 @@ docker compose down
 
 ## 3) Install and enable the Discourse plugin
 
-The plugin directory is `fiber-link-discourse-plugin/`.
+The plugin source of truth in this repo is `fiber-link-discourse-plugin/`.
 
-### Install path
+For operator installs, use the standalone plugin repository:
 
-From your Discourse app directory:
+- `https://github.com/Keith-CY/fiber-link-discourse-plugin`
+
+That repository is mirrored from this monorepo by GitHub Actions and is the preferred distribution target for self-hosted Discourse admins.
+
+### Preferred install path for self-hosted Discourse
+
+If your Discourse site runs from the standard Docker app container, add the standalone plugin repository to `containers/app.yml` and rebuild:
+
+```yaml
+hooks:
+  after_code:
+    - exec:
+        cd: $home/plugins
+        cmd:
+          - git clone https://github.com/Keith-CY/fiber-link-discourse-plugin.git
+```
+
+Then run:
+
+```bash
+cd /var/discourse
+./launcher rebuild app
+```
+
+### Local development alternative
+
+For local development against this monorepo, you can still link the plugin subdirectory directly into a Discourse checkout:
 
 ```bash
 cd /path/to/discourse
 ln -sfn /path/to/fiber-link/fiber-link-discourse-plugin plugins/fiber-link
 ```
 
-Restart/discover your Discourse app and then configure:
+Restart/rebuild your Discourse app and then configure:
 
 - `Admin > Settings > Plugins > fiber_link_enabled` = `true`
 - `fiber_link_service_url` = reachable RPC URL (example: `http://127.0.0.1:3000`)
@@ -131,7 +157,8 @@ Then:
 - Revoke/reset `FIBER_LINK_HMAC_SECRET`, `FIBER_SECRET_KEY_PASSWORD`.
 - Remove plugin from Discourse:
   - disable plugin setting
-  - remove `plugins/fiber-link` symlink if used for testing
+  - remove `plugins/fiber-link` symlink if used for local testing
+  - remove the standalone plugin checkout from your Discourse `plugins/` directory or from `containers/app.yml` before the next rebuild
 - Re-run `.env` creation with a clean minimal configuration and repeat startup steps.
 
 ## 6) Verification record

@@ -1,0 +1,57 @@
+name: Sync Discourse Plugin Mirror
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - fiber-link-discourse-plugin/**
+      - .github/workflows/sync-discourse-plugin-mirror.yml
+  workflow_dispatch:
+
+concurrency:
+  group: discourse-plugin-mirror
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure Git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Configure SSH for mirror push
+        env:
+          DISCOURSE_PLUGIN_MIRROR_SSH_KEY: ${{ secrets.DISCOURSE_PLUGIN_MIRROR_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          [ -n "${DISCOURSE_PLUGIN_MIRROR_SSH_KEY:-}" ] || {
+            echo "Missing DISCOURSE_PLUGIN_MIRROR_SSH_KEY secret" >&2
+            exit 1
+          }
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DISCOURSE_PLUGIN_MIRROR_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
+
+      - name: Mirror plugin subtree to standalone repository
+        run: |
+          set -euo pipefail
+          remote_name="plugin-mirror"
+          remote_url="git@github.com:Keith-CY/fiber-link-discourse-plugin.git"
+          split_branch="plugin-mirror-${GITHUB_RUN_ID}"
+
+          git remote remove "$remote_name" 2>/dev/null || true
+          git remote add "$remote_name" "$remote_url"
+
+          git subtree split --prefix=fiber-link-discourse-plugin --branch "$split_branch"
+          git push --force "$remote_name" "${split_branch}:refs/heads/main"
+          git branch -D "$split_branch"
