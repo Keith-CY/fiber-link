@@ -74,7 +74,7 @@ The plugin source of truth in this repo is `fiber-link-discourse-plugin/`.
 
 For operator installs, use the standalone plugin repository:
 
-- `https://github.com/Keith-CY/fiber-link-discourse-plugin`
+- [fiber-link-discourse-plugin](https://github.com/Keith-CY/fiber-link-discourse-plugin)
 
 That repository is mirrored from this monorepo by GitHub Actions and is the preferred distribution target for self-hosted Discourse admins.
 

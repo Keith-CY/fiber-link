@@ -4,8 +4,8 @@ This repository is the standalone distribution mirror for the Fiber Link Discour
 
 The source of truth lives in the monorepo at:
 
-- `Keith-CY/fiber-link`
-- subdirectory: `fiber-link-discourse-plugin/`
+- [`Keith-CY/fiber-link`](https://github.com/Keith-CY/fiber-link)
+- subdirectory: [`fiber-link-discourse-plugin/`](https://github.com/Keith-CY/fiber-link/tree/main/fiber-link-discourse-plugin)
 
 Changes to this mirror are synced from the monorepo by GitHub Actions.
 
