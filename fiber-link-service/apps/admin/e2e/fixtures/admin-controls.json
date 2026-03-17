@@ -1,0 +1,53 @@
+{
+  "apps": [
+    {
+      "appId": "app-alpha",
+      "createdAt": "2026-03-18T00:00:00.000Z"
+    },
+    {
+      "appId": "app-beta",
+      "createdAt": "2026-03-18T00:00:00.000Z"
+    }
+  ],
+  "withdrawals": [
+    {
+      "id": "withdrawal-1",
+      "appId": "app-alpha",
+      "userId": "creator-1",
+      "asset": "USDI",
+      "amount": "25",
+      "state": "PENDING",
+      "createdAt": "2026-03-18T00:00:00.000Z",
+      "txHash": null
+    },
+    {
+      "id": "withdrawal-2",
+      "appId": "app-beta",
+      "userId": "creator-2",
+      "asset": "CKB",
+      "amount": "61",
+      "state": "COMPLETED",
+      "createdAt": "2026-03-18T00:10:00.000Z",
+      "txHash": "0xabc123"
+    }
+  ],
+  "policies": [
+    {
+      "appId": "app-alpha",
+      "allowedAssets": [
+        "CKB",
+        "USDI"
+      ],
+      "maxPerRequest": "5000",
+      "perUserDailyMax": "20000",
+      "perAppDailyMax": "200000",
+      "cooldownSeconds": 120,
+      "updatedBy": "admin-1",
+      "createdAt": "2026-03-18T00:00:00.000Z",
+      "updatedAt": "2026-03-18T00:00:00.000Z"
+    }
+  ],
+  "communityAdminAppIds": [
+    "app-alpha"
+  ]
+}

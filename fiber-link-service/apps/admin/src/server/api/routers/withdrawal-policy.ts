@@ -1,83 +1,8 @@
 import { TRPCError } from "@trpc/server";
-import { assertPositiveAmount, compareDecimalStrings, withdrawalPolicies, type Asset } from "@fiber-link/db";
+import { withdrawalPolicies } from "@fiber-link/db";
 import { requireRole } from "../../auth/roles";
 import { t } from "../trpc";
-
-type WithdrawalPolicyInput = {
-  appId: string;
-  allowedAssets: Asset[];
-  maxPerRequest: string;
-  perUserDailyMax: string;
-  perAppDailyMax: string;
-  cooldownSeconds: number;
-};
-
-function isSupportedAsset(value: unknown): value is Asset {
-  return value === "CKB" || value === "USDI";
-}
-
-function parseUpsertInput(raw: unknown): WithdrawalPolicyInput {
-  if (!raw || typeof raw !== "object") {
-    throw new TRPCError({ code: "BAD_REQUEST", message: "input must be an object" });
-  }
-  const input = raw as Record<string, unknown>;
-
-  const appId = typeof input.appId === "string" ? input.appId.trim() : "";
-  if (!appId) {
-    throw new TRPCError({ code: "BAD_REQUEST", message: "appId is required" });
-  }
-
-  if (!Array.isArray(input.allowedAssets)) {
-    throw new TRPCError({ code: "BAD_REQUEST", message: "allowedAssets must be an array" });
-  }
-
-  const normalizedAssets = Array.from(new Set(input.allowedAssets.filter(isSupportedAsset)));
-  if (normalizedAssets.length === 0) {
-    throw new TRPCError({ code: "BAD_REQUEST", message: "allowedAssets must include CKB or USDI" });
-  }
-
-  const maxPerRequest = typeof input.maxPerRequest === "string" ? input.maxPerRequest.trim() : "";
-  const perUserDailyMax = typeof input.perUserDailyMax === "string" ? input.perUserDailyMax.trim() : "";
-  const perAppDailyMax = typeof input.perAppDailyMax === "string" ? input.perAppDailyMax.trim() : "";
-  if (!maxPerRequest || !perUserDailyMax || !perAppDailyMax) {
-    throw new TRPCError({
-      code: "BAD_REQUEST",
-      message: "maxPerRequest, perUserDailyMax, and perAppDailyMax are required",
-    });
-  }
-
-  try {
-    assertPositiveAmount(maxPerRequest);
-    assertPositiveAmount(perUserDailyMax);
-    assertPositiveAmount(perAppDailyMax);
-  } catch {
-    throw new TRPCError({
-      code: "BAD_REQUEST",
-      message: "maxPerRequest, perUserDailyMax, and perAppDailyMax must be positive decimals",
-    });
-  }
-
-  if (compareDecimalStrings(maxPerRequest, perUserDailyMax) > 0) {
-    throw new TRPCError({
-      code: "BAD_REQUEST",
-      message: "maxPerRequest must be <= perUserDailyMax",
-    });
-  }
-
-  const cooldownSeconds = Number(input.cooldownSeconds);
-  if (!Number.isInteger(cooldownSeconds) || cooldownSeconds < 0) {
-    throw new TRPCError({ code: "BAD_REQUEST", message: "cooldownSeconds must be an integer >= 0" });
-  }
-
-  return {
-    appId,
-    allowedAssets: normalizedAssets,
-    maxPerRequest,
-    perUserDailyMax,
-    perAppDailyMax,
-    cooldownSeconds,
-  };
-}
+import { parseWithdrawalPolicyInput } from "../../../withdrawal-policy-input";
 
 export const withdrawalPolicyRouter = t.router({
   list: t.procedure.query(async ({ ctx }) => {
@@ -130,7 +55,15 @@ export const withdrawalPolicyRouter = t.router({
       throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB not configured" });
     }
 
-    const parsed = parseUpsertInput(input);
+    let parsed;
+    try {
+      parsed = parseWithdrawalPolicyInput(input);
+    } catch (error) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: error instanceof Error ? error.message : "invalid withdrawal policy input",
+      });
+    }
 
     if (ctx.role === "COMMUNITY_ADMIN") {
       if (!ctx.adminUserId) {

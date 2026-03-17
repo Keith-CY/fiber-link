@@ -54,6 +54,44 @@ jobs:
         working-directory: fiber-link-service/packages/db
         run: bun run test -- --run --silent
 
+  admin-controls-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.1.8
+      - name: Cache Bun install artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.bun/install/cache
+            fiber-link-service/node_modules
+          key: ${{ runner.os }}-bun-${{ hashFiles('fiber-link-service/bun.lockb') }}-admin-controls-e2e
+          restore-keys: |
+            ${{ runner.os }}-bun-
+      - name: Install dependencies
+        working-directory: fiber-link-service
+        run: bun install --frozen-lockfile
+      - name: Install Playwright Chromium
+        working-directory: fiber-link-service/apps/admin
+        run: bunx playwright install --with-deps chromium
+      - name: Run admin controls e2e
+        working-directory: fiber-link-service/apps/admin
+        env:
+          ADMIN_E2E_ARTIFACT_ROOT: .artifacts/admin-controls-e2e
+        run: bun run test:e2e -- e2e/admin-controls.spec.ts
+      - name: Upload admin controls e2e artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: admin-controls-e2e-artifacts
+          path: fiber-link-service/apps/admin/.artifacts/admin-controls-e2e
+          if-no-files-found: warn
+
 
   coverage-comment:
     name: Coverage Comment

@@ -3,12 +3,17 @@
   "private": true,
   "scripts": {
     "test": "vitest",
+    "test:e2e": "playwright test --config=playwright.config.ts",
+    "serve:console": "bun run src/scripts/admin-console-server.ts",
     "policy:withdrawal": "bun run src/scripts/manage-withdrawal-policy.ts"
   },
   "dependencies": {
-    "@trpc/server": "^10.45.2"
+    "@fastify/formbody": "^7.4.0",
+    "@trpc/server": "^10.45.2",
+    "fastify": "^4.28.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.52.0",
     "vitest": "^1.6.0",
     "typescript": "^5.6.0"
   }

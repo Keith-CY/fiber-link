@@ -9,7 +9,7 @@ This note closes the production-hardening gaps identified in the audit and recor
 
 | Area | Completion | Maturity | Current operator path |
 | --- | --- | --- | --- |
-| Admin controls | Implemented | Near-ready | `manage-withdrawal-policy.ts` + dashboard policy visibility |
+| Admin controls | Implemented | Near-ready | browser-editable admin console + `manage-withdrawal-policy.ts` |
 | Monitoring | Implemented | Near-ready | `deploy/compose/compose-ops-summary.sh` + thresholded JSON/exit codes |
 | Rate limiting | Implemented | Near-ready | shared Redis-backed limiter via `FIBER_LINK_RATE_LIMIT_REDIS_URL` |
 | Backups | Implemented | Near-ready | `capture-compose-backup.sh` + `restore-compose-backup.sh` |
@@ -23,9 +23,11 @@ This note closes the production-hardening gaps identified in the audit and recor
   - `fiber-link-service/apps/admin/src/scripts/manage-withdrawal-policy.ts`
 - Tested operator module:
   - `fiber-link-service/apps/admin/src/withdrawal-policy-ops.test.ts`
-- Read-only dashboard visibility:
-  - `fiber-link-service/apps/admin/src/pages/dashboard-data.ts`
-  - `fiber-link-service/apps/admin/src/pages/index.tsx`
+- Browser-editable admin console:
+  - `fiber-link-service/apps/admin/src/server/admin-console-server.ts`
+  - `fiber-link-service/apps/admin/src/scripts/admin-console-server.ts`
+  - `fiber-link-service/apps/admin/src/server/admin-console-server.test.ts`
+  - `fiber-link-service/apps/admin/e2e/admin-controls.spec.ts`
 - Runbook:
   - `docs/runbooks/withdrawal-policy-operations.md`
 

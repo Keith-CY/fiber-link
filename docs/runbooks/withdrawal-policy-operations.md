@@ -12,7 +12,7 @@ The command manages `withdrawal_policies` rows for:
 - per-app daily max
 - cooldown seconds
 
-The admin web dashboard is read-only for policy visibility. Production changes should go through the script below so the operator can capture structured JSON output and a trusted actor ID.
+The admin web dashboard now supports browser-based policy edits for day-to-day operator work. Keep the script below for automation, ticket attachments, and any change that needs structured JSON output plus an explicit trusted actor trail.
 
 ## Prerequisites
 
@@ -21,6 +21,15 @@ The admin web dashboard is read-only for policy visibility. Production changes s
 - `ADMIN_USER_ID` is the trusted operator identity recorded in `updated_by`
 
 ## Review Current Policy State
+
+The browser UI is the fastest way to inspect and compare current limits across apps:
+
+```bash
+cd fiber-link-service/apps/admin
+bun run serve:console
+```
+
+By default the console serves on `http://127.0.0.1:4318/`. Use the CLI below when you need JSON output attached to a change record.
 
 ```bash
 ADMIN_ROLE=SUPER_ADMIN \
@@ -39,6 +48,8 @@ Attach the JSON output to the change request or release ticket.
 
 ## Upsert a Policy
 
+Use the browser UI for scoped edits when an operator needs immediate visual confirmation of asset allowlists, thresholds, and cooldowns. Use the CLI path below when the change must be captured as structured output.
+
 ```bash
 ADMIN_ROLE=SUPER_ADMIN \
 ADMIN_USER_ID=ops-admin-1 \
@@ -56,6 +67,7 @@ For `COMMUNITY_ADMIN`, the command is scoped by `app_admins` membership and will
 
 ## Change-Control Expectations
 
+- prefer the browser UI for quick review/diff of current settings before editing
 - review current values with `list` before any edit
 - record the prior JSON payload in the ticket so rollback values are explicit
 - require non-empty `ADMIN_USER_ID` for every production upsert
