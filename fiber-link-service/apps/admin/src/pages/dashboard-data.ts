@@ -1,5 +1,6 @@
 import { createDbClient, type DbClient, type UserRole, type WithdrawalState } from "@fiber-link/db";
 import { appRouter } from "../server/api/routers/app";
+import { withdrawalPolicyRouter } from "../server/api/routers/withdrawal-policy";
 import { withdrawalRouter } from "../server/api/routers/withdrawal";
 import type { TrpcContext } from "../server/api/trpc";
 
@@ -26,6 +27,18 @@ export type DashboardStatusSummary = {
   count: number;
 };
 
+export type DashboardWithdrawalPolicy = {
+  appId: string;
+  allowedAssets: Array<"CKB" | "USDI">;
+  maxPerRequest: string;
+  perUserDailyMax: string;
+  perAppDailyMax: string;
+  cooldownSeconds: number;
+  updatedBy: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 type DashboardLoadingState = {
   status: "loading";
 };
@@ -42,6 +55,7 @@ type DashboardReadyState = {
   apps: DashboardApp[];
   withdrawals: DashboardWithdrawal[];
   statusSummaries: DashboardStatusSummary[];
+  policies: DashboardWithdrawalPolicy[];
 };
 
 export type DashboardPageState = DashboardLoadingState | DashboardErrorState | DashboardReadyState;
@@ -74,6 +88,7 @@ export type DashboardDataDependencies = {
   createDb: () => DbClient;
   listApps: (ctx: TrpcContext) => Promise<DashboardApp[]>;
   listWithdrawals: (ctx: TrpcContext) => Promise<DashboardWithdrawal[]>;
+  listPolicies: (ctx: TrpcContext) => Promise<DashboardWithdrawalPolicy[]>;
 };
 
 const WITHDRAWAL_STATE_ORDER: WithdrawalState[] = [
@@ -105,6 +120,20 @@ const DEFAULT_DATA_DEPENDENCIES: DashboardDataDependencies = {
       state: row.state,
       createdAt: row.createdAt.toISOString(),
       txHash: row.txHash ?? null,
+    }));
+  },
+  listPolicies: async (ctx) => {
+    const rows = await withdrawalPolicyRouter.createCaller(ctx).list();
+    return rows.map((row) => ({
+      appId: row.appId,
+      allowedAssets: row.allowedAssets,
+      maxPerRequest: row.maxPerRequest,
+      perUserDailyMax: row.perUserDailyMax,
+      perAppDailyMax: row.perAppDailyMax,
+      cooldownSeconds: row.cooldownSeconds,
+      updatedBy: row.updatedBy ?? null,
+      createdAt: row.createdAt.toISOString(),
+      updatedAt: row.updatedAt.toISOString(),
     }));
   },
 };
@@ -175,7 +204,11 @@ export async function loadDashboardState(
       adminUserId: input.adminUserIdHeader?.trim() || undefined,
       db,
     };
-    const [apps, withdrawals] = await Promise.all([deps.listApps(trpcContext), deps.listWithdrawals(trpcContext)]);
+    const [apps, withdrawals, policies] = await Promise.all([
+      deps.listApps(trpcContext),
+      deps.listWithdrawals(trpcContext),
+      deps.listPolicies(trpcContext),
+    ]);
 
     return {
       status: "ready",
@@ -183,6 +216,7 @@ export async function loadDashboardState(
       apps,
       withdrawals,
       statusSummaries: summarizeWithdrawalStates(withdrawals),
+      policies,
     };
   } catch (error) {
     return {

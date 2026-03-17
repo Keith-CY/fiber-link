@@ -5,6 +5,10 @@ Baseline: `origin/main` at `7c3126d3d2e2f2c0e12b4f3c4ceb50c3bf92d73b`
 
 This audit scores current production readiness against a strict self-hosted production/mainnet bar, not the milestone acceptance bar.
 
+Historical note:
+- this document is the baseline gap assessment taken from `origin/main`
+- current repo-backed closeout status is tracked in `docs/plans/2026-03-18-production-hardening-closeout.md`
+
 ## Scorecard
 
 | Area | Completion | Maturity | Verdict |
@@ -33,7 +37,7 @@ Evidence:
 Production gap:
 
 - The repo has backend policy controls, but not a complete operator workflow for reviewing, editing, auditing, and safely rolling out policy changes from the admin surface.
-- Supporting admin feature modules such as `apps/admin/src/features/config/config-profiles.ts` and `apps/admin/src/features/healthcheck/health-check.ts` are utility-level building blocks, not a wired production UI flow.
+- Supporting admin feature modules such as `fiber-link-service/apps/admin/src/features/config/config-profiles.ts` and `fiber-link-service/apps/admin/src/features/healthcheck/health-check.ts` are utility-level building blocks, not a wired production UI flow.
 
 ### 2. Monitoring
 
@@ -43,7 +47,7 @@ Evidence:
 
 - `deploy/compose/docker-compose.yml` defines health checks for `postgres`, `redis`, `fnn`, `rpc`, and `worker`.
 - `docs/runbooks/compose-reference.md` documents liveness/readiness semantics for the compose stack.
-- `fiber-link-service/apps/rpc/src/rpc.ts`, `apps/rpc/src/scripts/healthcheck-ready.ts`, and `apps/worker/src/scripts/healthcheck.ts` provide live/readiness endpoints and probe scripts.
+- `fiber-link-service/apps/rpc/src/rpc.ts`, `fiber-link-service/apps/rpc/src/scripts/healthcheck-ready.ts`, and `fiber-link-service/apps/worker/src/scripts/healthcheck.ts` provide live/readiness endpoints and probe scripts.
 - `docs/runbooks/compose-reference.md` explicitly says the current setup does not include a production observability stack.
 
 Production gap:

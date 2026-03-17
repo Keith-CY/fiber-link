@@ -5,6 +5,7 @@
 - `docs/current-architecture.md` — canonical source-of-truth index for architecture, current status, and historical redirects.
 - `docs/audit-snapshot.md` — generated architecture-audit snapshot (operational metrics and deltas). This is non-canonical.
 - `docs/plans/2026-03-18-production-readiness-audit.md` — production-readiness audit of admin controls, monitoring, rate limiting, backups, and documentation polish against a strict self-hosted production bar.
+- `docs/plans/2026-03-18-production-hardening-closeout.md` — closeout snapshot showing the repo-backed operator baseline after the production-hardening gaps were implemented.
 - `docs/plans/2026-02-21-issue-32-epic-closeout.md` — latest closeout mapping for epic `#32`.
 - `docs/plans/2026-02-17-issue-32-epic-execution-status-tracker.md` — superseded historical status snapshot retained for traceability.
 - `docs/plans/2026-02-03-fiber-link-mvp-design.md` — historical early design snapshot; use canonical links at the top of the file.
@@ -75,7 +76,12 @@
 ## Deployment evidence
 
 - `docs/runbooks/deployment-evidence.md` — deployment evidence artifacts, checklist, and retention policy.
+- `docs/runbooks/compose-backup-recovery.md` — repeatable compose backup and restore runbook for Postgres, worker cursor state, and runtime snapshots.
+- `docs/runbooks/compose-ops-monitoring.md` — machine-consumable compose monitoring baseline with exit-code semantics for cron/CI/on-call routing.
+- `docs/runbooks/withdrawal-policy-operations.md` — trusted operator workflow for listing and upserting per-app withdrawal policy rows.
 - `scripts/capture-deployment-evidence.sh` — one-command evidence and log capture bundle.
+- `scripts/capture-compose-backup.sh` — one-command compose backup bundle capture with retention metadata and archive output.
+- `scripts/restore-compose-backup.sh` — restore flow for a compose backup bundle or archive with dry-run support.
 - `docs/runbooks/mainnet-deployment-checklist.md` — mainnet preflight, rollback, and post-deploy verification gate.
 
 ## Security assumptions

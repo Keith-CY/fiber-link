@@ -5,6 +5,7 @@
     "test": "vitest",
     "backfill:settlements": "bun run src/scripts/backfill-settlements.ts",
     "reconcile:withdrawals": "bun run src/scripts/reconcile-withdrawal-parity.ts",
+    "ops:summary": "bun run src/scripts/ops-summary.ts",
     "demo:w5": "bun run src/scripts/w5-demo.ts"
   },
   "dependencies": {

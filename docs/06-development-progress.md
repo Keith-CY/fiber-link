@@ -157,7 +157,13 @@ Current baseline update:
 
 ## Suggested Next Milestone
 
-With Phase 3 operational controls now implemented, next work should focus on scheduled operation wiring (for example cron/orchestrator hooks that run the reconciliation command and route alerts).
+With Phase 3 operational controls now implemented, the repo now ships runnable hooks for:
+
+- scheduled monitoring via `deploy/compose/compose-ops-summary.sh`
+- backup/restore via `scripts/capture-compose-backup.sh` and `scripts/restore-compose-backup.sh`
+- policy review/change workflow via `fiber-link-service/apps/admin/src/scripts/manage-withdrawal-policy.ts`
+
+Next work should focus on external platform integrations around those hooks (for example cron/systemd scheduling, alert routing, TLS, secret management, and offsite backup retention).
 
 Historical reference (Sprint 1 plan): `docs/plans/2026-02-11-phase3-sprint1-settlement-v1-plan.md`
 

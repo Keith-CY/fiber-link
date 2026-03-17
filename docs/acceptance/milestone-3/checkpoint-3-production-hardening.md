@@ -31,6 +31,13 @@ Latest hardening updates (2026-02-27):
 - Mainnet deployment checklist is published with backup/rollback gates.
 - Security assumptions and control-evidence mapping are updated for policy/rate-limit controls.
 
+Latest hardening updates (2026-03-18):
+
+- Compose backup and restore are runnable via `scripts/capture-compose-backup.sh` and `scripts/restore-compose-backup.sh`.
+- Shared Redis-backed RPC rate limiting is wired through compose (`FIBER_LINK_RATE_LIMIT_REDIS_URL`) and covered by targeted tests.
+- Compose monitoring baseline is runnable via `deploy/compose/compose-ops-summary.sh`, with exit-code semantics and documented thresholds.
+- Admin withdrawal policy operations are runnable via `fiber-link-service/apps/admin/src/scripts/manage-withdrawal-policy.ts`, and the admin dashboard now shows current policy rows.
+
 ## Exit criteria
 
 - Monitoring and alerting controls are explicitly verified in release evidence.

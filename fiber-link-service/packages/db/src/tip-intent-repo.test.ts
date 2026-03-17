@@ -164,6 +164,7 @@ describe("tipIntentRepo (db transition guards)", () => {
           limit: selectLimit,
         })),
       }))
+      .mockResolvedValueOnce([{ count: 2 }])
       .mockResolvedValueOnce([{ count: 2 }]);
     const selectFrom = vi.fn(() => ({ where: selectWhere }));
     const select = vi.fn(() => ({ from: selectFrom }));
@@ -182,6 +183,9 @@ describe("tipIntentRepo (db transition guards)", () => {
 
     const count = await repo.countByInvoiceState("UNPAID", { appId: "app1" });
     expect(count).toBe(2);
+
+    const retryPending = await repo.countSettlementRetryPending({ appId: "app1" });
+    expect(retryPending).toBe(2);
   });
 });
 
@@ -567,6 +571,38 @@ describe("tipIntentRepo (in-memory)", () => {
 
     const windowUnpaid = await repo.countByInvoiceState("UNPAID", { createdAtFrom: fromThirdOnly });
     expect(windowUnpaid).toBe(1);
+  });
+
+  it("counts retry-pending invoices separately from total unpaid backlog", async () => {
+    await repo.create({
+      appId: "app-a",
+      postId: "p1",
+      fromUserId: "u1",
+      toUserId: "u2",
+      asset: "USDI",
+      amount: "10",
+      invoice: "inv-retry-count-1",
+    });
+    await repo.create({
+      appId: "app-a",
+      postId: "p2",
+      fromUserId: "u3",
+      toUserId: "u4",
+      asset: "USDI",
+      amount: "20",
+      invoice: "inv-retry-count-2",
+    });
+    await repo.markSettlementRetryPending("inv-retry-count-1", {
+      now: new Date("2026-02-11T10:00:00.000Z"),
+      nextRetryAt: new Date("2026-02-11T10:01:00.000Z"),
+      error: "fiber timeout",
+    });
+
+    const retryPending = await repo.countSettlementRetryPending({ appId: "app-a" });
+    expect(retryPending).toBe(1);
+
+    const totalUnpaid = await repo.countByInvoiceState("UNPAID", { appId: "app-a" });
+    expect(totalUnpaid).toBe(2);
   });
 
   describe("issue #61 transition persistence smoke", () => {

@@ -16,6 +16,7 @@ This checklist is the required preflight and release gate before any mainnet rol
 ## 2. Runtime Policy Controls
 
 - [ ] RPC rate limit values are explicitly configured:
+  - `FIBER_LINK_RATE_LIMIT_REDIS_URL`
   - `RPC_RATE_LIMIT_ENABLED`
   - `RPC_RATE_LIMIT_WINDOW_MS`
   - `RPC_RATE_LIMIT_MAX_REQUESTS`
@@ -25,7 +26,14 @@ This checklist is the required preflight and release gate before any mainnet rol
   - `FIBER_WITHDRAWAL_POLICY_PER_USER_DAILY_MAX`
   - `FIBER_WITHDRAWAL_POLICY_PER_APP_DAILY_MAX`
   - `FIBER_WITHDRAWAL_POLICY_COOLDOWN_SECONDS`
-- [ ] Per-app production policy rows exist in `withdrawal_policies` for all onboarded `app_id`.
+- [ ] Per-app production policy rows exist in `withdrawal_policies` for all onboarded `app_id`, managed through:
+
+```bash
+ADMIN_ROLE=SUPER_ADMIN \
+ADMIN_USER_ID=<trusted_admin_id> \
+DATABASE_URL=postgresql://... \
+bun run fiber-link-service/apps/admin/src/scripts/manage-withdrawal-policy.ts list
+```
 
 Verification query:
 
@@ -38,8 +46,21 @@ docker exec -i fiber-link-postgres psql \
 
 ## 3. Data Safety and Backups
 
-- [ ] Pre-deploy backup snapshot is created and stored with immutable timestamp.
-- [ ] Restore rehearsal has succeeded in the current release window.
+- [ ] Pre-deploy backup snapshot is created with:
+
+```bash
+scripts/capture-compose-backup.sh
+```
+
+- [ ] The backup archive path (`BACKUP_ARCHIVE=...`) is copied into the release ticket and stored with immutable timestamp.
+- [ ] Restore rehearsal has succeeded in the current release window with:
+
+```bash
+scripts/restore-compose-backup.sh \
+  --backup deploy/compose/backups/<UTC_TIMESTAMP>.tar.gz \
+  --yes
+```
+
 - [ ] `deploy/compose/evidence/` retention policy is set and documented for this release.
 
 ## 4. Deploy Procedure
@@ -57,6 +78,7 @@ docker compose up -d --build postgres redis fnn rpc worker
 
 - [ ] Liveness: `GET /healthz/live` returns `{"status":"alive"}`.
 - [ ] Readiness: `GET /healthz/ready` returns `status=ready` and all checks `ok`.
+- [ ] `deploy/compose/compose-ops-summary.sh` returns exit `0` and status `ok`.
 - [ ] RPC auth and replay protections pass:
   - HMAC valid request returns result.
   - invalid signature returns unauthorized.

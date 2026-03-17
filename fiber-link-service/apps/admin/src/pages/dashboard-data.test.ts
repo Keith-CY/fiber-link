@@ -24,19 +24,34 @@ type DashboardWithdrawalRow = {
   txHash: string | null;
 };
 
+type DashboardPolicyRow = {
+  appId: string;
+  allowedAssets: Array<"CKB" | "USDI">;
+  maxPerRequest: string;
+  perUserDailyMax: string;
+  perAppDailyMax: string;
+  cooldownSeconds: number;
+  updatedBy: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 function createDeps({
   apps,
   withdrawals,
+  policies,
 }: {
-  apps: DashboardAppRow;
-  withdrawals: DashboardWithdrawalRow;
+  apps: DashboardAppRow[];
+  withdrawals: DashboardWithdrawalRow[];
+  policies?: DashboardPolicyRow[];
 }): DashboardDataDependencies {
   const sharedDb = {} as DbClient;
 
   return {
     createDb: () => sharedDb,
-    listApps: async () => [apps],
-    listWithdrawals: async () => [withdrawals],
+    listApps: async () => apps,
+    listWithdrawals: async () => withdrawals,
+    listPolicies: async () => policies ?? [],
   };
 }
 
@@ -53,17 +68,19 @@ describe("dashboard data", () => {
   it("loads ready state for SUPER_ADMIN and keeps full visibility", async () => {
     const now = "2026-02-17T00:00:00.000Z";
     const deps = createDeps({
-      apps: { appId: "app-1", createdAt: now },
-      withdrawals: {
-        id: "w-1",
-        appId: "app-1",
-        userId: "u-1",
-        asset: "USDI",
-        amount: "5",
-        state: "PENDING",
-        createdAt: now,
-        txHash: null,
-      },
+      apps: [{ appId: "app-1", createdAt: now }],
+      withdrawals: [
+        {
+          id: "w-1",
+          appId: "app-1",
+          userId: "u-1",
+          asset: "USDI",
+          amount: "5",
+          state: "PENDING",
+          createdAt: now,
+          txHash: null,
+        },
+      ],
     });
 
     const state = await loadDashboardState(
@@ -94,17 +111,19 @@ describe("dashboard data", () => {
   it("loads ready state for COMMUNITY_ADMIN and applies scoped visibility", async () => {
     const now = "2026-02-17T00:00:00.000Z";
     const deps = createDeps({
-      apps: { appId: "app-2", createdAt: now },
-      withdrawals: {
-        id: "w-2",
-        appId: "app-2",
-        userId: "u-2",
-        asset: "CKB",
-        amount: "2",
-        state: "COMPLETED",
-        createdAt: now,
-        txHash: "0xabc",
-      },
+      apps: [{ appId: "app-2", createdAt: now }],
+      withdrawals: [
+        {
+          id: "w-2",
+          appId: "app-2",
+          userId: "u-2",
+          asset: "CKB",
+          amount: "2",
+          state: "COMPLETED",
+          createdAt: now,
+          txHash: "0xabc",
+        },
+      ],
     });
 
     const state = await loadDashboardState(
@@ -140,6 +159,7 @@ describe("dashboard data", () => {
       },
       listApps: async () => [],
       listWithdrawals: async () => [],
+      listPolicies: async () => [],
     };
 
     const state = await loadDashboardState({ roleHeader: "SUPER_ADMIN" }, deps);
@@ -203,6 +223,56 @@ describe("dashboard data", () => {
       { state: "COMPLETED", count: 0 },
       { state: "FAILED", count: 1 },
     ]);
+  });
+
+  it("loads withdrawal policies into the ready state and view model", async () => {
+    const now = "2026-02-17T00:00:00.000Z";
+    const deps = createDeps({
+      apps: [{ appId: "app-2", createdAt: now }],
+      withdrawals: [],
+      policies: [
+        {
+          appId: "app-2",
+          allowedAssets: ["CKB", "USDI"],
+          maxPerRequest: "5000",
+          perUserDailyMax: "20000",
+          perAppDailyMax: "200000",
+          cooldownSeconds: 120,
+          updatedBy: "admin-42",
+          createdAt: now,
+          updatedAt: now,
+        },
+      ],
+    });
+
+    const state = await loadDashboardState(
+      {
+        roleHeader: "SUPER_ADMIN",
+        adminUserIdHeader: "admin-42",
+      },
+      deps,
+    );
+
+    expect(state).toMatchObject({
+      status: "ready",
+      policies: [
+        {
+          appId: "app-2",
+          cooldownSeconds: 120,
+        },
+      ],
+    });
+
+    const viewModel = buildDashboardViewModel(state);
+    expect(viewModel).toMatchObject({
+      status: "ready",
+      policies: [
+        {
+          appId: "app-2",
+          maxPerRequest: "5000",
+        },
+      ],
+    });
   });
 
   it("maps loading and error states into render model", () => {

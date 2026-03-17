@@ -25,7 +25,7 @@ import { WithdrawalPolicyViolationError, quoteWithdrawal, requestWithdrawal } fr
 import { createNonceStore } from "./nonce-store";
 import { dispatchMethod, type MethodDef } from "./rpc-dispatch";
 import {
-  InMemoryRateLimitStore,
+  createRateLimitStore,
   parseRpcRateLimitConfig,
   rateLimitKey,
   type RateLimitStore,
@@ -171,7 +171,7 @@ export function registerRpc(
     rateLimitConfig?: RpcRateLimitConfig;
   } = {},
 ) {
-  const rateLimitStore = options.rateLimitStore ?? new InMemoryRateLimitStore();
+  const rateLimitStore = options.rateLimitStore ?? createRateLimitStore();
   const rateLimitConfig = options.rateLimitConfig ?? parseRpcRateLimitConfig();
 
   app.get("/healthz/live", async () => {

@@ -106,6 +106,7 @@ export type TipIntentRepo = {
   listByInvoiceState(state: InvoiceState, options?: TipIntentListOptions): Promise<TipIntentRecord[]>;
   listSettled(options: TipIntentSettledListOptions): Promise<TipIntentRecord[]>;
   countByInvoiceState(state: InvoiceState, options?: TipIntentCountOptions): Promise<number>;
+  countSettlementRetryPending(options?: TipIntentCountOptions): Promise<number>;
   __resetForTests?: () => void;
 };
 
@@ -352,6 +353,12 @@ export function createDbTipIntentRepo(db: DbClient): TipIntentRepo {
       const [row] = await db.select({ count: sql<number>`count(*)` }).from(tipIntents).where(and(...filters));
       return Number(row?.count ?? 0);
     },
+
+    async countSettlementRetryPending(options = {}) {
+      const filters = [...buildStateFilters("UNPAID", options), sql`${tipIntents.settlementNextRetryAt} IS NOT NULL`];
+      const [row] = await db.select({ count: sql<number>`count(*)` }).from(tipIntents).where(and(...filters));
+      return Number(row?.count ?? 0);
+    },
   };
 }
 
@@ -528,6 +535,20 @@ export function createInMemoryTipIntentRepo(): TipIntentRepo {
 
     async countByInvoiceState(state, options = {}) {
       let items = records.filter((item) => item.invoiceState === state);
+      if (options.appId) {
+        items = items.filter((item) => item.appId === options.appId);
+      }
+      if (options.createdAtFrom) {
+        items = items.filter((item) => item.createdAt >= options.createdAtFrom!);
+      }
+      if (options.createdAtTo) {
+        items = items.filter((item) => item.createdAt <= options.createdAtTo!);
+      }
+      return items.length;
+    },
+
+    async countSettlementRetryPending(options = {}) {
+      let items = records.filter((item) => item.invoiceState === "UNPAID" && item.settlementNextRetryAt !== null);
       if (options.appId) {
         items = items.filter((item) => item.appId === options.appId);
       }

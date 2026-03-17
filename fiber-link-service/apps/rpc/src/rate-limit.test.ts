@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { InMemoryRateLimitStore, parseRpcRateLimitConfig, rateLimitKey } from "./rate-limit";
+import Redis from "ioredis-mock";
+import {
+  InMemoryRateLimitStore,
+  RedisRateLimitStore,
+  createRateLimitStore,
+  parseRpcRateLimitConfig,
+  rateLimitKey,
+} from "./rate-limit";
 
 describe("rpc rate limit", () => {
   it("allows requests until limit is reached and blocks after", async () => {
@@ -26,6 +33,55 @@ describe("rpc rate limit", () => {
     expect(a.allowed).toBe(true);
     expect(b.allowed).toBe(true);
 
+    await store.close();
+  });
+
+  it("RedisRateLimitStore shares counters across store instances", async () => {
+    const client = new Redis();
+    const storeA = new RedisRateLimitStore(client);
+    const storeB = new RedisRateLimitStore(client);
+
+    const first = await storeA.consume({ key: rateLimitKey("app1", "tip.create"), limit: 1, windowMs: 60_000 });
+    const second = await storeB.consume({ key: rateLimitKey("app1", "tip.create"), limit: 1, windowMs: 60_000 });
+
+    expect(first.allowed).toBe(true);
+    expect(second.allowed).toBe(false);
+    expect(second.remaining).toBe(0);
+    expect(second.resetAtEpochMs).toBeGreaterThan(Date.now());
+
+    await storeA.close();
+    await storeB.close();
+    await client.quit();
+  });
+
+  it("createRateLimitStore uses Redis when a Redis URL is configured", async () => {
+    const store = createRateLimitStore(
+      {
+        FIBER_LINK_RATE_LIMIT_REDIS_URL: "redis://example.test:6379/5",
+      },
+      () => new Redis(),
+    );
+
+    expect(store).toBeInstanceOf(RedisRateLimitStore);
+    await store.close();
+  });
+
+  it("createRateLimitStore falls back to the nonce Redis URL when rate-limit Redis URL is unset", async () => {
+    const store = createRateLimitStore(
+      {
+        FIBER_LINK_NONCE_REDIS_URL: "redis://example.test:6379/6",
+      },
+      () => new Redis(),
+    );
+
+    expect(store).toBeInstanceOf(RedisRateLimitStore);
+    await store.close();
+  });
+
+  it("createRateLimitStore falls back to InMemoryRateLimitStore when Redis is not configured", async () => {
+    const store = createRateLimitStore({});
+
+    expect(store).toBeInstanceOf(InMemoryRateLimitStore);
     await store.close();
   });
 
