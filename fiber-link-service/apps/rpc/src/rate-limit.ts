@@ -143,7 +143,7 @@ export function createRateLimitStore(
   env: NodeJS.ProcessEnv = process.env,
   redisFactory: ((redisUrl: string) => RedisLike) | null = null,
 ): RateLimitStore {
-  const redisUrl = env.FIBER_LINK_RATE_LIMIT_REDIS_URL ?? env.FIBER_LINK_NONCE_REDIS_URL ?? env.REDIS_URL;
+  const redisUrl = env.FIBER_LINK_RATE_LIMIT_REDIS_URL ?? env.FIBER_LINK_NONCE_REDIS_URL;
   if (!redisUrl) {
     return new InMemoryRateLimitStore();
   }

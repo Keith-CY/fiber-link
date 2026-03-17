@@ -85,6 +85,15 @@ describe("rpc rate limit", () => {
     await store.close();
   });
 
+  it("does not use generic REDIS_URL for rate limiting", async () => {
+    const store = createRateLimitStore({
+      REDIS_URL: "redis://example.test:6379/7",
+    });
+
+    expect(store).toBeInstanceOf(InMemoryRateLimitStore);
+    await store.close();
+  });
+
   it("parses env config with defaults", () => {
     const parsed = parseRpcRateLimitConfig({});
 

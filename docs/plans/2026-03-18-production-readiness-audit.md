@@ -109,14 +109,14 @@ Production gap:
 Validated from this audit worktree:
 
 - Passed:
-  - `bun test apps/admin/src/server/api/routers/withdrawal-policy.test.ts`
-  - `bun test packages/db/src/withdrawal-policy-repo.test.ts`
-  - `bun test apps/rpc/src/rate-limit.test.ts`
+  - `bun test fiber-link-service/apps/admin/src/server/api/routers/withdrawal-policy.test.ts`
+  - `bun test fiber-link-service/packages/db/src/withdrawal-policy-repo.test.ts`
+  - `bun test fiber-link-service/apps/rpc/src/rate-limit.test.ts`
   - `./deploy/compose/compose-reference.test.sh`
 - Failed on `origin/main` baseline:
-  - `bun test apps/rpc/src/rpc.test.ts`
+  - `bun test fiber-link-service/apps/rpc/src/rpc.test.ts`
 
-Observed baseline failures in `apps/rpc/src/rpc.test.ts`:
+Observed baseline failures in `fiber-link-service/apps/rpc/src/rpc.test.ts`:
 
 - `returns invalid params when withdrawal policy rejects request`
 - `returns standardized tip.status not-found error`
