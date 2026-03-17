@@ -4,6 +4,7 @@
 
 - `docs/current-architecture.md` — canonical source-of-truth index for architecture, current status, and historical redirects.
 - `docs/audit-snapshot.md` — generated architecture-audit snapshot (operational metrics and deltas). This is non-canonical.
+- `docs/plans/2026-03-18-production-readiness-audit.md` — production-readiness audit of admin controls, monitoring, rate limiting, backups, and documentation polish against a strict self-hosted production bar.
 - `docs/plans/2026-02-21-issue-32-epic-closeout.md` — latest closeout mapping for epic `#32`.
 - `docs/plans/2026-02-17-issue-32-epic-execution-status-tracker.md` — superseded historical status snapshot retained for traceability.
 - `docs/plans/2026-02-03-fiber-link-mvp-design.md` — historical early design snapshot; use canonical links at the top of the file.
