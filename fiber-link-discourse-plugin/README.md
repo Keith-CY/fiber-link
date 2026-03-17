@@ -11,7 +11,16 @@ Changes to this mirror are synced from the monorepo by GitHub Actions.
 
 ## Install
 
-For self-hosted Discourse, add this plugin repository to your Discourse container config and rebuild the app.
+For self-hosted Discourse, add this plugin repository to your Discourse container config and clone it into `plugins/fiber-link`, then rebuild the app.
+
+```yaml
+hooks:
+  after_code:
+    - exec:
+        cd: $home/plugins
+        cmd:
+          - git clone https://github.com/Keith-CY/fiber-link-discourse-plugin.git fiber-link
+```
 
 ## Configuration
 

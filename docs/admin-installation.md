@@ -88,7 +88,7 @@ hooks:
     - exec:
         cd: $home/plugins
         cmd:
-          - git clone https://github.com/Keith-CY/fiber-link-discourse-plugin.git
+          - git clone https://github.com/Keith-CY/fiber-link-discourse-plugin.git fiber-link
 ```
 
 Then run:
@@ -97,6 +97,8 @@ Then run:
 cd /var/discourse
 ./launcher rebuild app
 ```
+
+This keeps the installed plugin path at `plugins/fiber-link`, which matches the existing local verification tooling and smoke docs.
 
 ### Local development alternative
 
