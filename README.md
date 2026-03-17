@@ -6,7 +6,7 @@ A CKB Fiber-based pay layer for community tipping & micropayments (starting with
 
 - Plugin source of truth in this monorepo: `fiber-link-discourse-plugin/`
 - Standalone install repository for Discourse admins: `https://github.com/Keith-CY/fiber-link-discourse-plugin`
-- Sync automation: `.github/workflows/sync-discourse-plugin-mirror.yml` mirrors the plugin subtree from this repo into the standalone plugin repo on pushes to `main`
+- Sync automation: `.github/workflows/sync-discourse-plugin-mirror.yml` mirrors the plugin subtree from this repo into the standalone plugin repo only after the `CI` workflow succeeds on `main`
 
 ## What this repo is
 This repository is the *research + planning* starting point.

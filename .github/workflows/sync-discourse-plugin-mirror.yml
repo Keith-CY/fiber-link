@@ -1,21 +1,22 @@
 name: Sync Discourse Plugin Mirror
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - fiber-link-discourse-plugin/**
-      - .github/workflows/sync-discourse-plugin-mirror.yml
-  workflow_dispatch:
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - completed
 
 concurrency:
   group: discourse-plugin-mirror
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   sync:
-    if: github.ref == 'refs/heads/main'
+    if: >
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.event == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -23,6 +24,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - name: Configure Git identity
         run: |
@@ -43,6 +45,18 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan github.com >> ~/.ssh/known_hosts
 
+      - name: Guard against stale workflow reruns
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin main
+          current_sha="$(git rev-parse HEAD)"
+          latest_origin_main="$(git rev-parse origin/main)"
+
+          if [[ "$current_sha" != "$latest_origin_main" ]]; then
+            echo "Refusing to mirror stale run for ${current_sha}; latest origin/main is ${latest_origin_main}." >&2
+            exit 1
+          fi
+
       - name: Mirror plugin subtree to standalone repository
         run: |
           set -euo pipefail
@@ -52,7 +66,13 @@ jobs:
 
           git remote remove "$remote_name" 2>/dev/null || true
           git remote add "$remote_name" "$remote_url"
+          remote_main_sha="$(git ls-remote --heads "$remote_url" refs/heads/main | awk '{print $1}')"
+          [ -n "$remote_main_sha" ] || {
+            echo "Unable to resolve standalone mirror main branch SHA." >&2
+            exit 1
+          }
 
           git subtree split --prefix=fiber-link-discourse-plugin --branch "$split_branch"
-          git push --force "$remote_name" "${split_branch}:refs/heads/main"
+          git push --force-with-lease=refs/heads/main:${remote_main_sha} \
+            "$remote_name" "${split_branch}:refs/heads/main"
           git branch -D "$split_branch"
