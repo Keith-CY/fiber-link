@@ -1,0 +1,78 @@
+name: Sync Discourse Plugin Mirror
+
+on:
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - completed
+
+concurrency:
+  group: discourse-plugin-mirror
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    if: >
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Configure Git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Configure SSH for mirror push
+        env:
+          DISCOURSE_PLUGIN_MIRROR_SSH_KEY: ${{ secrets.DISCOURSE_PLUGIN_MIRROR_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          [ -n "${DISCOURSE_PLUGIN_MIRROR_SSH_KEY:-}" ] || {
+            echo "Missing DISCOURSE_PLUGIN_MIRROR_SSH_KEY secret" >&2
+            exit 1
+          }
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DISCOURSE_PLUGIN_MIRROR_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
+
+      - name: Guard against stale workflow reruns
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin main
+          current_sha="$(git rev-parse HEAD)"
+          latest_origin_main="$(git rev-parse origin/main)"
+
+          if [[ "$current_sha" != "$latest_origin_main" ]]; then
+            echo "Refusing to mirror stale run for ${current_sha}; latest origin/main is ${latest_origin_main}." >&2
+            exit 1
+          fi
+
+      - name: Mirror plugin subtree to standalone repository
+        run: |
+          set -euo pipefail
+          remote_name="plugin-mirror"
+          remote_url="git@github.com:Keith-CY/fiber-link-discourse-plugin.git"
+          split_branch="plugin-mirror-${GITHUB_RUN_ID}"
+
+          git remote remove "$remote_name" 2>/dev/null || true
+          git remote add "$remote_name" "$remote_url"
+          remote_main_sha="$(git ls-remote --heads "$remote_url" refs/heads/main | awk '{print $1}')"
+          [ -n "$remote_main_sha" ] || {
+            echo "Unable to resolve standalone mirror main branch SHA." >&2
+            exit 1
+          }
+
+          git subtree split --prefix=fiber-link-discourse-plugin --branch "$split_branch"
+          git push --force-with-lease=refs/heads/main:${remote_main_sha} \
+            "$remote_name" "${split_branch}:refs/heads/main"
+          git branch -D "$split_branch"
