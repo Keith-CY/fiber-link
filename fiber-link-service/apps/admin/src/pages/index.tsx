@@ -99,6 +99,42 @@ export default function HomePage({ initialState = { status: "loading" } }: HomeP
           </table>
         )}
       </section>
+
+      <section>
+        <h2>Withdrawal policies</h2>
+        {viewModel.policies.length === 0 ? (
+          <p>No withdrawal policies configured.</p>
+        ) : (
+          <table>
+            <thead>
+              <tr>
+                <th>App ID</th>
+                <th>Allowed Assets</th>
+                <th>Max Per Request</th>
+                <th>Per-User Daily Max</th>
+                <th>Per-App Daily Max</th>
+                <th>Cooldown Seconds</th>
+                <th>Updated By</th>
+                <th>Updated At</th>
+              </tr>
+            </thead>
+            <tbody>
+              {viewModel.policies.map((policy) => (
+                <tr key={policy.appId}>
+                  <td>{policy.appId}</td>
+                  <td>{policy.allowedAssets.join(", ")}</td>
+                  <td>{policy.maxPerRequest}</td>
+                  <td>{policy.perUserDailyMax}</td>
+                  <td>{policy.perAppDailyMax}</td>
+                  <td>{policy.cooldownSeconds}</td>
+                  <td>{policy.updatedBy ?? "N/A"}</td>
+                  <td>{formatDate(policy.updatedAt)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </section>
     </main>
   );
 }

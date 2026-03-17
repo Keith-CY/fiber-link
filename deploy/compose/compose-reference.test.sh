@@ -9,6 +9,8 @@ RUNBOOK_FILE="${ROOT_DIR}/docs/runbooks/compose-reference.md"
 EVIDENCE_RUNBOOK_FILE="${ROOT_DIR}/docs/runbooks/deployment-evidence.md"
 EVIDENCE_TEMPLATE_DIR="${ROOT_DIR}/docs/runbooks/evidence-template/deployment"
 EVIDENCE_SCRIPT="${ROOT_DIR}/scripts/capture-deployment-evidence.sh"
+BACKUP_TEST_SCRIPT="${ROOT_DIR}/deploy/compose/compose-backup.test.sh"
+OPS_TEST_SCRIPT="${ROOT_DIR}/deploy/compose/compose-ops.test.sh"
 ENV_FILE="${ROOT_DIR}/deploy/compose/.env.example"
 SERVICE_DOCKERFILE="${ROOT_DIR}/deploy/compose/service.Dockerfile"
 RPC_HEALTHCHECK_SCRIPT="${ROOT_DIR}/fiber-link-service/apps/rpc/src/scripts/healthcheck-ready.ts"
@@ -24,6 +26,8 @@ for required in \
   "${RUNBOOK_FILE}" \
   "${EVIDENCE_RUNBOOK_FILE}" \
   "${EVIDENCE_SCRIPT}" \
+  "${BACKUP_TEST_SCRIPT}" \
+  "${OPS_TEST_SCRIPT}" \
   "${ENV_FILE}" \
   "${SERVICE_DOCKERFILE}" \
   "${RPC_HEALTHCHECK_SCRIPT}" \
@@ -53,6 +57,16 @@ if [[ ! -x "${EVIDENCE_SCRIPT}" ]]; then
   exit 1
 fi
 
+if [[ ! -x "${BACKUP_TEST_SCRIPT}" ]]; then
+  echo "compose backup test script is not executable: ${BACKUP_TEST_SCRIPT}" >&2
+  exit 1
+fi
+
+if [[ ! -x "${OPS_TEST_SCRIPT}" ]]; then
+  echo "compose ops test script is not executable: ${OPS_TEST_SCRIPT}" >&2
+  exit 1
+fi
+
 for compose_file in "${ENV_FILE}" "${COMPOSE_FILE}"; do
   if grep -nE "^(<<<<<<<|=======|>>>>>>> )" "${compose_file}" >/dev/null; then
     echo "merge-conflict marker found in ${compose_file}" >&2
@@ -69,6 +83,9 @@ if ! grep -q "retention" "${EVIDENCE_RUNBOOK_FILE}"; then
   echo "deployment evidence runbook missing retention policy section" >&2
   exit 1
 fi
+
+"${BACKUP_TEST_SCRIPT}"
+"${OPS_TEST_SCRIPT}"
 
 for service in rpc worker postgres redis fnn; do
   if ! grep -Eq "^[[:space:]]{2}${service}:" "${COMPOSE_FILE}"; then
@@ -119,6 +136,16 @@ if ! grep -q "^WORKER_READINESS_TIMEOUT_MS=" "${ENV_FILE}"; then
   exit 1
 fi
 
+if ! grep -q "^WORKER_OPS_MAX_UNPAID_BACKLOG=" "${ENV_FILE}"; then
+  echo ".env.example missing WORKER_OPS_MAX_UNPAID_BACKLOG default" >&2
+  exit 1
+fi
+
+if ! grep -q "^FIBER_LINK_RATE_LIMIT_REDIS_URL=" "${ENV_FILE}"; then
+  echo ".env.example missing FIBER_LINK_RATE_LIMIT_REDIS_URL default" >&2
+  exit 1
+fi
+
 if ! grep -q "^deploy/compose/.env$" "${GITIGNORE_FILE}"; then
   echo ".gitignore missing deploy/compose/.env ignore rule" >&2
   exit 1
@@ -131,6 +158,11 @@ fi
 
 if ! grep -q "FIBER_LINK_HMAC_SECRET: \${FIBER_LINK_HMAC_SECRET:?Set FIBER_LINK_HMAC_SECRET in .env}" "${COMPOSE_FILE}"; then
   echo "docker-compose missing required FIBER_LINK_HMAC_SECRET guard" >&2
+  exit 1
+fi
+
+if ! grep -q "FIBER_LINK_RATE_LIMIT_REDIS_URL: \${FIBER_LINK_RATE_LIMIT_REDIS_URL:-redis://redis:6379/1}" "${COMPOSE_FILE}"; then
+  echo "docker-compose missing shared Redis rate-limit configuration" >&2
   exit 1
 fi
 

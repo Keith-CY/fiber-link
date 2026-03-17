@@ -1,3 +1,5 @@
+import Redis from "ioredis";
+
 export type RateLimitDecision = {
   allowed: boolean;
   limit: number;
@@ -9,6 +11,8 @@ export type RateLimitStore = {
   consume(input: { key: string; limit: number; windowMs: number }): Promise<RateLimitDecision>;
   close(): Promise<void>;
 };
+
+type RedisLike = Pick<Redis, "incr" | "pexpire" | "pttl" | "quit">;
 
 type Bucket = {
   count: number;
@@ -61,6 +65,37 @@ export class InMemoryRateLimitStore implements RateLimitStore {
   }
 }
 
+export class RedisRateLimitStore implements RateLimitStore {
+  constructor(private client: RedisLike, private owned = false) {}
+
+  async consume(input: { key: string; limit: number; windowMs: number }): Promise<RateLimitDecision> {
+    const redisKey = `rate:${input.key}`;
+    const count = await this.client.incr(redisKey);
+
+    let ttlMs = await this.client.pttl(redisKey);
+    if (count === 1 || ttlMs < 0) {
+      await this.client.pexpire(redisKey, input.windowMs);
+      ttlMs = input.windowMs;
+    }
+
+    const resetAtEpochMs = Date.now() + Math.max(0, ttlMs);
+    const allowed = count <= input.limit;
+
+    return {
+      allowed,
+      limit: input.limit,
+      remaining: Math.max(0, input.limit - count),
+      resetAtEpochMs,
+    };
+  }
+
+  async close(): Promise<void> {
+    if (this.owned) {
+      await this.client.quit();
+    }
+  }
+}
+
 export type RpcRateLimitConfig = {
   enabled: boolean;
   windowMs: number;
@@ -102,4 +137,17 @@ export function parseRpcRateLimitConfig(env: NodeJS.ProcessEnv = process.env): R
 
 export function rateLimitKey(appId: string, method: string): string {
   return `${appId}:${method}`;
+}
+
+export function createRateLimitStore(
+  env: NodeJS.ProcessEnv = process.env,
+  redisFactory: ((redisUrl: string) => RedisLike) | null = null,
+): RateLimitStore {
+  const redisUrl = env.FIBER_LINK_RATE_LIMIT_REDIS_URL ?? env.FIBER_LINK_NONCE_REDIS_URL;
+  if (!redisUrl) {
+    return new InMemoryRateLimitStore();
+  }
+
+  const client = redisFactory ? redisFactory(redisUrl) : new Redis(redisUrl);
+  return new RedisRateLimitStore(client, redisFactory === null);
 }

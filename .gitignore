@@ -5,3 +5,4 @@ node_modules
 .playwright-cli/
 deploy/compose/.env
 deploy/compose/evidence/
+deploy/compose/backups/

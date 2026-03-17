@@ -1,4 +1,4 @@
-import { createDbClient, createDbWithdrawalRepo, toErrorMessage } from "@fiber-link/db";
+import { runWorkerReadinessChecks } from "../worker-readiness";
 
 const timeoutRaw = process.env.WORKER_READINESS_TIMEOUT_MS ?? "5000";
 const timeoutMs = Number(timeoutRaw);
@@ -13,61 +13,14 @@ if (!fiberRpcUrl) {
   process.exit(1);
 }
 
-type CheckResult = {
-  status: "ok" | "error";
-  message?: string;
-};
-
-async function checkDatabase(): Promise<CheckResult> {
-  try {
-    const repo = createDbWithdrawalRepo(createDbClient());
-    await repo.listReadyForProcessing(new Date());
-    return { status: "ok" };
-  } catch (error) {
-    return {
-      status: "error",
-      message: toErrorMessage(error),
-    };
-  }
-}
-
-async function checkCoreRpc(endpoint: string): Promise<CheckResult> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), Math.floor(timeoutMs));
-  try {
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: '{"id":"worker-healthcheck","jsonrpc":"2.0","method":"ping","params":[]}',
-      signal: controller.signal,
-    });
-    if (response.status >= 500) {
-      return { status: "error", message: `HTTP ${response.status}` };
-    }
-    return { status: "ok" };
-  } catch (error) {
-    return {
-      status: "error",
-      message: toErrorMessage(error),
-    };
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
 async function main() {
-  const checks = {
-    database: await checkDatabase(),
-    coreService: await checkCoreRpc(fiberRpcUrl),
-  };
-  const ready = Object.values(checks).every((item) => item.status === "ok");
-  const payload = {
-    status: ready ? "ready" : "not_ready",
-    checks,
-  };
+  const payload = await runWorkerReadinessChecks({
+    fiberRpcUrl,
+    timeoutMs,
+  });
 
   console.log(JSON.stringify(payload));
-  if (!ready) {
+  if (payload.status !== "ready") {
     process.exit(1);
   }
 }

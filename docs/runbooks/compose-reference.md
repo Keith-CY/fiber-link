@@ -10,6 +10,12 @@ This reference deployment starts:
 
 It is intended for local/staging bring-up, not production hardening.
 
+For production operations built on this compose stack, use the companion runbooks:
+
+- `docs/runbooks/compose-backup-recovery.md`
+- `docs/runbooks/compose-ops-monitoring.md`
+- `docs/runbooks/withdrawal-policy-operations.md`
+
 For a strict deterministic execution sequence (precheck -> spin-up -> signed RPC checks -> cleanup), use:
 - `docs/runbooks/testnet-bootstrap.md`
 
@@ -50,6 +56,17 @@ Edit `.env` minimally:
 - Optional: tune readiness probe timeouts:
   - `RPC_HEALTHCHECK_TIMEOUT_MS`
   - `WORKER_READINESS_TIMEOUT_MS`
+- Optional: tune monitoring/alert thresholds consumed by `compose-ops-summary.sh`:
+  - `WORKER_OPS_MAX_UNPAID_BACKLOG`
+  - `WORKER_OPS_MAX_OLDEST_UNPAID_AGE_MS`
+  - `WORKER_OPS_MAX_RETRY_PENDING`
+  - `WORKER_OPS_MAX_RECENT_FAILED_SETTLEMENTS`
+  - `WORKER_OPS_RECENT_FAILURE_LOOKBACK_HOURS`
+  - `WORKER_OPS_MAX_WITHDRAWAL_PARITY_ISSUES`
+  - `WORKER_OPS_WITHDRAWAL_LOOKBACK_HOURS`
+  - `WORKER_OPS_WITHDRAWAL_SAMPLE_LIMIT`
+- Optional: override the shared rate-limit Redis backend:
+  - `FIBER_LINK_RATE_LIMIT_REDIS_URL` (defaults to `redis://redis:6379/1`)
 
 ## Config and Override Semantics
 - Internal ports are fixed by service config:
@@ -57,6 +74,7 @@ Edit `.env` minimally:
   - RPC service listens on `3000` in container.
 - `.env` port overrides (`FNN_RPC_PORT`, `FNN_P2P_PORT`, `RPC_PORT`) control host-published ports only.
 - `FIBER_RPC_URL` is the compose-network endpoint used by `rpc` and `worker`; default is `http://fnn:8227`.
+- `FIBER_LINK_RATE_LIMIT_REDIS_URL` defaults to a dedicated Redis DB (`redis://redis:6379/1`) so rate limiting stays shared across RPC instances instead of falling back to in-process memory.
 - Worker cursor persistence uses `worker-data` volume mounted at `/var/lib/fiber-link`.
 - Compose startup order is `postgres/redis/fnn` -> `rpc` -> `worker` (current dependency wiring in `docker-compose.yml`).
 
@@ -112,6 +130,48 @@ This captures compose logs, node metadata, invoice/settlement IDs, status snapsh
 See detailed policy/checklist in:
 - `docs/runbooks/deployment-evidence.md`
 
+## One-command backup bundle
+
+From repo root:
+
+```bash
+scripts/capture-compose-backup.sh
+```
+
+This captures a PostgreSQL logical dump, worker cursor state, compose snapshots, retention metadata, and a `.tar.gz` archive.
+See:
+
+- `docs/runbooks/compose-backup-recovery.md`
+
+## One-command ops summary
+
+From repo root:
+
+```bash
+deploy/compose/compose-ops-summary.sh
+```
+
+This executes the worker-side ops summary inside the compose stack and returns machine-readable JSON plus actionable exit codes.
+See:
+
+- `docs/runbooks/compose-ops-monitoring.md`
+
+## One-command restore rehearsal
+
+From repo root:
+
+```bash
+scripts/restore-compose-backup.sh \
+  --backup deploy/compose/backups/<UTC_TIMESTAMP>.tar.gz \
+  --dry-run \
+  --yes
+```
+
+For a live restore rehearsal, remove `--dry-run` and run against a dedicated rehearsal environment.
+See:
+
+- `docs/runbooks/compose-backup-recovery.md`
+
 ## Service Health and Readiness Semantics
 
 Compose startup is gated by readiness outcomes (`depends_on.condition: service_healthy`) for dependency-critical services.
@@ -160,7 +220,7 @@ You can customize by editing `deploy/compose/fnn/config/testnet.yml` before buil
 ## Current Limitations
 - Settlement subscription URL still depends on upstream deployment interface and must be configured explicitly (`FIBER_SETTLEMENT_SUBSCRIPTION_URL`) for low-latency event path.
 - Admin panel server is not included in this compose reference.
-- This setup does not include production controls (TLS, secrets manager, backup, network isolation, observability stack).
+- This setup still depends on external platform controls for TLS, secrets management, network isolation, and offsite/PITR backup.
 
 ## Productionization Checklist (Next)
 - Replace default generated dev wallet key flow with managed key import workflow.
