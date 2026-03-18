@@ -7,7 +7,17 @@ IMAGE_TAG="${VISUAL_ACCEPTANCE_IMAGE_TAG:-fiber-link-visual-acceptance}"
 OUTPUT_DIR="${VISUAL_ACCEPTANCE_OUTPUT_DIR:-}"
 SETTLEMENT_MODES="${VISUAL_ACCEPTANCE_SETTLEMENT_MODES:-subscription,polling}"
 EXPLORER_TEMPLATE="${VISUAL_ACCEPTANCE_EXPLORER_TX_URL_TEMPLATE:-https://pudge.explorer.nervos.org/transaction/{txHash}}"
+COMPOSE_ENV_SOURCE="${VISUAL_ACCEPTANCE_COMPOSE_ENV_FILE:-}"
 SKIP_BUILD=0
+RUNTIME_DIR=""
+
+cleanup() {
+  if [[ -n "${RUNTIME_DIR}" && -d "${RUNTIME_DIR}" ]]; then
+    rm -rf "${RUNTIME_DIR}"
+  fi
+}
+
+trap cleanup EXIT
 
 usage() {
   cat <<'USAGE'
@@ -69,6 +79,13 @@ else
   mkdir -p "${OUTPUT_DIR}"
 fi
 
+RUNTIME_DIR="$(mktemp -d "${TMPDIR:-/tmp}/fiber-link-visual-acceptance-runtime.XXXXXX")"
+compose_env_args=(--output "${RUNTIME_DIR}/compose.env")
+if [[ -n "${COMPOSE_ENV_SOURCE}" ]]; then
+  compose_env_args+=(--source "${COMPOSE_ENV_SOURCE}")
+fi
+"${ROOT_DIR}/scripts/prepare-visual-acceptance-compose-env.sh" "${compose_env_args[@]}" >/dev/null
+
 print_paths() {
   local manifest_path="${OUTPUT_DIR}/manifest.json"
   printf 'Temp output: %s\n' "${OUTPUT_DIR}"
@@ -104,8 +121,10 @@ set +e
 "${DOCKER_BIN}" run --rm --privileged \
   -v "${ROOT_DIR}:/workspace" \
   -v "${OUTPUT_DIR}:/artifacts" \
+  -v "${RUNTIME_DIR}:/runtime:ro" \
   -e VISUAL_ACCEPTANCE_REPO_ROOT=/workspace \
   -e VISUAL_ACCEPTANCE_ARTIFACT_ROOT=/artifacts \
+  -e COMPOSE_ENV_FILE=/runtime/compose.env \
   -e VISUAL_ACCEPTANCE_SETTLEMENT_MODES="${SETTLEMENT_MODES}" \
   -e VISUAL_ACCEPTANCE_EXPLORER_TX_URL_TEMPLATE="${EXPLORER_TEMPLATE}" \
   "${IMAGE_TAG}"

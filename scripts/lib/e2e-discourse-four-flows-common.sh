@@ -13,7 +13,7 @@ EXIT_ARTIFACT=17
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 COMPOSE_FILE="${ROOT_DIR}/deploy/compose/docker-compose.yml"
-COMPOSE_ENV_FILE="${ROOT_DIR}/deploy/compose/.env"
+COMPOSE_ENV_FILE="${COMPOSE_ENV_FILE:-${ROOT_DIR}/deploy/compose/.env}"
 DEFAULT_RUN_TIMESTAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 DEFAULT_RUN_DIR="${ROOT_DIR}/.tmp/e2e-discourse-four-flows/${DEFAULT_RUN_TIMESTAMP}"
 DEFAULT_DISCOURSE_UI_BASE_URL="${E2E_DISCOURSE_UI_BASE_URL:-http://127.0.0.1:9292}"
