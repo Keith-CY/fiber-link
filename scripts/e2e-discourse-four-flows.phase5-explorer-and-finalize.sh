@@ -251,10 +251,11 @@ if [[ -n "${AUTHOR_BALANCE}" && "${AUTHOR_TIP_HISTORY_COUNT}" =~ ^[0-9]+$ && "${
 fi
 
 summary_file="${ARTIFACTS_DIR}/summary.json"
+git_sha="$(git -C "${ROOT_DIR}" rev-parse HEAD 2>/dev/null || printf 'unknown')"
 jq -n \
   --arg artifactDir "${RUN_DIR}" \
   --arg appId "${APP_ID}" \
-  --arg gitSha "$(git -C "${ROOT_DIR}" rev-parse HEAD)" \
+  --arg gitSha "${git_sha}" \
   --arg withdrawalId "${WITHDRAWAL_ID}" \
   --arg withdrawalState "${WITHDRAWAL_STATE}" \
   --arg withdrawalTxHash "${WITHDRAWAL_TX_HASH}" \

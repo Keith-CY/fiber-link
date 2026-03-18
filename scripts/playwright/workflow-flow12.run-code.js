@@ -311,11 +311,14 @@ async (page) => {
       throw new Error("dashboard route /fiber-link is not available (Routing Error)");
     }
 
-    await Promise.any([
+    const dashboardReady = await Promise.any([
       page.getByText(/fiber link dashboard/i).first().waitFor({ timeout: 20_000 }),
       page.getByText(/payments/i).first().waitFor({ timeout: 20_000 }),
       page.getByText(/balance/i).first().waitFor({ timeout: 20_000 }),
-    ]).catch(() => {});
+    ]).then(() => true).catch(() => false);
+    if (!dashboardReady) {
+      throw new Error("dashboard did not load expected content");
+    }
   }
 
   await page.setViewportSize(viewport);
