@@ -25,6 +25,7 @@ fi
 artifact_root=""
 runtime_root=""
 compose_env_file=""
+legacy_env_file=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -v)
@@ -41,6 +42,8 @@ while [[ $# -gt 0 ]]; do
     -e)
       if [[ "$2" == COMPOSE_ENV_FILE=* ]]; then
         compose_env_file="${2#COMPOSE_ENV_FILE=}"
+      elif [[ "$2" == ENV_FILE=* ]]; then
+        legacy_env_file="${2#ENV_FILE=}"
       fi
       shift 2
       ;;
@@ -60,6 +63,10 @@ done
 }
 [[ "${compose_env_file}" == "/runtime/compose.env" ]] || {
   echo "unexpected compose env path: ${compose_env_file}" >&2
+  exit 1
+}
+[[ "${legacy_env_file}" == "/runtime/compose.env" ]] || {
+  echo "unexpected legacy env path: ${legacy_env_file}" >&2
   exit 1
 }
 [[ -f "${runtime_root}/compose.env" ]] || {

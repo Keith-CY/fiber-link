@@ -15,7 +15,7 @@ EXIT_CHANNEL_BOOTSTRAP_FAILURE=18
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPOSE_DIR="${ROOT_DIR}/deploy/compose"
-ENV_FILE="${COMPOSE_DIR}/.env"
+ENV_FILE="${ENV_FILE:-${COMPOSE_ENV_FILE:-${COMPOSE_DIR}/.env}}"
 ARTIFACT_DIR="${ROOT_DIR}/.tmp/e2e-invoice-payment-accounting/$(date -u +%Y%m%dT%H%M%SZ)"
 SUMMARY_FILE="${ARTIFACT_DIR}/summary.tsv"
 
