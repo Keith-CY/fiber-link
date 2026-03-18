@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PWCLI="${PWCLI:-$HOME/.codex/skills/playwright/scripts/playwright_cli.sh}"
+PWCLI="${PWCLI:-${ROOT_DIR}/scripts/playwright-cli.sh}"
 SESSION="${PW_FLOW12_SESSION:-fiber-workflow-flow12}"
 ARTIFACT_DIR="${PW_FLOW12_ARTIFACT_DIR:-${ROOT_DIR}/.tmp/e2e-discourse-four-flows}"
 RUN_CODE_FILE="${ROOT_DIR}/scripts/playwright/workflow-flow12.run-code.js"

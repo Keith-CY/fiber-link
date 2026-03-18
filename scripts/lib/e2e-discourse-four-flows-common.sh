@@ -121,14 +121,18 @@ write_checklist() {
 - Artifact directory: ${RUN_DIR}
 
 ## Required Screenshots
+- [ ] screenshots/step1-forum-tip-entrypoints.png
+- [ ] screenshots/step2-topic-and-reply.png
 - [ ] screenshots/flow1-tip-button.png
 - [ ] screenshots/flow1-tip-modal-step1-generate.png
 - [ ] screenshots/flow1-tip-modal-step2-pay.png
 - [ ] screenshots/flow1-tip-modal-step3-confirmed.png
 - [ ] screenshots/flow1-tip-modal-invoice.png
-- [ ] screenshots/flow4-author-balance-history.png
-- [ ] screenshots/flow4-admin-withdrawal.png
-- [ ] screenshots/flow4-explorer-withdrawal-tx.png
+- [ ] screenshots/step4-tipper-dashboard.png
+- [ ] screenshots/step5-author-dashboard.png
+- [ ] screenshots/step6-author-withdrawal.png
+- [ ] screenshots/step6-admin-withdrawal.png
+- [ ] screenshots/step6-explorer-tx.png
 
 ## Required Evidence
 - [ ] artifacts/flow2-rpc-calls.json

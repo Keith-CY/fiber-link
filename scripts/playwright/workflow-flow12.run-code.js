@@ -21,10 +21,13 @@ async (page) => {
   };
 
   const tipButtonScreenshotPath = `${artifactDir}/playwright-flow1-tip-button.png`;
+  const forumEntryPointsScreenshotPath = `${artifactDir}/playwright-step1-forum-tip-entrypoints.png`;
+  const topicThreadScreenshotPath = `${artifactDir}/playwright-step2-topic-and-reply.png`;
   const tipModalStepGenerateScreenshotPath = `${artifactDir}/playwright-flow1-tip-modal-step1-generate.png`;
   const tipModalStepPayScreenshotPath = `${artifactDir}/playwright-flow1-tip-modal-step2-pay.png`;
   const tipModalScreenshotPath = `${artifactDir}/playwright-flow1-tip-modal-invoice.png`;
   const tipModalStepConfirmedScreenshotPath = `${artifactDir}/playwright-flow1-tip-modal-step3-confirmed.png`;
+  const tipperDashboardScreenshotPath = `${artifactDir}/playwright-step4-tipper-dashboard.png`;
 
   function buildRpcId(prefix) {
     if (typeof crypto !== "undefined" && crypto.randomUUID) {
@@ -253,6 +256,68 @@ async (page) => {
     await searchTopicLink.click();
   }
 
+  async function screenshotHighlightedPosts(path, { fullPage = false } = {}) {
+    const highlightedCount = await page.evaluate(() => {
+      const buttons = Array.from(
+        document.querySelectorAll(
+          "[data-fiber-link-tip-button], .fiber-link-tip-entry__button, .post-action-menu__fiber-link-tip, button[aria-label='Tip']",
+        ),
+      ).filter((element) => {
+        const rect = element.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+      });
+
+      const targets = [];
+      for (const button of buttons.slice(0, 2)) {
+        const container =
+          button.closest(".topic-post") ??
+          button.closest(".topic-body") ??
+          button.closest("article") ??
+          button;
+        if (!container || targets.includes(container)) {
+          continue;
+        }
+        container.setAttribute("data-fiber-link-visual-target", "true");
+        container.style.outline = "3px solid #1d9bf0";
+        container.style.outlineOffset = "6px";
+        targets.push(container);
+      }
+      return targets.length;
+    });
+
+    if (!highlightedCount) {
+      throw new Error("expected at least one visible tip entry point before screenshot");
+    }
+
+    await page.waitForTimeout(300);
+    await page.screenshot({ path, fullPage, timeout: 20_000 });
+    await page.evaluate(() => {
+      for (const target of Array.from(document.querySelectorAll("[data-fiber-link-visual-target='true']"))) {
+        target.style.outline = "";
+        target.style.outlineOffset = "";
+        target.removeAttribute("data-fiber-link-visual-target");
+      }
+    });
+  }
+
+  async function openDashboard() {
+    await page.goto(`${baseUrl}/fiber-link?withdrawalState=ALL&settlementState=ALL`, { waitUntil: "domcontentloaded" });
+    const routingError = await page
+      .getByText(/No route matches \[GET\] "\/fiber-link"/i)
+      .first()
+      .isVisible()
+      .catch(() => false);
+    if (routingError) {
+      throw new Error("dashboard route /fiber-link is not available (Routing Error)");
+    }
+
+    await Promise.any([
+      page.getByText(/fiber link dashboard/i).first().waitFor({ timeout: 20_000 }),
+      page.getByText(/payments/i).first().waitFor({ timeout: 20_000 }),
+      page.getByText(/balance/i).first().waitFor({ timeout: 20_000 }),
+    ]).catch(() => {});
+  }
+
   await page.setViewportSize(viewport);
   await login(username, password);
 
@@ -269,6 +334,8 @@ async (page) => {
     )
     .first();
   await tipButton.waitFor({ timeout: 20_000 });
+  await screenshotHighlightedPosts(forumEntryPointsScreenshotPath, { fullPage: false });
+  await screenshotHighlightedPosts(topicThreadScreenshotPath, { fullPage: true });
   await tipButton.evaluate((element) => {
     element.scrollIntoView({ block: "center", inline: "center", behavior: "instant" });
   });
@@ -389,6 +456,9 @@ async (page) => {
 
   const dashboardSummary = await rpcCall("dashboard.summary", {});
   const tipStatus = await rpcCall("tip.status", { invoice });
+  await openDashboard();
+  await page.waitForTimeout(500);
+  await page.screenshot({ path: tipperDashboardScreenshotPath, fullPage: true, timeout: 20_000 });
 
   return {
     user: username,
@@ -400,10 +470,13 @@ async (page) => {
     pageUrl: page.url(),
     screenshots: {
       tipButton: tipButtonScreenshotPath,
+      forumEntryPoints: forumEntryPointsScreenshotPath,
+      topicThread: topicThreadScreenshotPath,
       tipModalStepGenerate: tipModalStepGenerateScreenshotPath,
       tipModalStepPay: tipModalStepPayScreenshotPath,
       tipModalStepConfirmed: tipModalStepConfirmedScreenshotPath,
       tipModal: tipModalScreenshotPath,
+      tipperDashboard: tipperDashboardScreenshotPath,
     },
     payment,
     rpc: {

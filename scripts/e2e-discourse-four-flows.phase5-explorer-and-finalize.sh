@@ -131,13 +131,20 @@ if [[ "${ATTEMPT_LABEL}" != "primary" ]]; then
 fi
 
 copy_or_fail "${FLOW12_DIR}/playwright-flow1-tip-button.png" "${SCREENSHOT_DIR}/flow1-tip-button.png"
+copy_or_fail "${FLOW12_DIR}/playwright-step1-forum-tip-entrypoints.png" "${SCREENSHOT_DIR}/step1-forum-tip-entrypoints.png"
+copy_or_fail "${FLOW12_DIR}/playwright-step2-topic-and-reply.png" "${SCREENSHOT_DIR}/step2-topic-and-reply.png"
 copy_or_fail "${FLOW12_DIR}/playwright-flow1-tip-modal-step1-generate.png" "${SCREENSHOT_DIR}/flow1-tip-modal-step1-generate.png"
 copy_or_fail "${FLOW12_DIR}/playwright-flow1-tip-modal-step2-pay.png" "${SCREENSHOT_DIR}/flow1-tip-modal-step2-pay.png"
 copy_or_fail "${FLOW12_DIR}/playwright-flow1-tip-modal-step3-confirmed.png" "${SCREENSHOT_DIR}/flow1-tip-modal-step3-confirmed.png"
 copy_or_fail "${FLOW12_DIR}/playwright-flow1-tip-modal-invoice.png" "${SCREENSHOT_DIR}/flow1-tip-modal-invoice.png"
+copy_or_fail "${FLOW12_DIR}/playwright-step4-tipper-dashboard.png" "${SCREENSHOT_DIR}/step4-tipper-dashboard.png"
+copy_or_fail "${PHASE3_DIR}/playwright-step5-author-dashboard.png" "${SCREENSHOT_DIR}/step5-author-dashboard.png"
+copy_or_fail "${PHASE3_DIR}/playwright-step6-author-withdrawal.png" "${SCREENSHOT_DIR}/step6-author-withdrawal.png"
 copy_or_fail "${attempt_postcheck_dir}/playwright-step5-author-dashboard.png" "${SCREENSHOT_DIR}/flow4-author-balance-history.png"
 copy_or_fail "${attempt_postcheck_dir}/playwright-step7-admin-withdrawal.png" "${SCREENSHOT_DIR}/flow4-admin-withdrawal.png"
 copy_or_fail "${attempt_explorer_dir}/playwright-flow4-explorer-withdrawal-tx.png" "${SCREENSHOT_DIR}/flow4-explorer-withdrawal-tx.png"
+copy_or_fail "${attempt_postcheck_dir}/playwright-step7-admin-withdrawal.png" "${SCREENSHOT_DIR}/step6-admin-withdrawal.png"
+copy_or_fail "${attempt_explorer_dir}/playwright-flow4-explorer-withdrawal-tx.png" "${SCREENSHOT_DIR}/step6-explorer-tx.png"
 
 flow2_tip_create_req="$(json_or_null "${PHASE2_DIR}/tips/topic-post/tip-create.request.json")"
 flow2_tip_create_resp="$(json_or_null "${PHASE2_DIR}/tips/topic-post/tip-create.response.json")"
@@ -179,14 +186,41 @@ jq -n \
   }' > "${ARTIFACTS_DIR}/flow2-rpc-calls.json"
 
 FLOW12_RESULT_JSON="$(extract_result_json "${FLOW12_DIR}/playwright-flow12-result.log" || true)"
+forum_entry_ok=false
+topic_thread_ok=false
+tip_flow_ok=false
+tipper_dashboard_ok=false
 flow1_ok=false
 if [[ -n "${FLOW12_RESULT_JSON}" ]]; then
+  forum_entry_ok="$(printf '%s' "${FLOW12_RESULT_JSON}" | jq -r '
+    ((.screenshots.forumEntryPoints // "") != "")
+    and ((.screenshots.tipButton // "") != "")
+  ')"
+  topic_thread_ok="$(printf '%s' "${FLOW12_RESULT_JSON}" | jq -r '
+    ((.screenshots.topicThread // "") != "")
+  ')"
+  tip_flow_ok="$(printf '%s' "${FLOW12_RESULT_JSON}" | jq -r '
+    ((.screenshots.tipModalStepGenerate // "") != "")
+    and ((.screenshots.tipModalStepPay // "") != "")
+    and ((.screenshots.tipModalStepConfirmed // "") != "")
+    and ((.screenshots.tipModal // "") != "")
+    and ((.invoiceQrVisible // false) == true)
+    and ((.payment.settled // false) == true)
+    and ((.rpc.tipStatus.response.result.state // "") == "SETTLED")
+  ')"
+  tipper_dashboard_ok="$(printf '%s' "${FLOW12_RESULT_JSON}" | jq -r '
+    ((.screenshots.tipperDashboard // "") != "")
+    and ((.rpc.dashboardSummary.ok // false) == true)
+  ')"
   flow1_ok="$(printf '%s' "${FLOW12_RESULT_JSON}" | jq -r '
-    ((.screenshots.tipButton // "") != "")
+    ((.screenshots.forumEntryPoints // "") != "")
+    and ((.screenshots.topicThread // "") != "")
+    and ((.screenshots.tipButton // "") != "")
     and ((.screenshots.tipModalStepGenerate // "") != "")
     and ((.screenshots.tipModalStepPay // "") != "")
     and ((.screenshots.tipModalStepConfirmed // "") != "")
     and ((.screenshots.tipModal // "") != "")
+    and ((.screenshots.tipperDashboard // "") != "")
     and ((.invoiceQrVisible // false) == true)
     and ((.payment.settled // false) == true)
     and ((.rpc.dashboardSummary.ok // false) == true)
@@ -211,33 +245,48 @@ if [[ -n "${WITHDRAWAL_ID}" && "${WITHDRAWAL_STATE}" == "COMPLETED" && -n "${WIT
   flow4_ok=true
 fi
 
+author_dashboard_ok=false
+if [[ -n "${AUTHOR_BALANCE}" && "${AUTHOR_TIP_HISTORY_COUNT}" =~ ^[0-9]+$ && "${AUTHOR_TIP_HISTORY_COUNT}" -ge 1 ]]; then
+  author_dashboard_ok=true
+fi
+
 summary_file="${ARTIFACTS_DIR}/summary.json"
 jq -n \
   --arg artifactDir "${RUN_DIR}" \
   --arg appId "${APP_ID}" \
+  --arg gitSha "$(git -C "${ROOT_DIR}" rev-parse HEAD)" \
   --arg withdrawalId "${WITHDRAWAL_ID}" \
   --arg withdrawalState "${WITHDRAWAL_STATE}" \
   --arg withdrawalTxHash "${WITHDRAWAL_TX_HASH}" \
   --arg authorBalance "${AUTHOR_BALANCE}" \
   --arg authorTipHistoryCount "${AUTHOR_TIP_HISTORY_COUNT}" \
   --arg explorerUrl "$(printf '%s' "${EXPLORER_RESULT_JSON}" | jq -r '.explorerUrl // empty')" \
+  --argjson forumEntryOk "${forum_entry_ok}" \
+  --argjson topicThreadOk "${topic_thread_ok}" \
+  --argjson tipFlowOk "${tip_flow_ok}" \
+  --argjson tipperDashboardOk "${tipper_dashboard_ok}" \
   --argjson flow1Ok "${flow1_ok}" \
   --argjson flow2Ok "${flow2_ok}" \
   --argjson flow3SubscriptionOk "${flow3_sub_ok}" \
   --argjson flow3PollingOk "${flow3_poll_ok}" \
+  --argjson authorDashboardOk "${author_dashboard_ok}" \
   --argjson flow4Ok "${flow4_ok}" \
   '{
     artifactDir: $artifactDir,
     appId: $appId,
+    gitSha: $gitSha,
     flows: {
       flow1TipUi: {
         ok: $flow1Ok,
         screenshots: {
+          forumEntryPoints: "screenshots/step1-forum-tip-entrypoints.png",
+          topicThread: "screenshots/step2-topic-and-reply.png",
           tipButton: "screenshots/flow1-tip-button.png",
           step1Generate: "screenshots/flow1-tip-modal-step1-generate.png",
           step2Pay: "screenshots/flow1-tip-modal-step2-pay.png",
           step3Confirmed: "screenshots/flow1-tip-modal-step3-confirmed.png",
-          tipModal: "screenshots/flow1-tip-modal-invoice.png"
+          tipModal: "screenshots/flow1-tip-modal-invoice.png",
+          tipperDashboard: "screenshots/step4-tipper-dashboard.png"
         }
       },
       flow2BackendInterfaces: {
@@ -266,6 +315,55 @@ jq -n \
           authorBalanceHistory: "screenshots/flow4-author-balance-history.png",
           adminWithdrawal: "screenshots/flow4-admin-withdrawal.png",
           explorerTx: "screenshots/flow4-explorer-withdrawal-tx.png"
+        }
+      }
+    },
+    visualAcceptance: {
+      steps: {
+        forumEntryPoints: {
+          label: "Step 1. Forum shows Fiber Link tip entry points",
+          ok: $forumEntryOk,
+          screenshots: ["screenshots/step1-forum-tip-entrypoints.png"]
+        },
+        topicThread: {
+          label: "Step 2. Topic and reply render with the plugin enabled",
+          ok: $topicThreadOk,
+          screenshots: ["screenshots/step2-topic-and-reply.png"]
+        },
+        tipFlow: {
+          label: "Step 3. Tipper generates invoice, sees QR code, and payment settles",
+          ok: $tipFlowOk,
+          invoiceQrVisible: true,
+          screenshots: [
+            "screenshots/flow1-tip-modal-step1-generate.png",
+            "screenshots/flow1-tip-modal-step2-pay.png",
+            "screenshots/flow1-tip-modal-step3-confirmed.png"
+          ]
+        },
+        tipperDashboard: {
+          label: "Step 4. Tipper dashboard shows payment history and balance",
+          ok: $tipperDashboardOk,
+          screenshots: ["screenshots/step4-tipper-dashboard.png"]
+        },
+        authorDashboard: {
+          label: "Step 5. Author dashboard shows payout history and balance",
+          ok: $authorDashboardOk,
+          authorBalance: $authorBalance,
+          authorTipHistoryCount: $authorTipHistoryCount,
+          screenshots: ["screenshots/step5-author-dashboard.png"]
+        },
+        withdrawalCompletion: {
+          label: "Step 6. Author withdrawal completes with admin and explorer proof",
+          ok: $flow4Ok,
+          withdrawalId: $withdrawalId,
+          withdrawalState: $withdrawalState,
+          withdrawalTxHash: $withdrawalTxHash,
+          explorerUrl: $explorerUrl,
+          screenshots: [
+            "screenshots/step6-author-withdrawal.png",
+            "screenshots/step6-admin-withdrawal.png",
+            "screenshots/step6-explorer-tx.png"
+          ]
         }
       }
     }

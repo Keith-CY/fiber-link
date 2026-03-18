@@ -235,6 +235,12 @@ resolve_runtime_ports() {
   fi
 }
 
+resolve_docker_host_gateway() {
+  docker network inspect bridge 2>/dev/null \
+    | jq -r '.[0].IPAM.Config[0].Gateway // empty' \
+    | tr -d '\r'
+}
+
 docker_container_env_value() {
   local container="$1"
   local key="$2"
@@ -904,7 +910,14 @@ fi
 
 resolve_runtime_ports
 sync_rpc_app_secret_record
-DISCOURSE_SERVICE_URL="${FIBER_LINK_DISCOURSE_SERVICE_URL:-http://host.docker.internal:${RPC_PORT}}"
+docker_host_gateway="${DOCKER_HOST_GATEWAY_IP:-$(resolve_docker_host_gateway)}"
+if [[ -n "${FIBER_LINK_DISCOURSE_SERVICE_URL:-}" ]]; then
+  DISCOURSE_SERVICE_URL="${FIBER_LINK_DISCOURSE_SERVICE_URL}"
+elif [[ -n "${docker_host_gateway}" ]]; then
+  DISCOURSE_SERVICE_URL="http://${docker_host_gateway}:${RPC_PORT}"
+else
+  DISCOURSE_SERVICE_URL="http://host.docker.internal:${RPC_PORT}"
+fi
 vlog "resolved rpc_port=${RPC_PORT} fnn2_rpc_port=${FNN2_RPC_PORT} discourse_service_url=${DISCOURSE_SERVICE_URL}"
 
 TIPPER_USER_ID="${WORKFLOW_TIPPER_USER_ID:-}"

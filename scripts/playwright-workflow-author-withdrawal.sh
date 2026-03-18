@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PWCLI="${PWCLI:-$HOME/.codex/skills/playwright/scripts/playwright_cli.sh}"
+PWCLI="${PWCLI:-${ROOT_DIR}/scripts/playwright-cli.sh}"
 SESSION="${PW_AUTHOR_WITHDRAWAL_SESSION:-fiber-workflow-author-withdrawal}"
 ARTIFACT_DIR="${PW_AUTHOR_WITHDRAWAL_ARTIFACT_DIR:-${ROOT_DIR}/.tmp/playwright-workflow-demo/author-withdrawal}"
 RUN_CODE_FILE="${ROOT_DIR}/scripts/playwright/workflow-author-withdrawal.run-code.js"
