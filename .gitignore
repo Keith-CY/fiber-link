@@ -3,6 +3,7 @@ node_modules
 /tmp/
 .tmp/
 .artifacts/
+coverage/
 .playwright-cli/
 deploy/compose/.env
 deploy/compose/evidence/

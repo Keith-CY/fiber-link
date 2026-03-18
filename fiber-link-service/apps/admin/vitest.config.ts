@@ -8,8 +8,10 @@ export default defineConfig({
       exclude: [
         "**/*.test.ts",
         "**/*.test.tsx",
+        "playwright.config.ts",
         "src/server/auth.ts",
         "src/pages/index.tsx",
+        "src/scripts/**",
       ],
     },
   },
