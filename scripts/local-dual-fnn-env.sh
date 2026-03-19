@@ -14,4 +14,4 @@ fi
 : "${E2E_TOPUP_INVOICE_NODE_CKB:=1}"
 export E2E_TOPUP_INVOICE_NODE_CKB
 
-exec "${E2E_SCRIPT}" --prepare-only --keep-up "$@"
+exec bash "${E2E_SCRIPT}" --prepare-only --keep-up "$@"

@@ -2,6 +2,11 @@ import { createHash } from "node:crypto";
 import { compareDecimalStrings, formatDecimal, parseDecimal, pow10, toErrorMessage } from "@fiber-link/db";
 import { createAdapter, type ChannelRecord } from "@fiber-link/fiber-adapter";
 import { computeRequiredOpenFundingAmount } from "../channel-rotation";
+import {
+  isIgnorableAcceptChannelError,
+  selectSeededLegacyChannel,
+  waitForSeededLegacyChannelReady,
+} from "../channel-rotation-legacy";
 
 const CKB_DECIMALS = 8;
 const DEFAULT_P2P_PORT = "8228";
@@ -227,17 +232,6 @@ function isIgnorableConnectError(error: unknown): boolean {
   );
 }
 
-function isIgnorableAcceptError(error: unknown): boolean {
-  const normalized = normalizeErrorMessage(error);
-  return (
-    normalized.includes("already") ||
-    normalized.includes("not found") ||
-    normalized.includes("no channel with temp id") ||
-    normalized.includes("no channel") ||
-    normalized.includes("unknown channel")
-  );
-}
-
 async function connectPeer(endpoint: string, address: string) {
   try {
     await rpcCall(endpoint, "connect_peer", [{ address }]);
@@ -246,82 +240,6 @@ async function connectPeer(endpoint: string, address: string) {
       throw error;
     }
   }
-}
-
-function findEligibleChannel(channels: ChannelRecord[], minimumLocalBalance: string): ChannelRecord | null {
-  let selected: ChannelRecord | null = null;
-  for (const channel of channels) {
-    if (
-      channel.state !== "CHANNEL_READY" ||
-      channel.pendingTlcCount !== 0 ||
-      compareDecimalStrings(channel.localBalance, minimumLocalBalance) < 0
-    ) {
-      continue;
-    }
-    if (!selected || compareDecimalStrings(channel.localBalance, selected.localBalance) > 0) {
-      selected = channel;
-    }
-  }
-  return selected;
-}
-
-async function delay(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function waitForNewReadyChannel(args: {
-  peerId: string;
-  existingChannelIds: Set<string>;
-  endpoint: string;
-  timeoutMs: number;
-  pollIntervalMs: number;
-}) {
-  const adapter = createAdapter({ endpoint: args.endpoint });
-  const deadline = Date.now() + args.timeoutMs;
-  let lastObserved:
-    | {
-        channelId: string;
-        state: string;
-        localBalance: string;
-      }
-    | null = null;
-  while (Date.now() < deadline) {
-    const channels = await adapter.listChannels({
-      includeClosed: false,
-      peerId: args.peerId,
-    });
-    const freshChannels = channels.channels.filter((channel) => !args.existingChannelIds.has(channel.channelId));
-    const freshest = freshChannels[0];
-    if (freshest) {
-      lastObserved = {
-        channelId: freshest.channelId,
-        state: freshest.state,
-        localBalance: freshest.localBalance,
-      };
-      console.error(
-        JSON.stringify({
-          step: "wait_for_ready",
-          observedChannelId: freshest.channelId,
-          observedState: freshest.state,
-          observedLocalBalance: freshest.localBalance,
-        }),
-      );
-    }
-    const ready = channels.channels.find(
-      (channel) =>
-        !args.existingChannelIds.has(channel.channelId) &&
-        channel.state === "CHANNEL_READY" &&
-        channel.pendingTlcCount === 0,
-    );
-    if (ready) {
-      return ready;
-    }
-    await delay(args.pollIntervalMs);
-  }
-  const detail = lastObserved
-    ? `; lastObservedChannel=${lastObserved.channelId} state=${lastObserved.state} localBalance=${lastObserved.localBalance}`
-    : "";
-  throw new Error(`seeded legacy channel did not reach CHANNEL_READY within ${args.timeoutMs}ms${detail}`);
 }
 
 async function main() {
@@ -356,7 +274,7 @@ async function main() {
       peerId: peerPeerId,
     }),
   );
-  const existingEligible = findEligibleChannel(existingChannels.channels, requiredLegacyAmountShannons);
+  const existingEligible = selectSeededLegacyChannel(existingChannels.channels, requiredLegacyAmountShannons);
   if (existingEligible) {
     console.log(
       JSON.stringify({
@@ -420,7 +338,7 @@ async function main() {
       });
       acceptOutcome = "accepted";
     } catch (error) {
-      if (!isIgnorableAcceptError(error)) {
+      if (!isIgnorableAcceptChannelError(error)) {
         throw error;
       }
       acceptOutcome = "ignored_error";
@@ -435,12 +353,39 @@ async function main() {
     }),
   );
 
-  const readyChannel = await waitForNewReadyChannel({
+  const readyChannel = await waitForSeededLegacyChannelReady({
     peerId: peerPeerId,
     existingChannelIds: new Set(existingChannels.channels.map((channel) => channel.channelId)),
-    endpoint: options.primaryEndpoint,
+    listChannels: (args) => primaryAdapter.listChannels(args),
     timeoutMs: options.readyTimeoutMs,
     pollIntervalMs: options.pollIntervalMs,
+    acceptChannel: hasPositiveAmount(acceptancePolicy.acceptChannelFundingAmount)
+      ? (args) => peerAdapter.acceptChannel(args)
+      : undefined,
+    temporaryChannelId: openResult.temporaryChannelId,
+    acceptFundingAmount: acceptancePolicy.acceptChannelFundingAmount,
+    onObservation: (channel) => {
+      console.error(
+        JSON.stringify({
+          step: "wait_for_ready",
+          observedChannelId: channel.channelId,
+          observedState: channel.state,
+          observedLocalBalance: channel.localBalance,
+        }),
+      );
+    },
+    onAcceptRetry: (event) => {
+      console.error(
+        JSON.stringify({
+          step: "accept_channel_retry",
+          temporaryChannelId: event.temporaryChannelId,
+          observedState: event.observedState,
+          acceptOutcome: event.outcome,
+          acceptFundingAmount: acceptancePolicy.acceptChannelFundingAmount,
+          attempt: event.attempt,
+        }),
+      );
+    },
   });
 
   console.log(

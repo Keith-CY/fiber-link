@@ -23,6 +23,7 @@ HEADLESS=0
 SKIP_SERVICES=0
 SKIP_DISCOURSE=0
 SETTLEMENT_MODES="${E2E_SETTLEMENT_MODES:-subscription}"
+E2E_RC=0
 
 usage() {
   cat <<'USAGE'
@@ -142,10 +143,13 @@ if [[ "${RUN_E2E}" -eq 1 ]]; then
   (cd "${ROOT_DIR}" && "${e2e_cmd[@]}") 2>&1 | tee "${RUN_LOG}"
   e2e_rc=${PIPESTATUS[0]}
   set -e
+  E2E_RC="${e2e_rc}"
 
   if [[ "${e2e_rc}" -ne 0 ]]; then
     log "e2e script failed with exit code ${e2e_rc}"
-    exit "${EXIT_RUN_FAILURE}"
+    if [[ ! -d "${SOURCE_ARTIFACT_DIR}" ]]; then
+      exit "${EXIT_RUN_FAILURE}"
+    fi
   fi
 fi
 
@@ -182,8 +186,8 @@ else
   summary_file="${EVIDENCE_DIR}/artifacts/summary.json"
 fi
 
-git_sha="$(cd "${ROOT_DIR}" && git rev-parse HEAD)"
-git_branch="$(cd "${ROOT_DIR}" && git rev-parse --abbrev-ref HEAD)"
+git_sha="${VISUAL_ACCEPTANCE_GIT_SHA:-$(cd "${ROOT_DIR}" && git rev-parse HEAD 2>/dev/null || printf 'unknown')}"
+git_branch="${VISUAL_ACCEPTANCE_GIT_BRANCH:-$(cd "${ROOT_DIR}" && git rev-parse --abbrev-ref HEAD 2>/dev/null || printf 'unknown')}"
 
 jq -n \
   --arg generatedAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
@@ -192,6 +196,7 @@ jq -n \
   --arg gitSha "${git_sha}" \
   --arg gitBranch "${git_branch}" \
   --arg summaryFile "${summary_file}" \
+  --argjson e2eExitCode "${E2E_RC}" \
   '{
     generatedAt: $generatedAt,
     rootDir: $rootDir,
@@ -200,7 +205,8 @@ jq -n \
       sha: $gitSha,
       branch: $gitBranch
     },
-    summaryFile: $summaryFile
+    summaryFile: $summaryFile,
+    e2eExitCode: $e2eExitCode
   }' > "${EVIDENCE_DIR}/metadata/manifest.json"
 
 set +e
@@ -214,4 +220,9 @@ set -e
 
 log "evidence dir: ${EVIDENCE_DIR}"
 log "archive: ${ARCHIVE_FILE}"
+if [[ "${E2E_RC}" -ne 0 ]]; then
+  printf 'RESULT=FAIL CODE=%s EVIDENCE_DIR=%s ARCHIVE=%s SOURCE_ARTIFACT_DIR=%s\n' "${EXIT_RUN_FAILURE}" "${EVIDENCE_DIR}" "${ARCHIVE_FILE}" "${SOURCE_ARTIFACT_DIR}"
+  exit "${EXIT_RUN_FAILURE}"
+fi
+
 printf 'RESULT=PASS CODE=0 EVIDENCE_DIR=%s ARCHIVE=%s SOURCE_ARTIFACT_DIR=%s\n' "${EVIDENCE_DIR}" "${ARCHIVE_FILE}" "${SOURCE_ARTIFACT_DIR}"

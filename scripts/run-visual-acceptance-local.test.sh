@@ -26,24 +26,63 @@ artifact_root=""
 runtime_root=""
 compose_env_file=""
 legacy_env_file=""
+git_sha=""
+git_branch=""
+discourse_ui_base_url=""
+host_access_host=""
+host_access_base_url=""
+discourse_dev_root=""
+docker_socket_mount=0
+host_gateway_alias=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    -v)
-      if [[ "$2" == *":/artifacts" ]]; then
-        artifact_root="${2%%:/artifacts}"
-      elif [[ "$2" == *":/runtime:ro" ]]; then
-        runtime_root="${2%%:/runtime:ro}"
+    --add-host)
+      if [[ "$2" == "host.docker.internal:host-gateway" ]]; then
+        host_gateway_alias=1
       fi
       shift 2
       ;;
-    --rm|--privileged)
+    -v)
+      mount_spec="$2"
+      if [[ "${mount_spec}" == /var/run/docker.sock:/var/run/docker.sock ]]; then
+        docker_socket_mount=1
+      elif [[ "${mount_spec}" == *":${runtime_root}" ]]; then
+        :
+      elif [[ "${mount_spec}" == *"/compose.env" ]]; then
+        :
+      elif [[ "${mount_spec}" == *":"* ]]; then
+        host_mount="${mount_spec%%:*}"
+        container_mount="${mount_spec#*:}"
+        if [[ "${host_mount}" == "${container_mount}" && "${host_mount}" == *"/fiber-link-visual-acceptance-runtime."* ]]; then
+          runtime_root="${host_mount}"
+        elif [[ "${host_mount}" == "${container_mount}" && "${host_mount}" == *"/fiber-link-visual-acceptance"* ]]; then
+          artifact_root="${host_mount}"
+        fi
+      fi
+      shift 2
+      ;;
+    --rm)
       shift
       ;;
     -e)
-      if [[ "$2" == COMPOSE_ENV_FILE=* ]]; then
+      if [[ "$2" == VISUAL_ACCEPTANCE_ARTIFACT_ROOT=* ]]; then
+        artifact_root="${2#VISUAL_ACCEPTANCE_ARTIFACT_ROOT=}"
+      elif [[ "$2" == COMPOSE_ENV_FILE=* ]]; then
         compose_env_file="${2#COMPOSE_ENV_FILE=}"
       elif [[ "$2" == ENV_FILE=* ]]; then
         legacy_env_file="${2#ENV_FILE=}"
+      elif [[ "$2" == VISUAL_ACCEPTANCE_GIT_SHA=* ]]; then
+        git_sha="${2#VISUAL_ACCEPTANCE_GIT_SHA=}"
+      elif [[ "$2" == VISUAL_ACCEPTANCE_GIT_BRANCH=* ]]; then
+        git_branch="${2#VISUAL_ACCEPTANCE_GIT_BRANCH=}"
+      elif [[ "$2" == E2E_DISCOURSE_UI_BASE_URL=* ]]; then
+        discourse_ui_base_url="${2#E2E_DISCOURSE_UI_BASE_URL=}"
+      elif [[ "$2" == E2E_HOST_ACCESS_HOST=* ]]; then
+        host_access_host="${2#E2E_HOST_ACCESS_HOST=}"
+      elif [[ "$2" == E2E_HOST_ACCESS_BASE_URL=* ]]; then
+        host_access_base_url="${2#E2E_HOST_ACCESS_BASE_URL=}"
+      elif [[ "$2" == DISCOURSE_DEV_ROOT=* ]]; then
+        discourse_dev_root="${2#DISCOURSE_DEV_ROOT=}"
       fi
       shift 2
       ;;
@@ -61,12 +100,44 @@ done
   echo "missing runtime mount" >&2
   exit 1
 }
-[[ "${compose_env_file}" == "/runtime/compose.env" ]] || {
+[[ "${docker_socket_mount}" -eq 1 ]] || {
+  echo "missing docker socket mount" >&2
+  exit 1
+}
+[[ "${host_gateway_alias}" -eq 1 ]] || {
+  echo "missing host gateway alias" >&2
+  exit 1
+}
+[[ "${compose_env_file}" == "${runtime_root}/compose.env" ]] || {
   echo "unexpected compose env path: ${compose_env_file}" >&2
   exit 1
 }
-[[ "${legacy_env_file}" == "/runtime/compose.env" ]] || {
+[[ "${legacy_env_file}" == "${runtime_root}/compose.env" ]] || {
   echo "unexpected legacy env path: ${legacy_env_file}" >&2
+  exit 1
+}
+[[ -n "${git_sha}" ]] || {
+  echo "missing host git sha" >&2
+  exit 1
+}
+[[ -n "${git_branch}" ]] || {
+  echo "missing host git branch" >&2
+  exit 1
+}
+[[ "${host_access_host}" == "host.docker.internal" ]] || {
+  echo "unexpected host access host: ${host_access_host}" >&2
+  exit 1
+}
+[[ "${host_access_base_url}" == "http://host.docker.internal" ]] || {
+  echo "unexpected host access base url: ${host_access_base_url}" >&2
+  exit 1
+}
+[[ "${discourse_dev_root}" == "${runtime_root}/discourse-dev" ]] || {
+  echo "unexpected discourse dev root: ${discourse_dev_root}" >&2
+  exit 1
+}
+[[ "${discourse_ui_base_url}" == "http://host.docker.internal:4200" ]] || {
+  echo "unexpected discourse ui base url: ${discourse_ui_base_url}" >&2
   exit 1
 }
 [[ -f "${runtime_root}/compose.env" ]] || {
@@ -92,7 +163,6 @@ cat > "${artifact_root}/evidence/fake/summary.json" <<'EOF_SUMMARY'
 EOF_SUMMARY
 touch "${artifact_root}/evidence/fake.tar.gz"
 touch "${artifact_root}/harness.log"
-touch "${artifact_root}/dockerd.log"
 EOF_DOCKER
 chmod +x "${FAKE_BIN_DIR}/docker"
 

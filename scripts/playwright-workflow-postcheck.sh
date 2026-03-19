@@ -28,11 +28,40 @@ export PATH
 }
 
 mkdir -p "${ARTIFACT_DIR}"
-PW_TMPDIR="${PW_TMPDIR:-/tmp/playwright-cli}"
+PW_TMPDIR="${PW_TMPDIR:-${ARTIFACT_DIR}/playwright-cli-tmp}"
 mkdir -p "${PW_TMPDIR}"
 export TMPDIR="${PW_TMPDIR}"
 
-BASE_URL="${PW_DEMO_URL:-http://127.0.0.1:9292}"
+normalize_sidecar_url() {
+  local raw_url="$1"
+  local host_access_host="${PLAYWRIGHT_CLI_HOST_ACCESS_HOST:-${E2E_HOST_ACCESS_HOST:-host.docker.internal}}"
+  if [[ -n "${PLAYWRIGHT_CLI_DOCKER_NETWORK_CONTAINER:-}" && "${raw_url}" == "http://${host_access_host}:"* ]]; then
+    printf 'http://127.0.0.1:%s' "${raw_url#http://${host_access_host}:}"
+    return 0
+  fi
+  printf '%s' "${raw_url}"
+}
+
+normalize_sidecar_probe_url() {
+  local raw_url="$1"
+  local host_access_host="${PLAYWRIGHT_CLI_HOST_ACCESS_HOST:-${E2E_HOST_ACCESS_HOST:-host.docker.internal}}"
+  if [[ -z "${PLAYWRIGHT_CLI_DOCKER_NETWORK_CONTAINER:-}" ]]; then
+    printf '%s' "${raw_url}"
+    return 0
+  fi
+  if [[ "${raw_url}" == "http://${host_access_host}:4200/"* ]]; then
+    printf 'http://127.0.0.1:9292/%s' "${raw_url#http://${host_access_host}:4200/}"
+    return 0
+  fi
+  if [[ "${raw_url}" == "http://127.0.0.1:4200/"* ]]; then
+    printf 'http://127.0.0.1:9292/%s' "${raw_url#http://127.0.0.1:4200/}"
+    return 0
+  fi
+  printf '%s' "$(normalize_sidecar_url "${raw_url}")"
+}
+
+BASE_URL="${PW_DEMO_URL:-http://127.0.0.1:4200}"
+BASE_URL="$(normalize_sidecar_url "${BASE_URL}")"
 if [[ "${BASE_URL}" == */login ]]; then
   OPEN_URL="${BASE_URL}"
 else
@@ -46,7 +75,16 @@ wait_for_backend_ready() {
   deadline=$(( $(date +%s) + timeout_seconds ))
 
   while true; do
-    if curl -fsS -m 3 "${probe_url}" >/dev/null 2>&1; then
+    if [[ -n "${PLAYWRIGHT_CLI_DOCKER_NETWORK_CONTAINER:-}" ]]; then
+      local container_probe_url="${probe_url}"
+      local host_access_host="${PLAYWRIGHT_CLI_HOST_ACCESS_HOST:-${E2E_HOST_ACCESS_HOST:-host.docker.internal}}"
+      if [[ "${container_probe_url}" == "http://${host_access_host}:"* ]]; then
+        container_probe_url="http://127.0.0.1:${container_probe_url#http://${host_access_host}:}"
+      fi
+      if docker exec "${PLAYWRIGHT_CLI_DOCKER_NETWORK_CONTAINER}" sh -lc "curl -fsS -m 3 '${container_probe_url}' >/dev/null" >/dev/null 2>&1; then
+        return 0
+      fi
+    elif curl -fsS -m 3 "${probe_url}" >/dev/null 2>&1; then
       return 0
     fi
     if [[ "$(date +%s)" -ge "${deadline}" ]]; then
@@ -57,6 +95,7 @@ wait_for_backend_ready() {
 }
 
 BACKEND_READY_URL="${PW_DEMO_BACKEND_READY_URL:-${BASE_URL%/}/session/csrf.json}"
+BACKEND_READY_URL="$(normalize_sidecar_probe_url "${BACKEND_READY_URL}")"
 BACKEND_WAIT_SECONDS="${PW_DEMO_BACKEND_WAIT_SECONDS:-120}"
 if ! wait_for_backend_ready "${BACKEND_READY_URL}" "${BACKEND_WAIT_SECONDS}"; then
   echo "[playwright-postcheck] discourse backend not ready at ${BACKEND_READY_URL} after ${BACKEND_WAIT_SECONDS}s" >&2
@@ -105,27 +144,18 @@ demo_env_json="$(
 )"
 base_code="$(cat "${RUN_CODE_FILE}")"
 run_code="$(printf '(() => { globalThis.__PW_DEMO_ENV__ = %s; return (%s); })()' "${demo_env_json}" "${base_code}")"
+run_code_file="${ARTIFACT_DIR}/playwright-postcheck.run-code.js"
+printf '%s' "${run_code}" > "${run_code_file}"
 
-"${PWCLI}" -s="${SESSION}" close >/dev/null 2>&1 || true
-if [[ "${PW_DEMO_HEADED:-1}" == "1" ]]; then
-  "${PWCLI}" -s="${SESSION}" open "${OPEN_URL}" --headed > "${ARTIFACT_DIR}/playwright-postcheck-open.log"
-else
-  "${PWCLI}" -s="${SESSION}" open "${OPEN_URL}" > "${ARTIFACT_DIR}/playwright-postcheck-open.log"
-fi
-
-set +e
-"${PWCLI}" -s="${SESSION}" run-code "${run_code}" \
-  | tee "${ARTIFACT_DIR}/playwright-postcheck-result.log"
-run_code_status=${PIPESTATUS[0]}
-set -e
-
-if [[ "${run_code_status}" -ne 0 ]]; then
-  if grep -q '^### Result' "${ARTIFACT_DIR}/playwright-postcheck-result.log"; then
-    echo "[playwright-postcheck] run-code returned ${run_code_status} (likely due console errors); continuing because result payload exists." >> "${ARTIFACT_DIR}/playwright-postcheck-result.log"
-  else
-    echo "[playwright-postcheck] run-code failed with status ${run_code_status}" >&2
-    exit "${run_code_status}"
-  fi
-fi
-
-"${PWCLI}" -s="${SESSION}" close > "${ARTIFACT_DIR}/playwright-postcheck-close.log" 2>&1 || true
+PWCLI_PATH="${PWCLI}" \
+PW_SESSION="${SESSION}" \
+PW_OPEN_URL="${OPEN_URL}" \
+PW_RUN_CODE_FILE="${run_code_file}" \
+PW_OPEN_LOG="${ARTIFACT_DIR}/playwright-postcheck-open.log" \
+PW_RESULT_LOG="${ARTIFACT_DIR}/playwright-postcheck-result.log" \
+PW_CLOSE_LOG="${ARTIFACT_DIR}/playwright-postcheck-close.log" \
+PW_ERROR_PREFIX="[playwright-postcheck]" \
+PW_HEADED="${PW_DEMO_HEADED:-1}" \
+PW_ARTIFACT_DIR="${ARTIFACT_DIR}" \
+PW_TMPDIR="${PW_TMPDIR}" \
+  "${ROOT_DIR}/scripts/run-playwright-session.sh"

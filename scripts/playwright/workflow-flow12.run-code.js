@@ -28,6 +28,10 @@ async (page) => {
   const tipModalScreenshotPath = `${artifactDir}/playwright-flow1-tip-modal-invoice.png`;
   const tipModalStepConfirmedScreenshotPath = `${artifactDir}/playwright-flow1-tip-modal-step3-confirmed.png`;
   const tipperDashboardScreenshotPath = `${artifactDir}/playwright-step4-tipper-dashboard.png`;
+  const tipButtonMissingScreenshotPath = `${artifactDir}/playwright-flow12-tip-button-missing.png`;
+  const topicThreadMissingScreenshotPath = `${artifactDir}/playwright-flow12-topic-thread-missing.png`;
+  const topicThreadWaitTimeoutMs = 60_000;
+  const tipButtonWaitTimeoutMs = 45_000;
 
   function buildRpcId(prefix) {
     if (typeof crypto !== "undefined" && crypto.randomUUID) {
@@ -238,13 +242,97 @@ async (page) => {
     await waitForSessionLoggedIn(30_000);
   }
 
-  async function openTopicByTitle(title) {
+  async function collectPageDiagnostics() {
+    return page.evaluate(() => ({
+      url: window.location.href,
+      title: document.title,
+      topicPosts: document.querySelectorAll(".topic-post, article.topic-post, .topic-body").length,
+      topicLinks: Array.from(document.querySelectorAll("a[href*='/t/']")).slice(0, 5).map((element) => ({
+        href: element.getAttribute("href"),
+        text: (element.textContent || "").trim(),
+      })),
+      bodyPreview: (document.body?.innerText || "").replace(/\s+/g, " ").slice(0, 500),
+    }));
+  }
+
+  async function waitForTopicThread(title) {
+    const escapedBaseUrl = baseUrl.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const topicUrlPattern = new RegExp(`^${escapedBaseUrl}/t/`, "i");
+    const topicPostLocator = page.locator(".topic-post, article.topic-post, .topic-body").first();
+    let lastDiagnostics = null;
+
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      try {
+        await Promise.any([
+          page.waitForURL(topicUrlPattern, { timeout: topicThreadWaitTimeoutMs }),
+          topicPostLocator.waitFor({ timeout: topicThreadWaitTimeoutMs }),
+          page.getByRole("heading", { name: title }).first().waitFor({ timeout: topicThreadWaitTimeoutMs }),
+        ]);
+        await page.waitForLoadState("domcontentloaded", { timeout: 10_000 }).catch(() => {});
+        await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {});
+        await topicPostLocator.waitFor({ timeout: topicThreadWaitTimeoutMs });
+        return;
+      } catch (_error) {
+        lastDiagnostics = await collectPageDiagnostics().catch(() => ({
+          url: page.url(),
+          title: null,
+          topicPosts: 0,
+          topicLinks: [],
+          bodyPreview: null,
+        }));
+        if (attempt < 2) {
+          await page.waitForTimeout(5_000);
+          await page.reload({ waitUntil: "domcontentloaded" });
+          continue;
+        }
+      }
+    }
+
+    await page.screenshot({ path: topicThreadMissingScreenshotPath, fullPage: true, timeout: 20_000 }).catch(() => {});
+    throw new Error(`topic thread did not load for "${title}": ${JSON.stringify(lastDiagnostics)}`);
+  }
+
+  async function clickTopicLink(topicLink) {
+    await topicLink.scrollIntoViewIfNeeded().catch(() => {});
+    await Promise.allSettled([
+      page.waitForURL(/\/t\//i, { timeout: 20_000 }),
+      topicLink.click(),
+    ]);
+  }
+
+  async function waitForTopicLink(linkLocator, { timeoutMs = 90_000 } = {}) {
+    const deadline = Date.now() + timeoutMs;
+    let lastError = null;
+
+    while (Date.now() < deadline) {
+      try {
+        await linkLocator.waitFor({ timeout: 5_000 });
+        return;
+      } catch (error) {
+        lastError = error;
+      }
+
+      await page.waitForTimeout(5_000);
+      if (Date.now() < deadline) {
+        await page.reload({ waitUntil: "domcontentloaded" }).catch(() => {});
+      }
+    }
+
+    if (lastError) {
+      throw lastError;
+    }
+
+    await linkLocator.waitFor({ timeout: 1 });
+  }
+
+  async function openTopicByTitle(title, fallbackPath = "") {
     await page.goto(`${baseUrl}/latest`, { waitUntil: "domcontentloaded" });
 
     const latestTopicLink = page.getByRole("link", { name: title }).first();
     try {
-      await latestTopicLink.waitFor({ timeout: 15_000 });
-      await latestTopicLink.click();
+      await waitForTopicLink(latestTopicLink);
+      await clickTopicLink(latestTopicLink);
+      await waitForTopicThread(title);
       return;
     } catch (_error) {
       // Fallback to search when the latest list has not rendered or the topic is not visible yet.
@@ -252,8 +340,20 @@ async (page) => {
 
     await page.goto(`${baseUrl}/search?q=${encodeURIComponent(title)}`, { waitUntil: "domcontentloaded" });
     const searchTopicLink = page.getByRole("link", { name: title }).first();
-    await searchTopicLink.waitFor({ timeout: 20_000 });
-    await searchTopicLink.click();
+    try {
+      await waitForTopicLink(searchTopicLink);
+      await clickTopicLink(searchTopicLink);
+      await waitForTopicThread(title);
+      return;
+    } catch (_error) {
+      if (!fallbackPath.trim()) {
+        throw _error;
+      }
+    }
+
+    const normalizedPath = fallbackPath.startsWith("/") ? fallbackPath : `/${fallbackPath}`;
+    await page.goto(`${baseUrl}${normalizedPath}`, { waitUntil: "domcontentloaded" });
+    await waitForTopicThread(title);
   }
 
   async function screenshotHighlightedPosts(path, { fullPage = false } = {}) {
@@ -321,22 +421,52 @@ async (page) => {
     }
   }
 
+  async function collectTipButtonDiagnostics() {
+    const pageDiagnostics = await collectPageDiagnostics();
+    const buttonDiagnostics = await page.evaluate(() => {
+      const selector = "[data-fiber-link-tip-button], .fiber-link-tip-entry__button, .post-action-menu__fiber-link-tip, button[aria-label='Tip']";
+      const buttons = Array.from(document.querySelectorAll(selector));
+      const visibleButtons = buttons.filter((element) => {
+        const rect = element.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+      });
+      return {
+        totalTipButtons: buttons.length,
+        visibleTipButtons: visibleButtons.length,
+        visibleTipButtonLabels: visibleButtons.map((element) =>
+          (element.getAttribute("aria-label") || element.textContent || "").trim(),
+        ),
+      };
+    });
+
+    return { ...pageDiagnostics, ...buttonDiagnostics };
+  }
+
   await page.setViewportSize(viewport);
   await login(username, password);
 
-  if (topicPath.trim()) {
-    const normalizedPath = topicPath.startsWith("/") ? topicPath : `/${topicPath}`;
-    await page.goto(`${baseUrl}${normalizedPath}`, { waitUntil: "domcontentloaded" });
-  } else {
-    await openTopicByTitle(topicTitle);
-  }
+  await openTopicByTitle(topicTitle, topicPath);
 
   const tipButton = page
     .locator(
       "[data-fiber-link-tip-button]:visible, .fiber-link-tip-entry__button:visible, .post-action-menu__fiber-link-tip:visible, button[aria-label='Tip']:visible",
     )
     .first();
-  await tipButton.waitFor({ timeout: 20_000 });
+  try {
+    await tipButton.waitFor({ timeout: tipButtonWaitTimeoutMs });
+  } catch (_error) {
+    await page.screenshot({ path: tipButtonMissingScreenshotPath, fullPage: true, timeout: 20_000 }).catch(() => {});
+    const diagnostics = await collectTipButtonDiagnostics().catch(() => ({
+      url: page.url(),
+      title: null,
+      topicPosts: 0,
+      totalTipButtons: 0,
+      visibleTipButtons: 0,
+      visibleTipButtonLabels: [],
+      bodyPreview: null,
+    }));
+    throw new Error(`tip button not visible after topic load: ${JSON.stringify(diagnostics)}`);
+  }
   await screenshotHighlightedPosts(forumEntryPointsScreenshotPath, { fullPage: false });
   await screenshotHighlightedPosts(topicThreadScreenshotPath, { fullPage: true });
   await tipButton.evaluate((element) => {

@@ -147,7 +147,7 @@ test_default_runtime_preferences() {
       bash -lc "source '${ROOT_DIR}/scripts/lib/e2e-discourse-four-flows-common.sh'; printf 'ui=%s\nsettlement=%s\nfallback=%s\ndefaultTarget=%s\n' \"\$DEFAULT_DISCOURSE_UI_BASE_URL\" \"\$DEFAULT_SETTLEMENT_MODES\" \"\$LIQUIDITY_FALLBACK_MODE\" \"\$(default_withdrawal_signer_target_shannons)\""
   )"
 
-  assert_contains "${defaults_output}" "ui=http://127.0.0.1:9292"
+  assert_contains "${defaults_output}" "ui=http://127.0.0.1:4200"
   assert_contains "${defaults_output}" "settlement=subscription"
   assert_contains "${defaults_output}" "fallback=channel_rotation"
   assert_contains "${defaults_output}" "defaultTarget=6100000000"

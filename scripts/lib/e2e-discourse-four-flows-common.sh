@@ -16,7 +16,9 @@ COMPOSE_FILE="${ROOT_DIR}/deploy/compose/docker-compose.yml"
 COMPOSE_ENV_FILE="${COMPOSE_ENV_FILE:-${ROOT_DIR}/deploy/compose/.env}"
 DEFAULT_RUN_TIMESTAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 DEFAULT_RUN_DIR="${ROOT_DIR}/.tmp/e2e-discourse-four-flows/${DEFAULT_RUN_TIMESTAMP}"
-DEFAULT_DISCOURSE_UI_BASE_URL="${E2E_DISCOURSE_UI_BASE_URL:-http://127.0.0.1:9292}"
+HOST_ACCESS_HOST="${E2E_HOST_ACCESS_HOST:-127.0.0.1}"
+HOST_ACCESS_BASE_URL="${E2E_HOST_ACCESS_BASE_URL:-http://${HOST_ACCESS_HOST}}"
+DEFAULT_DISCOURSE_UI_BASE_URL="${E2E_DISCOURSE_UI_BASE_URL:-http://127.0.0.1:4200}"
 DEFAULT_SETTLEMENT_MODES="${E2E_SETTLEMENT_MODES:-subscription}"
 DEFAULT_WORKFLOW_RPC_PORT="${E2E_WORKFLOW_RPC_PORT:-13001}"
 DEFAULT_WORKFLOW_WITHDRAW_AMOUNT_CKB="${WORKFLOW_WITHDRAW_AMOUNT:-61}"
@@ -453,42 +455,75 @@ wait_http_ready() {
 }
 
 ensure_discourse_ui_proxy() {
-  local base_url normalized_url login_url backend_ready_url ember_log ember_pattern
+  local base_url normalized_url login_url backend_ready_url ember_log ember_container_log ember_pattern
+  local ember_cmd
+  local ember_service_dir ember_service_name ember_run_script
 
   normalized_url="${DISCOURSE_UI_BASE_URL%/}"
   if [[ -z "${normalized_url}" ]]; then
     normalized_url="${DEFAULT_DISCOURSE_UI_BASE_URL%/}"
   fi
 
-  if [[ "${normalized_url}" != "http://127.0.0.1:4200" ]]; then
+  if [[ "${normalized_url}" != "${HOST_ACCESS_BASE_URL}:4200" ]]; then
     login_url="${normalized_url}/login"
     wait_http_ready "${login_url}" 120 \
       || fatal "${EXIT_PRECHECK}" "discourse ui did not become ready at ${login_url}"
     return 0
   fi
 
-  login_url="http://127.0.0.1:4200/login"
-  backend_ready_url="http://127.0.0.1:9292/session/csrf.json"
+  login_url="${HOST_ACCESS_BASE_URL}:4200/login"
+  backend_ready_url="${HOST_ACCESS_BASE_URL}:9292/session/csrf.json"
   ember_log="${LOGS_DIR}/discourse-ember-cli.log"
-  ember_pattern='[e]mber server --proxy http://127.0.0.1:9292'
+  ember_container_log="/tmp/fiber-link-discourse-ember-cli.log"
+  ember_service_dir="/etc/service/fiber-link-ember-cli"
+  ember_service_name="fiber-link-ember-cli"
+  ember_pattern='[b]in/ember-cli --host 0.0.0.0 --port 4200 --proxy http://127.0.0.1:9292'
+  ember_cmd='bin/ember-cli --host 0.0.0.0 --port 4200 --proxy http://127.0.0.1:9292'
+  ember_run_script="$(cat <<'EOF'
+#!/bin/sh
+exec chpst -u discourse:discourse env HOME=/home/discourse XDG_CONFIG_HOME=/home/discourse/.config PNPM_HOME=/home/discourse/.local/share/pnpm sh -lc 'mkdir -p "$HOME/.local/share/pnpm" "$XDG_CONFIG_HOME/pnpm" && cd /src && exec bin/ember-cli --host 0.0.0.0 --port 4200 --proxy http://127.0.0.1:9292 >> /tmp/fiber-link-discourse-ember-cli.log 2>&1'
+EOF
+)"
 
-  if docker exec discourse_dev sh -lc "pgrep -f '${ember_pattern}' >/dev/null 2>&1"; then
-    if wait_http_ready "${login_url}" 20; then
-      vlog "ember-cli proxy already running (${login_url})"
-      return 0
-    fi
+  sync_ember_cli_log() {
+    docker exec discourse_dev sh -lc "cat '${ember_container_log}' 2>/dev/null || true" > "${ember_log}" 2>/dev/null || true
+  }
 
-    log "ember-cli process exists but ${login_url} is not ready; restarting proxy"
-    docker exec discourse_dev sh -lc "pkill -f '${ember_pattern}' >/dev/null 2>&1 || true"
-    sleep 2
+  if wait_http_ready "${login_url}" 20; then
+    sync_ember_cli_log
+    vlog "ember-cli proxy already running (${login_url})"
+    return 0
   fi
 
+  docker exec discourse_dev sh -lc "
+    pids=\$(ps -eo pid=,args= | grep -E '${ember_pattern}' | awk '{print \$1}')
+    if [ -n \"\${pids}\" ]; then
+      kill \${pids} >/dev/null 2>&1 || true
+    fi
+    sv force-stop '${ember_service_name}' >/dev/null 2>&1 || true
+    rm -rf '${ember_service_dir}' >/dev/null 2>&1 || true
+    rm -f '${ember_container_log}' >/dev/null 2>&1 || true
+  "
+  sleep 2
+
   log "starting ember-cli proxy"
-  docker exec -u discourse:discourse -w /src discourse_dev sh -lc 'bin/ember-cli --proxy http://127.0.0.1:9292' > "${ember_log}" 2>&1 &
+  : > "${ember_log}"
+  printf '%s' "${ember_run_script}" | docker exec -i discourse_dev sh -lc "
+    mkdir -p '${ember_service_dir}' &&
+    cat > '${ember_service_dir}/run' &&
+    chmod +x '${ember_service_dir}/run' &&
+    rm -f '${ember_service_dir}/down' &&
+    sv start '${ember_service_name}' >/dev/null 2>&1 || true
+  "
   wait_http_ready "${login_url}" 420 \
-    || fatal "${EXIT_PRECHECK}" "ember-cli proxy did not become ready at ${login_url} (see ${ember_log})"
-  wait_http_ready "${backend_ready_url}" 180 \
-    || fatal "${EXIT_PRECHECK}" "discourse backend did not become ready at ${backend_ready_url} (see ${ember_log})"
+    || {
+      sync_ember_cli_log
+      fatal "${EXIT_PRECHECK}" "ember-cli proxy did not become ready at ${login_url} (see ${ember_log})"
+    }
+  sync_ember_cli_log
+  if ! wait_http_ready "${backend_ready_url}" 180; then
+    log "warning: discourse backend probe did not become ready at ${backend_ready_url}; continuing because ember proxy is already serving ${login_url}"
+  fi
 }
 
 docker_container_env_value() {
@@ -563,15 +598,15 @@ resolve_runtime_rpc_port() {
   fi
   WORKFLOW_RPC_PORT="${configured}"
 
-  if ! curl -fsS -m 3 "http://127.0.0.1:${WORKFLOW_RPC_PORT}/healthz/ready" >/dev/null 2>&1; then
+  if ! curl -fsS -m 3 "${HOST_ACCESS_BASE_URL}:${WORKFLOW_RPC_PORT}/healthz/ready" >/dev/null 2>&1; then
     detected="$(docker port fiber-link-rpc 3000/tcp 2>/dev/null | awk -F: 'NR==1 {print $NF}' || true)"
     if [[ -n "${detected}" ]]; then
       WORKFLOW_RPC_PORT="${detected}"
     fi
   fi
 
-  curl -fsS -m 5 "http://127.0.0.1:${WORKFLOW_RPC_PORT}/healthz/ready" >/dev/null 2>&1 \
-    || fatal "${EXIT_PRECHECK}" "rpc endpoint is not ready at http://127.0.0.1:${WORKFLOW_RPC_PORT}/healthz/ready"
+  curl -fsS -m 5 "${HOST_ACCESS_BASE_URL}:${WORKFLOW_RPC_PORT}/healthz/ready" >/dev/null 2>&1 \
+    || fatal "${EXIT_PRECHECK}" "rpc endpoint is not ready at ${HOST_ACCESS_BASE_URL}:${WORKFLOW_RPC_PORT}/healthz/ready"
 }
 
 normalize_private_key_hex() {
@@ -978,7 +1013,7 @@ rpc_call_signed() {
   local ts sig
   ts="$(date +%s)"
   sig="$(sign_payload "${payload}" "${ts}" "${nonce}")"
-  curl -fsS "http://127.0.0.1:${WORKFLOW_RPC_PORT}/rpc" \
+  curl -fsS "${HOST_ACCESS_BASE_URL}:${WORKFLOW_RPC_PORT}/rpc" \
     -H "content-type: application/json" \
     -H "x-app-id: ${APP_ID}" \
     -H "x-ts: ${ts}" \
