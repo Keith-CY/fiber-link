@@ -504,9 +504,14 @@ ensure_discourse_ui_proxy() {
 
   if [[ "${normalized_url}" != "${HOST_ACCESS_BASE_URL}:4200" ]]; then
     login_url="${normalized_url}/login"
-    wait_http_ready "${login_url}" 120 \
-      || fatal "${EXIT_PRECHECK}" "discourse ui did not become ready at ${login_url}"
-    return 0
+    if wait_http_ready "${login_url}" 120; then
+      return 0
+    fi
+    if wait_discourse_ui_ready_in_container 20; then
+      log "warning: discourse ui is serving inside discourse_dev, but configured UI is not reachable at ${login_url}; continuing for sidecar-driven visual acceptance"
+      return 0
+    fi
+    fatal "${EXIT_PRECHECK}" "discourse ui did not become ready at ${login_url}"
   fi
 
   login_url="${HOST_ACCESS_BASE_URL}:4200/login"
