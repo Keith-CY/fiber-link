@@ -38,7 +38,11 @@ export_workflow_ids_from_state() {
 }
 
 should_start_ember_cli() {
-  [[ "${DISCOURSE_UI_BASE_URL%/}" == "${E2E_HOST_ACCESS_BASE_URL:-http://127.0.0.1}:4200" ]]
+  local ui_base_url="${DISCOURSE_UI_BASE_URL%/}"
+  local host_access_host="${E2E_HOST_ACCESS_HOST:-host.docker.internal}"
+  local host_access_base_url="${E2E_HOST_ACCESS_BASE_URL:-http://127.0.0.1}"
+  [[ "${ui_base_url}" == "http://${host_access_host}:4200" ]] \
+    || [[ "${ui_base_url}" == "${host_access_base_url}:4200" ]]
 }
 
 while [[ $# -gt 0 ]]; do

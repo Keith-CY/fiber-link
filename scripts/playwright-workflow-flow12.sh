@@ -6,6 +6,7 @@ PWCLI="${PWCLI:-${ROOT_DIR}/scripts/playwright-cli.sh}"
 SESSION="${PW_FLOW12_SESSION:-fiber-workflow-flow12}"
 ARTIFACT_DIR="${PW_FLOW12_ARTIFACT_DIR:-${ROOT_DIR}/.tmp/e2e-discourse-four-flows}"
 RUN_CODE_FILE="${ROOT_DIR}/scripts/playwright/workflow-flow12.run-code.js"
+RUN_PLAYWRIGHT_SESSION_SCRIPT="${RUN_PLAYWRIGHT_SESSION_SCRIPT:-${ROOT_DIR}/scripts/run-playwright-session.sh}"
 
 if [[ -d "${HOME}/.nvm/versions/node" ]]; then
   latest_nvm_bin="$(ls -d "${HOME}"/.nvm/versions/node/*/bin 2>/dev/null | sort -V | tail -n1 || true)"
@@ -26,6 +27,10 @@ export PATH
   echo "[playwright-flow12] missing run-code file: ${RUN_CODE_FILE}" >&2
   exit 2
 }
+[[ -x "${RUN_PLAYWRIGHT_SESSION_SCRIPT}" ]] || {
+  echo "[playwright-flow12] missing playwright session runner: ${RUN_PLAYWRIGHT_SESSION_SCRIPT}" >&2
+  exit 2
+}
 
 mkdir -p "${ARTIFACT_DIR}"
 PW_TMPDIR="${PW_TMPDIR:-${ARTIFACT_DIR}/playwright-cli-tmp}"
@@ -35,9 +40,11 @@ export TMPDIR="${PW_TMPDIR}"
 normalize_sidecar_url() {
   local raw_url="$1"
   local host_access_host="${PLAYWRIGHT_CLI_HOST_ACCESS_HOST:-${E2E_HOST_ACCESS_HOST:-host.docker.internal}}"
-  if [[ -n "${PLAYWRIGHT_CLI_DOCKER_NETWORK_CONTAINER:-}" && "${raw_url}" == "http://${host_access_host}:"* ]]; then
-    printf 'http://127.0.0.1:%s' "${raw_url#http://${host_access_host}:}"
-    return 0
+  if [[ -n "${PLAYWRIGHT_CLI_DOCKER_NETWORK_CONTAINER:-}" ]]; then
+    if [[ "${raw_url}" == "http://${host_access_host}:"* ]]; then
+      printf 'http://127.0.0.1:%s' "${raw_url#http://${host_access_host}:}"
+      return 0
+    fi
   fi
   printf '%s' "${raw_url}"
 }
@@ -163,4 +170,4 @@ PW_ERROR_PREFIX="[playwright-flow12]" \
 PW_HEADED="${PW_FLOW12_HEADED:-${PW_DEMO_HEADED:-1}}" \
 PW_ARTIFACT_DIR="${ARTIFACT_DIR}" \
 PW_TMPDIR="${PW_TMPDIR}" \
-  "${ROOT_DIR}/scripts/run-playwright-session.sh"
+  "${RUN_PLAYWRIGHT_SESSION_SCRIPT}"

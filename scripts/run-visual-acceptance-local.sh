@@ -9,8 +9,8 @@ SETTLEMENT_MODES="${VISUAL_ACCEPTANCE_SETTLEMENT_MODES:-subscription,polling}"
 DEFAULT_EXPLORER_TEMPLATE='https://pudge.explorer.nervos.org/transaction/{txHash}'
 EXPLORER_TEMPLATE="${VISUAL_ACCEPTANCE_EXPLORER_TX_URL_TEMPLATE:-${DEFAULT_EXPLORER_TEMPLATE}}"
 HOST_ACCESS_HOST="${VISUAL_ACCEPTANCE_HOST_ACCESS_HOST:-host.docker.internal}"
-HOST_ACCESS_BASE_URL="${VISUAL_ACCEPTANCE_HOST_ACCESS_BASE_URL:-http://${HOST_ACCESS_HOST}}"
-DISCOURSE_UI_BASE_URL="${VISUAL_ACCEPTANCE_DISCOURSE_UI_BASE_URL:-${HOST_ACCESS_BASE_URL}:4200}"
+HOST_ACCESS_BASE_URL="${VISUAL_ACCEPTANCE_HOST_ACCESS_BASE_URL:-}"
+DISCOURSE_UI_BASE_URL="${VISUAL_ACCEPTANCE_DISCOURSE_UI_BASE_URL:-}"
 COMPOSE_ENV_SOURCE="${VISUAL_ACCEPTANCE_COMPOSE_ENV_FILE:-}"
 KEEP_RUNTIME="${VISUAL_ACCEPTANCE_KEEP_RUNTIME:-0}"
 SKIP_BUILD=0
@@ -39,6 +39,12 @@ cleanup() {
 }
 
 trap cleanup EXIT
+
+resolve_docker_host_gateway() {
+  "${DOCKER_BIN}" network inspect bridge 2>/dev/null \
+    | jq -r '.[0].IPAM.Config[0].Gateway // empty' \
+    | tr -d '\r'
+}
 
 usage() {
   cat <<'USAGE'
@@ -149,6 +155,19 @@ print_paths() {
 
 if [[ "${SKIP_BUILD}" -eq 0 ]]; then
   "${DOCKER_BIN}" build -t "${IMAGE_TAG}" -f "${ROOT_DIR}/harness/visual-acceptance/Dockerfile" "${ROOT_DIR}"
+fi
+
+if [[ -z "${HOST_ACCESS_BASE_URL}" ]]; then
+  docker_host_gateway="$(resolve_docker_host_gateway || true)"
+  if [[ -n "${docker_host_gateway}" ]]; then
+    HOST_ACCESS_BASE_URL="http://${docker_host_gateway}"
+  else
+    HOST_ACCESS_BASE_URL="http://${HOST_ACCESS_HOST}"
+  fi
+fi
+
+if [[ -z "${DISCOURSE_UI_BASE_URL}" ]]; then
+  DISCOURSE_UI_BASE_URL="http://${HOST_ACCESS_HOST}:4200"
 fi
 
 set +e

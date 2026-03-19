@@ -17,6 +17,13 @@ if [[ "$1" == "build" ]]; then
   exit 0
 fi
 
+if [[ "$1" == "network" && "$2" == "inspect" && "$3" == "bridge" ]]; then
+  cat <<'EOF_NETWORK'
+[{"IPAM":{"Config":[{"Gateway":"172.17.0.1"}]}}]
+EOF_NETWORK
+  exit 0
+fi
+
 if [[ "$1" != "run" ]]; then
   echo "unexpected docker subcommand: $1" >&2
   exit 1
@@ -131,7 +138,7 @@ done
   echo "unexpected host access host: ${host_access_host}" >&2
   exit 1
 }
-[[ "${host_access_base_url}" == "http://host.docker.internal" ]] || {
+[[ "${host_access_base_url}" == "http://172.17.0.1" ]] || {
   echo "unexpected host access base url: ${host_access_base_url}" >&2
   exit 1
 }
@@ -173,6 +180,7 @@ touch "${artifact_root}/harness.log"
 EOF_DOCKER
 chmod +x "${FAKE_BIN_DIR}/docker"
 
+PATH="${FAKE_BIN_DIR}:${PATH}" \
 VISUAL_ACCEPTANCE_FNN_ASSET_SHA256=8f9a69361f662438fa1fc29ddc668192810b13021536ebd1101c84dc0cfa330f \
 VISUAL_ACCEPTANCE_DOCKER_BIN="${FAKE_BIN_DIR}/docker" \
   "${ROOT_DIR}/scripts/run-visual-acceptance-local.sh" \
@@ -186,6 +194,7 @@ grep -q "^Summary: ${OUTPUT_ROOT}/evidence/fake/summary.json$" "${CLI_OUTPUT}"
 grep -q "^Screenshots: ${OUTPUT_ROOT}/evidence/fake/screenshots$" "${CLI_OUTPUT}"
 grep -q "^Archive: ${OUTPUT_ROOT}/evidence/fake.tar.gz$" "${CLI_OUTPUT}"
 
+PATH="${FAKE_BIN_DIR}:${PATH}" \
 TMPDIR="${DEFAULT_TMPDIR}" \
 VISUAL_ACCEPTANCE_FNN_ASSET_SHA256=8f9a69361f662438fa1fc29ddc668192810b13021536ebd1101c84dc0cfa330f \
 VISUAL_ACCEPTANCE_DOCKER_BIN="${FAKE_BIN_DIR}/docker" \
