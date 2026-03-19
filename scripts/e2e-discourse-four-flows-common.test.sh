@@ -59,3 +59,21 @@ trap 'rm -rf "${TEST_TMPDIR}" "${NORMALIZE_TMPDIR}"' EXIT
   load_state_env
   [[ "${EXPLORER_TX_URL_TEMPLATE}" == 'https://pudge.explorer.nervos.org/transaction/{txHash}' ]]
 )
+
+COPY_TMPDIR="$(mktemp -d)"
+trap 'rm -rf "${TEST_TMPDIR}" "${NORMALIZE_TMPDIR}" "${COPY_TMPDIR}"' EXIT
+
+(
+  # shellcheck disable=SC1091
+  source "${ROOT_DIR}/scripts/lib/e2e-discourse-four-flows-common.sh"
+
+  src="${COPY_TMPDIR}/source.txt"
+  dest_one="${COPY_TMPDIR}/one.txt"
+  dest_two="${COPY_TMPDIR}/two.txt"
+
+  printf 'copy me\n' > "${src}"
+  copy_or_fail_many "${src}" "${dest_one}" "${dest_two}"
+
+  diff -u "${src}" "${dest_one}" >/dev/null
+  diff -u "${src}" "${dest_two}" >/dev/null
+)

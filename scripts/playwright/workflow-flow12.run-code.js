@@ -255,6 +255,27 @@ async (page) => {
     }));
   }
 
+  async function waitForAnyOrThrow(waiters, errorMessage) {
+    try {
+      await Promise.any(waiters);
+      return;
+    } catch (error) {
+      const diagnostics = await collectPageDiagnostics().catch(() => ({
+        url: page.url(),
+        title: null,
+        topicPosts: 0,
+        topicLinks: [],
+        bodyPreview: null,
+      }));
+      throw new Error(`${errorMessage}: ${JSON.stringify({
+        diagnostics,
+        promiseErrors: Array.isArray(error?.errors)
+          ? error.errors.map((entry) => (entry instanceof Error ? entry.message : String(entry)))
+          : [],
+      })}`);
+    }
+  }
+
   async function waitForTopicThread(title) {
     const escapedBaseUrl = baseUrl.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const topicUrlPattern = new RegExp(`^${escapedBaseUrl}/t/`, "i");
@@ -377,7 +398,7 @@ async (page) => {
         if (!container || targets.includes(container)) {
           continue;
         }
-        container.setAttribute("data-fiber-link-visual-target", "true");
+        container.setAttribute("data-fiber-link-visual-acceptance-target", "true");
         container.style.outline = "3px solid #1d9bf0";
         container.style.outlineOffset = "6px";
         targets.push(container);
@@ -392,10 +413,10 @@ async (page) => {
     await page.waitForTimeout(300);
     await page.screenshot({ path, fullPage, timeout: 20_000 });
     await page.evaluate(() => {
-      for (const target of Array.from(document.querySelectorAll("[data-fiber-link-visual-target='true']"))) {
+      for (const target of Array.from(document.querySelectorAll("[data-fiber-link-visual-acceptance-target='true']"))) {
         target.style.outline = "";
         target.style.outlineOffset = "";
-        target.removeAttribute("data-fiber-link-visual-target");
+        target.removeAttribute("data-fiber-link-visual-acceptance-target");
       }
     });
   }
@@ -411,14 +432,11 @@ async (page) => {
       throw new Error("dashboard route /fiber-link is not available (Routing Error)");
     }
 
-    const dashboardReady = await Promise.any([
+    await waitForAnyOrThrow([
       page.getByText(/fiber link dashboard/i).first().waitFor({ timeout: 20_000 }),
       page.getByText(/payments/i).first().waitFor({ timeout: 20_000 }),
       page.getByText(/balance/i).first().waitFor({ timeout: 20_000 }),
-    ]).then(() => true).catch(() => false);
-    if (!dashboardReady) {
-      throw new Error("dashboard did not load expected content");
-    }
+    ], "dashboard did not load expected content");
   }
 
   async function collectTipButtonDiagnostics() {

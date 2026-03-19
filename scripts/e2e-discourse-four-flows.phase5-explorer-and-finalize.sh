@@ -142,10 +142,14 @@ copy_or_fail "${FLOW12_DIR}/playwright-step4-tipper-dashboard.png" "${SCREENSHOT
 copy_or_fail "${PHASE3_DIR}/playwright-step5-author-dashboard.png" "${SCREENSHOT_DIR}/step5-author-dashboard.png"
 copy_or_fail "${PHASE3_DIR}/playwright-step6-author-withdrawal.png" "${SCREENSHOT_DIR}/step6-author-withdrawal.png"
 copy_or_fail "${attempt_postcheck_dir}/playwright-step5-author-dashboard.png" "${SCREENSHOT_DIR}/flow4-author-balance-history.png"
-copy_or_fail "${attempt_postcheck_dir}/playwright-step7-admin-withdrawal.png" "${SCREENSHOT_DIR}/flow4-admin-withdrawal.png"
-copy_or_fail "${attempt_explorer_dir}/playwright-flow4-explorer-withdrawal-tx.png" "${SCREENSHOT_DIR}/flow4-explorer-withdrawal-tx.png"
-copy_or_fail "${attempt_postcheck_dir}/playwright-step7-admin-withdrawal.png" "${SCREENSHOT_DIR}/step6-admin-withdrawal.png"
-copy_or_fail "${attempt_explorer_dir}/playwright-flow4-explorer-withdrawal-tx.png" "${SCREENSHOT_DIR}/step6-explorer-tx.png"
+copy_or_fail_many \
+  "${attempt_postcheck_dir}/playwright-step7-admin-withdrawal.png" \
+  "${SCREENSHOT_DIR}/flow4-admin-withdrawal.png" \
+  "${SCREENSHOT_DIR}/step6-admin-withdrawal.png"
+copy_or_fail_many \
+  "${attempt_explorer_dir}/playwright-flow4-explorer-withdrawal-tx.png" \
+  "${SCREENSHOT_DIR}/flow4-explorer-withdrawal-tx.png" \
+  "${SCREENSHOT_DIR}/step6-explorer-tx.png"
 
 flow2_tip_create_req="$(json_or_null "${PHASE2_DIR}/tips/topic-post/tip-create.request.json")"
 flow2_tip_create_resp="$(json_or_null "${PHASE2_DIR}/tips/topic-post/tip-create.response.json")"

@@ -431,6 +431,18 @@ copy_or_fail() {
   cp "${src}" "${dest}"
 }
 
+copy_or_fail_many() {
+  local src="$1"
+  shift
+  [[ "$#" -gt 0 ]] || fatal "${EXIT_ARTIFACT}" "copy_or_fail_many requires at least one destination"
+  [[ -f "${src}" ]] || fatal "${EXIT_ARTIFACT}" "missing expected file: ${src}"
+
+  local dest
+  for dest in "$@"; do
+    cp "${src}" "${dest}"
+  done
+}
+
 wait_container_healthy() {
   local container="$1"
   local timeout_seconds="$2"
