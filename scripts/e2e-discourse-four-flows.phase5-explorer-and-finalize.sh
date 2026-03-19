@@ -72,6 +72,7 @@ parse_settlement_modes
 if [[ -n "${CLI_EXPLORER_TX_URL_TEMPLATE}" ]]; then
   EXPLORER_TX_URL_TEMPLATE="${CLI_EXPLORER_TX_URL_TEMPLATE}"
 fi
+normalize_explorer_tx_url_template
 persist_state_env
 
 [[ -n "${WITHDRAWAL_ID}" ]] || fatal "${EXIT_WITHDRAWAL}" "phase5 requires withdrawal id from phase3"

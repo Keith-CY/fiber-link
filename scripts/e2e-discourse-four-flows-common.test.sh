@@ -39,3 +39,23 @@ trap 'rm -rf "${TEST_TMPDIR}"' EXIT
 grep -q '^http:http://host.docker.internal:4200/login:120$' "${CALL_LOG}"
 grep -q '^container:20$' "${CALL_LOG}"
 grep -q 'configured UI is not reachable at http://host.docker.internal:4200/login' "${OUTPUT_LOG}"
+
+NORMALIZE_TMPDIR="$(mktemp -d)"
+trap 'rm -rf "${TEST_TMPDIR}" "${NORMALIZE_TMPDIR}"' EXIT
+
+(
+  # shellcheck disable=SC1091
+  source "${ROOT_DIR}/scripts/lib/e2e-discourse-four-flows-common.sh"
+
+  RUN_DIR="${NORMALIZE_TMPDIR}/run"
+  refresh_run_paths
+  EXPLORER_TX_URL_TEMPLATE='https://pudge.explorer.nervos.org/transaction/{txHash}}'
+
+  persist_state_env
+
+  grep -q '^EXPLORER_TX_URL_TEMPLATE=https://pudge\.explorer\.nervos\.org/transaction/\\{txHash\\}$' "${STATE_ENV_PATH}"
+
+  EXPLORER_TX_URL_TEMPLATE=""
+  load_state_env
+  [[ "${EXPLORER_TX_URL_TEMPLATE}" == 'https://pudge.explorer.nervos.org/transaction/{txHash}' ]]
+)

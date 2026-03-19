@@ -244,17 +244,34 @@ sync_liquidity_fallback_env() {
   export FIBER_CHANNEL_ROTATION_MAX_CONCURRENT="${CHANNEL_ROTATION_MAX_CONCURRENT:-1}"
 }
 
+normalize_explorer_tx_url_template() {
+  local normalized="${EXPLORER_TX_URL_TEMPLATE:-}"
+
+  case "${normalized}" in
+    *"{txHash}}")
+      normalized="${normalized%?}"
+      ;;
+    *'${txHash}}')
+      normalized="${normalized%?}"
+      ;;
+  esac
+
+  EXPLORER_TX_URL_TEMPLATE="${normalized}"
+}
+
 load_state_env() {
   refresh_run_paths
   if [[ -f "${STATE_ENV_PATH}" ]]; then
     # shellcheck disable=SC1090
     source "${STATE_ENV_PATH}"
   fi
+  normalize_explorer_tx_url_template
   sync_liquidity_fallback_env
 }
 
 persist_state_env() {
   refresh_run_paths
+  normalize_explorer_tx_url_template
   sync_liquidity_fallback_env
   mkdir -p "$(dirname "${STATE_ENV_PATH}")"
   {

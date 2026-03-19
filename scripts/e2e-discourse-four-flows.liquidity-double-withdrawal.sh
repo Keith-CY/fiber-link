@@ -65,6 +65,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ -n "${RUN_DIR}" ]] || { usage >&2; exit "${EXIT_USAGE}"; }
+normalize_explorer_tx_url_template
 [[ -n "${EXPLORER_TX_URL_TEMPLATE}" ]] || fatal "${EXIT_USAGE}" "--explorer-tx-url-template is required"
 
 ensure_run_layout

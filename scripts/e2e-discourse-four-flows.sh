@@ -108,6 +108,7 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 
+normalize_explorer_tx_url_template
 [[ -n "${EXPLORER_TX_URL_TEMPLATE}" ]] || fatal "${EXIT_USAGE}" "E2E_EXPLORER_TX_URL_TEMPLATE/--explorer-tx-url-template is required"
 
 ensure_run_layout
