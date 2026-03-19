@@ -6,7 +6,8 @@ DOCKER_BIN="${VISUAL_ACCEPTANCE_DOCKER_BIN:-docker}"
 IMAGE_TAG="${VISUAL_ACCEPTANCE_IMAGE_TAG:-fiber-link-visual-acceptance}"
 OUTPUT_DIR="${VISUAL_ACCEPTANCE_OUTPUT_DIR:-}"
 SETTLEMENT_MODES="${VISUAL_ACCEPTANCE_SETTLEMENT_MODES:-subscription,polling}"
-EXPLORER_TEMPLATE="${VISUAL_ACCEPTANCE_EXPLORER_TX_URL_TEMPLATE:-https://pudge.explorer.nervos.org/transaction/{txHash}}"
+DEFAULT_EXPLORER_TEMPLATE='https://pudge.explorer.nervos.org/transaction/{txHash}'
+EXPLORER_TEMPLATE="${VISUAL_ACCEPTANCE_EXPLORER_TX_URL_TEMPLATE:-${DEFAULT_EXPLORER_TEMPLATE}}"
 HOST_ACCESS_HOST="${VISUAL_ACCEPTANCE_HOST_ACCESS_HOST:-host.docker.internal}"
 HOST_ACCESS_BASE_URL="${VISUAL_ACCEPTANCE_HOST_ACCESS_BASE_URL:-http://${HOST_ACCESS_HOST}}"
 DISCOURSE_UI_BASE_URL="${VISUAL_ACCEPTANCE_DISCOURSE_UI_BASE_URL:-${HOST_ACCESS_BASE_URL}:4200}"
@@ -18,9 +19,23 @@ HOST_GIT_SHA=""
 HOST_GIT_BRANCH=""
 
 cleanup() {
-  if [[ "${KEEP_RUNTIME}" != "1" && -n "${RUNTIME_DIR}" && -d "${RUNTIME_DIR}" ]]; then
-    rm -rf "${RUNTIME_DIR}"
+  local runtime_parent runtime_name
+  if [[ "${KEEP_RUNTIME}" == "1" || -z "${RUNTIME_DIR}" || ! -d "${RUNTIME_DIR}" ]]; then
+    return 0
   fi
+
+  if rm -rf "${RUNTIME_DIR}" 2>/dev/null; then
+    return 0
+  fi
+
+  runtime_parent="$(dirname "${RUNTIME_DIR}")"
+  runtime_name="$(basename "${RUNTIME_DIR}")"
+  "${DOCKER_BIN}" run --rm \
+    --entrypoint /bin/sh \
+    -v "${runtime_parent}:${runtime_parent}" \
+    "${IMAGE_TAG}" \
+    -lc "rm -rf -- '${runtime_parent}/${runtime_name}'" >/dev/null 2>&1 || true
+  rm -rf "${RUNTIME_DIR}" >/dev/null 2>&1 || true
 }
 
 trap cleanup EXIT

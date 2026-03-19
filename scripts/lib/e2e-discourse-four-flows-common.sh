@@ -454,6 +454,44 @@ wait_http_ready() {
   done
 }
 
+wait_discourse_ui_ready_in_container() {
+  local timeout_seconds="$1"
+  local started now
+  started="$(date +%s)"
+
+  while true; do
+    if docker exec discourse_dev sh -lc 'curl -fsS -m 5 http://127.0.0.1:4200/login >/dev/null' >/dev/null 2>&1; then
+      return 0
+    fi
+
+    now="$(date +%s)"
+    if (( now - started >= timeout_seconds )); then
+      return 1
+    fi
+
+    sleep 2
+  done
+}
+
+wait_discourse_backend_ready_in_container() {
+  local timeout_seconds="$1"
+  local started now
+  started="$(date +%s)"
+
+  while true; do
+    if docker exec discourse_dev sh -lc 'curl -fsS -m 5 http://127.0.0.1:9292/session/csrf.json >/dev/null' >/dev/null 2>&1; then
+      return 0
+    fi
+
+    now="$(date +%s)"
+    if (( now - started >= timeout_seconds )); then
+      return 1
+    fi
+
+    sleep 2
+  done
+}
+
 ensure_discourse_ui_proxy() {
   local base_url normalized_url login_url backend_ready_url ember_log ember_container_log ember_pattern
   local ember_cmd
@@ -489,7 +527,7 @@ EOF
     docker exec discourse_dev sh -lc "cat '${ember_container_log}' 2>/dev/null || true" > "${ember_log}" 2>/dev/null || true
   }
 
-  if wait_http_ready "${login_url}" 20; then
+  if wait_http_ready "${login_url}" 20 || wait_discourse_ui_ready_in_container 20; then
     sync_ember_cli_log
     vlog "ember-cli proxy already running (${login_url})"
     return 0
@@ -515,13 +553,16 @@ EOF
     rm -f '${ember_service_dir}/down' &&
     sv start '${ember_service_name}' >/dev/null 2>&1 || true
   "
-  wait_http_ready "${login_url}" 420 \
+  wait_discourse_ui_ready_in_container 420 \
     || {
       sync_ember_cli_log
-      fatal "${EXIT_PRECHECK}" "ember-cli proxy did not become ready at ${login_url} (see ${ember_log})"
+      fatal "${EXIT_PRECHECK}" "ember-cli proxy did not become ready inside discourse_dev (see ${ember_log})"
     }
   sync_ember_cli_log
-  if ! wait_http_ready "${backend_ready_url}" 180; then
+  if ! wait_http_ready "${login_url}" 20; then
+    log "warning: ember proxy is serving inside discourse_dev, but host UI is not reachable at ${login_url}; continuing for sidecar-driven visual acceptance"
+  fi
+  if ! wait_http_ready "${backend_ready_url}" 180 && ! wait_discourse_backend_ready_in_container 30; then
     log "warning: discourse backend probe did not become ready at ${backend_ready_url}; continuing because ember proxy is already serving ${login_url}"
   fi
 }

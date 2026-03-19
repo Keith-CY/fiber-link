@@ -32,6 +32,7 @@ discourse_ui_base_url=""
 host_access_host=""
 host_access_base_url=""
 discourse_dev_root=""
+explorer_template=""
 docker_socket_mount=0
 host_gateway_alias=0
 while [[ $# -gt 0 ]]; do
@@ -83,6 +84,8 @@ while [[ $# -gt 0 ]]; do
         host_access_base_url="${2#E2E_HOST_ACCESS_BASE_URL=}"
       elif [[ "$2" == DISCOURSE_DEV_ROOT=* ]]; then
         discourse_dev_root="${2#DISCOURSE_DEV_ROOT=}"
+      elif [[ "$2" == VISUAL_ACCEPTANCE_EXPLORER_TX_URL_TEMPLATE=* ]]; then
+        explorer_template="${2#VISUAL_ACCEPTANCE_EXPLORER_TX_URL_TEMPLATE=}"
       fi
       shift 2
       ;;
@@ -138,6 +141,10 @@ done
 }
 [[ "${discourse_ui_base_url}" == "http://host.docker.internal:4200" ]] || {
   echo "unexpected discourse ui base url: ${discourse_ui_base_url}" >&2
+  exit 1
+}
+[[ "${explorer_template}" == "https://pudge.explorer.nervos.org/transaction/{txHash}" ]] || {
+  echo "unexpected explorer template: ${explorer_template}" >&2
   exit 1
 }
 [[ -f "${runtime_root}/compose.env" ]] || {

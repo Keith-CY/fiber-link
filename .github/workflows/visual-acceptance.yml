@@ -50,7 +50,13 @@ jobs:
           COMMENT_PATH: ${{ github.workspace }}/.tmp/visual-acceptance/comment.md
         run: |
           test -f "${MANIFEST_PATH}"
-          SUMMARY_FILE="${ARTIFACT_ROOT}/$(jq -r '.summaryFile' "${MANIFEST_PATH}")"
+          SUMMARY_REL="$(jq -r '.summaryFile // empty' "${MANIFEST_PATH}")"
+          if [[ -z "${SUMMARY_REL}" ]]; then
+            echo "No summary file was produced; skipping PR comment render." >> "${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
+          SUMMARY_FILE="${ARTIFACT_ROOT}/${SUMMARY_REL}"
+          test -f "${SUMMARY_FILE}"
           SCREENSHOTS_DIR="${ARTIFACT_ROOT}/$(jq -r '.screenshotsDir' "${MANIFEST_PATH}")"
           SCREENSHOTS_BASE_URL="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/visual-acceptance/pr-${{ github.event.pull_request.number || 'manual' }}"
           node scripts/render-visual-acceptance-comment.mjs \
