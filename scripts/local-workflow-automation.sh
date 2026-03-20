@@ -1139,7 +1139,8 @@ if [[ "${SKIP_SERVICES}" -eq 0 ]]; then
   if [[ "${VERBOSE}" -eq 1 ]]; then
     service_args+=(--verbose)
   fi
-  bash "${ROOT_DIR}/scripts/local-dual-fnn-env.sh" "${service_args[@]}"
+  E2E_ARTIFACT_DIR="${ARTIFACT_DIR}/service-bootstrap" \
+    bash "${ROOT_DIR}/scripts/local-dual-fnn-env.sh" "${service_args[@]}"
 else
   log "skipping services bootstrap (--skip-services)"
 fi

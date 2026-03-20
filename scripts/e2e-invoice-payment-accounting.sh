@@ -16,7 +16,7 @@ EXIT_CHANNEL_BOOTSTRAP_FAILURE=18
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPOSE_DIR="${ROOT_DIR}/deploy/compose"
 ENV_FILE="${ENV_FILE:-${COMPOSE_ENV_FILE:-${COMPOSE_DIR}/.env}}"
-ARTIFACT_DIR="${ROOT_DIR}/.tmp/e2e-invoice-payment-accounting/$(date -u +%Y%m%dT%H%M%SZ)"
+ARTIFACT_DIR="${E2E_ARTIFACT_DIR:-${ROOT_DIR}/.tmp/e2e-invoice-payment-accounting/$(date -u +%Y%m%dT%H%M%SZ)}"
 SUMMARY_FILE="${ARTIFACT_DIR}/summary.tsv"
 HOST_ACCESS_HOST="${E2E_HOST_ACCESS_HOST:-127.0.0.1}"
 HOST_ACCESS_BASE_URL="${E2E_HOST_ACCESS_BASE_URL:-http://${HOST_ACCESS_HOST}}"
@@ -202,7 +202,7 @@ is_positive_integer() {
 }
 
 compose() {
-  (cd "${COMPOSE_DIR}" && docker compose "$@")
+  (cd "${COMPOSE_DIR}" && docker compose --env-file "${ENV_FILE}" "$@")
 }
 
 reset_compose_stack() {
@@ -291,7 +291,7 @@ compose_up_with_timeout() {
 
   (
     cd "${COMPOSE_DIR}"
-    docker compose up -d --build postgres redis fnn fnn2 rpc worker
+    docker compose --env-file "${ENV_FILE}" up -d --build postgres redis fnn fnn2 rpc worker
   ) > "${log_path}" 2>&1 &
   start_pid=$!
 
@@ -2158,6 +2158,7 @@ if [[ "${compose_up_rc}" -eq 124 ]]; then
   fatal "${EXIT_STARTUP_TIMEOUT}" "docker compose up exceeded ${COMPOSE_UP_TIMEOUT_SECONDS}s (see compose-up.log and compose-timeout.*.log)"
 fi
 if [[ "${compose_up_rc}" -ne 0 ]]; then
+  cat "${ARTIFACT_DIR}/compose-up.log" >&2 || true
   if grep -Eqi 'address already in use|port is already allocated|bind: address already in use' "${ARTIFACT_DIR}/compose-up.log"; then
     fatal "${EXIT_STARTUP_TIMEOUT}" "docker compose failed due to host port conflict (see compose-up.log)"
   fi
