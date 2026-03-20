@@ -405,7 +405,10 @@ run_with_pseudo_tty() {
 
 ensure_discourse_checkout_permissions() {
   mkdir -p "${DISCOURSE_DEV_ROOT}/plugins" "${DISCOURSE_DEV_ROOT}/public" "${DISCOURSE_DEV_ROOT}/tmp"
-  chown -R "${DISCOURSE_DEV_UID_GID}" "${DISCOURSE_DEV_ROOT}"
+  if ! chown -R "${DISCOURSE_DEV_UID_GID}" "${DISCOURSE_DEV_ROOT}" >/dev/null 2>&1; then
+    vlog "host chown to ${DISCOURSE_DEV_UID_GID} is not permitted for ${DISCOURSE_DEV_ROOT}; relying on writable bind mount permissions instead"
+  fi
+  chmod -R a+rwX "${DISCOURSE_DEV_ROOT}"
 }
 
 configure_discourse_dev_allowed_hosts() {
