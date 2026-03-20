@@ -19,10 +19,11 @@ export const appRouter = t.router({
         message: "Admin identity not configured",
       });
     }
+    const adminUserId = ctx.adminUserId;
 
     const memberships = await ctx.db.query.appAdmins.findMany({
       columns: { appId: true },
-      where: (a, { eq }) => eq(a.adminUserId, ctx.adminUserId),
+      where: (a, { eq }) => eq(a.adminUserId, adminUserId),
     });
     const appIds = memberships.map((m) => m.appId);
     if (appIds.length === 0) {

@@ -25,6 +25,7 @@ jobs:
         run: ./deploy/compose/compose-reference.test.sh
       - name: Check visual acceptance scripts
         run: |
+          ./scripts/admin-dashboard-proof.test.sh
           ./scripts/run-visual-acceptance-local.test.sh
           ./scripts/render-visual-acceptance-comment.test.sh
           ./scripts/playwright-workflow-flow12.test.sh

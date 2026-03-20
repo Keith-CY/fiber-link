@@ -1,12 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { DbClient, WithdrawalState } from "@fiber-link/db";
+import { buildDashboardViewModel, summarizeWithdrawalStates, type DashboardPageState } from "../dashboard/dashboard-page-model";
 import {
-  buildDashboardViewModel,
   loadDashboardState,
-  summarizeWithdrawalStates,
   type DashboardDataDependencies,
-  type DashboardPageState,
-} from "./dashboard-data";
+} from "../server/dashboard-data";
 
 type DashboardAppRow = {
   appId: string;
@@ -150,6 +148,33 @@ describe("dashboard data", () => {
     if (viewModel.status === "ready") {
       expect(viewModel.withdrawalColumns).not.toContain("userId");
     }
+  });
+
+  it("uses env-backed default headers for local proof mode", async () => {
+    const now = "2026-02-17T00:00:00.000Z";
+    const deps = createDeps({
+      apps: [{ appId: "app-proof", createdAt: now }],
+      withdrawals: [],
+      policies: [],
+    });
+
+    const state = await loadDashboardState(
+      {
+        roleHeader: undefined,
+        adminUserIdHeader: undefined,
+      },
+      deps,
+      {
+        ADMIN_DASHBOARD_DEFAULT_ROLE: "COMMUNITY_ADMIN",
+        ADMIN_DASHBOARD_DEFAULT_ADMIN_USER_ID: "fixture-admin",
+      } as NodeJS.ProcessEnv,
+    );
+
+    expect(state).toMatchObject({
+      status: "ready",
+      role: "COMMUNITY_ADMIN",
+      apps: [{ appId: "app-proof" }],
+    });
   });
 
   it("returns error state when data loading throws", async () => {

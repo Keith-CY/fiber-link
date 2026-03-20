@@ -2,6 +2,7 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
+    exclude: ["**/node_modules/**", "**/.next/**"],
     coverage: {
       reporter: ["text", "json-summary"],
       exclude: [

@@ -1,8 +1,4 @@
-import { createDbClient, type DbClient, type UserRole, type WithdrawalState } from "@fiber-link/db";
-import { appRouter } from "../server/api/routers/app";
-import { withdrawalPolicyRouter } from "../server/api/routers/withdrawal-policy";
-import { withdrawalRouter } from "../server/api/routers/withdrawal";
-import type { TrpcContext } from "../server/api/trpc";
+import type { UserRole, WithdrawalState } from "@fiber-link/db";
 
 export const DASHBOARD_TITLE = "Fiber Link Admin Dashboard";
 
@@ -84,13 +80,6 @@ type DashboardReadyViewModel = DashboardReadyState & {
 
 export type DashboardViewModel = DashboardLoadingViewModel | DashboardErrorViewModel | DashboardReadyViewModel;
 
-export type DashboardDataDependencies = {
-  createDb: () => DbClient;
-  listApps: (ctx: TrpcContext) => Promise<DashboardApp[]>;
-  listWithdrawals: (ctx: TrpcContext) => Promise<DashboardWithdrawal[]>;
-  listPolicies: (ctx: TrpcContext) => Promise<DashboardWithdrawalPolicy[]>;
-};
-
 const WITHDRAWAL_STATE_ORDER: WithdrawalState[] = [
   "LIQUIDITY_PENDING",
   "PENDING",
@@ -99,44 +88,6 @@ const WITHDRAWAL_STATE_ORDER: WithdrawalState[] = [
   "COMPLETED",
   "FAILED",
 ];
-
-const DEFAULT_DATA_DEPENDENCIES: DashboardDataDependencies = {
-  createDb: () => createDbClient(),
-  listApps: async (ctx) => {
-    const rows = await appRouter.createCaller(ctx).list();
-    return rows.map((row) => ({
-      appId: row.appId,
-      createdAt: row.createdAt.toISOString(),
-    }));
-  },
-  listWithdrawals: async (ctx) => {
-    const rows = await withdrawalRouter.createCaller(ctx).list();
-    return rows.map((row) => ({
-      id: row.id,
-      appId: row.appId,
-      userId: row.userId,
-      asset: row.asset,
-      amount: row.amount,
-      state: row.state,
-      createdAt: row.createdAt.toISOString(),
-      txHash: row.txHash ?? null,
-    }));
-  },
-  listPolicies: async (ctx) => {
-    const rows = await withdrawalPolicyRouter.createCaller(ctx).list();
-    return rows.map((row) => ({
-      appId: row.appId,
-      allowedAssets: row.allowedAssets,
-      maxPerRequest: row.maxPerRequest,
-      perUserDailyMax: row.perUserDailyMax,
-      perAppDailyMax: row.perAppDailyMax,
-      cooldownSeconds: row.cooldownSeconds,
-      updatedBy: row.updatedBy ?? null,
-      createdAt: row.createdAt.toISOString(),
-      updatedAt: row.updatedAt.toISOString(),
-    }));
-  },
-};
 
 export function parseAdminRole(roleHeader?: string): UserRole | undefined {
   if (roleHeader === "SUPER_ADMIN" || roleHeader === "COMMUNITY_ADMIN") {
@@ -182,51 +133,6 @@ export function summarizeWithdrawalStates(withdrawals: DashboardWithdrawal[]): D
   return WITHDRAWAL_STATE_ORDER.map((state) => ({ state, count: counts[state] ?? 0 }));
 }
 
-export async function loadDashboardState(
-  input: {
-    roleHeader?: string;
-    adminUserIdHeader?: string;
-  },
-  deps: DashboardDataDependencies = DEFAULT_DATA_DEPENDENCIES,
-): Promise<DashboardPageState> {
-  const role = parseAdminRole(input.roleHeader);
-  if (!role) {
-    return {
-      status: "error",
-      message: "Missing or invalid x-admin-role header",
-    };
-  }
-
-  try {
-    const db = deps.createDb();
-    const trpcContext: TrpcContext = {
-      role,
-      adminUserId: input.adminUserIdHeader?.trim() || undefined,
-      db,
-    };
-    const [apps, withdrawals, policies] = await Promise.all([
-      deps.listApps(trpcContext),
-      deps.listWithdrawals(trpcContext),
-      deps.listPolicies(trpcContext),
-    ]);
-
-    return {
-      status: "ready",
-      role,
-      apps,
-      withdrawals,
-      statusSummaries: summarizeWithdrawalStates(withdrawals),
-      policies,
-    };
-  } catch (error) {
-    return {
-      status: "error",
-      role,
-      message: getErrorMessage(error),
-    };
-  }
-}
-
 export function buildDashboardViewModel(state: DashboardPageState): DashboardViewModel {
   if (state.status === "loading") {
     return {
@@ -244,7 +150,7 @@ export function buildDashboardViewModel(state: DashboardPageState): DashboardVie
   }
 
   const roleVisibility = getRoleVisibility(state.role);
-  const withdrawalColumns = roleVisibility.showUserId
+  const withdrawalColumns: DashboardReadyViewModel["withdrawalColumns"] = roleVisibility.showUserId
     ? ["id", "appId", "userId", "asset", "amount", "state", "createdAt", "txHash"]
     : ["id", "appId", "asset", "amount", "state", "createdAt", "txHash"];
 
@@ -254,11 +160,4 @@ export function buildDashboardViewModel(state: DashboardPageState): DashboardVie
     roleVisibility,
     withdrawalColumns,
   };
-}
-
-function getErrorMessage(error: unknown): string {
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-  return "Failed to load dashboard data";
 }

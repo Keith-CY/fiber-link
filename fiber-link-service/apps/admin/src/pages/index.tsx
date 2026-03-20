@@ -1,13 +1,32 @@
-import { buildDashboardViewModel, loadDashboardState, type DashboardPageState } from "./dashboard-data";
+import type { ParsedUrlQuery } from "querystring";
+import React from "react";
+import {
+  buildDashboardViewModel,
+  type DashboardPageState,
+  type DashboardWithdrawalPolicy,
+} from "../dashboard/dashboard-page-model";
+import {
+  readDashboardPolicyFlash,
+  type DashboardPolicyDraft,
+  type DashboardPolicyFlash,
+} from "../dashboard/dashboard-policy-form";
 
 type HomePageProps = {
   initialState?: DashboardPageState;
+  policyFlash?: DashboardPolicyFlash;
 };
 
 type HeaderValue = string | string[] | undefined;
 type RequestHeaders = Record<string, HeaderValue>;
 
-export default function HomePage({ initialState = { status: "loading" } }: HomePageProps) {
+type PolicyCard = {
+  appId: string;
+  updatedBy: string | null;
+  updatedAt: string;
+  values: DashboardPolicyDraft;
+};
+
+export default function HomePage({ initialState = { status: "loading" }, policyFlash }: HomePageProps) {
   const viewModel = buildDashboardViewModel(initialState);
 
   if (viewModel.status === "loading") {
@@ -33,6 +52,9 @@ export default function HomePage({ initialState = { status: "loading" } }: HomeP
       <h1>{viewModel.title}</h1>
       <p>Role: {viewModel.role}</p>
       <p>{viewModel.roleVisibility.scopeDescription}</p>
+
+      {policyFlash?.savedAppId ? <p role="status">Policy saved for {policyFlash.savedAppId}</p> : null}
+      {policyFlash?.formError ? <p role="alert">{policyFlash.formError}</p> : null}
 
       <section>
         <h2>Status summaries</h2>
@@ -102,44 +124,57 @@ export default function HomePage({ initialState = { status: "loading" } }: HomeP
 
       <section>
         <h2>Withdrawal policies</h2>
-        {viewModel.policies.length === 0 ? (
-          <p>No withdrawal policies configured.</p>
-        ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>App ID</th>
-                <th>Allowed Assets</th>
-                <th>Max Per Request</th>
-                <th>Per-User Daily Max</th>
-                <th>Per-App Daily Max</th>
-                <th>Cooldown Seconds</th>
-                <th>Updated By</th>
-                <th>Updated At</th>
-              </tr>
-            </thead>
-            <tbody>
-              {viewModel.policies.map((policy) => (
-                <tr key={policy.appId}>
-                  <td>{policy.appId}</td>
-                  <td>{policy.allowedAssets.join(", ")}</td>
-                  <td>{policy.maxPerRequest}</td>
-                  <td>{policy.perUserDailyMax}</td>
-                  <td>{policy.perAppDailyMax}</td>
-                  <td>{policy.cooldownSeconds}</td>
-                  <td>{policy.updatedBy ?? "N/A"}</td>
-                  <td>{formatDate(policy.updatedAt)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
+        {buildPolicyCards(viewModel.policies, viewModel.apps.map((app) => app.appId), policyFlash?.draft).map((card) => (
+          <article key={card.appId}>
+            <h3>{card.appId}</h3>
+            <p>
+              Updated by {card.updatedBy ?? "N/A"} at {formatDate(card.updatedAt)}
+            </p>
+            <form method="post" action="/api/withdrawal-policies" data-testid={`policy-form-${card.appId}`}>
+              <input type="hidden" name="appId" value={card.appId} />
+              <fieldset>
+                <legend>Allowed assets</legend>
+                <label>
+                  <input type="checkbox" name="allowedAssets" value="CKB" defaultChecked={card.values.allowedAssets.includes("CKB")} />
+                  CKB
+                </label>
+                <label>
+                  <input
+                    type="checkbox"
+                    name="allowedAssets"
+                    value="USDI"
+                    defaultChecked={card.values.allowedAssets.includes("USDI")}
+                  />
+                  USDI
+                </label>
+              </fieldset>
+              <label>
+                Max Per Request
+                <input type="text" name="maxPerRequest" defaultValue={card.values.maxPerRequest} />
+              </label>
+              <label>
+                Per-User Daily Max
+                <input type="text" name="perUserDailyMax" defaultValue={card.values.perUserDailyMax} />
+              </label>
+              <label>
+                Per-App Daily Max
+                <input type="text" name="perAppDailyMax" defaultValue={card.values.perAppDailyMax} />
+              </label>
+              <label>
+                Cooldown Seconds
+                <input type="number" name="cooldownSeconds" min={0} step={1} defaultValue={card.values.cooldownSeconds} />
+              </label>
+              <button type="submit">Save policy</button>
+            </form>
+          </article>
+        ))}
       </section>
     </main>
   );
 }
 
-export async function getServerSideProps(context: { req?: { headers?: RequestHeaders } }) {
+export async function getServerSideProps(context: { req?: { headers?: RequestHeaders }; query?: ParsedUrlQuery }) {
+  const { loadDashboardState } = await import("../server/dashboard-data");
   const headers = context.req?.headers ?? {};
   const initialState = await loadDashboardState({
     roleHeader: getHeader(headers, "x-admin-role"),
@@ -149,6 +184,7 @@ export async function getServerSideProps(context: { req?: { headers?: RequestHea
   return {
     props: {
       initialState,
+      policyFlash: readDashboardPolicyFlash(toSearchParams(context.query ?? {})),
     },
   };
 }
@@ -163,6 +199,54 @@ function getHeader(headers: RequestHeaders, key: string): string | undefined {
 
 function formatDate(dateText: string): string {
   return dateText;
+}
+
+function toSearchParams(query: ParsedUrlQuery): URLSearchParams {
+  const searchParams = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        searchParams.append(key, item);
+      }
+      continue;
+    }
+
+    if (typeof value === "string") {
+      searchParams.set(key, value);
+    }
+  }
+  return searchParams;
+}
+
+function buildPolicyCards(
+  policies: DashboardWithdrawalPolicy[],
+  appIds: string[],
+  draft?: DashboardPolicyDraft,
+): PolicyCard[] {
+  const policyMap = new Map(policies.map((policy) => [policy.appId, policy]));
+  const orderedAppIds = Array.from(new Set([...appIds, ...policies.map((policy) => policy.appId)])).sort();
+
+  return orderedAppIds.map((appId) => {
+    const policy = policyMap.get(appId);
+    const values =
+      draft?.appId === appId
+        ? draft
+        : {
+            appId,
+            allowedAssets: policy?.allowedAssets ?? [],
+            maxPerRequest: policy?.maxPerRequest ?? "",
+            perUserDailyMax: policy?.perUserDailyMax ?? "",
+            perAppDailyMax: policy?.perAppDailyMax ?? "",
+            cooldownSeconds: String(policy?.cooldownSeconds ?? 0),
+          };
+
+    return {
+      appId,
+      updatedBy: policy?.updatedBy ?? null,
+      updatedAt: policy?.updatedAt ?? "Not yet configured",
+      values,
+    };
+  });
 }
 
 function toColumnLabel(column: string): string {
