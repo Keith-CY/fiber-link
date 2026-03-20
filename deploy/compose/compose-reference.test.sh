@@ -99,6 +99,16 @@ if ! grep -q "^FIBER_RPC_URL=http://fnn:8227$" "${ENV_FILE}"; then
   exit 1
 fi
 
+if ! grep -q "^POSTGRES_IMAGE=public.ecr.aws/docker/library/postgres:16-alpine$" "${ENV_FILE}"; then
+  echo ".env.example missing POSTGRES_IMAGE default" >&2
+  exit 1
+fi
+
+if ! grep -q "^REDIS_IMAGE=public.ecr.aws/docker/library/redis:7-alpine$" "${ENV_FILE}"; then
+  echo ".env.example missing REDIS_IMAGE default" >&2
+  exit 1
+fi
+
 if ! grep -q "^FNN_ASSET_SHA256=" "${ENV_FILE}"; then
   echo ".env.example missing FNN_ASSET_SHA256 placeholder" >&2
   exit 1
@@ -153,6 +163,16 @@ fi
 
 if ! grep -q "POSTGRES_PASSWORD: \${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}" "${COMPOSE_FILE}"; then
   echo "docker-compose missing required POSTGRES_PASSWORD guard" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'image: ${POSTGRES_IMAGE:-public.ecr.aws/docker/library/postgres:16-alpine}' "${COMPOSE_FILE}"; then
+  echo "docker-compose missing POSTGRES_IMAGE override" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'image: ${REDIS_IMAGE:-public.ecr.aws/docker/library/redis:7-alpine}' "${COMPOSE_FILE}"; then
+  echo "docker-compose missing REDIS_IMAGE override" >&2
   exit 1
 fi
 

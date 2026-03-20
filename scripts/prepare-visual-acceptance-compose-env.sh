@@ -157,6 +157,8 @@ mkdir -p "$(dirname "${OUTPUT_PATH}")"
 cp "${SOURCE_ENV_FILE}" "${OUTPUT_PATH}"
 
 current_postgres_password="$(get_env_value_from_file "${OUTPUT_PATH}" POSTGRES_PASSWORD)"
+current_postgres_image="$(get_env_value_from_file "${OUTPUT_PATH}" POSTGRES_IMAGE)"
+current_redis_image="$(get_env_value_from_file "${OUTPUT_PATH}" REDIS_IMAGE)"
 current_fiber_secret_password="$(get_env_value_from_file "${OUTPUT_PATH}" FIBER_SECRET_KEY_PASSWORD)"
 current_hmac_secret="$(get_env_value_from_file "${OUTPUT_PATH}" FIBER_LINK_HMAC_SECRET)"
 current_fnn_asset_sha="$(get_env_value_from_file "${OUTPUT_PATH}" FNN_ASSET_SHA256)"
@@ -171,6 +173,16 @@ if needs_placeholder_value "${current_fiber_secret_password}"; then
 fi
 if needs_placeholder_value "${current_hmac_secret}"; then
   set_env_value_in_file "${OUTPUT_PATH}" FIBER_LINK_HMAC_SECRET "visual-acceptance-hmac-secret"
+fi
+
+target_postgres_image="${VISUAL_ACCEPTANCE_POSTGRES_IMAGE:-${POSTGRES_IMAGE:-${current_postgres_image}}}"
+target_redis_image="${VISUAL_ACCEPTANCE_REDIS_IMAGE:-${REDIS_IMAGE:-${current_redis_image}}}"
+
+if [[ -n "${target_postgres_image}" ]]; then
+  set_env_value_in_file "${OUTPUT_PATH}" POSTGRES_IMAGE "${target_postgres_image}"
+fi
+if [[ -n "${target_redis_image}" ]]; then
+  set_env_value_in_file "${OUTPUT_PATH}" REDIS_IMAGE "${target_redis_image}"
 fi
 
 if ! is_valid_sha256 "${current_fnn_asset_sha}"; then

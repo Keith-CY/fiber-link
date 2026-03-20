@@ -419,7 +419,9 @@ jobs:
           POSTGRES_DB=fiber_link
           POSTGRES_USER=fiber
           POSTGRES_PASSWORD=ci-postgres-password
+          POSTGRES_IMAGE=mirror.gcr.io/library/postgres:16-alpine
           POSTGRES_PORT=5432
+          REDIS_IMAGE=mirror.gcr.io/library/redis:7-alpine
           REDIS_PORT=6379
           RPC_PORT=3000
           FNN_VERSION=v0.6.1
