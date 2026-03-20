@@ -242,7 +242,7 @@ ensure_discourse_backend() {
   local unicorn_log="$ARTIFACT_DIR/discourse-unicorn.log"
   log "starting discourse unicorn backend"
   docker exec -u discourse:discourse -w /src "$DISCOURSE_DEV_CONTAINER" \
-    sh -lc 'ALLOW_EMBER_CLI_PROXY_BYPASS=1 bin/unicorn' >"$unicorn_log" 2>&1 &
+    sh -lc 'cd /src && exec env ALLOW_EMBER_CLI_PROXY_BYPASS=1 /src/bin/unicorn -c /src/config/unicorn.conf.rb' >"$unicorn_log" 2>&1 &
 
   if ! wait_http_ready "$DISCOURSE_BACKEND_READY_URL" "$BACKEND_WAIT_SECONDS"; then
     tail -n 120 "$unicorn_log" >&2 || true

@@ -11,12 +11,18 @@ EXIT_BALANCE=14
 EXIT_WITHDRAWAL=15
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-COMPOSE_ENV_FILE="${ROOT_DIR}/deploy/compose/.env"
+COMPOSE_ENV_FILE="${COMPOSE_ENV_FILE:-${ROOT_DIR}/deploy/compose/.env}"
 DISCOURSE_DEV_ROOT="${DISCOURSE_DEV_ROOT:-/tmp/discourse-dev}"
+DISCOURSE_CONTAINER_TMPDIR="${DISCOURSE_CONTAINER_TMPDIR:-/src/tmp/fiber-link-visual-acceptance}"
 DISCOURSE_REF="${DISCOURSE_REF:-26f3e2aa87a3abb35849183e0740fe7ab84cec67}"
+DISCOURSE_DEV_UID_GID="${DISCOURSE_DEV_UID_GID:-1000:1000}"
 DEFAULT_ARTIFACT_DIR="${ROOT_DIR}/.tmp/local-workflow-automation/$(date -u +%Y%m%dT%H%M%SZ)"
 ARTIFACT_DIR="${WORKFLOW_ARTIFACT_DIR:-${DEFAULT_ARTIFACT_DIR}}"
 RESULT_METADATA_PATH="${WORKFLOW_RESULT_METADATA_PATH:-${ARTIFACT_DIR}/result.env}"
+HOST_ACCESS_HOST="${E2E_HOST_ACCESS_HOST:-127.0.0.1}"
+HOST_ACCESS_BASE_URL="${E2E_HOST_ACCESS_BASE_URL:-http://${HOST_ACCESS_HOST}}"
+CURRENT_STEP="initializing"
+WORKFLOW_COMPLETED=0
 
 VERBOSE=0
 SKIP_SERVICES=0
@@ -25,6 +31,7 @@ SKIP_WITHDRAWAL=0
 PAUSE_AT_STEP4=0
 START_EMBER_CLI=0
 PAUSE_START_EMBER_CLI="${WORKFLOW_PAUSE_START_EMBER_CLI:-1}"
+PREPARE_ONLY=0
 
 WORKFLOW_ASSET="${WORKFLOW_ASSET:-CKB}"
 TIP_AMOUNT="${WORKFLOW_TIP_AMOUNT:-31}"
@@ -40,7 +47,7 @@ REPLY_BODY="${WORKFLOW_REPLY_BODY:-This reply is created by local workflow autom
 
 usage() {
   cat <<'EOF'
-Usage: scripts/local-workflow-automation.sh [--verbose] [--skip-services] [--skip-discourse] [--skip-withdrawal] [--pause-at-step4] [--with-ember-cli]
+Usage: scripts/local-workflow-automation.sh [--verbose] [--skip-services] [--skip-discourse] [--skip-withdrawal] [--pause-at-step4] [--prepare-only] [--with-ember-cli]
 
 Automates local workflow:
 1) launch discourse
@@ -56,6 +63,7 @@ Options:
   --skip-discourse  Skip discourse bootstrap/seeding step (assume IDs provided through env).
   --skip-withdrawal Skip step 6 backend withdrawal request (useful when browser will initiate it).
   --pause-at-step4  Pause before tip actions and wait for Enter.
+  --prepare-only    Exit after steps 1-3 and optional browser preparation.
   --with-ember-cli  Start Ember CLI proxy and expose interactive UI at http://127.0.0.1:4200/login.
   -h, --help        Show this help message.
 
@@ -116,6 +124,20 @@ fatal() {
   printf 'RESULT=FAIL CODE=%s MESSAGE=%s ARTIFACT_DIR=%s\n' "${code}" "$*" "${ARTIFACT_DIR}"
   exit "${code}"
 }
+
+on_exit() {
+  local rc="$?"
+  if [[ "${WORKFLOW_COMPLETED}" -eq 1 || "${rc}" -eq 0 ]]; then
+    return 0
+  fi
+
+  local message="workflow aborted during ${CURRENT_STEP}"
+  write_result_metadata "FAIL" "${rc}" "${message}" "" || true
+  log "${message} (exit=${rc})"
+  printf 'RESULT=FAIL CODE=%s MESSAGE=%s ARTIFACT_DIR=%s\n' "${rc}" "${message}" "${ARTIFACT_DIR}"
+}
+
+trap on_exit EXIT
 
 require_cmd() {
   local name="$1"
@@ -183,14 +205,49 @@ wait_http_ready() {
 wait_discourse_ui_ready() {
   local url="$1"
   local timeout_seconds="$2"
-  local started now body
+  local started now
   started="$(date +%s)"
 
   while true; do
-    body="$(curl -fsS -m 5 "${url}" 2>/dev/null || true)"
-    if [[ -n "${body}" ]] \
-      && ! printf '%s' "${body}" | grep -q "Ember CLI is Required in Development Mode" \
-      && ! printf '%s' "${body}" | grep -q "Build Error"; then
+    if curl -fsS -m 5 "${url}" >/dev/null 2>&1; then
+      return 0
+    fi
+
+    now="$(date +%s)"
+    if (( now - started >= timeout_seconds )); then
+      return 1
+    fi
+
+    sleep 2
+  done
+}
+
+wait_discourse_ui_ready_in_container() {
+  local timeout_seconds="$1"
+  local started now
+  started="$(date +%s)"
+
+  while true; do
+    if docker exec discourse_dev sh -lc 'curl -fsS -m 5 http://127.0.0.1:4200/login >/dev/null' >/dev/null 2>&1; then
+      return 0
+    fi
+
+    now="$(date +%s)"
+    if (( now - started >= timeout_seconds )); then
+      return 1
+    fi
+
+    sleep 2
+  done
+}
+
+wait_discourse_backend_ready_in_container() {
+  local timeout_seconds="$1"
+  local started now
+  started="$(date +%s)"
+
+  while true; do
+    if docker exec discourse_dev sh -lc 'curl -fsS -m 5 http://127.0.0.1:9292/session/csrf.json >/dev/null' >/dev/null 2>&1; then
       return 0
     fi
 
@@ -210,7 +267,7 @@ docker_host_port_for() {
 }
 
 resolve_runtime_ports() {
-  local rpc_probe_url="http://127.0.0.1:${RPC_PORT}/healthz/ready"
+  local rpc_probe_url="${HOST_ACCESS_BASE_URL}:${RPC_PORT}/healthz/ready"
   if ! wait_http_ready "${rpc_probe_url}" 8; then
     local detected_rpc_port
     detected_rpc_port="$(docker_host_port_for "fiber-link-rpc" "3000")"
@@ -220,11 +277,11 @@ resolve_runtime_ports() {
     fi
   fi
 
-  rpc_probe_url="http://127.0.0.1:${RPC_PORT}/healthz/ready"
+  rpc_probe_url="${HOST_ACCESS_BASE_URL}:${RPC_PORT}/healthz/ready"
   wait_http_ready "${rpc_probe_url}" 30 \
     || fatal "${EXIT_PRECHECK}" "rpc endpoint is not ready at ${rpc_probe_url}"
 
-  local fnn_probe_url="http://127.0.0.1:${FNN2_RPC_PORT}"
+  local fnn_probe_url="${HOST_ACCESS_BASE_URL}:${FNN2_RPC_PORT}"
   if ! wait_http_ready "${fnn_probe_url}" 8; then
     local detected_fnn2_port
     detected_fnn2_port="$(docker_host_port_for "fiber-link-fnn2" "8227")"
@@ -233,6 +290,12 @@ resolve_runtime_ports() {
       FNN2_RPC_PORT="${detected_fnn2_port}"
     fi
   fi
+}
+
+resolve_docker_host_gateway() {
+  docker network inspect bridge 2>/dev/null \
+    | jq -r '.[0].IPAM.Config[0].Gateway // empty' \
+    | tr -d '\r'
 }
 
 docker_container_env_value() {
@@ -293,6 +356,89 @@ resolve_workflow_app_id() {
   printf 'local-dev'
 }
 
+ensure_discourse_checkout() {
+  if [[ ! -d "${DISCOURSE_DEV_ROOT}/.git" ]]; then
+    mkdir -p "${DISCOURSE_DEV_ROOT}"
+    (
+      cd "${DISCOURSE_DEV_ROOT}"
+      git init >/dev/null 2>&1
+      git remote add origin https://github.com/discourse/discourse.git
+    )
+  fi
+
+  (
+    cd "${DISCOURSE_DEV_ROOT}"
+    if ! git remote get-url origin >/dev/null 2>&1; then
+      git remote add origin https://github.com/discourse/discourse.git
+    fi
+    git fetch --depth=1 origin "${DISCOURSE_REF}"
+    git checkout --force FETCH_HEAD
+  )
+}
+
+run_with_pseudo_tty() {
+  if [[ $# -eq 0 ]]; then
+    fatal "${EXIT_PRECHECK}" "run_with_pseudo_tty requires a command"
+  fi
+
+  if command -v script >/dev/null 2>&1; then
+    if script -q /dev/null true >/dev/null 2>&1; then
+      script -q /dev/null "$@"
+      return 0
+    fi
+
+    local quoted_cmd=""
+    local arg
+    for arg in "$@"; do
+      quoted_cmd+=" $(printf '%q' "${arg}")"
+    done
+    quoted_cmd="${quoted_cmd# }"
+
+    if script -q -e -c "true" /dev/null >/dev/null 2>&1; then
+      script -q -e -c "${quoted_cmd}" /dev/null
+      return 0
+    fi
+  fi
+
+  "$@"
+}
+
+ensure_discourse_checkout_permissions() {
+  mkdir -p "${DISCOURSE_DEV_ROOT}/plugins" "${DISCOURSE_DEV_ROOT}/public" "${DISCOURSE_DEV_ROOT}/tmp"
+  if ! chown -R "${DISCOURSE_DEV_UID_GID}" "${DISCOURSE_DEV_ROOT}" >/dev/null 2>&1; then
+    vlog "host chown to ${DISCOURSE_DEV_UID_GID} is not permitted for ${DISCOURSE_DEV_ROOT}; relying on writable bind mount permissions instead"
+  fi
+  chmod -R a+rwX "${DISCOURSE_DEV_ROOT}"
+}
+
+configure_discourse_dev_allowed_hosts() {
+  local requested_host="${E2E_HOST_ACCESS_HOST:-}"
+  local requested_ui_url="${DISCOURSE_UI_BASE_URL:-}"
+  local initializer_path="${DISCOURSE_DEV_ROOT}/config/initializers/099-fiber-link-visual-acceptance-hosts.rb"
+
+  if [[ -n "${requested_ui_url}" ]]; then
+    requested_host="${requested_ui_url#http://}"
+    requested_host="${requested_host#https://}"
+    requested_host="${requested_host%%/*}"
+    requested_host="${requested_host%%:*}"
+  fi
+
+  if [[ -z "${requested_host}" || "${requested_host}" == "127.0.0.1" || "${requested_host}" == "localhost" ]]; then
+    rm -f "${initializer_path}"
+    return 0
+  fi
+
+  mkdir -p "${DISCOURSE_DEV_ROOT}/config/initializers"
+  cat >"${initializer_path}" <<EOF
+# frozen_string_literal: true
+
+if defined?(Rails) && Rails.env.development?
+  config_host = "${requested_host}"
+  Rails.application.config.hosts << config_host unless Rails.application.config.hosts.include?(config_host)
+end
+EOF
+}
+
 repair_discourse_frontend_runtime() {
   local assets_log="${ARTIFACT_DIR}/discourse-assets-clobber.log"
   local constants_log="${ARTIFACT_DIR}/discourse-javascript-update-constants.log"
@@ -312,6 +458,8 @@ repair_discourse_frontend_runtime() {
 
   docker exec discourse_dev sh -lc "
     pkill -f '[e]mber server --proxy http://127.0.0.1:9292' >/dev/null 2>&1 || true
+    sv force-stop 'fiber-link-unicorn' >/dev/null 2>&1 || true
+    rm -rf '/etc/service/fiber-link-unicorn' >/dev/null 2>&1 || true
     if [ -f '/src/tmp/pids/unicorn.pid' ]; then
       pid=\$(cat '/src/tmp/pids/unicorn.pid' 2>/dev/null || true)
       if [ -n \"\${pid}\" ] && kill -0 \"\${pid}\" 2>/dev/null; then
@@ -355,52 +503,95 @@ sync_rpc_app_secret_record() {
 }
 
 ensure_ember_cli_proxy() {
-  local ember_url="http://127.0.0.1:4200/login"
-  local backend_ready_url="http://127.0.0.1:9292/session/csrf.json"
+  local ember_url="${HOST_ACCESS_BASE_URL}:4200/login"
+  local backend_ready_url="${HOST_ACCESS_BASE_URL}:9292/session/csrf.json"
   local ember_log="${ARTIFACT_DIR}/discourse-ember-cli.log"
-  local ember_pattern='[e]mber server --proxy http://127.0.0.1:9292'
+  local ember_container_log="/tmp/fiber-link-discourse-ember-cli.log"
+  local ember_service_dir="/etc/service/fiber-link-ember-cli"
+  local ember_service_name="fiber-link-ember-cli"
+  local ember_pattern='[b]in/ember-cli --host 0.0.0.0 --port 4200 --proxy http://127.0.0.1:9292'
+  local ember_cmd='bin/ember-cli --host 0.0.0.0 --port 4200 --proxy http://127.0.0.1:9292'
+  local ember_run_script
+  ember_run_script="$(cat <<EOF
+#!/bin/sh
+exec chpst -u discourse:discourse env HOME=/home/discourse XDG_CONFIG_HOME=/home/discourse/.config PNPM_HOME=/home/discourse/.local/share/pnpm TMPDIR=${DISCOURSE_CONTAINER_TMPDIR} sh -lc 'rm -rf "\$TMPDIR" && mkdir -p "\$HOME/.local/share/pnpm" "\$XDG_CONFIG_HOME/pnpm" "\$TMPDIR" && cd /src && exec bin/ember-cli --host 0.0.0.0 --port 4200 --proxy http://127.0.0.1:9292 >> /tmp/fiber-link-discourse-ember-cli.log 2>&1'
+EOF
+)"
 
-  if docker exec discourse_dev sh -lc "pgrep -f '${ember_pattern}' >/dev/null 2>&1"; then
-    if wait_discourse_ui_ready "${ember_url}" 20; then
-      log "ember-cli proxy already running (${ember_url})"
-      return 0
-    fi
+  sync_ember_cli_log() {
+    docker exec discourse_dev sh -lc "cat '${ember_container_log}' 2>/dev/null || true" > "${ember_log}" 2>/dev/null || true
+  }
 
-    log "ember-cli process exists but ${ember_url} is not ready; restarting proxy"
-    docker exec discourse_dev sh -lc "pkill -f '${ember_pattern}' >/dev/null 2>&1 || true"
-    sleep 2
-  fi
-
-  if docker exec discourse_dev sh -lc "pgrep -f '${ember_pattern}' >/dev/null 2>&1"; then
+  if wait_discourse_ui_ready "${ember_url}" 20 || wait_discourse_ui_ready_in_container 20; then
+    sync_ember_cli_log
     log "ember-cli proxy already running (${ember_url})"
-  else
-    log "starting ember-cli proxy (first compile can take a few minutes)"
-    docker exec -u discourse:discourse -w /src discourse_dev sh -lc 'bin/ember-cli --proxy http://127.0.0.1:9292' > "${ember_log}" 2>&1 &
-    vlog "ember-cli logs: ${ember_log}"
+    return 0
   fi
 
-  if ! wait_discourse_ui_ready "${ember_url}" 180; then
-    log "ember-cli proxy did not become healthy; refreshing frontend runtime and retrying once"
-    repair_discourse_frontend_runtime
-    ensure_discourse_backend_server
-    log "starting ember-cli proxy after frontend runtime refresh"
-    docker exec -u discourse:discourse -w /src discourse_dev sh -lc 'bin/ember-cli --proxy http://127.0.0.1:9292' > "${ember_log}" 2>&1 &
-    vlog "ember-cli logs: ${ember_log}"
-    wait_discourse_ui_ready "${ember_url}" 420 \
-      || fatal "${EXIT_DISCOURSE}" "ember-cli proxy did not become ready at ${ember_url} (see ${ember_log})"
+  CURRENT_STEP="clearing previous ember proxy processes"
+  docker exec discourse_dev sh -lc "
+    pids=\$(ps -eo pid=,args= | grep -E '${ember_pattern}' | awk '{print \$1}')
+    if [ -n \"\${pids}\" ]; then
+      kill \${pids} >/dev/null 2>&1 || true
+    fi
+    sv force-stop '${ember_service_name}' >/dev/null 2>&1 || true
+    rm -rf '${ember_service_dir}' >/dev/null 2>&1 || true
+    rm -f '${ember_container_log}' >/dev/null 2>&1 || true
+    rm -rf '${DISCOURSE_CONTAINER_TMPDIR}' >/dev/null 2>&1 || true
+  "
+  sleep 2
+
+  CURRENT_STEP="starting detached ember proxy"
+  log "starting ember-cli proxy (first compile can take a few minutes)"
+  : > "${ember_log}"
+  printf '%s' "${ember_run_script}" | docker exec -i discourse_dev sh -lc "
+    mkdir -p '${ember_service_dir}' &&
+    cat > '${ember_service_dir}/run' &&
+    chmod +x '${ember_service_dir}/run' &&
+    rm -f '${ember_service_dir}/down' &&
+    sv start '${ember_service_name}' >/dev/null 2>&1 || true
+  "
+  vlog "ember-cli logs: ${ember_log}"
+
+  CURRENT_STEP="waiting for ember proxy readiness"
+  wait_discourse_ui_ready_in_container 600 \
+    || {
+      sync_ember_cli_log
+      fatal "${EXIT_DISCOURSE}" "ember-cli proxy did not become ready inside discourse_dev (see ${ember_log})"
+    }
+  sync_ember_cli_log
+  if ! wait_discourse_ui_ready "${ember_url}" 20; then
+    log "warning: ember proxy is serving inside discourse_dev, but host UI is not reachable at ${ember_url}; continuing for sidecar-driven visual acceptance"
   fi
-  wait_http_ready "${backend_ready_url}" 180 || fatal "${EXIT_DISCOURSE}" "discourse backend did not become ready at ${backend_ready_url} (see ${ember_log})"
+  if ! wait_http_ready "${backend_ready_url}" 180 && ! wait_discourse_backend_ready_in_container 30; then
+    log "warning: discourse backend probe did not become ready at ${backend_ready_url}; continuing because ember proxy is already serving ${ember_url}"
+  fi
 }
 
 ensure_discourse_backend_server() {
   local backend_url="http://127.0.0.1:9292/session/csrf.json"
-  local login_url="http://127.0.0.1:9292/login"
   local backend_log="${ARTIFACT_DIR}/discourse-unicorn.log"
-  local unicorn_pattern='[b]in/unicorn'
+  local backend_container_log="/tmp/fiber-link-discourse-unicorn.log"
+  local backend_service_dir="/etc/service/fiber-link-unicorn"
+  local backend_service_name="fiber-link-unicorn"
+  local unicorn_pattern='[/]src/bin/unicorn|[b]in/unicorn'
   local unicorn_pid_path="/src/tmp/pids/unicorn.pid"
+  local unicorn_run_script
+  unicorn_run_script="$(cat <<EOF
+#!/bin/sh
+exec chpst -u discourse:discourse env HOME=/home/discourse TMPDIR=${DISCOURSE_CONTAINER_TMPDIR} sh -lc 'mkdir -p "\$TMPDIR" && cd /src && exec env ALLOW_EMBER_CLI_PROXY_BYPASS=1 /src/bin/unicorn -c /src/config/unicorn.conf.rb >> ${backend_container_log} 2>&1'
+EOF
+)"
+
+  sync_discourse_unicorn_log() {
+    docker exec discourse_dev sh -lc "cat '${backend_container_log}' 2>/dev/null || true" > "${backend_log}" 2>/dev/null || true
+  }
 
   cleanup_discourse_unicorn() {
     docker exec discourse_dev sh -lc "
+      sv force-stop '${backend_service_name}' >/dev/null 2>&1 || true
+      rm -rf '${backend_service_dir}' >/dev/null 2>&1 || true
+      rm -f '${backend_container_log}' >/dev/null 2>&1 || true
       if [ -f '${unicorn_pid_path}' ]; then
         pid=\$(cat '${unicorn_pid_path}' 2>/dev/null || true)
         if [ -n \"\${pid}\" ] && kill -0 \"\${pid}\" 2>/dev/null; then
@@ -415,12 +606,19 @@ ensure_discourse_backend_server() {
 
   start_discourse_unicorn() {
     log "starting discourse unicorn backend"
-    docker exec -u discourse:discourse -w /src discourse_dev sh -lc 'ALLOW_EMBER_CLI_PROXY_BYPASS=1 bin/unicorn' > "${backend_log}" 2>&1 &
+    : > "${backend_log}"
+    printf '%s' "${unicorn_run_script}" | docker exec -i discourse_dev sh -lc "
+      mkdir -p '${backend_service_dir}' &&
+      cat > '${backend_service_dir}/run' &&
+      chmod +x '${backend_service_dir}/run' &&
+      rm -f '${backend_service_dir}/down' &&
+      sv start '${backend_service_name}' >/dev/null 2>&1 || true
+    "
   }
 
   if docker exec discourse_dev sh -lc "pgrep -f '${unicorn_pattern}' >/dev/null 2>&1"; then
-    if wait_http_ready "${backend_url}" 20; then
-      if curl -fsS -m 5 "${login_url}" 2>/dev/null | grep -q "Ember CLI is Required in Development Mode"; then
+    if wait_discourse_backend_ready_in_container 20; then
+      if docker exec discourse_dev sh -lc "curl -fsS -m 5 http://127.0.0.1:9292/login" 2>/dev/null | grep -q "Ember CLI is Required in Development Mode"; then
         log "discourse backend is running without proxy bypass; restarting with ALLOW_EMBER_CLI_PROXY_BYPASS=1"
       else
         vlog "discourse backend already running (${backend_url})"
@@ -436,10 +634,12 @@ ensure_discourse_backend_server() {
   local attempt
   for attempt in 1 2; do
     start_discourse_unicorn
-    if wait_http_ready "${backend_url}" 120; then
+    if wait_discourse_backend_ready_in_container 120; then
+      sync_discourse_unicorn_log
       return 0
     fi
 
+    sync_discourse_unicorn_log
     if grep -q "Unicorn is already running!" "${backend_log}" 2>/dev/null; then
       log "discourse unicorn reported stale running state; cleaning up and retrying (attempt ${attempt}/2)"
       cleanup_discourse_unicorn
@@ -454,7 +654,46 @@ ensure_discourse_backend_server() {
     fi
   done
 
+  sync_discourse_unicorn_log
   fatal "${EXIT_DISCOURSE}" "discourse backend did not become ready at ${backend_url} (see ${backend_log})"
+}
+
+ensure_discourse_playwright_runtime() {
+  if [[ -n "${PLAYWRIGHT_CLI_DOCKER_IMAGE:-}" ]]; then
+    vlog "skipping discourse Playwright runtime install because an external Playwright sidecar is configured (${PLAYWRIGHT_CLI_DOCKER_IMAGE})"
+    return 0
+  fi
+
+  if ! docker ps --format '{{.Names}}' | grep -qx "discourse_dev"; then
+    return 0
+  fi
+
+  local runtime_artifact_dir="${ARTIFACT_DIR}/discourse-dev-runtime"
+  mkdir -p "${runtime_artifact_dir}"
+  DISCOURSE_DEV_ROOT="${DISCOURSE_DEV_ROOT}" \
+    DISCOURSE_DEV_RUNTIME_ARTIFACT_DIR="${runtime_artifact_dir}" \
+    "${ROOT_DIR}/scripts/ensure-discourse-dev-runtime.sh" \
+      --install-playwright \
+      --no-backend \
+      > "${runtime_artifact_dir}/ensure-playwright.log" 2>&1 || {
+      tail -n 120 "${runtime_artifact_dir}/ensure-playwright.log" >&2 || true
+      fatal "${EXIT_DISCOURSE}" "failed to prepare discourse Playwright runtime (see ${runtime_artifact_dir}/ensure-playwright.log)"
+    }
+}
+
+ensure_discourse_container_source_mount() {
+  local mounted_source=""
+  if ! docker ps -a --format '{{.Names}}' | grep -qx "discourse_dev"; then
+    return 0
+  fi
+
+  mounted_source="$(docker inspect discourse_dev --format '{{range .Mounts}}{{if eq .Destination "/src"}}{{.Source}}{{end}}{{end}}' 2>/dev/null || true)"
+  if [[ -z "${mounted_source}" || "${mounted_source}" == "${DISCOURSE_DEV_ROOT}" ]]; then
+    return 0
+  fi
+
+  log "discourse_dev is mounted from ${mounted_source}; recreating it for ${DISCOURSE_DEV_ROOT}"
+  docker rm -f discourse_dev >/dev/null 2>&1 || true
 }
 
 rpc_call_signed() {
@@ -463,7 +702,7 @@ rpc_call_signed() {
   local ts sig
   ts="$(date +%s)"
   sig="$(sign_payload "${payload}" "${ts}" "${nonce}")"
-  curl -fsS "http://127.0.0.1:${RPC_PORT}/rpc" \
+  curl -fsS "${HOST_ACCESS_BASE_URL}:${RPC_PORT}/rpc" \
     -H "content-type: application/json" \
     -H "x-app-id: ${APP_ID}" \
     -H "x-ts: ${ts}" \
@@ -474,7 +713,7 @@ rpc_call_signed() {
 
 fnn_payer_rpc_call() {
   local payload="$1"
-  curl -fsS "http://127.0.0.1:${FNN2_RPC_PORT}" \
+  curl -fsS "${HOST_ACCESS_BASE_URL}:${FNN2_RPC_PORT}" \
     -H "content-type: application/json" \
     -d "${payload}"
 }
@@ -823,6 +1062,9 @@ while [[ $# -gt 0 ]]; do
     --pause-at-step4)
       PAUSE_AT_STEP4=1
       ;;
+    --prepare-only)
+      PREPARE_ONLY=1
+      ;;
     --with-ember-cli)
       START_EMBER_CLI=1
       ;;
@@ -897,14 +1139,23 @@ if [[ "${SKIP_SERVICES}" -eq 0 ]]; then
   if [[ "${VERBOSE}" -eq 1 ]]; then
     service_args+=(--verbose)
   fi
-  "${ROOT_DIR}/scripts/local-dual-fnn-env.sh" "${service_args[@]}"
+  E2E_ARTIFACT_DIR="${ARTIFACT_DIR}/service-bootstrap" \
+    bash "${ROOT_DIR}/scripts/local-dual-fnn-env.sh" "${service_args[@]}"
 else
   log "skipping services bootstrap (--skip-services)"
 fi
 
 resolve_runtime_ports
+CURRENT_STEP="bootstrapping discourse"
 sync_rpc_app_secret_record
-DISCOURSE_SERVICE_URL="${FIBER_LINK_DISCOURSE_SERVICE_URL:-http://host.docker.internal:${RPC_PORT}}"
+docker_host_gateway="${DOCKER_HOST_GATEWAY_IP:-$(resolve_docker_host_gateway)}"
+if [[ -n "${FIBER_LINK_DISCOURSE_SERVICE_URL:-}" ]]; then
+  DISCOURSE_SERVICE_URL="${FIBER_LINK_DISCOURSE_SERVICE_URL}"
+elif [[ -n "${docker_host_gateway}" ]]; then
+  DISCOURSE_SERVICE_URL="http://${docker_host_gateway}:${RPC_PORT}"
+else
+  DISCOURSE_SERVICE_URL="http://host.docker.internal:${RPC_PORT}"
+fi
 vlog "resolved rpc_port=${RPC_PORT} fnn2_rpc_port=${FNN2_RPC_PORT} discourse_service_url=${DISCOURSE_SERVICE_URL}"
 
 TIPPER_USER_ID="${WORKFLOW_TIPPER_USER_ID:-}"
@@ -914,12 +1165,13 @@ REPLY_POST_ID="${WORKFLOW_REPLY_POST_ID:-}"
 
 if [[ "${SKIP_DISCOURSE}" -eq 0 ]]; then
   log "step 1/6 + 3/6: launching discourse and installing plugin"
-  if [[ ! -d "${DISCOURSE_DEV_ROOT}/.git" ]]; then
-    git clone https://github.com/discourse/discourse.git "${DISCOURSE_DEV_ROOT}"
-  fi
 
   (
+    ensure_discourse_checkout
+    ensure_discourse_checkout_permissions
+    configure_discourse_dev_allowed_hosts
     cd "${DISCOURSE_DEV_ROOT}"
+    ensure_discourse_container_source_mount
     discourse_exec=(
       docker exec
       -u discourse:discourse
@@ -932,17 +1184,17 @@ if [[ "${SKIP_DISCOURSE}" -eq 0 ]]; then
       -e QUNIT_RAILS_ENV
       discourse_dev
     )
-    git fetch --depth=1 origin "${DISCOURSE_REF}"
-    git checkout "${DISCOURSE_REF}"
     mkdir -p plugins tmp
     ln -sfn "${ROOT_DIR}/fiber-link-discourse-plugin" plugins/fiber-link
     if docker ps -a --format '{{.Names}}' | grep -qx discourse_dev; then
       docker start discourse_dev >/dev/null 2>&1 || true
     else
-      ./bin/docker/boot_dev
+      run_with_pseudo_tty ./bin/docker/boot_dev
     fi
+    "${discourse_exec[@]}" mkdir -p "${DISCOURSE_CONTAINER_TMPDIR}"
     "${discourse_exec[@]}" git config --global --add safe.directory /src || true
     "${discourse_exec[@]}" env \
+      TMPDIR="${DISCOURSE_CONTAINER_TMPDIR}" \
       LOAD_PLUGINS=1 \
       RAILS_ENV=development \
       bundle exec rake db:create db:migrate
@@ -969,6 +1221,7 @@ if [[ "${SKIP_DISCOURSE}" -eq 0 ]]; then
       FIBER_LINK_DISCOURSE_SERVICE_URL="${DISCOURSE_SERVICE_URL}" \
       FIBER_LINK_APP_ID="${APP_ID}" \
       FIBER_LINK_APP_SECRET="${APP_SECRET}" \
+      TMPDIR="${DISCOURSE_CONTAINER_TMPDIR}" \
       LOAD_PLUGINS=1 \
       RAILS_ENV=development \
       bin/rails runner tmp/fiber-link-seed.rb
@@ -990,12 +1243,28 @@ else
   log "skipping discourse bootstrap (--skip-discourse)"
 fi
 
+ensure_discourse_playwright_runtime
+CURRENT_STEP="validating seeded identifiers"
+
 [[ -n "${TIPPER_USER_ID}" ]] || fatal "${EXIT_PRECHECK}" "missing WORKFLOW_TIPPER_USER_ID"
 [[ -n "${AUTHOR_USER_ID}" ]] || fatal "${EXIT_PRECHECK}" "missing WORKFLOW_AUTHOR_USER_ID"
 [[ -n "${TOPIC_POST_ID}" ]] || fatal "${EXIT_PRECHECK}" "missing WORKFLOW_TOPIC_POST_ID"
 [[ -n "${REPLY_POST_ID}" ]] || fatal "${EXIT_PRECHECK}" "missing WORKFLOW_REPLY_POST_ID"
 
+if [[ "${PREPARE_ONLY}" -eq 1 ]]; then
+  CURRENT_STEP="preparing browser pause"
+  if [[ "${START_EMBER_CLI}" -eq 1 ]]; then
+    ensure_ember_cli_proxy
+  fi
+  CURRENT_STEP="prepare-only complete"
+  write_result_metadata "PASS" "0" "prepared through step 3" ""
+  WORKFLOW_COMPLETED=1
+  printf 'RESULT=PASS CODE=0 ARTIFACT_DIR=%s PREPARED=1\n' "${ARTIFACT_DIR}"
+  exit 0
+fi
+
 if [[ "${PAUSE_AT_STEP4}" -eq 1 ]]; then
+  CURRENT_STEP="preparing browser pause"
   if [[ "${START_EMBER_CLI}" -eq 1 ]]; then
     ensure_ember_cli_proxy
   fi
@@ -1011,6 +1280,7 @@ if [[ "${PAUSE_AT_STEP4}" -eq 1 ]]; then
   read -r -p "Press Enter to continue workflow... " _
 fi
 
+CURRENT_STEP="tipping topic and reply"
 log "step 4/6: tip post and tip reply"
 TOPIC_INVOICE="$(create_tip_invoice "topic-post" "${TOPIC_POST_ID}" "${TIPPER_USER_ID}" "${AUTHOR_USER_ID}")"
 TOPIC_TX_HASH="$(pay_invoice_from_payer "topic-post" "${TOPIC_INVOICE}" "${TIP_AMOUNT}")"
@@ -1020,6 +1290,7 @@ REPLY_INVOICE="$(create_tip_invoice "reply-post" "${REPLY_POST_ID}" "${TIPPER_US
 REPLY_TX_HASH="$(pay_invoice_from_payer "reply-post" "${REPLY_INVOICE}" "${TIP_AMOUNT}")"
 wait_tip_settled "reply-post" "${REPLY_INVOICE}"
 
+CURRENT_STEP="verifying author dashboard"
 log "step 5/6: author checks balance"
 DASHBOARD_RESPONSE="$(dashboard_summary "${AUTHOR_USER_ID}" false)"
 printf '%s\n' "${DASHBOARD_RESPONSE}" > "${ARTIFACT_DIR}/author-dashboard.json"
@@ -1039,6 +1310,7 @@ if [[ "${AUTHOR_BALANCE_INTEGER}" -lt "${WITHDRAW_AMOUNT}" ]]; then
   fatal "${EXIT_BALANCE}" "author balance ${AUTHOR_BALANCE} is smaller than withdrawal amount ${WITHDRAW_AMOUNT}"
 fi
 
+CURRENT_STEP="preparing withdrawal"
 WITHDRAW_TO_ADDRESS_RESOLVED="$(resolve_withdraw_to_address)"
 vlog "withdraw_to_address=${WITHDRAW_TO_ADDRESS_RESOLVED}"
 
@@ -1046,11 +1318,13 @@ WITHDRAWAL_ID=""
 WITHDRAWAL_STATE="SKIPPED"
 WITHDRAWAL_REQUESTED="false"
 if [[ "${SKIP_WITHDRAWAL}" -eq 0 ]]; then
+  CURRENT_STEP="requesting withdrawal"
   log "step 6/6: withdraw to CKB on-chain address"
   WITHDRAWAL_ID="$(request_withdrawal "${AUTHOR_USER_ID}" "${WITHDRAW_TO_ADDRESS_RESOLVED}")"
   WITHDRAWAL_STATE="$(wait_withdrawal_completed "${AUTHOR_USER_ID}" "${WITHDRAWAL_ID}")"
   WITHDRAWAL_REQUESTED="true"
 else
+  CURRENT_STEP="skipping withdrawal request"
   log "step 6/6: skipping backend withdrawal request (--skip-withdrawal)"
 fi
 
@@ -1092,4 +1366,5 @@ jq -n \
   }' > "${summary_path}"
 
 write_result_metadata "PASS" "0" "" "${summary_path}"
+WORKFLOW_COMPLETED=1
 printf 'RESULT=PASS CODE=0 ARTIFACT_DIR=%s SUMMARY=%s\n' "${ARTIFACT_DIR}" "${summary_path}"

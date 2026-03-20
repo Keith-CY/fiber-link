@@ -107,6 +107,7 @@ result = {
     id: topic.id.to_s,
     title: topic.title,
     first_post_id: first_post.id.to_s,
+    relative_url: topic.relative_url,
   },
   reply: {
     post_id: reply.id.to_s,

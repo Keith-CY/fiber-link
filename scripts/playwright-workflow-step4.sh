@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PWCLI="${PWCLI:-$HOME/.codex/skills/playwright/scripts/playwright_cli.sh}"
+PWCLI="${PWCLI:-${ROOT_DIR}/scripts/playwright-cli.sh}"
 SESSION="${PW_DEMO_SESSION:-fiber-workflow-step4}"
 ARTIFACT_DIR="${PW_DEMO_ARTIFACT_DIR:-${ROOT_DIR}/.tmp/playwright-workflow-demo}"
 RUN_CODE_FILE="${ROOT_DIR}/scripts/playwright/workflow-step4.run-code.js"
@@ -28,7 +28,7 @@ export PATH
 }
 
 mkdir -p "${ARTIFACT_DIR}"
-PW_TMPDIR="${PW_TMPDIR:-/tmp/playwright-cli}"
+PW_TMPDIR="${PW_TMPDIR:-${ARTIFACT_DIR}/playwright-cli-tmp}"
 mkdir -p "${PW_TMPDIR}"
 export TMPDIR="${PW_TMPDIR}"
 
@@ -66,27 +66,18 @@ demo_env_json="$(
 )"
 base_code="$(cat "${RUN_CODE_FILE}")"
 run_code="$(printf '(() => { globalThis.__PW_DEMO_ENV__ = %s; return (%s); })()' "${demo_env_json}" "${base_code}")"
+run_code_file="${ARTIFACT_DIR}/playwright-step4.run-code.js"
+printf '%s' "${run_code}" > "${run_code_file}"
 
-"${PWCLI}" -s="${SESSION}" close >/dev/null 2>&1 || true
-if [[ "${PW_DEMO_HEADED:-1}" == "1" ]]; then
-  "${PWCLI}" -s="${SESSION}" open "${OPEN_URL}" --headed > "${ARTIFACT_DIR}/playwright-step4-open.log"
-else
-  "${PWCLI}" -s="${SESSION}" open "${OPEN_URL}" > "${ARTIFACT_DIR}/playwright-step4-open.log"
-fi
-
-set +e
-"${PWCLI}" -s="${SESSION}" run-code "${run_code}" \
-  | tee "${ARTIFACT_DIR}/playwright-step4-result.log"
-run_code_status=${PIPESTATUS[0]}
-set -e
-
-if [[ "${run_code_status}" -ne 0 ]]; then
-  if grep -q '^### Result' "${ARTIFACT_DIR}/playwright-step4-result.log"; then
-    echo "[playwright-step4] run-code returned ${run_code_status} (likely due console errors); continuing because result payload exists." >> "${ARTIFACT_DIR}/playwright-step4-result.log"
-  else
-    echo "[playwright-step4] run-code failed with status ${run_code_status}" >&2
-    exit "${run_code_status}"
-  fi
-fi
-
-"${PWCLI}" -s="${SESSION}" close > "${ARTIFACT_DIR}/playwright-step4-close.log" 2>&1 || true
+PWCLI_PATH="${PWCLI}" \
+PW_SESSION="${SESSION}" \
+PW_OPEN_URL="${OPEN_URL}" \
+PW_RUN_CODE_FILE="${run_code_file}" \
+PW_OPEN_LOG="${ARTIFACT_DIR}/playwright-step4-open.log" \
+PW_RESULT_LOG="${ARTIFACT_DIR}/playwright-step4-result.log" \
+PW_CLOSE_LOG="${ARTIFACT_DIR}/playwright-step4-close.log" \
+PW_ERROR_PREFIX="[playwright-step4]" \
+PW_HEADED="${PW_DEMO_HEADED:-1}" \
+PW_ARTIFACT_DIR="${ARTIFACT_DIR}" \
+PW_TMPDIR="${PW_TMPDIR}" \
+  "${ROOT_DIR}/scripts/run-playwright-session.sh"

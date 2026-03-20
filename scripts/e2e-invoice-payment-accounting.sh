@@ -15,9 +15,11 @@ EXIT_CHANNEL_BOOTSTRAP_FAILURE=18
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPOSE_DIR="${ROOT_DIR}/deploy/compose"
-ENV_FILE="${COMPOSE_DIR}/.env"
-ARTIFACT_DIR="${ROOT_DIR}/.tmp/e2e-invoice-payment-accounting/$(date -u +%Y%m%dT%H%M%SZ)"
+ENV_FILE="${ENV_FILE:-${COMPOSE_ENV_FILE:-${COMPOSE_DIR}/.env}}"
+ARTIFACT_DIR="${E2E_ARTIFACT_DIR:-${ROOT_DIR}/.tmp/e2e-invoice-payment-accounting/$(date -u +%Y%m%dT%H%M%SZ)}"
 SUMMARY_FILE="${ARTIFACT_DIR}/summary.tsv"
+HOST_ACCESS_HOST="${E2E_HOST_ACCESS_HOST:-127.0.0.1}"
+HOST_ACCESS_BASE_URL="${E2E_HOST_ACCESS_BASE_URL:-http://${HOST_ACCESS_HOST}}"
 
 # Normalize PATH for non-interactive shells (expect/CI) so modern Node/Bun are found first.
 if [[ -d "${HOME}/.nvm/versions/node" ]]; then
@@ -73,6 +75,9 @@ CHANNEL_TLC_FEE_PROPORTIONAL_MILLIONTHS="${E2E_CHANNEL_TLC_FEE_PROPORTIONAL_MILL
 TOPUP_INVOICE_NODE_CKB="${E2E_TOPUP_INVOICE_NODE_CKB:-0}"
 SKIP_CKB_FAUCET="${E2E_SKIP_CKB_FAUCET:-0}"
 ACCEPT_CHANNEL_FUNDING_AMOUNT_HEX="${E2E_ACCEPT_CHANNEL_FUNDING_AMOUNT_HEX:-}"
+OPEN_CHANNEL_INIT_RETRIES="${E2E_OPEN_CHANNEL_INIT_RETRIES:-10}"
+OPEN_CHANNEL_INIT_RETRY_INTERVAL_SECONDS="${E2E_OPEN_CHANNEL_INIT_RETRY_INTERVAL_SECONDS:-2}"
+CHANNEL_ACCEPT_RETRY_INTERVAL_ATTEMPTS="${E2E_CHANNEL_ACCEPT_RETRY_INTERVAL_ATTEMPTS:-6}"
 
 STARTED_COMPOSE=0
 KEEP_STACK_UP=0
@@ -154,6 +159,9 @@ Optional env:
   E2E_CHANNEL_FUNDING_AMOUNT=10000000000
   E2E_CHANNEL_TLC_FEE_PROPORTIONAL_MILLIONTHS=0x4B0
   E2E_ACCEPT_CHANNEL_FUNDING_AMOUNT_HEX=<auto from invoice node_info>
+  E2E_OPEN_CHANNEL_INIT_RETRIES=10
+  E2E_OPEN_CHANNEL_INIT_RETRY_INTERVAL_SECONDS=2
+  E2E_CHANNEL_ACCEPT_RETRY_INTERVAL_ATTEMPTS=6
   E2E_TOPUP_INVOICE_NODE_CKB=0
   E2E_SKIP_CKB_FAUCET=0
   CHANNEL_READY_TIMEOUT_SECONDS=600
@@ -194,7 +202,11 @@ is_positive_integer() {
 }
 
 compose() {
-  (cd "${COMPOSE_DIR}" && docker compose "$@")
+  (cd "${COMPOSE_DIR}" && docker compose --env-file "${ENV_FILE}" "$@")
+}
+
+reset_compose_stack() {
+  compose down -v --remove-orphans > "${ARTIFACT_DIR}/compose-down-reset.log" 2>&1 || true
 }
 
 is_tcp_port_listening() {
@@ -211,7 +223,7 @@ socket.setTimeout(500);
 socket.once("connect", () => finish(0));
 socket.once("timeout", () => finish(1));
 socket.once("error", () => finish(1));
-socket.connect(port, "127.0.0.1");' "${port}"
+socket.connect(port, process.argv[2] || "127.0.0.1");' "${port}" "${HOST_ACCESS_HOST}"
 }
 
 listener_hint_for_port() {
@@ -279,7 +291,7 @@ compose_up_with_timeout() {
 
   (
     cd "${COMPOSE_DIR}"
-    docker compose up -d --build postgres redis fnn fnn2 rpc worker
+    docker compose --env-file "${ENV_FILE}" up -d --build postgres redis fnn fnn2 rpc worker
   ) > "${log_path}" 2>&1 &
   start_pid=$!
 
@@ -303,7 +315,7 @@ cleanup_stack() {
   fi
 
   compose logs --no-color > "${ARTIFACT_DIR}/compose.log" || true
-  compose down --remove-orphans > "${ARTIFACT_DIR}/compose-down.log" 2>&1 || return 1
+  compose down -v --remove-orphans > "${ARTIFACT_DIR}/compose-down.log" 2>&1 || return 1
   return 0
 }
 
@@ -454,7 +466,7 @@ rpc_call_signed() {
   local ts sig
   ts="$(date +%s)"
   sig="$(sign_payload "${payload}" "${ts}" "${nonce}")"
-  curl -fsS "http://127.0.0.1:${RPC_PORT}/rpc" \
+  curl -fsS "${HOST_ACCESS_BASE_URL}:${RPC_PORT}/rpc" \
     -H "content-type: application/json" \
     -H "x-app-id: ${APP_ID}" \
     -H "x-ts: ${ts}" \
@@ -466,7 +478,7 @@ rpc_call_signed() {
 fnn_rpc_call_on_port() {
   local port="$1"
   local payload="$2"
-  curl -fsS "http://127.0.0.1:${port}" \
+  curl -fsS "${HOST_ACCESS_BASE_URL}:${port}" \
     -H "content-type: application/json" \
     -d "${payload}"
 }
@@ -628,6 +640,14 @@ contains_accept_channel_ignorable_error() {
     || [[ "${normalized}" == *"no channel with temp id"* ]] \
     || [[ "${normalized}" == *"no channel"* ]] \
     || [[ "${normalized}" == *"unknown channel"* ]]
+}
+
+contains_open_channel_peer_not_ready_error() {
+  local text="$1"
+  local normalized
+  normalized="$(printf '%s' "${text}" | tr '[:upper:]' '[:lower:]')"
+  [[ "${normalized}" == *"waiting for peer to send init message"* ]] \
+    || [[ "${normalized}" == *"peer"* && "${normalized}" == *"feature not found"* ]]
 }
 
 asset_topup_address() {
@@ -1319,49 +1339,64 @@ open_channel_from_payer() {
   local target_dir="$3"
   local funding_udt_type_script_json="${4:-}"
 
-  local payload
-  if [[ -n "${funding_udt_type_script_json}" ]]; then
-    payload="$(jq -cn \
-      --arg id "open-channel-$(date +%s)-$RANDOM" \
-      --arg peer_id "${peer_id}" \
-      --arg funding_amount "${funding_amount_hex}" \
-      --arg tlc_fee_proportional_millionths "${CHANNEL_TLC_FEE_PROPORTIONAL_MILLIONTHS}" \
-      --argjson funding_udt_type_script "${funding_udt_type_script_json}" \
-      '{jsonrpc:"2.0",id:$id,method:"open_channel",params:[{peer_id:$peer_id,funding_amount:$funding_amount,funding_udt_type_script:$funding_udt_type_script,tlc_fee_proportional_millionths:$tlc_fee_proportional_millionths}]}'
-    )"
-  else
-    payload="$(jq -cn \
-      --arg id "open-channel-$(date +%s)-$RANDOM" \
-      --arg peer_id "${peer_id}" \
-      --arg funding_amount "${funding_amount_hex}" \
-      --arg tlc_fee_proportional_millionths "${CHANNEL_TLC_FEE_PROPORTIONAL_MILLIONTHS}" \
-      '{jsonrpc:"2.0",id:$id,method:"open_channel",params:[{peer_id:$peer_id,funding_amount:$funding_amount,tlc_fee_proportional_millionths:$tlc_fee_proportional_millionths}]}'
-    )"
-  fi
-  printf '%s\n' "${payload}" > "${target_dir}/open-channel.request.json"
+  local attempt=0
+  while true; do
+    attempt=$((attempt + 1))
 
-  local response
-  set +e
-  response="$(fnn_payer_rpc_call "${payload}")"
-  local rc=$?
-  set -e
-  if [[ "${rc}" -ne 0 ]]; then
-    fatal "${EXIT_CHANNEL_BOOTSTRAP_FAILURE}" "open_channel transport failed"
-  fi
-  printf '%s\n' "${response}" > "${target_dir}/open-channel.response.json"
-
-  if contains_jsonrpc_error "${response}"; then
-    local message
-    message="$(jsonrpc_error_message "${response}")"
-    if contains_insufficient_balance "${message}"; then
-      fail_with_channel_topup_hint "${message}"
+    local payload
+    if [[ -n "${funding_udt_type_script_json}" ]]; then
+      payload="$(jq -cn \
+        --arg id "open-channel-${attempt}-$(date +%s)-$RANDOM" \
+        --arg peer_id "${peer_id}" \
+        --arg funding_amount "${funding_amount_hex}" \
+        --arg tlc_fee_proportional_millionths "${CHANNEL_TLC_FEE_PROPORTIONAL_MILLIONTHS}" \
+        --argjson funding_udt_type_script "${funding_udt_type_script_json}" \
+        '{jsonrpc:"2.0",id:$id,method:"open_channel",params:[{peer_id:$peer_id,funding_amount:$funding_amount,funding_udt_type_script:$funding_udt_type_script,tlc_fee_proportional_millionths:$tlc_fee_proportional_millionths}]}'
+      )"
+    else
+      payload="$(jq -cn \
+        --arg id "open-channel-${attempt}-$(date +%s)-$RANDOM" \
+        --arg peer_id "${peer_id}" \
+        --arg funding_amount "${funding_amount_hex}" \
+        --arg tlc_fee_proportional_millionths "${CHANNEL_TLC_FEE_PROPORTIONAL_MILLIONTHS}" \
+        '{jsonrpc:"2.0",id:$id,method:"open_channel",params:[{peer_id:$peer_id,funding_amount:$funding_amount,tlc_fee_proportional_millionths:$tlc_fee_proportional_millionths}]}'
+      )"
     fi
-    fatal "${EXIT_CHANNEL_BOOTSTRAP_FAILURE}" "open_channel failed: ${message}"
-  fi
+    printf '%s\n' "${payload}" > "${target_dir}/open-channel.request.${attempt}.json"
+    printf '%s\n' "${payload}" > "${target_dir}/open-channel.request.json"
 
-  local temporary_channel_id
-  temporary_channel_id="$(printf '%s' "${response}" | jq -r '.result.temporary_channel_id // empty')"
-  OPEN_CHANNEL_TEMPORARY_ID="${temporary_channel_id}"
+    local response
+    set +e
+    response="$(fnn_payer_rpc_call "${payload}")"
+    local rc=$?
+    set -e
+    if [[ "${rc}" -ne 0 ]]; then
+      fatal "${EXIT_CHANNEL_BOOTSTRAP_FAILURE}" "open_channel transport failed"
+    fi
+    printf '%s\n' "${response}" > "${target_dir}/open-channel.response.${attempt}.json"
+    printf '%s\n' "${response}" > "${target_dir}/open-channel.response.json"
+
+    if contains_jsonrpc_error "${response}"; then
+      local message
+      message="$(jsonrpc_error_message "${response}")"
+      if contains_insufficient_balance "${message}"; then
+        fail_with_channel_topup_hint "${message}"
+      fi
+      if contains_open_channel_peer_not_ready_error "${message}" && [[ "${attempt}" -lt "${OPEN_CHANNEL_INIT_RETRIES}" ]]; then
+        printf 'attempt=%s retrying=true reason=%s at=%s\n' \
+          "${attempt}" "${message}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "${target_dir}/open-channel.retry.log"
+        vlog "open_channel attempt=${attempt} waiting for peer init; retrying in ${OPEN_CHANNEL_INIT_RETRY_INTERVAL_SECONDS}s"
+        sleep "${OPEN_CHANNEL_INIT_RETRY_INTERVAL_SECONDS}"
+        continue
+      fi
+      fatal "${EXIT_CHANNEL_BOOTSTRAP_FAILURE}" "open_channel failed: ${message}"
+    fi
+
+    local temporary_channel_id
+    temporary_channel_id="$(printf '%s' "${response}" | jq -r '.result.temporary_channel_id // empty')"
+    OPEN_CHANNEL_TEMPORARY_ID="${temporary_channel_id}"
+    return 0
+  done
 }
 
 accept_channel_on_invoice_node() {
@@ -1446,6 +1481,7 @@ normalize_channel_state() {
 
 wait_until_channel_ready() {
   local target_dir="$1"
+  local temporary_channel_id="${2:-}"
   local poll_log="${target_dir}/channel-ready.poll.log"
   : > "${poll_log}"
 
@@ -1500,6 +1536,15 @@ wait_until_channel_ready() {
 
     if [[ "${seen_channel}" -eq 1 && "${payer_count}" -eq 0 && "${invoice_count}" -eq 0 ]]; then
       fail_with_channel_topup_hint "channel dropped before ChannelReady"
+    fi
+
+    if [[ -n "${temporary_channel_id}" \
+      && "${invoice_state}" == "AWAITING_CHANNEL_READY" \
+      && "${CHANNEL_ACCEPT_RETRY_INTERVAL_ATTEMPTS}" =~ ^[0-9]+$ \
+      && "${CHANNEL_ACCEPT_RETRY_INTERVAL_ATTEMPTS}" -gt 0 \
+      && $((attempt % CHANNEL_ACCEPT_RETRY_INTERVAL_ATTEMPTS)) -eq 0 ]]; then
+      vlog "channel poll attempt=${attempt} still awaiting channel ready; retrying accept_channel"
+      accept_channel_on_invoice_node "${temporary_channel_id}" "${target_dir}"
     fi
 
     if [[ "${payer_count}" -gt 0 && "${invoice_count}" -gt 0 && "${payer_state}" == "CHANNEL_READY" && "${invoice_state}" == "CHANNEL_READY" ]]; then
@@ -1709,10 +1754,10 @@ bootstrap_dual_fnn_channel() {
   # In local dual-node mode, auto-accept can be delayed. Try explicit accept first.
   accept_channel_on_invoice_node "${temporary_channel_id}" "${target_dir}"
 
-  if ! wait_until_channel_ready "${target_dir}"; then
+  if ! wait_until_channel_ready "${target_dir}" "${temporary_channel_id}"; then
     log "channel not ready yet, trying accept_channel fallback"
     accept_channel_on_invoice_node "${temporary_channel_id}" "${target_dir}"
-    if ! wait_until_channel_ready "${target_dir}"; then
+    if ! wait_until_channel_ready "${target_dir}" "${temporary_channel_id}"; then
       fatal "${EXIT_CHANNEL_BOOTSTRAP_FAILURE}" "timeout waiting fnn2<->fnn channel to reach ChannelReady"
     fi
   fi
@@ -2101,6 +2146,8 @@ fi
 log "starting compose services"
 ensure_rpc_port_available
 vlog "effective rpc_port=${RPC_PORT}"
+vlog "reset compose stack to deterministic baseline"
+reset_compose_stack
 set +e
 compose_up_with_timeout "${COMPOSE_UP_TIMEOUT_SECONDS}" "${ARTIFACT_DIR}/compose-up.log"
 compose_up_rc=$?
@@ -2111,6 +2158,7 @@ if [[ "${compose_up_rc}" -eq 124 ]]; then
   fatal "${EXIT_STARTUP_TIMEOUT}" "docker compose up exceeded ${COMPOSE_UP_TIMEOUT_SECONDS}s (see compose-up.log and compose-timeout.*.log)"
 fi
 if [[ "${compose_up_rc}" -ne 0 ]]; then
+  cat "${ARTIFACT_DIR}/compose-up.log" >&2 || true
   if grep -Eqi 'address already in use|port is already allocated|bind: address already in use' "${ARTIFACT_DIR}/compose-up.log"; then
     fatal "${EXIT_STARTUP_TIMEOUT}" "docker compose failed due to host port conflict (see compose-up.log)"
   fi

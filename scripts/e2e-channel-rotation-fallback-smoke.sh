@@ -59,6 +59,7 @@ done
 if [[ -z "${RUN_DIR}" ]]; then
   RUN_DIR="${ROOT_DIR}/.tmp/e2e-discourse-four-flows/${DEFAULT_RUN_TIMESTAMP}-channel-rotation"
 fi
+normalize_explorer_tx_url_template
 [[ -n "${EXPLORER_TX_URL_TEMPLATE}" ]] || fatal "${EXIT_USAGE}" "--explorer-tx-url-template is required"
 [[ -x "${ORCHESTRATOR_SCRIPT}" ]] || fatal "${EXIT_PRECHECK}" "missing orchestrator script: ${ORCHESTRATOR_SCRIPT}"
 

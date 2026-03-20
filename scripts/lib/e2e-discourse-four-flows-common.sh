@@ -13,10 +13,12 @@ EXIT_ARTIFACT=17
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 COMPOSE_FILE="${ROOT_DIR}/deploy/compose/docker-compose.yml"
-COMPOSE_ENV_FILE="${ROOT_DIR}/deploy/compose/.env"
+COMPOSE_ENV_FILE="${COMPOSE_ENV_FILE:-${ROOT_DIR}/deploy/compose/.env}"
 DEFAULT_RUN_TIMESTAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 DEFAULT_RUN_DIR="${ROOT_DIR}/.tmp/e2e-discourse-four-flows/${DEFAULT_RUN_TIMESTAMP}"
-DEFAULT_DISCOURSE_UI_BASE_URL="${E2E_DISCOURSE_UI_BASE_URL:-http://127.0.0.1:9292}"
+HOST_ACCESS_HOST="${E2E_HOST_ACCESS_HOST:-127.0.0.1}"
+HOST_ACCESS_BASE_URL="${E2E_HOST_ACCESS_BASE_URL:-http://${HOST_ACCESS_HOST}}"
+DEFAULT_DISCOURSE_UI_BASE_URL="${E2E_DISCOURSE_UI_BASE_URL:-http://127.0.0.1:4200}"
 DEFAULT_SETTLEMENT_MODES="${E2E_SETTLEMENT_MODES:-subscription}"
 DEFAULT_WORKFLOW_RPC_PORT="${E2E_WORKFLOW_RPC_PORT:-13001}"
 DEFAULT_WORKFLOW_WITHDRAW_AMOUNT_CKB="${WORKFLOW_WITHDRAW_AMOUNT:-61}"
@@ -121,14 +123,18 @@ write_checklist() {
 - Artifact directory: ${RUN_DIR}
 
 ## Required Screenshots
+- [ ] screenshots/step1-forum-tip-entrypoints.png
+- [ ] screenshots/step2-topic-and-reply.png
 - [ ] screenshots/flow1-tip-button.png
 - [ ] screenshots/flow1-tip-modal-step1-generate.png
 - [ ] screenshots/flow1-tip-modal-step2-pay.png
 - [ ] screenshots/flow1-tip-modal-step3-confirmed.png
 - [ ] screenshots/flow1-tip-modal-invoice.png
-- [ ] screenshots/flow4-author-balance-history.png
-- [ ] screenshots/flow4-admin-withdrawal.png
-- [ ] screenshots/flow4-explorer-withdrawal-tx.png
+- [ ] screenshots/step4-tipper-dashboard.png
+- [ ] screenshots/step5-author-dashboard.png
+- [ ] screenshots/step6-author-withdrawal.png
+- [ ] screenshots/step6-admin-withdrawal.png
+- [ ] screenshots/step6-explorer-tx.png
 
 ## Required Evidence
 - [ ] artifacts/flow2-rpc-calls.json
@@ -238,17 +244,34 @@ sync_liquidity_fallback_env() {
   export FIBER_CHANNEL_ROTATION_MAX_CONCURRENT="${CHANNEL_ROTATION_MAX_CONCURRENT:-1}"
 }
 
+normalize_explorer_tx_url_template() {
+  local normalized="${EXPLORER_TX_URL_TEMPLATE:-}"
+
+  case "${normalized}" in
+    *"{txHash}}")
+      normalized="${normalized%?}"
+      ;;
+    *'${txHash}}')
+      normalized="${normalized%?}"
+      ;;
+  esac
+
+  EXPLORER_TX_URL_TEMPLATE="${normalized}"
+}
+
 load_state_env() {
   refresh_run_paths
   if [[ -f "${STATE_ENV_PATH}" ]]; then
     # shellcheck disable=SC1090
     source "${STATE_ENV_PATH}"
   fi
+  normalize_explorer_tx_url_template
   sync_liquidity_fallback_env
 }
 
 persist_state_env() {
   refresh_run_paths
+  normalize_explorer_tx_url_template
   sync_liquidity_fallback_env
   mkdir -p "$(dirname "${STATE_ENV_PATH}")"
   {
@@ -408,6 +431,18 @@ copy_or_fail() {
   cp "${src}" "${dest}"
 }
 
+copy_or_fail_many() {
+  local src="$1"
+  shift
+  [[ "$#" -gt 0 ]] || fatal "${EXIT_ARTIFACT}" "copy_or_fail_many requires at least one destination"
+  [[ -f "${src}" ]] || fatal "${EXIT_ARTIFACT}" "missing expected file: ${src}"
+
+  local dest
+  for dest in "$@"; do
+    cp "${src}" "${dest}"
+  done
+}
+
 wait_container_healthy() {
   local container="$1"
   local timeout_seconds="$2"
@@ -448,43 +483,179 @@ wait_http_ready() {
   done
 }
 
+normalize_playwright_probe_url() {
+  local raw_url="$1"
+  local host_access_host="${PLAYWRIGHT_CLI_HOST_ACCESS_HOST:-${E2E_HOST_ACCESS_HOST:-host.docker.internal}}"
+
+  if [[ -n "${PLAYWRIGHT_CLI_DOCKER_NETWORK_CONTAINER:-}" && "${raw_url}" == "http://${host_access_host}:"* ]]; then
+    printf 'http://127.0.0.1:%s' "${raw_url#http://${host_access_host}:}"
+    return 0
+  fi
+
+  printf '%s' "${raw_url}"
+}
+
+wait_http_ready_from_playwright_context() {
+  local url="$1"
+  local timeout_seconds="$2"
+  local started now probe_url host_access_host
+  started="$(date +%s)"
+  probe_url="$(normalize_playwright_probe_url "${url}")"
+  host_access_host="${PLAYWRIGHT_CLI_HOST_ACCESS_HOST:-${E2E_HOST_ACCESS_HOST:-host.docker.internal}}"
+
+  while true; do
+    if [[ -n "${PLAYWRIGHT_CLI_DOCKER_NETWORK_CONTAINER:-}" ]]; then
+      if docker exec "${PLAYWRIGHT_CLI_DOCKER_NETWORK_CONTAINER}" sh -lc "curl -fsS -m 5 '${probe_url}' >/dev/null" >/dev/null 2>&1; then
+        return 0
+      fi
+    elif [[ -n "${PLAYWRIGHT_CLI_DOCKER_IMAGE:-}" ]]; then
+      if docker run --rm --add-host "${host_access_host}:host-gateway" --entrypoint bash "${PLAYWRIGHT_CLI_DOCKER_IMAGE}" -lc "curl -fsS -m 5 '${probe_url}' >/dev/null" >/dev/null 2>&1; then
+        return 0
+      fi
+    elif curl -fsS -m 3 "${url}" >/dev/null 2>&1; then
+      return 0
+    fi
+
+    now="$(date +%s)"
+    if (( now - started >= timeout_seconds )); then
+      return 1
+    fi
+
+    sleep 2
+  done
+}
+
+wait_discourse_ui_ready_in_container() {
+  local timeout_seconds="$1"
+  local started now
+  started="$(date +%s)"
+
+  while true; do
+    if docker exec discourse_dev sh -lc 'curl -fsS -m 5 http://127.0.0.1:4200/login >/dev/null' >/dev/null 2>&1; then
+      return 0
+    fi
+
+    now="$(date +%s)"
+    if (( now - started >= timeout_seconds )); then
+      return 1
+    fi
+
+    sleep 2
+  done
+}
+
+playwright_ui_requires_host_reachability() {
+  [[ -z "${PLAYWRIGHT_CLI_DOCKER_IMAGE:-}" ]]
+}
+
+wait_discourse_backend_ready_in_container() {
+  local timeout_seconds="$1"
+  local started now
+  started="$(date +%s)"
+
+  while true; do
+    if docker exec discourse_dev sh -lc 'curl -fsS -m 5 http://127.0.0.1:9292/session/csrf.json >/dev/null' >/dev/null 2>&1; then
+      return 0
+    fi
+
+    now="$(date +%s)"
+    if (( now - started >= timeout_seconds )); then
+      return 1
+    fi
+
+    sleep 2
+  done
+}
+
 ensure_discourse_ui_proxy() {
-  local base_url normalized_url login_url backend_ready_url ember_log ember_pattern
+  local base_url normalized_url login_url backend_ready_url ember_log ember_container_log ember_pattern
+  local ember_cmd
+  local ember_service_dir ember_service_name ember_run_script
 
   normalized_url="${DISCOURSE_UI_BASE_URL%/}"
   if [[ -z "${normalized_url}" ]]; then
     normalized_url="${DEFAULT_DISCOURSE_UI_BASE_URL%/}"
   fi
 
-  if [[ "${normalized_url}" != "http://127.0.0.1:4200" ]]; then
+  if [[ "${normalized_url}" != "${HOST_ACCESS_BASE_URL}:4200" ]]; then
     login_url="${normalized_url}/login"
-    wait_http_ready "${login_url}" 120 \
-      || fatal "${EXIT_PRECHECK}" "discourse ui did not become ready at ${login_url}"
+    if wait_http_ready_from_playwright_context "${login_url}" 120; then
+      return 0
+    fi
+    if playwright_ui_requires_host_reachability; then
+      fatal "${EXIT_PRECHECK}" "discourse ui did not become ready at ${login_url}"
+    fi
+    if wait_discourse_ui_ready_in_container 20; then
+      log "warning: discourse ui is serving inside discourse_dev, but configured UI is not reachable at ${login_url}; continuing for sidecar-driven visual acceptance"
+      return 0
+    fi
+    fatal "${EXIT_PRECHECK}" "discourse ui did not become ready at ${login_url}"
+  fi
+
+  login_url="${HOST_ACCESS_BASE_URL}:4200/login"
+  backend_ready_url="${HOST_ACCESS_BASE_URL}:9292/session/csrf.json"
+  ember_log="${LOGS_DIR}/discourse-ember-cli.log"
+  ember_container_log="/tmp/fiber-link-discourse-ember-cli.log"
+  ember_service_dir="/etc/service/fiber-link-ember-cli"
+  ember_service_name="fiber-link-ember-cli"
+  ember_pattern='[b]in/ember-cli --host 0.0.0.0 --port 4200 --proxy http://127.0.0.1:9292'
+  ember_cmd='bin/ember-cli --host 0.0.0.0 --port 4200 --proxy http://127.0.0.1:9292'
+  ember_run_script="$(cat <<'EOF'
+#!/bin/sh
+exec chpst -u discourse:discourse env HOME=/home/discourse XDG_CONFIG_HOME=/home/discourse/.config PNPM_HOME=/home/discourse/.local/share/pnpm sh -lc 'mkdir -p "$HOME/.local/share/pnpm" "$XDG_CONFIG_HOME/pnpm" && cd /src && exec bin/ember-cli --host 0.0.0.0 --port 4200 --proxy http://127.0.0.1:9292 >> /tmp/fiber-link-discourse-ember-cli.log 2>&1'
+EOF
+)"
+
+  sync_ember_cli_log() {
+    docker exec discourse_dev sh -lc "cat '${ember_container_log}' 2>/dev/null || true" > "${ember_log}" 2>/dev/null || true
+  }
+
+  if wait_http_ready "${login_url}" 20; then
+    sync_ember_cli_log
+    vlog "ember-cli proxy already running (${login_url})"
+    return 0
+  fi
+  if ! playwright_ui_requires_host_reachability && wait_discourse_ui_ready_in_container 20; then
+    sync_ember_cli_log
+    vlog "ember-cli proxy already running inside discourse_dev (${login_url})"
     return 0
   fi
 
-  login_url="http://127.0.0.1:4200/login"
-  backend_ready_url="http://127.0.0.1:9292/session/csrf.json"
-  ember_log="${LOGS_DIR}/discourse-ember-cli.log"
-  ember_pattern='[e]mber server --proxy http://127.0.0.1:9292'
-
-  if docker exec discourse_dev sh -lc "pgrep -f '${ember_pattern}' >/dev/null 2>&1"; then
-    if wait_http_ready "${login_url}" 20; then
-      vlog "ember-cli proxy already running (${login_url})"
-      return 0
+  docker exec discourse_dev sh -lc "
+    pids=\$(ps -eo pid=,args= | grep -E '${ember_pattern}' | awk '{print \$1}')
+    if [ -n \"\${pids}\" ]; then
+      kill \${pids} >/dev/null 2>&1 || true
     fi
-
-    log "ember-cli process exists but ${login_url} is not ready; restarting proxy"
-    docker exec discourse_dev sh -lc "pkill -f '${ember_pattern}' >/dev/null 2>&1 || true"
-    sleep 2
-  fi
+    sv force-stop '${ember_service_name}' >/dev/null 2>&1 || true
+    rm -rf '${ember_service_dir}' >/dev/null 2>&1 || true
+    rm -f '${ember_container_log}' >/dev/null 2>&1 || true
+  "
+  sleep 2
 
   log "starting ember-cli proxy"
-  docker exec -u discourse:discourse -w /src discourse_dev sh -lc 'bin/ember-cli --proxy http://127.0.0.1:9292' > "${ember_log}" 2>&1 &
-  wait_http_ready "${login_url}" 420 \
-    || fatal "${EXIT_PRECHECK}" "ember-cli proxy did not become ready at ${login_url} (see ${ember_log})"
-  wait_http_ready "${backend_ready_url}" 180 \
-    || fatal "${EXIT_PRECHECK}" "discourse backend did not become ready at ${backend_ready_url} (see ${ember_log})"
+  : > "${ember_log}"
+  printf '%s' "${ember_run_script}" | docker exec -i discourse_dev sh -lc "
+    mkdir -p '${ember_service_dir}' &&
+    cat > '${ember_service_dir}/run' &&
+    chmod +x '${ember_service_dir}/run' &&
+    rm -f '${ember_service_dir}/down' &&
+    sv start '${ember_service_name}' >/dev/null 2>&1 || true
+  "
+  wait_discourse_ui_ready_in_container 420 \
+    || {
+      sync_ember_cli_log
+      fatal "${EXIT_PRECHECK}" "ember-cli proxy did not become ready inside discourse_dev (see ${ember_log})"
+    }
+  sync_ember_cli_log
+  if ! wait_http_ready "${login_url}" 20; then
+    if playwright_ui_requires_host_reachability; then
+      fatal "${EXIT_PRECHECK}" "ember proxy did not become reachable at ${login_url} (see ${ember_log})"
+    fi
+    log "warning: ember proxy is serving inside discourse_dev, but host UI is not reachable at ${login_url}; continuing for sidecar-driven visual acceptance"
+  fi
+  if ! wait_http_ready "${backend_ready_url}" 180 && ! wait_discourse_backend_ready_in_container 30; then
+    log "warning: discourse backend probe did not become ready at ${backend_ready_url}; continuing because ember proxy is already serving ${login_url}"
+  fi
 }
 
 docker_container_env_value() {
@@ -559,15 +730,15 @@ resolve_runtime_rpc_port() {
   fi
   WORKFLOW_RPC_PORT="${configured}"
 
-  if ! curl -fsS -m 3 "http://127.0.0.1:${WORKFLOW_RPC_PORT}/healthz/ready" >/dev/null 2>&1; then
+  if ! curl -fsS -m 3 "${HOST_ACCESS_BASE_URL}:${WORKFLOW_RPC_PORT}/healthz/ready" >/dev/null 2>&1; then
     detected="$(docker port fiber-link-rpc 3000/tcp 2>/dev/null | awk -F: 'NR==1 {print $NF}' || true)"
     if [[ -n "${detected}" ]]; then
       WORKFLOW_RPC_PORT="${detected}"
     fi
   fi
 
-  curl -fsS -m 5 "http://127.0.0.1:${WORKFLOW_RPC_PORT}/healthz/ready" >/dev/null 2>&1 \
-    || fatal "${EXIT_PRECHECK}" "rpc endpoint is not ready at http://127.0.0.1:${WORKFLOW_RPC_PORT}/healthz/ready"
+  curl -fsS -m 5 "${HOST_ACCESS_BASE_URL}:${WORKFLOW_RPC_PORT}/healthz/ready" >/dev/null 2>&1 \
+    || fatal "${EXIT_PRECHECK}" "rpc endpoint is not ready at ${HOST_ACCESS_BASE_URL}:${WORKFLOW_RPC_PORT}/healthz/ready"
 }
 
 normalize_private_key_hex() {
@@ -974,7 +1145,7 @@ rpc_call_signed() {
   local ts sig
   ts="$(date +%s)"
   sig="$(sign_payload "${payload}" "${ts}" "${nonce}")"
-  curl -fsS "http://127.0.0.1:${WORKFLOW_RPC_PORT}/rpc" \
+  curl -fsS "${HOST_ACCESS_BASE_URL}:${WORKFLOW_RPC_PORT}/rpc" \
     -H "content-type: application/json" \
     -H "x-app-id: ${APP_ID}" \
     -H "x-ts: ${ts}" \

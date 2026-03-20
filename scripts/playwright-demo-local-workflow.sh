@@ -57,6 +57,12 @@ Optional demo env (defaults are seed script values):
 EOF
 }
 
+should_use_ember_cli() {
+  local ui_base_url="${PW_DEMO_URL:-http://127.0.0.1:4200}"
+  ui_base_url="${ui_base_url%/}"
+  [[ "${ui_base_url}" == *":4200" ]]
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --skip-services)
@@ -127,7 +133,6 @@ WORKFLOW_PAUSE_CMD=(
   WORKFLOW_RESULT_METADATA_PATH="${PHASE1_RESULT_METADATA_PATH}"
   scripts/local-workflow-automation.sh
   --verbose
-  --with-ember-cli
   --pause-at-step4
 )
 WORKFLOW_COMPLETE_CMD=(
@@ -136,8 +141,11 @@ WORKFLOW_COMPLETE_CMD=(
   WORKFLOW_RESULT_METADATA_PATH="${PHASE2_RESULT_METADATA_PATH}"
   scripts/local-workflow-automation.sh
   --verbose
-  --with-ember-cli
 )
+if should_use_ember_cli; then
+  WORKFLOW_PAUSE_CMD+=(--with-ember-cli)
+  WORKFLOW_COMPLETE_CMD+=(--with-ember-cli)
+fi
 WORKFLOW_PAUSE_CMD+=(--skip-withdrawal)
 if [[ "${BROWSER_WITHDRAWAL}" -eq 1 ]]; then
   WORKFLOW_COMPLETE_CMD+=(--skip-withdrawal)

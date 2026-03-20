@@ -1,0 +1,57 @@
+{
+  "gitSha": "deadbeef",
+  "visualAcceptance": {
+    "steps": {
+      "forumEntryPoints": {
+        "label": "Step 1. Forum shows Fiber Link tip entry points",
+        "ok": true,
+        "screenshots": [
+          "screenshots/step1-forum-tip-entrypoints.png"
+        ]
+      },
+      "topicThread": {
+        "label": "Step 2. Topic and reply render with the plugin enabled",
+        "ok": true,
+        "screenshots": [
+          "screenshots/step2-topic-and-reply.png"
+        ]
+      },
+      "tipFlow": {
+        "label": "Step 3. Tipper generates invoice, sees QR code, and payment settles",
+        "ok": true,
+        "screenshots": [
+          "screenshots/flow1-tip-modal-step1-generate.png",
+          "screenshots/flow1-tip-modal-step2-pay.png",
+          "screenshots/flow1-tip-modal-step3-confirmed.png"
+        ]
+      },
+      "tipperDashboard": {
+        "label": "Step 4. Tipper dashboard shows payment history and balance",
+        "ok": true,
+        "screenshots": [
+          "screenshots/step4-tipper-dashboard.png"
+        ]
+      },
+      "authorDashboard": {
+        "label": "Step 5. Author dashboard shows payout history and balance",
+        "ok": true,
+        "screenshots": [
+          "screenshots/step5-author-dashboard.png"
+        ]
+      },
+      "withdrawalCompletion": {
+        "label": "Step 6. Author withdrawal completes with admin and explorer proof",
+        "ok": true,
+        "withdrawalId": "wd_123",
+        "withdrawalState": "COMPLETED",
+        "withdrawalTxHash": "0xabc",
+        "explorerUrl": "https://pudge.explorer.nervos.org/transaction/0xabc",
+        "screenshots": [
+          "screenshots/step6-author-withdrawal.png",
+          "screenshots/step6-admin-withdrawal.png",
+          "screenshots/step6-explorer-tx.png"
+        ]
+      }
+    }
+  }
+}

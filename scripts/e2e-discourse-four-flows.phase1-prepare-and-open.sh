@@ -29,16 +29,18 @@ Options:
 USAGE
 }
 
+should_use_ember_cli() {
+  local ui_base_url="${FLOW12_URL:-${DISCOURSE_UI_BASE_URL:-}}"
+  ui_base_url="${ui_base_url%/}"
+  [[ -z "${ui_base_url}" || "${ui_base_url}" == *":4200" ]]
+}
+
 export_workflow_ids_from_state() {
   [[ -n "${TIPPER_USER_ID}" ]] && export WORKFLOW_TIPPER_USER_ID="${TIPPER_USER_ID}"
   [[ -n "${AUTHOR_USER_ID}" ]] && export WORKFLOW_AUTHOR_USER_ID="${AUTHOR_USER_ID}"
   [[ -n "${TOPIC_POST_ID}" ]] && export WORKFLOW_TOPIC_POST_ID="${TOPIC_POST_ID}"
   [[ -n "${REPLY_POST_ID}" ]] && export WORKFLOW_REPLY_POST_ID="${REPLY_POST_ID}"
   return 0
-}
-
-should_start_ember_cli() {
-  [[ "${DISCOURSE_UI_BASE_URL%/}" == "http://127.0.0.1:4200" ]]
 }
 
 while [[ $# -gt 0 ]]; do
@@ -82,93 +84,47 @@ persist_state_env
 
 require_cmd jq
 require_cmd awk
-require_cmd expect
 ensure_compose_files
 
 log "run dir: ${RUN_DIR}"
 log "app id: ${APP_ID}"
 
-pause_cmd=(
+prepare_cmd=(
   env
   "FIBER_LINK_APP_ID=${APP_ID}"
   "RPC_PORT=${WORKFLOW_RPC_PORT}"
-  "WORKFLOW_PAUSE_START_EMBER_CLI=0"
-  "WORKFLOW_PAUSE_BROWSER_URL=${DISCOURSE_UI_BASE_URL%/}/login"
   "WORKFLOW_ARTIFACT_DIR=${PHASE1_DIR}"
   "WORKFLOW_RESULT_METADATA_PATH=${PHASE1_METADATA_PATH}"
   scripts/local-workflow-automation.sh
   --verbose
-  --pause-at-step4
+  --prepare-only
   --skip-withdrawal
 )
 
-if should_start_ember_cli; then
-  pause_cmd[3]="WORKFLOW_PAUSE_START_EMBER_CLI=1"
+if should_use_ember_cli; then
+  prepare_cmd+=(--with-ember-cli)
 fi
 
 if [[ "${SKIP_SERVICES}" -eq 1 ]]; then
-  pause_cmd+=(--skip-services)
+  prepare_cmd+=(--skip-services)
 fi
 if [[ "${SKIP_DISCOURSE}" -eq 1 ]]; then
-  pause_cmd+=(--skip-discourse)
+  prepare_cmd+=(--skip-discourse)
 fi
 
-pause_cmd_escaped="$(printf '%q ' "${pause_cmd[@]}")"
-PAUSE_CMD_ESCAPED="${pause_cmd_escaped}"
-export ROOT_DIR PAUSE_CMD_ESCAPED FLOW12_DIR PHASE1_DIR
+export ROOT_DIR FLOW12_DIR PHASE1_DIR
 export FLOW12_HEADED="${HEADED}"
 export FLOW12_URL="${DISCOURSE_UI_BASE_URL}"
 
-record_cmd "expect phase1+flow12"
+record_cmd "local-workflow prepare-only"
 set +e
-expect <<'EXPECT' 2>&1 | tee "${LOGS_DIR}/phase1.pause.log"
-set timeout -1
-set ran_flow12 0
-
-spawn -noecho bash -lc "cd \"$env(ROOT_DIR)\" && $env(PAUSE_CMD_ESCAPED)"
-
-while {1} {
-  expect {
-    -re "Press Enter to continue workflow\\.\\.\\." {
-      set ran_flow12 1
-      puts ""
-      puts {[e2e-four-flows-phase1] pause reached; running flow1/flow2 playwright step...}
-      puts ""
-      set flow12TopicPath ""
-      set seedPath "$env(PHASE1_DIR)/discourse-seed.json"
-      if {[file exists $seedPath]} {
-        set topicId [string trim [exec jq -r ".topic.id // empty" $seedPath]]
-        if {$topicId ne ""} {
-          set flow12TopicPath "/t/-/$topicId"
-        }
-      }
-      set rc [catch {
-        exec env PW_FLOW12_ARTIFACT_DIR=$env(FLOW12_DIR) PW_FLOW12_HEADED=$env(FLOW12_HEADED) PW_FLOW12_URL=$env(FLOW12_URL) PW_FLOW12_TOPIC_PATH=$flow12TopicPath $env(ROOT_DIR)/scripts/playwright-workflow-flow12.sh 2>@1
-      } out]
-      puts $out
-      if {$rc != 0} {
-        puts stderr {[e2e-four-flows-phase1] flow12 playwright step failed.}
-        exit 97
-      }
-      send "\003"
-      exp_continue
-    }
-    eof {
-      break
-    }
-  }
-}
-
-if {$ran_flow12 == 0} {
-  puts stderr {[e2e-four-flows-phase1] did not reach pause-at-step4 prompt.}
-  exit 96
-}
-
-exit 0
-EXPECT
-rc=$?
+(
+  cd "${ROOT_DIR}"
+  "${prepare_cmd[@]}"
+) 2>&1 | tee "${LOGS_DIR}/phase1.pause.log"
+rc=${PIPESTATUS[0]}
 set -e
-[[ "${rc}" -eq 0 ]] || fatal "${EXIT_FLOW12}" "phase1 pause+flow12 failed (see ${LOGS_DIR}/phase1.pause.log)"
+[[ "${rc}" -eq 0 ]] || fatal "${EXIT_FLOW12}" "phase1 prepare-only failed (see ${LOGS_DIR}/phase1.pause.log)"
 
 if load_result_metadata "${PHASE1_METADATA_PATH}"; then
   phase1_seed_path="${WORKFLOW_RESULT_SEED_JSON_PATH:-${PHASE1_DIR}/discourse-seed.json}"
@@ -192,6 +148,28 @@ REPLY_POST_ID="${REPLY_POST_ID:-${WORKFLOW_REPLY_POST_ID:-}}"
   || fatal "${EXIT_FLOW12}" "failed to resolve required workflow IDs"
 
 export_workflow_ids_from_state
+
+log "prepare-only completed; running flow1/flow2 playwright step"
+flow12_topic_path="$(jq -r '.topic.relative_url // empty' "${phase1_seed_path}")"
+if [[ -z "${flow12_topic_path}" ]]; then
+  topic_id="$(jq -r '.topic.id // empty' "${phase1_seed_path}")"
+  if [[ -n "${topic_id}" ]]; then
+    flow12_topic_path="/t/-/${topic_id}"
+  fi
+fi
+
+record_cmd "playwright flow12"
+set +e
+env \
+  PW_FLOW12_ARTIFACT_DIR="${FLOW12_DIR}" \
+  PW_FLOW12_HEADED="${FLOW12_HEADED}" \
+  PW_FLOW12_URL="${FLOW12_URL}" \
+  PW_FLOW12_TOPIC_PATH="${flow12_topic_path}" \
+  "${ROOT_DIR}/scripts/playwright-workflow-flow12.sh" 2>&1 \
+  | tee -a "${LOGS_DIR}/phase1.pause.log"
+rc=${PIPESTATUS[0]}
+set -e
+[[ "${rc}" -eq 0 ]] || fatal "${EXIT_FLOW12}" "flow12 playwright step failed (see ${LOGS_DIR}/phase1.pause.log)"
 
 FLOW12_RESULT_JSON="$(extract_result_json "${FLOW12_DIR}/playwright-flow12-result.log" || true)"
 [[ -n "${FLOW12_RESULT_JSON}" ]] || fatal "${EXIT_FLOW12}" "missing flow12 result payload"

@@ -1,0 +1,116 @@
+name: Visual Acceptance
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: visual-acceptance-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  visual-acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+
+      - name: Run visual acceptance in Docker
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          VISUAL_ACCEPTANCE_OUTPUT_DIR: ${{ github.workspace }}/.tmp/visual-acceptance
+          VISUAL_ACCEPTANCE_EXPLORER_TX_URL_TEMPLATE: https://pudge.explorer.nervos.org/transaction/{txHash}
+          VISUAL_ACCEPTANCE_DISCOURSE_UI_BASE_URL: http://127.0.0.1:4200
+          VISUAL_ACCEPTANCE_HOST_ACCESS_HOST: 127.0.0.1
+          VISUAL_ACCEPTANCE_HOST_ACCESS_BASE_URL: http://127.0.0.1
+          VISUAL_ACCEPTANCE_PLAYWRIGHT_DOCKER_NETWORK_MODE: host
+        run: scripts/run-visual-acceptance-local.sh --output-dir "${VISUAL_ACCEPTANCE_OUTPUT_DIR}"
+
+      - name: Upload visual acceptance artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-acceptance-${{ github.sha }}
+          path: ${{ github.workspace }}/.tmp/visual-acceptance
+          retention-days: 30
+
+      - name: Render PR comment body
+        if: always() && hashFiles('.tmp/visual-acceptance/manifest.json') != ''
+        env:
+          ARTIFACT_ROOT: ${{ github.workspace }}/.tmp/visual-acceptance
+          MANIFEST_PATH: ${{ github.workspace }}/.tmp/visual-acceptance/manifest.json
+          COMMENT_PATH: ${{ github.workspace }}/.tmp/visual-acceptance/comment.md
+        run: |
+          test -f "${MANIFEST_PATH}"
+          SUMMARY_REL="$(jq -r '.summaryFile // empty' "${MANIFEST_PATH}")"
+          if [[ -z "${SUMMARY_REL}" ]]; then
+            echo "No summary file was produced; skipping PR comment render." >> "${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
+          SUMMARY_FILE="${ARTIFACT_ROOT}/${SUMMARY_REL}"
+          test -f "${SUMMARY_FILE}"
+          SCREENSHOTS_DIR="${ARTIFACT_ROOT}/$(jq -r '.screenshotsDir' "${MANIFEST_PATH}")"
+          SCREENSHOTS_BASE_URL="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/visual-acceptance/pr-${{ github.event.pull_request.number || 'manual' }}"
+          node scripts/render-visual-acceptance-comment.mjs \
+            --summary-file "${SUMMARY_FILE}" \
+            --output-file "${COMMENT_PATH}" \
+            --repository "${GITHUB_REPOSITORY}" \
+            --run-id "${GITHUB_RUN_ID}" \
+            --screenshots-base-url "${SCREENSHOTS_BASE_URL}" \
+            --screenshots-dir "${SCREENSHOTS_DIR}"
+
+      - name: Push screenshots to ref
+        id: screenshot_ref
+        if: always() && hashFiles('.tmp/visual-acceptance/manifest.json') != '' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          ARTIFACT_ROOT: ${{ github.workspace }}/.tmp/visual-acceptance
+          MANIFEST_PATH: ${{ github.workspace }}/.tmp/visual-acceptance/manifest.json
+        run: |
+          SCREENSHOTS_DIR="${ARTIFACT_ROOT}/$(jq -r '.screenshotsDir' "${MANIFEST_PATH}")"
+          REF_NAME="visual-acceptance/pr-${{ github.event.pull_request.number }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout --orphan "${REF_NAME}"
+          git rm -rf . >/dev/null 2>&1 || true
+          mkdir -p screenshots
+          cp -R "${SCREENSHOTS_DIR}/." screenshots/
+          git add screenshots
+          git commit -m "Visual acceptance screenshots for ${{ github.sha }}" --allow-empty
+          git push origin "${REF_NAME}" --force
+
+      - name: Find existing visual acceptance comment
+        uses: peter-evans/find-comment@v3
+        id: existing_comment
+        if: always() && hashFiles('.tmp/visual-acceptance/comment.md') != '' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-author: github-actions[bot]
+          body-includes: "<!-- fiber-link-visual-acceptance -->"
+
+      - name: Create or update visual acceptance comment
+        uses: peter-evans/create-or-update-comment@v4
+        if: always() && hashFiles('.tmp/visual-acceptance/comment.md') != '' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        with:
+          comment-id: ${{ steps.existing_comment.outputs.comment-id }}
+          issue-number: ${{ github.event.pull_request.number }}
+          body-path: ${{ github.workspace }}/.tmp/visual-acceptance/comment.md
+          edit-mode: replace
+
+      - name: Note fork PR fallback
+        if: always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
+        run: |
+          {
+            echo "### Visual acceptance note"
+            echo "Fork PR detected; screenshots artifact was uploaded, but screenshot ref publishing and PR comment updates were skipped."
+          } >> "${GITHUB_STEP_SUMMARY}"

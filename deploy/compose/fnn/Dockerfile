@@ -1,4 +1,4 @@
-FROM debian:bookworm-slim
+FROM public.ecr.aws/docker/library/debian:bookworm-slim
 
 ARG FNN_VERSION=v0.6.1
 ARG FNN_ASSET=fnn_v0.6.1-x86_64-linux-portable.tar.gz
