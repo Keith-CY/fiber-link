@@ -13,6 +13,7 @@ TIMESTAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 OUTPUT_ROOT="${ROOT_DIR}/deploy/compose/evidence/e2e-discourse-four-flows"
 EVIDENCE_DIR="${OUTPUT_ROOT}/${TIMESTAMP}"
 ARCHIVE_FILE="${EVIDENCE_DIR}.tar.gz"
+SOURCE_OUTPUT_ROOT="${E2E_SOURCE_ARTIFACT_ROOT:-${ROOT_DIR}/.tmp/e2e-discourse-four-flows}"
 RUN_E2E=1
 VERBOSE=0
 
@@ -114,7 +115,7 @@ if [[ "${RUN_E2E}" -eq 1 ]]; then
     exit "${EXIT_USAGE}"
   }
 
-  SOURCE_ARTIFACT_DIR="${ROOT_DIR}/.tmp/e2e-discourse-four-flows/${TIMESTAMP}"
+  SOURCE_ARTIFACT_DIR="${SOURCE_OUTPUT_ROOT}/${TIMESTAMP}"
   mkdir -p "${EVIDENCE_DIR}/logs"
 
   e2e_cmd=(

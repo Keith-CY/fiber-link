@@ -52,12 +52,12 @@ normalize_sidecar_url() {
 normalize_sidecar_probe_url() {
   local raw_url="$1"
   local host_access_host="${PLAYWRIGHT_CLI_HOST_ACCESS_HOST:-${E2E_HOST_ACCESS_HOST:-host.docker.internal}}"
-  if [[ -z "${PLAYWRIGHT_CLI_DOCKER_NETWORK_CONTAINER:-}" ]]; then
-    printf '%s' "${raw_url}"
-    return 0
-  fi
   if [[ "${raw_url}" == "http://${host_access_host}:4200/"* ]]; then
-    printf 'http://127.0.0.1:9292/%s' "${raw_url#http://${host_access_host}:4200/}"
+    if [[ -n "${PLAYWRIGHT_CLI_DOCKER_NETWORK_CONTAINER:-}" ]]; then
+      printf 'http://127.0.0.1:9292/%s' "${raw_url#http://${host_access_host}:4200/}"
+    else
+      printf 'http://%s:9292/%s' "${host_access_host}" "${raw_url#http://${host_access_host}:4200/}"
+    fi
     return 0
   fi
   if [[ "${raw_url}" == "http://127.0.0.1:4200/"* ]]; then
@@ -78,17 +78,21 @@ fi
 wait_for_backend_ready() {
   local probe_url="$1"
   local timeout_seconds="$2"
-  local deadline
+  local deadline host_access_host
   deadline=$(( $(date +%s) + timeout_seconds ))
+  host_access_host="${PLAYWRIGHT_CLI_HOST_ACCESS_HOST:-${E2E_HOST_ACCESS_HOST:-host.docker.internal}}"
 
   while true; do
     if [[ -n "${PLAYWRIGHT_CLI_DOCKER_NETWORK_CONTAINER:-}" ]]; then
       local container_probe_url="${probe_url}"
-      local host_access_host="${PLAYWRIGHT_CLI_HOST_ACCESS_HOST:-${E2E_HOST_ACCESS_HOST:-host.docker.internal}}"
       if [[ "${container_probe_url}" == "http://${host_access_host}:"* ]]; then
         container_probe_url="http://127.0.0.1:${container_probe_url#http://${host_access_host}:}"
       fi
       if docker exec "${PLAYWRIGHT_CLI_DOCKER_NETWORK_CONTAINER}" sh -lc "curl -fsS -m 3 '${container_probe_url}' >/dev/null" >/dev/null 2>&1; then
+        return 0
+      fi
+    elif [[ -n "${PLAYWRIGHT_CLI_DOCKER_IMAGE:-}" ]]; then
+      if docker run --rm --add-host "${host_access_host}:host-gateway" --entrypoint bash "${PLAYWRIGHT_CLI_DOCKER_IMAGE}" -lc "curl -fsS -m 3 '${probe_url}' >/dev/null" >/dev/null 2>&1; then
         return 0
       fi
     elif curl -fsS -m 3 "${probe_url}" >/dev/null 2>&1; then

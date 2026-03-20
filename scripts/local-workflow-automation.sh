@@ -13,6 +13,7 @@ EXIT_WITHDRAWAL=15
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPOSE_ENV_FILE="${COMPOSE_ENV_FILE:-${ROOT_DIR}/deploy/compose/.env}"
 DISCOURSE_DEV_ROOT="${DISCOURSE_DEV_ROOT:-/tmp/discourse-dev}"
+DISCOURSE_CONTAINER_TMPDIR="${DISCOURSE_CONTAINER_TMPDIR:-/src/tmp/fiber-link-visual-acceptance}"
 DISCOURSE_REF="${DISCOURSE_REF:-26f3e2aa87a3abb35849183e0740fe7ab84cec67}"
 DISCOURSE_DEV_UID_GID="${DISCOURSE_DEV_UID_GID:-1000:1000}"
 DEFAULT_ARTIFACT_DIR="${ROOT_DIR}/.tmp/local-workflow-automation/$(date -u +%Y%m%dT%H%M%SZ)"
@@ -407,6 +408,34 @@ ensure_discourse_checkout_permissions() {
   chown -R "${DISCOURSE_DEV_UID_GID}" "${DISCOURSE_DEV_ROOT}"
 }
 
+configure_discourse_dev_allowed_hosts() {
+  local requested_host="${E2E_HOST_ACCESS_HOST:-}"
+  local requested_ui_url="${DISCOURSE_UI_BASE_URL:-}"
+  local initializer_path="${DISCOURSE_DEV_ROOT}/config/initializers/099-fiber-link-visual-acceptance-hosts.rb"
+
+  if [[ -n "${requested_ui_url}" ]]; then
+    requested_host="${requested_ui_url#http://}"
+    requested_host="${requested_host#https://}"
+    requested_host="${requested_host%%/*}"
+    requested_host="${requested_host%%:*}"
+  fi
+
+  if [[ -z "${requested_host}" || "${requested_host}" == "127.0.0.1" || "${requested_host}" == "localhost" ]]; then
+    rm -f "${initializer_path}"
+    return 0
+  fi
+
+  mkdir -p "${DISCOURSE_DEV_ROOT}/config/initializers"
+  cat >"${initializer_path}" <<EOF
+# frozen_string_literal: true
+
+if defined?(Rails) && Rails.env.development?
+  config_host = "${requested_host}"
+  Rails.application.config.hosts << config_host unless Rails.application.config.hosts.include?(config_host)
+end
+EOF
+}
+
 repair_discourse_frontend_runtime() {
   local assets_log="${ARTIFACT_DIR}/discourse-assets-clobber.log"
   local constants_log="${ARTIFACT_DIR}/discourse-javascript-update-constants.log"
@@ -426,6 +455,8 @@ repair_discourse_frontend_runtime() {
 
   docker exec discourse_dev sh -lc "
     pkill -f '[e]mber server --proxy http://127.0.0.1:9292' >/dev/null 2>&1 || true
+    sv force-stop 'fiber-link-unicorn' >/dev/null 2>&1 || true
+    rm -rf '/etc/service/fiber-link-unicorn' >/dev/null 2>&1 || true
     if [ -f '/src/tmp/pids/unicorn.pid' ]; then
       pid=\$(cat '/src/tmp/pids/unicorn.pid' 2>/dev/null || true)
       if [ -n \"\${pid}\" ] && kill -0 \"\${pid}\" 2>/dev/null; then
@@ -478,9 +509,9 @@ ensure_ember_cli_proxy() {
   local ember_pattern='[b]in/ember-cli --host 0.0.0.0 --port 4200 --proxy http://127.0.0.1:9292'
   local ember_cmd='bin/ember-cli --host 0.0.0.0 --port 4200 --proxy http://127.0.0.1:9292'
   local ember_run_script
-  ember_run_script="$(cat <<'EOF'
+  ember_run_script="$(cat <<EOF
 #!/bin/sh
-exec chpst -u discourse:discourse env HOME=/home/discourse XDG_CONFIG_HOME=/home/discourse/.config PNPM_HOME=/home/discourse/.local/share/pnpm sh -lc 'mkdir -p "$HOME/.local/share/pnpm" "$XDG_CONFIG_HOME/pnpm" && cd /src && exec bin/ember-cli --host 0.0.0.0 --port 4200 --proxy http://127.0.0.1:9292 >> /tmp/fiber-link-discourse-ember-cli.log 2>&1'
+exec chpst -u discourse:discourse env HOME=/home/discourse XDG_CONFIG_HOME=/home/discourse/.config PNPM_HOME=/home/discourse/.local/share/pnpm TMPDIR=${DISCOURSE_CONTAINER_TMPDIR} sh -lc 'rm -rf "\$TMPDIR" && mkdir -p "\$HOME/.local/share/pnpm" "\$XDG_CONFIG_HOME/pnpm" "\$TMPDIR" && cd /src && exec bin/ember-cli --host 0.0.0.0 --port 4200 --proxy http://127.0.0.1:9292 >> /tmp/fiber-link-discourse-ember-cli.log 2>&1'
 EOF
 )"
 
@@ -503,6 +534,7 @@ EOF
     sv force-stop '${ember_service_name}' >/dev/null 2>&1 || true
     rm -rf '${ember_service_dir}' >/dev/null 2>&1 || true
     rm -f '${ember_container_log}' >/dev/null 2>&1 || true
+    rm -rf '${DISCOURSE_CONTAINER_TMPDIR}' >/dev/null 2>&1 || true
   "
   sleep 2
 
@@ -536,11 +568,27 @@ EOF
 ensure_discourse_backend_server() {
   local backend_url="http://127.0.0.1:9292/session/csrf.json"
   local backend_log="${ARTIFACT_DIR}/discourse-unicorn.log"
-  local unicorn_pattern='[b]in/unicorn'
+  local backend_container_log="/tmp/fiber-link-discourse-unicorn.log"
+  local backend_service_dir="/etc/service/fiber-link-unicorn"
+  local backend_service_name="fiber-link-unicorn"
+  local unicorn_pattern='[/]src/bin/unicorn|[b]in/unicorn'
   local unicorn_pid_path="/src/tmp/pids/unicorn.pid"
+  local unicorn_run_script
+  unicorn_run_script="$(cat <<EOF
+#!/bin/sh
+exec chpst -u discourse:discourse env HOME=/home/discourse TMPDIR=${DISCOURSE_CONTAINER_TMPDIR} sh -lc 'mkdir -p "\$TMPDIR" && cd /src && exec env ALLOW_EMBER_CLI_PROXY_BYPASS=1 /src/bin/unicorn -c /src/config/unicorn.conf.rb >> ${backend_container_log} 2>&1'
+EOF
+)"
+
+  sync_discourse_unicorn_log() {
+    docker exec discourse_dev sh -lc "cat '${backend_container_log}' 2>/dev/null || true" > "${backend_log}" 2>/dev/null || true
+  }
 
   cleanup_discourse_unicorn() {
     docker exec discourse_dev sh -lc "
+      sv force-stop '${backend_service_name}' >/dev/null 2>&1 || true
+      rm -rf '${backend_service_dir}' >/dev/null 2>&1 || true
+      rm -f '${backend_container_log}' >/dev/null 2>&1 || true
       if [ -f '${unicorn_pid_path}' ]; then
         pid=\$(cat '${unicorn_pid_path}' 2>/dev/null || true)
         if [ -n \"\${pid}\" ] && kill -0 \"\${pid}\" 2>/dev/null; then
@@ -555,7 +603,14 @@ ensure_discourse_backend_server() {
 
   start_discourse_unicorn() {
     log "starting discourse unicorn backend"
-    docker exec -u discourse:discourse -w /src discourse_dev sh -lc 'ALLOW_EMBER_CLI_PROXY_BYPASS=1 bin/unicorn' > "${backend_log}" 2>&1 &
+    : > "${backend_log}"
+    printf '%s' "${unicorn_run_script}" | docker exec -i discourse_dev sh -lc "
+      mkdir -p '${backend_service_dir}' &&
+      cat > '${backend_service_dir}/run' &&
+      chmod +x '${backend_service_dir}/run' &&
+      rm -f '${backend_service_dir}/down' &&
+      sv start '${backend_service_name}' >/dev/null 2>&1 || true
+    "
   }
 
   if docker exec discourse_dev sh -lc "pgrep -f '${unicorn_pattern}' >/dev/null 2>&1"; then
@@ -577,9 +632,11 @@ ensure_discourse_backend_server() {
   for attempt in 1 2; do
     start_discourse_unicorn
     if wait_discourse_backend_ready_in_container 120; then
+      sync_discourse_unicorn_log
       return 0
     fi
 
+    sync_discourse_unicorn_log
     if grep -q "Unicorn is already running!" "${backend_log}" 2>/dev/null; then
       log "discourse unicorn reported stale running state; cleaning up and retrying (attempt ${attempt}/2)"
       cleanup_discourse_unicorn
@@ -594,10 +651,16 @@ ensure_discourse_backend_server() {
     fi
   done
 
+  sync_discourse_unicorn_log
   fatal "${EXIT_DISCOURSE}" "discourse backend did not become ready at ${backend_url} (see ${backend_log})"
 }
 
 ensure_discourse_playwright_runtime() {
+  if [[ -n "${PLAYWRIGHT_CLI_DOCKER_IMAGE:-}" ]]; then
+    vlog "skipping discourse Playwright runtime install because an external Playwright sidecar is configured (${PLAYWRIGHT_CLI_DOCKER_IMAGE})"
+    return 0
+  fi
+
   if ! docker ps --format '{{.Names}}' | grep -qx "discourse_dev"; then
     return 0
   fi
@@ -1102,6 +1165,7 @@ if [[ "${SKIP_DISCOURSE}" -eq 0 ]]; then
   (
     ensure_discourse_checkout
     ensure_discourse_checkout_permissions
+    configure_discourse_dev_allowed_hosts
     cd "${DISCOURSE_DEV_ROOT}"
     ensure_discourse_container_source_mount
     discourse_exec=(
@@ -1123,8 +1187,10 @@ if [[ "${SKIP_DISCOURSE}" -eq 0 ]]; then
     else
       run_with_pseudo_tty ./bin/docker/boot_dev
     fi
+    "${discourse_exec[@]}" mkdir -p "${DISCOURSE_CONTAINER_TMPDIR}"
     "${discourse_exec[@]}" git config --global --add safe.directory /src || true
     "${discourse_exec[@]}" env \
+      TMPDIR="${DISCOURSE_CONTAINER_TMPDIR}" \
       LOAD_PLUGINS=1 \
       RAILS_ENV=development \
       bundle exec rake db:create db:migrate
@@ -1151,6 +1217,7 @@ if [[ "${SKIP_DISCOURSE}" -eq 0 ]]; then
       FIBER_LINK_DISCOURSE_SERVICE_URL="${DISCOURSE_SERVICE_URL}" \
       FIBER_LINK_APP_ID="${APP_ID}" \
       FIBER_LINK_APP_SECRET="${APP_SECRET}" \
+      TMPDIR="${DISCOURSE_CONTAINER_TMPDIR}" \
       LOAD_PLUGINS=1 \
       RAILS_ENV=development \
       bin/rails runner tmp/fiber-link-seed.rb

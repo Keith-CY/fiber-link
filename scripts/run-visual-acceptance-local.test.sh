@@ -2,12 +2,13 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+FAKE_RUNNER_DIR="$(mktemp -d)"
 FAKE_BIN_DIR="$(mktemp -d)"
 OUTPUT_ROOT="$(mktemp -d)"
 CLI_OUTPUT="$(mktemp)"
 DEFAULT_TMPDIR="$(mktemp -d)"
 DEFAULT_OUTPUT_CAPTURE="$(mktemp)"
-trap 'rm -rf "${FAKE_BIN_DIR}" "${OUTPUT_ROOT}" "${DEFAULT_TMPDIR}" "${CLI_OUTPUT}" "${DEFAULT_OUTPUT_CAPTURE}"' EXIT
+trap 'rm -rf "${FAKE_RUNNER_DIR}" "${FAKE_BIN_DIR}" "${OUTPUT_ROOT}" "${DEFAULT_TMPDIR}" "${CLI_OUTPUT}" "${DEFAULT_OUTPUT_CAPTURE}"' EXIT
 
 cat > "${FAKE_BIN_DIR}/docker" <<'EOF_DOCKER'
 #!/usr/bin/env bash
@@ -17,105 +18,44 @@ if [[ "$1" == "build" ]]; then
   exit 0
 fi
 
-if [[ "$1" == "network" && "$2" == "inspect" && "$3" == "bridge" ]]; then
-  cat <<'EOF_NETWORK'
-[{"IPAM":{"Config":[{"Gateway":"172.17.0.1"}]}}]
-EOF_NETWORK
-  exit 0
-fi
+echo "unexpected docker subcommand: $1" >&2
+exit 1
+EOF_DOCKER
+chmod +x "${FAKE_BIN_DIR}/docker"
 
-if [[ "$1" != "run" ]]; then
-  echo "unexpected docker subcommand: $1" >&2
-  exit 1
-fi
+cat > "${FAKE_RUNNER_DIR}/visual-acceptance-runner" <<'EOF_RUNNER'
+#!/usr/bin/env bash
+set -euo pipefail
 
-artifact_root=""
-runtime_root=""
-compose_env_file=""
-legacy_env_file=""
-git_sha=""
-git_branch=""
-discourse_ui_base_url=""
-host_access_host=""
-host_access_base_url=""
-discourse_dev_root=""
-explorer_template=""
-docker_socket_mount=0
-host_gateway_alias=0
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --add-host)
-      if [[ "$2" == "host.docker.internal:host-gateway" ]]; then
-        host_gateway_alias=1
-      fi
-      shift 2
-      ;;
-    -v)
-      mount_spec="$2"
-      if [[ "${mount_spec}" == /var/run/docker.sock:/var/run/docker.sock ]]; then
-        docker_socket_mount=1
-      elif [[ "${mount_spec}" == *":${runtime_root}" ]]; then
-        :
-      elif [[ "${mount_spec}" == *"/compose.env" ]]; then
-        :
-      elif [[ "${mount_spec}" == *":"* ]]; then
-        host_mount="${mount_spec%%:*}"
-        container_mount="${mount_spec#*:}"
-        if [[ "${host_mount}" == "${container_mount}" && "${host_mount}" == *"/fiber-link-visual-acceptance-runtime."* ]]; then
-          runtime_root="${host_mount}"
-        elif [[ "${host_mount}" == "${container_mount}" && "${host_mount}" == *"/fiber-link-visual-acceptance"* ]]; then
-          artifact_root="${host_mount}"
-        fi
-      fi
-      shift 2
-      ;;
-    --rm)
-      shift
-      ;;
-    -e)
-      if [[ "$2" == VISUAL_ACCEPTANCE_ARTIFACT_ROOT=* ]]; then
-        artifact_root="${2#VISUAL_ACCEPTANCE_ARTIFACT_ROOT=}"
-      elif [[ "$2" == COMPOSE_ENV_FILE=* ]]; then
-        compose_env_file="${2#COMPOSE_ENV_FILE=}"
-      elif [[ "$2" == ENV_FILE=* ]]; then
-        legacy_env_file="${2#ENV_FILE=}"
-      elif [[ "$2" == VISUAL_ACCEPTANCE_GIT_SHA=* ]]; then
-        git_sha="${2#VISUAL_ACCEPTANCE_GIT_SHA=}"
-      elif [[ "$2" == VISUAL_ACCEPTANCE_GIT_BRANCH=* ]]; then
-        git_branch="${2#VISUAL_ACCEPTANCE_GIT_BRANCH=}"
-      elif [[ "$2" == E2E_DISCOURSE_UI_BASE_URL=* ]]; then
-        discourse_ui_base_url="${2#E2E_DISCOURSE_UI_BASE_URL=}"
-      elif [[ "$2" == E2E_HOST_ACCESS_HOST=* ]]; then
-        host_access_host="${2#E2E_HOST_ACCESS_HOST=}"
-      elif [[ "$2" == E2E_HOST_ACCESS_BASE_URL=* ]]; then
-        host_access_base_url="${2#E2E_HOST_ACCESS_BASE_URL=}"
-      elif [[ "$2" == DISCOURSE_DEV_ROOT=* ]]; then
-        discourse_dev_root="${2#DISCOURSE_DEV_ROOT=}"
-      elif [[ "$2" == VISUAL_ACCEPTANCE_EXPLORER_TX_URL_TEMPLATE=* ]]; then
-        explorer_template="${2#VISUAL_ACCEPTANCE_EXPLORER_TX_URL_TEMPLATE=}"
-      fi
-      shift 2
-      ;;
-    *)
-      shift
-      ;;
-  esac
-done
+artifact_root="${VISUAL_ACCEPTANCE_ARTIFACT_ROOT:-}"
+output_root="${VISUAL_ACCEPTANCE_OUTPUT_ROOT:-}"
+manifest_path="${VISUAL_ACCEPTANCE_MANIFEST_PATH:-}"
+log_path="${VISUAL_ACCEPTANCE_HARNESS_LOG_PATH:-}"
+compose_env_file="${COMPOSE_ENV_FILE:-}"
+legacy_env_file="${ENV_FILE:-}"
+git_sha="${VISUAL_ACCEPTANCE_GIT_SHA:-}"
+git_branch="${VISUAL_ACCEPTANCE_GIT_BRANCH:-}"
+discourse_ui_base_url="${E2E_DISCOURSE_UI_BASE_URL:-}"
+host_access_host="${E2E_HOST_ACCESS_HOST:-}"
+host_access_base_url="${E2E_HOST_ACCESS_BASE_URL:-}"
+sidecar_host_access_host="${PLAYWRIGHT_CLI_HOST_ACCESS_HOST:-}"
+discourse_dev_root="${DISCOURSE_DEV_ROOT:-}"
+explorer_template="${VISUAL_ACCEPTANCE_EXPLORER_TX_URL_TEMPLATE:-}"
+playwright_image="${PLAYWRIGHT_CLI_DOCKER_IMAGE:-}"
+network_container="${PLAYWRIGHT_CLI_DOCKER_NETWORK_CONTAINER:-}"
+source_artifact_root="${E2E_SOURCE_ARTIFACT_ROOT:-}"
+flow12_payer_rpc_base_url="${PW_FLOW12_PAYER_RPC_BASE_URL:-}"
+flow12_backend_ready_url="${PW_FLOW12_BACKEND_READY_URL:-}"
+demo_backend_ready_url="${PW_DEMO_BACKEND_READY_URL:-}"
+author_withdrawal_backend_ready_url="${PW_AUTHOR_WITHDRAWAL_BACKEND_READY_URL:-}"
+runtime_root="$(dirname "${compose_env_file}")"
 
 [[ -n "${artifact_root}" ]] || {
-  echo "missing artifact mount" >&2
+  echo "missing artifact root" >&2
   exit 1
 }
 [[ -n "${runtime_root}" ]] || {
   echo "missing runtime mount" >&2
-  exit 1
-}
-[[ "${docker_socket_mount}" -eq 1 ]] || {
-  echo "missing docker socket mount" >&2
-  exit 1
-}
-[[ "${host_gateway_alias}" -eq 1 ]] || {
-  echo "missing host gateway alias" >&2
   exit 1
 }
 [[ "${compose_env_file}" == "${runtime_root}/compose.env" ]] || {
@@ -134,11 +74,11 @@ done
   echo "missing host git branch" >&2
   exit 1
 }
-[[ "${host_access_host}" == "host.docker.internal" ]] || {
+[[ "${host_access_host}" == "127.0.0.1" ]] || {
   echo "unexpected host access host: ${host_access_host}" >&2
   exit 1
 }
-[[ "${host_access_base_url}" == "http://172.17.0.1" ]] || {
+[[ "${host_access_base_url}" == "http://127.0.0.1" ]] || {
   echo "unexpected host access base url: ${host_access_base_url}" >&2
   exit 1
 }
@@ -154,6 +94,50 @@ done
   echo "unexpected explorer template: ${explorer_template}" >&2
   exit 1
 }
+[[ "${output_root}" == "${artifact_root}/evidence" ]] || {
+  echo "unexpected output root: ${output_root}" >&2
+  exit 1
+}
+[[ "${manifest_path}" == "${artifact_root}/manifest.json" ]] || {
+  echo "unexpected manifest path: ${manifest_path}" >&2
+  exit 1
+}
+[[ "${log_path}" == "${artifact_root}/harness.log" ]] || {
+  echo "unexpected log path: ${log_path}" >&2
+  exit 1
+}
+[[ "${playwright_image}" == "fake-image" ]] || {
+  echo "unexpected playwright image: ${playwright_image}" >&2
+  exit 1
+}
+[[ -z "${network_container}" ]] || {
+  echo "unexpected network container: ${network_container}" >&2
+  exit 1
+}
+[[ "${sidecar_host_access_host}" == "host.docker.internal" ]] || {
+  echo "unexpected sidecar host access host: ${sidecar_host_access_host}" >&2
+  exit 1
+}
+[[ "${flow12_payer_rpc_base_url}" == "http://host.docker.internal" ]] || {
+  echo "unexpected flow12 payer rpc base url: ${flow12_payer_rpc_base_url}" >&2
+  exit 1
+}
+[[ "${flow12_backend_ready_url}" == "http://host.docker.internal:9292/session/csrf.json" ]] || {
+  echo "unexpected flow12 backend ready url: ${flow12_backend_ready_url}" >&2
+  exit 1
+}
+[[ "${demo_backend_ready_url}" == "http://host.docker.internal:9292/session/csrf.json" ]] || {
+  echo "unexpected demo backend ready url: ${demo_backend_ready_url}" >&2
+  exit 1
+}
+[[ "${author_withdrawal_backend_ready_url}" == "http://host.docker.internal:9292/session/csrf.json" ]] || {
+  echo "unexpected author withdrawal backend ready url: ${author_withdrawal_backend_ready_url}" >&2
+  exit 1
+}
+[[ "${source_artifact_root}" == "${runtime_root}/source-artifacts" ]] || {
+  echo "unexpected source artifact root: ${source_artifact_root}" >&2
+  exit 1
+}
 [[ -f "${runtime_root}/compose.env" ]] || {
   echo "missing runtime compose env" >&2
   exit 1
@@ -164,7 +148,7 @@ grep -q '^FIBER_LINK_HMAC_SECRET=visual-acceptance-hmac-secret$' "${runtime_root
 
 mkdir -p "${artifact_root}/evidence/fake/screenshots"
 touch "${artifact_root}/evidence/fake/screenshots/step1-forum-tip-entrypoints.png"
-cat > "${artifact_root}/manifest.json" <<'EOF_MANIFEST'
+cat > "${manifest_path}" <<'EOF_MANIFEST'
 {
   "status": "PASS",
   "summaryFile": "evidence/fake/summary.json",
@@ -176,11 +160,11 @@ cat > "${artifact_root}/evidence/fake/summary.json" <<'EOF_SUMMARY'
 {"visualAcceptance":{"steps":{}}}
 EOF_SUMMARY
 touch "${artifact_root}/evidence/fake.tar.gz"
-touch "${artifact_root}/harness.log"
-EOF_DOCKER
-chmod +x "${FAKE_BIN_DIR}/docker"
+touch "${log_path}"
+EOF_RUNNER
+chmod +x "${FAKE_RUNNER_DIR}/visual-acceptance-runner"
 
-PATH="${FAKE_BIN_DIR}:${PATH}" \
+VISUAL_ACCEPTANCE_RUNNER_SCRIPT="${FAKE_RUNNER_DIR}/visual-acceptance-runner" \
 VISUAL_ACCEPTANCE_FNN_ASSET_SHA256=8f9a69361f662438fa1fc29ddc668192810b13021536ebd1101c84dc0cfa330f \
 VISUAL_ACCEPTANCE_DOCKER_BIN="${FAKE_BIN_DIR}/docker" \
   "${ROOT_DIR}/scripts/run-visual-acceptance-local.sh" \
@@ -194,11 +178,12 @@ grep -q "^Summary: ${OUTPUT_ROOT}/evidence/fake/summary.json$" "${CLI_OUTPUT}"
 grep -q "^Screenshots: ${OUTPUT_ROOT}/evidence/fake/screenshots$" "${CLI_OUTPUT}"
 grep -q "^Archive: ${OUTPUT_ROOT}/evidence/fake.tar.gz$" "${CLI_OUTPUT}"
 
-PATH="${FAKE_BIN_DIR}:${PATH}" \
+VISUAL_ACCEPTANCE_RUNNER_SCRIPT="${FAKE_RUNNER_DIR}/visual-acceptance-runner" \
 TMPDIR="${DEFAULT_TMPDIR}" \
 VISUAL_ACCEPTANCE_FNN_ASSET_SHA256=8f9a69361f662438fa1fc29ddc668192810b13021536ebd1101c84dc0cfa330f \
 VISUAL_ACCEPTANCE_DOCKER_BIN="${FAKE_BIN_DIR}/docker" \
   "${ROOT_DIR}/scripts/run-visual-acceptance-local.sh" \
+  --skip-build \
   --image-tag fake-image \
   > "${DEFAULT_OUTPUT_CAPTURE}"
 

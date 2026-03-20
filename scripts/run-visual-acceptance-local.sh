@@ -3,13 +3,15 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DOCKER_BIN="${VISUAL_ACCEPTANCE_DOCKER_BIN:-docker}"
-IMAGE_TAG="${VISUAL_ACCEPTANCE_IMAGE_TAG:-fiber-link-visual-acceptance}"
+RUNNER_SCRIPT="${VISUAL_ACCEPTANCE_RUNNER_SCRIPT:-${ROOT_DIR}/harness/visual-acceptance/entrypoint.sh}"
+PLAYWRIGHT_IMAGE="${VISUAL_ACCEPTANCE_IMAGE_TAG:-fiber-link-visual-acceptance}"
 OUTPUT_DIR="${VISUAL_ACCEPTANCE_OUTPUT_DIR:-}"
 SETTLEMENT_MODES="${VISUAL_ACCEPTANCE_SETTLEMENT_MODES:-subscription,polling}"
 DEFAULT_EXPLORER_TEMPLATE='https://pudge.explorer.nervos.org/transaction/{txHash}'
 EXPLORER_TEMPLATE="${VISUAL_ACCEPTANCE_EXPLORER_TX_URL_TEMPLATE:-${DEFAULT_EXPLORER_TEMPLATE}}"
-HOST_ACCESS_HOST="${VISUAL_ACCEPTANCE_HOST_ACCESS_HOST:-host.docker.internal}"
+HOST_ACCESS_HOST="${VISUAL_ACCEPTANCE_HOST_ACCESS_HOST:-127.0.0.1}"
 HOST_ACCESS_BASE_URL="${VISUAL_ACCEPTANCE_HOST_ACCESS_BASE_URL:-}"
+SIDECAR_HOST_ACCESS_HOST="${VISUAL_ACCEPTANCE_SIDECAR_HOST_ACCESS_HOST:-host.docker.internal}"
 DISCOURSE_UI_BASE_URL="${VISUAL_ACCEPTANCE_DISCOURSE_UI_BASE_URL:-}"
 COMPOSE_ENV_SOURCE="${VISUAL_ACCEPTANCE_COMPOSE_ENV_FILE:-}"
 KEEP_RUNTIME="${VISUAL_ACCEPTANCE_KEEP_RUNTIME:-0}"
@@ -19,53 +21,36 @@ HOST_GIT_SHA=""
 HOST_GIT_BRANCH=""
 
 cleanup() {
-  local runtime_parent runtime_name
   if [[ "${KEEP_RUNTIME}" == "1" || -z "${RUNTIME_DIR}" || ! -d "${RUNTIME_DIR}" ]]; then
     return 0
   fi
-
-  if rm -rf "${RUNTIME_DIR}" 2>/dev/null; then
-    return 0
-  fi
-
-  runtime_parent="$(dirname "${RUNTIME_DIR}")"
-  runtime_name="$(basename "${RUNTIME_DIR}")"
-  "${DOCKER_BIN}" run --rm \
-    --entrypoint /bin/sh \
-    -v "${runtime_parent}:${runtime_parent}" \
-    "${IMAGE_TAG}" \
-    -lc "rm -rf -- '${runtime_parent}/${runtime_name}'" >/dev/null 2>&1 || true
   rm -rf "${RUNTIME_DIR}" >/dev/null 2>&1 || true
 }
 
 trap cleanup EXIT
 
-resolve_docker_host_gateway() {
-  "${DOCKER_BIN}" network inspect bridge 2>/dev/null \
-    | jq -r '.[0].IPAM.Config[0].Gateway // empty' \
-    | tr -d '\r'
-}
-
 usage() {
   cat <<'USAGE'
 Usage: scripts/run-visual-acceptance-local.sh [options]
 
-Build and run the visual-acceptance DinD harness locally.
+Run the visual-acceptance workflow locally against the host Docker daemon.
 
 Options:
   --output-dir <path>              Host output dir. Default: mktemp under ${TMPDIR:-/tmp}.
   --settlement-modes <modes>       Comma-separated: subscription,polling | subscription | polling.
   --explorer-tx-url-template <tpl> Explorer URL template containing {txHash} or %s.
-  --image-tag <name>               Docker image tag. Default: fiber-link-visual-acceptance.
-  --skip-build                     Reuse an existing image tag without rebuilding.
+  --image-tag <name>               Playwright sidecar image tag. Default: fiber-link-visual-acceptance.
+  --skip-build                     Reuse an existing sidecar image tag without rebuilding.
   -h, --help                       Show help.
 
 Environment:
-  VISUAL_ACCEPTANCE_HOST_ACCESS_HOST        Hostname exposed inside the harness container for
+  VISUAL_ACCEPTANCE_HOST_ACCESS_HOST        Hostname used by host-side verification/probes.
+                                           Default: 127.0.0.1
+  VISUAL_ACCEPTANCE_SIDECAR_HOST_ACCESS_HOST Hostname exposed inside the Playwright sidecar for
                                            reaching host-published Docker ports.
                                            Default: host.docker.internal
   VISUAL_ACCEPTANCE_DISCOURSE_UI_BASE_URL  UI base URL used by the four-flow browser steps.
-                                           Default: ${VISUAL_ACCEPTANCE_HOST_ACCESS_BASE_URL:-http://host.docker.internal}:4200
+                                           Default: http://host.docker.internal:4200
   VISUAL_ACCEPTANCE_KEEP_RUNTIME=1         Preserve the temp runtime dir for debugging.
 USAGE
 }
@@ -89,7 +74,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     --image-tag)
       [[ $# -ge 2 ]] || { usage >&2; exit 2; }
-      IMAGE_TAG="$2"
+      PLAYWRIGHT_IMAGE="$2"
       shift
       ;;
     --skip-build)
@@ -153,46 +138,53 @@ print_paths() {
   fi
 }
 
-if [[ "${SKIP_BUILD}" -eq 0 ]]; then
-  "${DOCKER_BIN}" build -t "${IMAGE_TAG}" -f "${ROOT_DIR}/harness/visual-acceptance/Dockerfile" "${ROOT_DIR}"
-fi
-
 if [[ -z "${HOST_ACCESS_BASE_URL}" ]]; then
-  docker_host_gateway="$(resolve_docker_host_gateway || true)"
-  if [[ -n "${docker_host_gateway}" ]]; then
-    HOST_ACCESS_BASE_URL="http://${docker_host_gateway}"
-  else
-    HOST_ACCESS_BASE_URL="http://${HOST_ACCESS_HOST}"
-  fi
+  HOST_ACCESS_BASE_URL="http://${HOST_ACCESS_HOST}"
 fi
 
 if [[ -z "${DISCOURSE_UI_BASE_URL}" ]]; then
-  DISCOURSE_UI_BASE_URL="http://${HOST_ACCESS_HOST}:4200"
+  DISCOURSE_UI_BASE_URL="http://${SIDECAR_HOST_ACCESS_HOST}:4200"
+fi
+
+DISCOURSE_BACKEND_READY_URL="${HOST_ACCESS_BASE_URL}:9292/session/csrf.json"
+if [[ -n "${PLAYWRIGHT_IMAGE}" ]]; then
+  DISCOURSE_BACKEND_READY_URL="http://${SIDECAR_HOST_ACCESS_HOST}:9292/session/csrf.json"
+fi
+
+[[ -x "${RUNNER_SCRIPT}" ]] || {
+  echo "Error: visual acceptance runner script is missing or not executable: ${RUNNER_SCRIPT}" >&2
+  exit 2
+}
+
+if [[ "${SKIP_BUILD}" -eq 0 ]]; then
+  "${DOCKER_BIN}" build -t "${PLAYWRIGHT_IMAGE}" -f "${ROOT_DIR}/harness/visual-acceptance/Dockerfile" "${ROOT_DIR}"
 fi
 
 set +e
-"${DOCKER_BIN}" run --rm \
-  --add-host "${HOST_ACCESS_HOST}:host-gateway" \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  -v "${ROOT_DIR}:${ROOT_DIR}" \
-  -v "${OUTPUT_DIR}:${OUTPUT_DIR}" \
-  -v "${RUNTIME_DIR}:${RUNTIME_DIR}" \
-  -w "${ROOT_DIR}" \
-  -e VISUAL_ACCEPTANCE_REPO_ROOT="${ROOT_DIR}" \
-  -e VISUAL_ACCEPTANCE_ARTIFACT_ROOT="${OUTPUT_DIR}" \
-  -e VISUAL_ACCEPTANCE_GIT_SHA="${HOST_GIT_SHA}" \
-  -e VISUAL_ACCEPTANCE_GIT_BRANCH="${HOST_GIT_BRANCH}" \
-  -e COMPOSE_ENV_FILE="${RUNTIME_DIR}/compose.env" \
-  -e ENV_FILE="${RUNTIME_DIR}/compose.env" \
-  -e DISCOURSE_DEV_ROOT="${DISCOURSE_DEV_ROOT}" \
-  -e E2E_HOST_ACCESS_HOST="${HOST_ACCESS_HOST}" \
-  -e E2E_HOST_ACCESS_BASE_URL="${HOST_ACCESS_BASE_URL}" \
-  -e E2E_DISCOURSE_UI_BASE_URL="${DISCOURSE_UI_BASE_URL}" \
-  -e PLAYWRIGHT_CLI_DOCKER_IMAGE="${IMAGE_TAG}" \
-  -e PLAYWRIGHT_CLI_DOCKER_NETWORK_CONTAINER="discourse_dev" \
-  -e VISUAL_ACCEPTANCE_SETTLEMENT_MODES="${SETTLEMENT_MODES}" \
-  -e VISUAL_ACCEPTANCE_EXPLORER_TX_URL_TEMPLATE="${EXPLORER_TEMPLATE}" \
-  "${IMAGE_TAG}"
+VISUAL_ACCEPTANCE_REPO_ROOT="${ROOT_DIR}" \
+VISUAL_ACCEPTANCE_ARTIFACT_ROOT="${OUTPUT_DIR}" \
+VISUAL_ACCEPTANCE_OUTPUT_ROOT="${OUTPUT_DIR}/evidence" \
+VISUAL_ACCEPTANCE_MANIFEST_PATH="${OUTPUT_DIR}/manifest.json" \
+VISUAL_ACCEPTANCE_HARNESS_LOG_PATH="${OUTPUT_DIR}/harness.log" \
+VISUAL_ACCEPTANCE_GIT_SHA="${HOST_GIT_SHA}" \
+VISUAL_ACCEPTANCE_GIT_BRANCH="${HOST_GIT_BRANCH}" \
+COMPOSE_ENV_FILE="${RUNTIME_DIR}/compose.env" \
+ENV_FILE="${RUNTIME_DIR}/compose.env" \
+DISCOURSE_DEV_ROOT="${DISCOURSE_DEV_ROOT}" \
+E2E_SOURCE_ARTIFACT_ROOT="${RUNTIME_DIR}/source-artifacts" \
+E2E_HOST_ACCESS_HOST="${HOST_ACCESS_HOST}" \
+E2E_HOST_ACCESS_BASE_URL="${HOST_ACCESS_BASE_URL}" \
+E2E_DISCOURSE_UI_BASE_URL="${DISCOURSE_UI_BASE_URL}" \
+PLAYWRIGHT_CLI_HOST_ACCESS_HOST="${SIDECAR_HOST_ACCESS_HOST}" \
+PLAYWRIGHT_CLI_DOCKER_IMAGE="${PLAYWRIGHT_IMAGE}" \
+PW_FLOW12_PAYER_RPC_BASE_URL="http://${SIDECAR_HOST_ACCESS_HOST}" \
+PW_DEMO_PAYER_RPC_BASE_URL="http://${SIDECAR_HOST_ACCESS_HOST}" \
+PW_FLOW12_BACKEND_READY_URL="${DISCOURSE_BACKEND_READY_URL}" \
+PW_DEMO_BACKEND_READY_URL="${DISCOURSE_BACKEND_READY_URL}" \
+PW_AUTHOR_WITHDRAWAL_BACKEND_READY_URL="${DISCOURSE_BACKEND_READY_URL}" \
+VISUAL_ACCEPTANCE_SETTLEMENT_MODES="${SETTLEMENT_MODES}" \
+VISUAL_ACCEPTANCE_EXPLORER_TX_URL_TEMPLATE="${EXPLORER_TEMPLATE}" \
+  "${RUNNER_SCRIPT}"
 run_rc=$?
 set -e
 

@@ -2,7 +2,7 @@ async (page) => {
   const env = typeof globalThis === "object" && globalThis.__PW_AUTHOR_WITHDRAWAL_ENV__ && typeof globalThis.__PW_AUTHOR_WITHDRAWAL_ENV__ === "object"
     ? globalThis.__PW_AUTHOR_WITHDRAWAL_ENV__
     : {};
-  const baseUrl = String(env.baseUrl ?? "http://127.0.0.1:9292").replace(/\/+$/, "");
+  const baseUrl = String(env.baseUrl ?? "http://127.0.0.1:4200").replace(/\/+$/, "");
   const authorUser = String(env.authorUser ?? "fiber_author");
   const authorPassword = String(env.authorPassword ?? "fiber-local-pass-1");
   const withdrawAmount = String(env.withdrawAmount ?? "61");

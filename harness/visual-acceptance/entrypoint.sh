@@ -13,10 +13,8 @@ SETTLEMENT_MODES="${VISUAL_ACCEPTANCE_SETTLEMENT_MODES:-subscription,polling}"
 mkdir -p "${ARTIFACT_ROOT}" "${OUTPUT_ROOT}"
 
 {
-  echo "[visual-acceptance] using host docker daemon via mounted socket"
-  test -S /var/run/docker.sock
+  echo "[visual-acceptance] using host docker daemon"
   docker info >/dev/null 2>&1
-  docker buildx version >/dev/null 2>&1
 
   echo "[visual-acceptance] running four-flow evidence capture"
   cd "${REPO_ROOT}"

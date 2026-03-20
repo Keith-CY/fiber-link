@@ -31,8 +31,10 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           VISUAL_ACCEPTANCE_OUTPUT_DIR: ${{ github.workspace }}/.tmp/visual-acceptance
           VISUAL_ACCEPTANCE_EXPLORER_TX_URL_TEMPLATE: https://pudge.explorer.nervos.org/transaction/{txHash}
-          VISUAL_ACCEPTANCE_DISCOURSE_UI_BASE_URL: http://host.docker.internal:4200
-        run: scripts/run-visual-acceptance-local.sh --output-dir "${VISUAL_ACCEPTANCE_OUTPUT_DIR}" --image-tag fiber-link-visual-acceptance
+          VISUAL_ACCEPTANCE_DISCOURSE_UI_BASE_URL: http://127.0.0.1:4200
+          VISUAL_ACCEPTANCE_HOST_ACCESS_HOST: 127.0.0.1
+          VISUAL_ACCEPTANCE_HOST_ACCESS_BASE_URL: http://127.0.0.1
+        run: scripts/run-visual-acceptance-local.sh --output-dir "${VISUAL_ACCEPTANCE_OUTPUT_DIR}"
 
       - name: Upload visual acceptance artifact
         if: always()

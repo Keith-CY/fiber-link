@@ -483,6 +483,48 @@ wait_http_ready() {
   done
 }
 
+normalize_playwright_probe_url() {
+  local raw_url="$1"
+  local host_access_host="${PLAYWRIGHT_CLI_HOST_ACCESS_HOST:-${E2E_HOST_ACCESS_HOST:-host.docker.internal}}"
+
+  if [[ -n "${PLAYWRIGHT_CLI_DOCKER_NETWORK_CONTAINER:-}" && "${raw_url}" == "http://${host_access_host}:"* ]]; then
+    printf 'http://127.0.0.1:%s' "${raw_url#http://${host_access_host}:}"
+    return 0
+  fi
+
+  printf '%s' "${raw_url}"
+}
+
+wait_http_ready_from_playwright_context() {
+  local url="$1"
+  local timeout_seconds="$2"
+  local started now probe_url host_access_host
+  started="$(date +%s)"
+  probe_url="$(normalize_playwright_probe_url "${url}")"
+  host_access_host="${PLAYWRIGHT_CLI_HOST_ACCESS_HOST:-${E2E_HOST_ACCESS_HOST:-host.docker.internal}}"
+
+  while true; do
+    if [[ -n "${PLAYWRIGHT_CLI_DOCKER_NETWORK_CONTAINER:-}" ]]; then
+      if docker exec "${PLAYWRIGHT_CLI_DOCKER_NETWORK_CONTAINER}" sh -lc "curl -fsS -m 5 '${probe_url}' >/dev/null" >/dev/null 2>&1; then
+        return 0
+      fi
+    elif [[ -n "${PLAYWRIGHT_CLI_DOCKER_IMAGE:-}" ]]; then
+      if docker run --rm --add-host "${host_access_host}:host-gateway" --entrypoint bash "${PLAYWRIGHT_CLI_DOCKER_IMAGE}" -lc "curl -fsS -m 5 '${probe_url}' >/dev/null" >/dev/null 2>&1; then
+        return 0
+      fi
+    elif curl -fsS -m 3 "${url}" >/dev/null 2>&1; then
+      return 0
+    fi
+
+    now="$(date +%s)"
+    if (( now - started >= timeout_seconds )); then
+      return 1
+    fi
+
+    sleep 2
+  done
+}
+
 wait_discourse_ui_ready_in_container() {
   local timeout_seconds="$1"
   local started now
@@ -500,6 +542,10 @@ wait_discourse_ui_ready_in_container() {
 
     sleep 2
   done
+}
+
+playwright_ui_requires_host_reachability() {
+  [[ -z "${PLAYWRIGHT_CLI_DOCKER_IMAGE:-}" ]]
 }
 
 wait_discourse_backend_ready_in_container() {
@@ -533,8 +579,11 @@ ensure_discourse_ui_proxy() {
 
   if [[ "${normalized_url}" != "${HOST_ACCESS_BASE_URL}:4200" ]]; then
     login_url="${normalized_url}/login"
-    if wait_http_ready "${login_url}" 120; then
+    if wait_http_ready_from_playwright_context "${login_url}" 120; then
       return 0
+    fi
+    if playwright_ui_requires_host_reachability; then
+      fatal "${EXIT_PRECHECK}" "discourse ui did not become ready at ${login_url}"
     fi
     if wait_discourse_ui_ready_in_container 20; then
       log "warning: discourse ui is serving inside discourse_dev, but configured UI is not reachable at ${login_url}; continuing for sidecar-driven visual acceptance"
@@ -561,9 +610,14 @@ EOF
     docker exec discourse_dev sh -lc "cat '${ember_container_log}' 2>/dev/null || true" > "${ember_log}" 2>/dev/null || true
   }
 
-  if wait_http_ready "${login_url}" 20 || wait_discourse_ui_ready_in_container 20; then
+  if wait_http_ready "${login_url}" 20; then
     sync_ember_cli_log
     vlog "ember-cli proxy already running (${login_url})"
+    return 0
+  fi
+  if ! playwright_ui_requires_host_reachability && wait_discourse_ui_ready_in_container 20; then
+    sync_ember_cli_log
+    vlog "ember-cli proxy already running inside discourse_dev (${login_url})"
     return 0
   fi
 
@@ -594,6 +648,9 @@ EOF
     }
   sync_ember_cli_log
   if ! wait_http_ready "${login_url}" 20; then
+    if playwright_ui_requires_host_reachability; then
+      fatal "${EXIT_PRECHECK}" "ember proxy did not become reachable at ${login_url} (see ${ember_log})"
+    fi
     log "warning: ember proxy is serving inside discourse_dev, but host UI is not reachable at ${login_url}; continuing for sidecar-driven visual acceptance"
   fi
   if ! wait_http_ready "${backend_ready_url}" 180 && ! wait_discourse_backend_ready_in_container 30; then

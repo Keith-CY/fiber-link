@@ -29,20 +29,18 @@ Options:
 USAGE
 }
 
+should_use_ember_cli() {
+  local ui_base_url="${FLOW12_URL:-${DISCOURSE_UI_BASE_URL:-}}"
+  ui_base_url="${ui_base_url%/}"
+  [[ -z "${ui_base_url}" || "${ui_base_url}" == *":4200" ]]
+}
+
 export_workflow_ids_from_state() {
   [[ -n "${TIPPER_USER_ID}" ]] && export WORKFLOW_TIPPER_USER_ID="${TIPPER_USER_ID}"
   [[ -n "${AUTHOR_USER_ID}" ]] && export WORKFLOW_AUTHOR_USER_ID="${AUTHOR_USER_ID}"
   [[ -n "${TOPIC_POST_ID}" ]] && export WORKFLOW_TOPIC_POST_ID="${TOPIC_POST_ID}"
   [[ -n "${REPLY_POST_ID}" ]] && export WORKFLOW_REPLY_POST_ID="${REPLY_POST_ID}"
   return 0
-}
-
-should_start_ember_cli() {
-  local ui_base_url="${DISCOURSE_UI_BASE_URL%/}"
-  local host_access_host="${E2E_HOST_ACCESS_HOST:-host.docker.internal}"
-  local host_access_base_url="${E2E_HOST_ACCESS_BASE_URL:-http://127.0.0.1}"
-  [[ "${ui_base_url}" == "http://${host_access_host}:4200" ]] \
-    || [[ "${ui_base_url}" == "${host_access_base_url}:4200" ]]
 }
 
 while [[ $# -gt 0 ]]; do
@@ -103,7 +101,7 @@ prepare_cmd=(
   --skip-withdrawal
 )
 
-if should_start_ember_cli; then
+if should_use_ember_cli; then
   prepare_cmd+=(--with-ember-cli)
 fi
 

@@ -57,9 +57,10 @@ run_locally() {
 }
 
 run_in_sidecar() {
-  local container_tmpdir inner_script
+  local container_tmpdir inner_script host_access_host
   container_tmpdir="/tmp/playwright-cli-session/${SESSION}"
   inner_script="${ARTIFACT_DIR}/playwright-session-inner.sh"
+  host_access_host="${PLAYWRIGHT_CLI_HOST_ACCESS_HOST:-${E2E_HOST_ACCESS_HOST:-host.docker.internal}}"
   cat > "${inner_script}" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -96,8 +97,12 @@ EOF
     --init
     --ipc=host
     --entrypoint bash
-    --network "container:${PLAYWRIGHT_DOCKER_NETWORK_CONTAINER}"
   )
+  if [[ -n "${PLAYWRIGHT_DOCKER_NETWORK_CONTAINER}" ]]; then
+    docker_args+=(--network "container:${PLAYWRIGHT_DOCKER_NETWORK_CONTAINER}")
+  else
+    docker_args+=(--add-host "${host_access_host}:host-gateway")
+  fi
   docker_args+=(
     -v "${ROOT_DIR}:${ROOT_DIR}"
     -v "${ARTIFACT_DIR}:${ARTIFACT_DIR}"
@@ -122,6 +127,8 @@ EOF
 }
 
 if [[ -n "${PLAYWRIGHT_DOCKER_IMAGE}" && -n "${PLAYWRIGHT_DOCKER_NETWORK_CONTAINER}" ]]; then
+  run_in_sidecar
+elif [[ -n "${PLAYWRIGHT_DOCKER_IMAGE}" ]]; then
   run_in_sidecar
 else
   run_locally

@@ -31,7 +31,7 @@ docker inspect discourse_dev >/dev/null 2>&1 || {
 
 log "starting discourse web server on port ${PORT}"
 docker exec -u discourse:discourse -w /src discourse_dev sh -lc \
-  "pkill -f 'bin/unicorn -p ${PORT}' >/dev/null 2>&1 || true; nohup env ALLOW_EMBER_CLI_PROXY_BYPASS=1 bin/unicorn -p ${PORT} > /tmp/unicorn.log 2>&1 &" >/dev/null
+  "pkill -f '/src/bin/unicorn -c /src/config/unicorn.conf.rb -p ${PORT}' >/dev/null 2>&1 || pkill -f 'bin/unicorn -p ${PORT}' >/dev/null 2>&1 || true; cd /src && nohup env ALLOW_EMBER_CLI_PROXY_BYPASS=1 /src/bin/unicorn -c /src/config/unicorn.conf.rb -p ${PORT} > /tmp/unicorn.log 2>&1 &" >/dev/null
 
 started_at="$(date +%s)"
 while true; do
