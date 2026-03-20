@@ -15,6 +15,7 @@ ARTIFACT_DIR="${PW_ARTIFACT_DIR:-$(dirname "${RESULT_LOG}")}"
 PW_TMPDIR="${PW_TMPDIR:-${ARTIFACT_DIR}/playwright-cli-tmp}"
 PLAYWRIGHT_DOCKER_IMAGE="${PLAYWRIGHT_CLI_DOCKER_IMAGE:-}"
 PLAYWRIGHT_DOCKER_NETWORK_CONTAINER="${PLAYWRIGHT_CLI_DOCKER_NETWORK_CONTAINER:-}"
+PLAYWRIGHT_DOCKER_NETWORK_MODE="${PLAYWRIGHT_CLI_DOCKER_NETWORK_MODE:-}"
 
 [[ -x "${PWCLI}" ]] || {
   echo "${ERROR_PREFIX} missing playwright CLI wrapper: ${PWCLI}" >&2
@@ -100,6 +101,8 @@ EOF
   )
   if [[ -n "${PLAYWRIGHT_DOCKER_NETWORK_CONTAINER}" ]]; then
     docker_args+=(--network "container:${PLAYWRIGHT_DOCKER_NETWORK_CONTAINER}")
+  elif [[ "${PLAYWRIGHT_DOCKER_NETWORK_MODE}" == "host" ]]; then
+    docker_args+=(--network host)
   else
     docker_args+=(--add-host "${host_access_host}:host-gateway")
   fi

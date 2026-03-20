@@ -40,7 +40,7 @@ export TMPDIR="${PW_TMPDIR}"
 normalize_sidecar_url() {
   local raw_url="$1"
   local host_access_host="${PLAYWRIGHT_CLI_HOST_ACCESS_HOST:-${E2E_HOST_ACCESS_HOST:-host.docker.internal}}"
-  if [[ -n "${PLAYWRIGHT_CLI_DOCKER_NETWORK_CONTAINER:-}" ]]; then
+  if [[ -n "${PLAYWRIGHT_CLI_DOCKER_NETWORK_CONTAINER:-}" || "${PLAYWRIGHT_CLI_DOCKER_NETWORK_MODE:-}" == "host" ]]; then
     if [[ "${raw_url}" == "http://${host_access_host}:"* ]]; then
       printf 'http://127.0.0.1:%s' "${raw_url#http://${host_access_host}:}"
       return 0
@@ -89,6 +89,10 @@ wait_for_backend_ready() {
         container_probe_url="http://127.0.0.1:${container_probe_url#http://${host_access_host}:}"
       fi
       if docker exec "${PLAYWRIGHT_CLI_DOCKER_NETWORK_CONTAINER}" sh -lc "curl -fsS -m 3 '${container_probe_url}' >/dev/null" >/dev/null 2>&1; then
+        return 0
+      fi
+    elif [[ -n "${PLAYWRIGHT_CLI_DOCKER_IMAGE:-}" && "${PLAYWRIGHT_CLI_DOCKER_NETWORK_MODE:-}" == "host" ]]; then
+      if docker run --rm --network host --entrypoint bash "${PLAYWRIGHT_CLI_DOCKER_IMAGE}" -lc "curl -fsS -m 3 '${probe_url}' >/dev/null" >/dev/null 2>&1; then
         return 0
       fi
     elif [[ -n "${PLAYWRIGHT_CLI_DOCKER_IMAGE:-}" ]]; then

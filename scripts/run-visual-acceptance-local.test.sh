@@ -43,12 +43,18 @@ discourse_dev_root="${DISCOURSE_DEV_ROOT:-}"
 explorer_template="${VISUAL_ACCEPTANCE_EXPLORER_TX_URL_TEMPLATE:-}"
 playwright_image="${PLAYWRIGHT_CLI_DOCKER_IMAGE:-}"
 network_container="${PLAYWRIGHT_CLI_DOCKER_NETWORK_CONTAINER:-}"
+network_mode="${PLAYWRIGHT_CLI_DOCKER_NETWORK_MODE:-}"
 source_artifact_root="${E2E_SOURCE_ARTIFACT_ROOT:-}"
 flow12_payer_rpc_base_url="${PW_FLOW12_PAYER_RPC_BASE_URL:-}"
 flow12_backend_ready_url="${PW_FLOW12_BACKEND_READY_URL:-}"
 demo_backend_ready_url="${PW_DEMO_BACKEND_READY_URL:-}"
 author_withdrawal_backend_ready_url="${PW_AUTHOR_WITHDRAWAL_BACKEND_READY_URL:-}"
 runtime_root="$(dirname "${compose_env_file}")"
+expected_host_access_host="${EXPECTED_HOST_ACCESS_HOST:-host.docker.internal}"
+expected_ui_base_url="${EXPECTED_UI_BASE_URL:-http://host.docker.internal:4200}"
+expected_network_mode="${EXPECTED_NETWORK_MODE:-}"
+expected_payer_rpc_base_url="${EXPECTED_PAYER_RPC_BASE_URL:-http://host.docker.internal}"
+expected_backend_ready_url="${EXPECTED_BACKEND_READY_URL:-http://host.docker.internal:9292/session/csrf.json}"
 
 [[ -n "${artifact_root}" ]] || {
   echo "missing artifact root" >&2
@@ -86,7 +92,7 @@ runtime_root="$(dirname "${compose_env_file}")"
   echo "unexpected discourse dev root: ${discourse_dev_root}" >&2
   exit 1
 }
-[[ "${discourse_ui_base_url}" == "http://host.docker.internal:4200" ]] || {
+[[ "${discourse_ui_base_url}" == "${expected_ui_base_url}" ]] || {
   echo "unexpected discourse ui base url: ${discourse_ui_base_url}" >&2
   exit 1
 }
@@ -114,23 +120,27 @@ runtime_root="$(dirname "${compose_env_file}")"
   echo "unexpected network container: ${network_container}" >&2
   exit 1
 }
-[[ "${sidecar_host_access_host}" == "host.docker.internal" ]] || {
+[[ "${network_mode}" == "${expected_network_mode}" ]] || {
+  echo "unexpected network mode: ${network_mode}" >&2
+  exit 1
+}
+[[ "${sidecar_host_access_host}" == "${expected_host_access_host}" ]] || {
   echo "unexpected sidecar host access host: ${sidecar_host_access_host}" >&2
   exit 1
 }
-[[ "${flow12_payer_rpc_base_url}" == "http://host.docker.internal" ]] || {
+[[ "${flow12_payer_rpc_base_url}" == "${expected_payer_rpc_base_url}" ]] || {
   echo "unexpected flow12 payer rpc base url: ${flow12_payer_rpc_base_url}" >&2
   exit 1
 }
-[[ "${flow12_backend_ready_url}" == "http://host.docker.internal:9292/session/csrf.json" ]] || {
+[[ "${flow12_backend_ready_url}" == "${expected_backend_ready_url}" ]] || {
   echo "unexpected flow12 backend ready url: ${flow12_backend_ready_url}" >&2
   exit 1
 }
-[[ "${demo_backend_ready_url}" == "http://host.docker.internal:9292/session/csrf.json" ]] || {
+[[ "${demo_backend_ready_url}" == "${expected_backend_ready_url}" ]] || {
   echo "unexpected demo backend ready url: ${demo_backend_ready_url}" >&2
   exit 1
 }
-[[ "${author_withdrawal_backend_ready_url}" == "http://host.docker.internal:9292/session/csrf.json" ]] || {
+[[ "${author_withdrawal_backend_ready_url}" == "${expected_backend_ready_url}" ]] || {
   echo "unexpected author withdrawal backend ready url: ${author_withdrawal_backend_ready_url}" >&2
   exit 1
 }
@@ -177,6 +187,23 @@ grep -q "^Manifest: ${OUTPUT_ROOT}/manifest.json$" "${CLI_OUTPUT}"
 grep -q "^Summary: ${OUTPUT_ROOT}/evidence/fake/summary.json$" "${CLI_OUTPUT}"
 grep -q "^Screenshots: ${OUTPUT_ROOT}/evidence/fake/screenshots$" "${CLI_OUTPUT}"
 grep -q "^Archive: ${OUTPUT_ROOT}/evidence/fake.tar.gz$" "${CLI_OUTPUT}"
+
+HOST_NETWORK_OUTPUT="$(mktemp)"
+trap 'rm -rf "${FAKE_RUNNER_DIR}" "${FAKE_BIN_DIR}" "${OUTPUT_ROOT}" "${DEFAULT_TMPDIR}" "${CLI_OUTPUT}" "${DEFAULT_OUTPUT_CAPTURE}" "${HOST_NETWORK_OUTPUT}"' EXIT
+
+EXPECTED_NETWORK_MODE="host" \
+EXPECTED_HOST_ACCESS_HOST="127.0.0.1" \
+EXPECTED_UI_BASE_URL="http://127.0.0.1:4200" \
+EXPECTED_PAYER_RPC_BASE_URL="http://127.0.0.1" \
+EXPECTED_BACKEND_READY_URL="http://127.0.0.1:9292/session/csrf.json" \
+VISUAL_ACCEPTANCE_PLAYWRIGHT_DOCKER_NETWORK_MODE="host" \
+VISUAL_ACCEPTANCE_RUNNER_SCRIPT="${FAKE_RUNNER_DIR}/visual-acceptance-runner" \
+VISUAL_ACCEPTANCE_FNN_ASSET_SHA256=8f9a69361f662438fa1fc29ddc668192810b13021536ebd1101c84dc0cfa330f \
+VISUAL_ACCEPTANCE_DOCKER_BIN="${FAKE_BIN_DIR}/docker" \
+  "${ROOT_DIR}/scripts/run-visual-acceptance-local.sh" \
+  --output-dir "${OUTPUT_ROOT}" \
+  --image-tag fake-image \
+  > "${HOST_NETWORK_OUTPUT}"
 
 VISUAL_ACCEPTANCE_RUNNER_SCRIPT="${FAKE_RUNNER_DIR}/visual-acceptance-runner" \
 TMPDIR="${DEFAULT_TMPDIR}" \

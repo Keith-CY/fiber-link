@@ -34,6 +34,7 @@ jobs:
           VISUAL_ACCEPTANCE_DISCOURSE_UI_BASE_URL: http://127.0.0.1:4200
           VISUAL_ACCEPTANCE_HOST_ACCESS_HOST: 127.0.0.1
           VISUAL_ACCEPTANCE_HOST_ACCESS_BASE_URL: http://127.0.0.1
+          VISUAL_ACCEPTANCE_PLAYWRIGHT_DOCKER_NETWORK_MODE: host
         run: scripts/run-visual-acceptance-local.sh --output-dir "${VISUAL_ACCEPTANCE_OUTPUT_DIR}"
 
       - name: Upload visual acceptance artifact

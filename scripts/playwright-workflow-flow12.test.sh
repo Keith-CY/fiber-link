@@ -15,6 +15,10 @@ if [[ "$1" == "exec" ]]; then
   exit 0
 fi
 
+if [[ "$1" == "run" && "$2" == "--rm" && "$3" == "--network" && "$4" == "host" ]]; then
+  exit 0
+fi
+
 echo "unexpected docker invocation: $*" >&2
 exit 1
 EOF_DOCKER
@@ -55,3 +59,24 @@ FNN2_RPC_PORT=9227 \
 
 grep -q '"baseUrl":"http://127.0.0.1:4200"' "${CAPTURE_DIR}/playwright-flow12.run-code.js"
 grep -q '"payerRpcUrl":"http://172.17.0.1:9227"' "${CAPTURE_DIR}/playwright-flow12.run-code.js"
+
+rm -f "${CAPTURE_DIR}/playwright-flow12.run-code.js"
+
+PATH="${FAKE_BIN_DIR}:${PATH}" \
+PWCLI="${FAKE_BIN_DIR}/fake-pwcli" \
+RUN_PLAYWRIGHT_SESSION_SCRIPT="${FAKE_BIN_DIR}/fake-run-playwright-session.sh" \
+PW_TEST_CAPTURE_DIR="${CAPTURE_DIR}" \
+PW_FLOW12_ARTIFACT_DIR="${ARTIFACT_DIR}" \
+PW_FLOW12_URL="http://127.0.0.1:4200" \
+PW_FLOW12_TOPIC_PATH="/t/fiber-link-local-workflow-topic/7" \
+PW_FLOW12_HEADED=0 \
+PLAYWRIGHT_CLI_DOCKER_IMAGE="fake-image" \
+PLAYWRIGHT_CLI_DOCKER_NETWORK_MODE="host" \
+PLAYWRIGHT_CLI_HOST_ACCESS_HOST="127.0.0.1" \
+E2E_HOST_ACCESS_HOST="127.0.0.1" \
+E2E_HOST_ACCESS_BASE_URL="http://127.0.0.1" \
+FNN2_RPC_PORT=9227 \
+  "${ROOT_DIR}/scripts/playwright-workflow-flow12.sh"
+
+grep -q '"baseUrl":"http://127.0.0.1:4200"' "${CAPTURE_DIR}/playwright-flow12.run-code.js"
+grep -q '"payerRpcUrl":"http://127.0.0.1:9227"' "${CAPTURE_DIR}/playwright-flow12.run-code.js"
