@@ -12,7 +12,7 @@ PORT="${ADMIN_DASHBOARD_PORT:-4318}"
 BASE_URL="http://${HOST}:${PORT}"
 FIXTURE_PATH="${ADMIN_DASHBOARD_FIXTURE_PATH:-${APP_DIR}/fixtures/dashboard-proof.json}"
 SESSION="${ADMIN_DASHBOARD_SESSION:-admin-dashboard-proof}"
-READY_COMMAND="${ADMIN_DASHBOARD_READY_COMMAND:-curl -fsS ${BASE_URL} | rg -q 'Admin controls'}"
+READY_COMMAND="${ADMIN_DASHBOARD_READY_COMMAND:-curl -fsS ${BASE_URL} | rg -q 'Operations overview'}"
 
 [[ -f "${RUN_CODE_FILE}" ]] || {
   echo "[admin-dashboard-proof] missing run-code file: ${RUN_CODE_FILE}" >&2
@@ -69,6 +69,8 @@ proof_env_json="$(
     --arg perUserDailyMax "4500" \
     --arg perAppDailyMax "25000" \
     --arg cooldownSeconds "45" \
+    --arg rateLimitWindowMs "90000" \
+    --arg rateLimitMaxRequests "500" \
     '{
       baseUrl: $baseUrl,
       artifactDir: $artifactDir,
@@ -76,7 +78,9 @@ proof_env_json="$(
       maxPerRequest: $maxPerRequest,
       perUserDailyMax: $perUserDailyMax,
       perAppDailyMax: $perAppDailyMax,
-      cooldownSeconds: $cooldownSeconds
+      cooldownSeconds: $cooldownSeconds,
+      rateLimitWindowMs: $rateLimitWindowMs,
+      rateLimitMaxRequests: $rateLimitMaxRequests
     }'
 )"
 run_code="$(printf '(() => { globalThis.__PW_ADMIN_DASHBOARD_ENV__ = %s; return (%s); })()' "${proof_env_json}" "$(cat "${RUN_CODE_FILE}")")"

@@ -32,6 +32,9 @@ function createFixture(input?: Partial<DashboardFixture>): DashboardFixture {
         updatedAt: "2026-03-18T00:00:00.000Z",
       },
     ],
+    monitoringSummary: input?.monitoringSummary,
+    rateLimitConfig: input?.rateLimitConfig,
+    backupBundles: input?.backupBundles,
     communityAdminAppIds: input?.communityAdminAppIds,
   };
 }
@@ -94,5 +97,62 @@ describe("dashboard fixture store", () => {
         },
       }),
     ).rejects.toThrow("COMMUNITY_ADMIN can only update policies for managed apps");
+  });
+
+  it("exposes monitoring, rate-limit, and backup fixture capabilities for SUPER_ADMIN flows", async () => {
+    const { deps, snapshot } = createDashboardFixtureDependencies(
+      createFixture({
+        monitoringSummary: {
+          status: "alert",
+          generatedAt: "2026-03-21T08:00:00.000Z",
+          readinessStatus: "ready",
+          unpaidBacklog: 8,
+          retryPendingCount: 1,
+          withdrawalParityIssueCount: 0,
+          alertCount: 1,
+        },
+        rateLimitConfig: {
+          enabled: true,
+          windowMs: "60000",
+          maxRequests: "300",
+          redisUrl: "redis://redis:6379/1",
+          sourceLabel: "fixture",
+        },
+        backupBundles: [
+          {
+            id: "bundle-1",
+            generatedAt: "bundle-1",
+            overallStatus: "PASS",
+            retentionDays: 30,
+            dryRun: true,
+            backupDir: "/tmp/bundle-1",
+            archiveFile: "/tmp/bundle-1.tar.gz",
+          },
+        ],
+      }),
+    );
+
+    await expect(deps.loadMonitoringSummary?.()).resolves.toMatchObject({
+      status: "alert",
+      unpaidBacklog: 8,
+    });
+    await expect(deps.loadRateLimitConfig?.()).resolves.toMatchObject({
+      windowMs: "60000",
+      maxRequests: "300",
+    });
+    await expect(deps.createRateLimitChangeSet({ enabled: true, windowMs: "90000", maxRequests: "500" })).resolves.toEqual({
+      changedKeys: ["RPC_RATE_LIMIT_WINDOW_MS", "RPC_RATE_LIMIT_MAX_REQUESTS"],
+      envSnippet: "RPC_RATE_LIMIT_WINDOW_MS=90000\nRPC_RATE_LIMIT_MAX_REQUESTS=500",
+      rollbackSnippet: "RPC_RATE_LIMIT_WINDOW_MS=60000\nRPC_RATE_LIMIT_MAX_REQUESTS=300",
+    });
+
+    const capture = await deps.captureBackup();
+    expect(capture.backupId).toBe("fixture-backup-001");
+    expect(snapshot.backupBundles[0]?.id).toBe("fixture-backup-001");
+
+    await expect(deps.buildBackupRestorePlan("fixture-backup-001")).resolves.toMatchObject({
+      backupId: "fixture-backup-001",
+      command: 'scripts/restore-compose-backup.sh --backup "/tmp/fixture-backup-001.tar.gz" --yes',
+    });
   });
 });

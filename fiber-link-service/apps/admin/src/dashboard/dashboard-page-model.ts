@@ -35,6 +35,71 @@ export type DashboardWithdrawalPolicy = {
   updatedAt: string;
 };
 
+export type DashboardMonitoringSummary = {
+  status: "ok" | "alert";
+  generatedAt: string;
+  readinessStatus: "ready" | "not_ready";
+  unpaidBacklog: number;
+  retryPendingCount: number;
+  withdrawalParityIssueCount: number;
+  alertCount: number;
+  rawJson?: string;
+};
+
+export type DashboardMonitoringState =
+  | {
+      status: "ready";
+      summary: DashboardMonitoringSummary;
+    }
+  | {
+      status: "error";
+      message: string;
+    };
+
+export type DashboardRateLimitConfig = {
+  enabled: boolean;
+  windowMs: string;
+  maxRequests: string;
+  redisUrl: string | null;
+  sourceLabel: string;
+};
+
+export type DashboardRateLimitState =
+  | {
+      status: "ready";
+      config: DashboardRateLimitConfig;
+    }
+  | {
+      status: "error";
+      message: string;
+    };
+
+export type DashboardBackupBundle = {
+  id: string;
+  generatedAt: string;
+  overallStatus: string;
+  retentionDays: number;
+  dryRun: boolean;
+  backupDir: string;
+  archiveFile: string | null;
+};
+
+export type DashboardBackupsState =
+  | {
+      status: "ready";
+      bundles: DashboardBackupBundle[];
+    }
+  | {
+      status: "error";
+      message: string;
+    };
+
+export type DashboardOperationsState = {
+  monitoring: DashboardMonitoringState;
+  rateLimit: DashboardRateLimitState;
+  backups: DashboardBackupsState;
+};
+
 type DashboardLoadingState = {
   status: "loading";
 };
@@ -52,6 +117,7 @@ type DashboardReadyState = {
   withdrawals: DashboardWithdrawal[];
   statusSummaries: DashboardStatusSummary[];
   policies: DashboardWithdrawalPolicy[];
+  operations?: DashboardOperationsState;
 };
 
 export type DashboardPageState = DashboardLoadingState | DashboardErrorState | DashboardReadyState;
@@ -59,6 +125,7 @@ export type DashboardPageState = DashboardLoadingState | DashboardErrorState | D
 export type DashboardRoleVisibility = {
   scopeDescription: string;
   showUserId: boolean;
+  showGlobalControls: boolean;
 };
 
 type DashboardLoadingViewModel = {
@@ -101,12 +168,14 @@ export function getRoleVisibility(role: UserRole): DashboardRoleVisibility {
     return {
       scopeDescription: "Global visibility across all communities",
       showUserId: true,
+      showGlobalControls: true,
     };
   }
 
   return {
     scopeDescription: "Scoped visibility for assigned communities",
     showUserId: false,
+    showGlobalControls: false,
   };
 }
 
