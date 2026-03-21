@@ -61,15 +61,25 @@ function parseDraftFromSearch(searchParams: URLSearchParams): DashboardPolicyDra
   };
 }
 
-export function readDashboardPolicyFlash(searchParams: URLSearchParams): DashboardPolicyFlash {
+export function readDashboardPolicyFlash(searchParams: URLSearchParams): DashboardPolicyFlash | undefined {
   const savedAppId = searchParams.get("savedAppId")?.trim() || undefined;
   const formError = searchParams.get("formError")?.trim() || undefined;
+  const draft = parseDraftFromSearch(searchParams);
+  const flash: DashboardPolicyFlash = {};
 
-  return {
-    savedAppId,
-    formError,
-    draft: parseDraftFromSearch(searchParams),
-  };
+  if (savedAppId) {
+    flash.savedAppId = savedAppId;
+  }
+
+  if (formError) {
+    flash.formError = formError;
+  }
+
+  if (draft) {
+    flash.draft = draft;
+  }
+
+  return Object.keys(flash).length > 0 ? flash : undefined;
 }
 
 export function buildDashboardPolicyRedirectTarget(input: DashboardPolicyFlash): string {

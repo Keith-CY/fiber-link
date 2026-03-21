@@ -335,6 +335,8 @@ export async function getServerSideProps(context: { req?: { headers?: RequestHea
   const { loadDashboardState } = await import("../server/dashboard-data");
   const headers = context.req?.headers ?? {};
   const searchParams = toSearchParams(context.query ?? {});
+  const policyFlash = readDashboardPolicyFlash(searchParams);
+  const operationFlash = readDashboardOperationFlash(searchParams);
   const initialState = await loadDashboardState({
     roleHeader: getHeader(headers, "x-admin-role"),
     adminUserIdHeader: getHeader(headers, "x-admin-user-id"),
@@ -343,8 +345,8 @@ export async function getServerSideProps(context: { req?: { headers?: RequestHea
   return {
     props: {
       initialState,
-      policyFlash: readDashboardPolicyFlash(searchParams),
-      operationFlash: readDashboardOperationFlash(searchParams),
+      ...(policyFlash ? { policyFlash } : {}),
+      ...(operationFlash ? { operationFlash } : {}),
     },
   };
 }

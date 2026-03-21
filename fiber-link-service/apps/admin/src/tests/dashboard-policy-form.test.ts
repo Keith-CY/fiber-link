@@ -19,6 +19,10 @@ function createDraft(overrides: Partial<DashboardPolicyDraft> = {}): DashboardPo
 }
 
 describe("dashboard policy form helpers", () => {
+  it("returns no flash payload when query params are empty", () => {
+    expect(readDashboardPolicyFlash(new URLSearchParams())).toBeUndefined();
+  });
+
   it("builds a compact redirect target for successful saves", () => {
     expect(buildDashboardPolicyRedirectTarget({ savedAppId: "app-beta" })).toBe("/?savedAppId=app-beta");
   });
@@ -35,7 +39,6 @@ describe("dashboard policy form helpers", () => {
     const flash = readDashboardPolicyFlash(new URLSearchParams(search));
     expect(flash).toEqual({
       formError: "maxPerRequest must be <= perUserDailyMax",
-      savedAppId: undefined,
       draft: createDraft({ allowedAssets: ["USDI"] }),
     });
   });

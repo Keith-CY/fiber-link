@@ -51,48 +51,67 @@ export function parseDashboardRateLimitDraft(raw: Record<string, unknown>): Dash
   };
 }
 
-export function readDashboardOperationFlash(searchParams: URLSearchParams): DashboardOperationFlash {
+export function readDashboardOperationFlash(searchParams: URLSearchParams): DashboardOperationFlash | undefined {
   const draftWindowMs = searchParams.get("rateLimitDraftWindowMs");
   const draftMaxRequests = searchParams.get("rateLimitDraftMaxRequests");
   const draftEnabled = searchParams.get("rateLimitDraftEnabled");
   const restoreWarnings = searchParams.getAll("restoreWarning").filter(Boolean);
   const backupCaptureStatus = searchParams.get("backupCaptureStatus");
+  const flash: DashboardOperationFlash = {};
+  const rateLimitError = searchParams.get("rateLimitError")?.trim() || undefined;
 
-  return {
-    rateLimitError: searchParams.get("rateLimitError")?.trim() || undefined,
-    rateLimitDraft:
-      draftWindowMs !== null || draftMaxRequests !== null || draftEnabled !== null
-        ? {
-            enabled: draftEnabled === "true",
-            windowMs: draftWindowMs?.trim() ?? "",
-            maxRequests: draftMaxRequests?.trim() ?? "",
-          }
-        : undefined,
-    rateLimitChangeSet:
-      searchParams.get("rateLimitEnvSnippet") || searchParams.get("rateLimitRollbackSnippet")
-        ? {
-            changedKeys: searchParams.getAll("rateLimitChangedKey").filter(Boolean),
-            envSnippet: searchParams.get("rateLimitEnvSnippet") ?? "",
-            rollbackSnippet: searchParams.get("rateLimitRollbackSnippet") ?? "",
-          }
-        : undefined,
-    backupCapture:
-      backupCaptureStatus === "success" || backupCaptureStatus === "error"
-        ? {
-            status: backupCaptureStatus,
-            message: searchParams.get("backupCaptureMessage") ?? "",
-            backupId: searchParams.get("backupCaptureBackupId") ?? undefined,
-            archiveFile: searchParams.get("backupCaptureArchive") ?? undefined,
-          }
-        : undefined,
-    backupRestorePlan: searchParams.get("restoreBackupId") || searchParams.get("restoreCommand")
-      ? {
-          backupId: searchParams.get("restoreBackupId") ?? "",
-          command: searchParams.get("restoreCommand") ?? "",
-          warnings: restoreWarnings.length > 0 ? restoreWarnings : undefined,
-        }
-      : undefined,
-  };
+  if (rateLimitError) {
+    flash.rateLimitError = rateLimitError;
+  }
+
+  if (draftWindowMs !== null || draftMaxRequests !== null || draftEnabled !== null) {
+    flash.rateLimitDraft = {
+      enabled: draftEnabled === "true",
+      windowMs: draftWindowMs?.trim() ?? "",
+      maxRequests: draftMaxRequests?.trim() ?? "",
+    };
+  }
+
+  if (searchParams.get("rateLimitEnvSnippet") || searchParams.get("rateLimitRollbackSnippet")) {
+    flash.rateLimitChangeSet = {
+      changedKeys: searchParams.getAll("rateLimitChangedKey").filter(Boolean),
+      envSnippet: searchParams.get("rateLimitEnvSnippet") ?? "",
+      rollbackSnippet: searchParams.get("rateLimitRollbackSnippet") ?? "",
+    };
+  }
+
+  if (backupCaptureStatus === "success" || backupCaptureStatus === "error") {
+    const backupCapture: DashboardBackupCaptureFlash = {
+      status: backupCaptureStatus,
+      message: searchParams.get("backupCaptureMessage") ?? "",
+    };
+    const backupId = searchParams.get("backupCaptureBackupId");
+    const archiveFile = searchParams.get("backupCaptureArchive");
+
+    if (backupId) {
+      backupCapture.backupId = backupId;
+    }
+    if (archiveFile !== null) {
+      backupCapture.archiveFile = archiveFile;
+    }
+
+    flash.backupCapture = backupCapture;
+  }
+
+  if (searchParams.get("restoreBackupId") || searchParams.get("restoreCommand")) {
+    const backupRestorePlan: DashboardBackupRestorePlanFlash = {
+      backupId: searchParams.get("restoreBackupId") ?? "",
+      command: searchParams.get("restoreCommand") ?? "",
+    };
+
+    if (restoreWarnings.length > 0) {
+      backupRestorePlan.warnings = restoreWarnings;
+    }
+
+    flash.backupRestorePlan = backupRestorePlan;
+  }
+
+  return Object.keys(flash).length > 0 ? flash : undefined;
 }
 
 export function buildDashboardOperationRedirectTarget(input: DashboardOperationFlash): string {
