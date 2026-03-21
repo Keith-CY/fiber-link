@@ -53,6 +53,8 @@ fi
 grep -q "\"baseUrl\":\"http://${HOST}:${PORT}\"" "${CAPTURE_DIR}/admin-dashboard-proof.run-code.js"
 grep -q "\"appId\":\"e2e-app-123\"" "${CAPTURE_DIR}/admin-dashboard-proof.run-code.js"
 grep -q "\"artifactDir\":\"${ARTIFACT_DIR}\"" "${CAPTURE_DIR}/admin-dashboard-proof.run-code.js"
+grep -q "noWaitAfter: true" "${CAPTURE_DIR}/admin-dashboard-proof.run-code.js"
+grep -q "waitForLoadState(\"domcontentloaded\"" "${CAPTURE_DIR}/admin-dashboard-proof.run-code.js"
 
 READY_BIN_DIR="$(mktemp -d)"
 trap '[[ -n "${SERVER_PID}" ]] && kill "${SERVER_PID}" >/dev/null 2>&1 || true; rm -rf "${CAPTURE_DIR}" "${ARTIFACT_DIR}" "${ENV_CAPTURE}" "${READY_BIN_DIR}"' EXIT
