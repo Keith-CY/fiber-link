@@ -1,4 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from "next";
+import { createDbClient } from "@fiber-link/db";
 import { withdrawalPolicyRouter } from "../../server/api/routers/withdrawal-policy";
 import { getDashboardFixtureDependencies } from "../../server/dashboard-fixture-store";
 import { handleDashboardPolicyAction } from "../../server/dashboard-policy-action";
@@ -31,6 +32,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           env: process.env,
         }
       : {
+          createDb: () => createDbClient(),
           upsertPolicy: async ({ ctx, input }) => withdrawalPolicyRouter.createCaller(ctx).upsert(input),
           env: process.env,
         },
