@@ -76,6 +76,8 @@ describe("dashboard page", () => {
       />,
     );
 
+    expect(html).toContain('class="dashboard-shell"');
+    expect(html).toContain('class="hero-panel"');
     expect(html).toContain("Operations overview");
     expect(html).toContain("Monitoring");
     expect(html).toContain("Global rate limiting");

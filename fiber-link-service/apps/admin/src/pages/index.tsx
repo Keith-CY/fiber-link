@@ -43,18 +43,32 @@ export default function HomePage({
 
   if (viewModel.status === "loading") {
     return (
-      <main>
-        <h1>{viewModel.title}</h1>
-        <p>Loading dashboard data...</p>
+      <main className="dashboard-shell">
+        <div className="dashboard-page">
+          <section className="section-card">
+            <div className="section-header">
+              <h1 className="section-title">{viewModel.title}</h1>
+              <p className="section-caption">Loading dashboard data...</p>
+            </div>
+          </section>
+        </div>
       </main>
     );
   }
 
   if (viewModel.status === "error") {
     return (
-      <main>
-        <h1>{viewModel.title}</h1>
-        <p role="alert">Failed to load dashboard data: {viewModel.message}</p>
+      <main className="dashboard-shell">
+        <div className="dashboard-page">
+          <section className="section-card">
+            <div className="section-header">
+              <h1 className="section-title">{viewModel.title}</h1>
+              <p className="notice notice--error" role="alert">
+                Failed to load dashboard data: {viewModel.message}
+              </p>
+            </div>
+          </section>
+        </div>
       </main>
     );
   }
@@ -63,270 +77,408 @@ export default function HomePage({
   const backupBundles = viewModel.operations?.backups.status === "ready" ? viewModel.operations.backups.bundles : [];
 
   return (
-    <main>
-      <h1>{viewModel.title}</h1>
-      <p>Role: {viewModel.role}</p>
-      <p>{viewModel.roleVisibility.scopeDescription}</p>
+    <main className="dashboard-shell">
+      <div className="dashboard-page">
+        <section className="hero-panel">
+          <p className="hero-kicker">Fiber Link service operation admin</p>
+          <h1 className="hero-title">{viewModel.title}</h1>
+          <p className="hero-summary">{viewModel.roleVisibility.scopeDescription}</p>
 
-      {viewModel.roleVisibility.showGlobalControls ? (
-        <section>
-          <h2>Operations overview</h2>
-          <ul>
-            <li>Monitoring: {describeMonitoring(viewModel)}</li>
-            <li>Rate limiting: {describeRateLimiting(viewModel)}</li>
-            <li>Backups: {describeBackups(backupBundles)}</li>
-          </ul>
+          <div className="hero-meta-row">
+            <div className="hero-pill">
+              <p className="hero-pill-label">Role</p>
+              <p className="hero-pill-value">{viewModel.role}</p>
+            </div>
+            <div className="hero-pill">
+              <p className="hero-pill-label">Visible apps</p>
+              <p className="hero-pill-value">{viewModel.apps.length}</p>
+            </div>
+            <div className="hero-pill">
+              <p className="hero-pill-label">Policy surfaces</p>
+              <p className="hero-pill-value">{viewModel.roleVisibility.showGlobalControls ? "Global + app-scoped" : "App-scoped only"}</p>
+            </div>
+          </div>
+
+          {viewModel.roleVisibility.showGlobalControls ? (
+            <div className="hero-stat-grid">
+              <article className="metric-tile">
+                <p className="metric-label">Monitoring</p>
+                <p className="metric-value">{describeMonitoring(viewModel)}</p>
+              </article>
+              <article className="metric-tile">
+                <p className="metric-label">Rate limiting</p>
+                <p className="metric-value">{describeRateLimiting(viewModel)}</p>
+              </article>
+              <article className="metric-tile">
+                <p className="metric-label">Backups</p>
+                <p className="metric-value">{describeBackups(backupBundles)}</p>
+              </article>
+            </div>
+          ) : null}
         </section>
-      ) : null}
 
-      <section>
-        <h2>Status summaries</h2>
-        <ul>
-          {viewModel.statusSummaries.map((summary) => (
-            <li key={summary.state}>
-              {summary.state}: {summary.count}
-            </li>
-          ))}
-        </ul>
-      </section>
-
-      <section>
-        <h2>App list</h2>
-        {viewModel.apps.length === 0 ? (
-          <p>No apps found.</p>
-        ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>App ID</th>
-                <th>Created At</th>
-              </tr>
-            </thead>
-            <tbody>
-              {viewModel.apps.map((app) => (
-                <tr key={app.appId}>
-                  <td>{app.appId}</td>
-                  <td>{formatDate(app.createdAt)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </section>
-
-      <section>
-        <h2>Withdrawals</h2>
-        {viewModel.withdrawals.length === 0 ? (
-          <p>No withdrawals found.</p>
-        ) : (
-          <table>
-            <thead>
-              <tr>
-                {viewModel.withdrawalColumns.map((column) => (
-                  <th key={column}>{toColumnLabel(column)}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {viewModel.withdrawals.map((withdrawal) => (
-                <tr key={withdrawal.id}>
-                  <td>{withdrawal.id}</td>
-                  <td>{withdrawal.appId}</td>
-                  {viewModel.roleVisibility.showUserId ? <td>{withdrawal.userId}</td> : null}
-                  <td>{withdrawal.asset}</td>
-                  <td>{withdrawal.amount}</td>
-                  <td>{withdrawal.state}</td>
-                  <td>{formatDate(withdrawal.createdAt)}</td>
-                  <td>{withdrawal.txHash ?? "N/A"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </section>
-
-      {viewModel.roleVisibility.showGlobalControls ? (
-        <section>
-          <h2>Monitoring</h2>
-          {viewModel.operations?.monitoring.status === "ready" ? (
-            <>
-              <p>
-                Status: {viewModel.operations.monitoring.summary.status} | Generated at{" "}
-                {formatDate(viewModel.operations.monitoring.summary.generatedAt)}
-              </p>
-              <ul>
-                <li>Readiness: {viewModel.operations.monitoring.summary.readinessStatus}</li>
-                <li>Unpaid backlog: {viewModel.operations.monitoring.summary.unpaidBacklog}</li>
-                <li>Retry pending: {viewModel.operations.monitoring.summary.retryPendingCount}</li>
-                <li>
-                  Withdrawal parity issues: {viewModel.operations.monitoring.summary.withdrawalParityIssueCount}
+        <div className="card-grid">
+          {viewModel.roleVisibility.showGlobalControls ? (
+            <section className="section-card">
+              <div className="section-header">
+                <h2 className="section-title">Operations overview</h2>
+                <p className="section-caption">The standalone operation admin should surface monitoring, rate-limit posture, and backup readiness at a glance.</p>
+              </div>
+              <ul className="overview-list">
+                <li className="overview-item">
+                  <p className="overview-label">Monitoring</p>
+                  <p className="overview-value">{describeMonitoring(viewModel)}</p>
                 </li>
-                <li>Alerts: {viewModel.operations.monitoring.summary.alertCount}</li>
+                <li className="overview-item">
+                  <p className="overview-label">Rate limiting</p>
+                  <p className="overview-value">{describeRateLimiting(viewModel)}</p>
+                </li>
+                <li className="overview-item">
+                  <p className="overview-label">Backups</p>
+                  <p className="overview-value">{describeBackups(backupBundles)}</p>
+                </li>
               </ul>
-              {viewModel.operations.monitoring.summary.rawJson ? (
-                <details>
-                  <summary>Raw ops summary JSON</summary>
-                  <pre>{viewModel.operations.monitoring.summary.rawJson}</pre>
-                </details>
-              ) : null}
-            </>
-          ) : (
-            <p role="alert">Monitoring unavailable: {viewModel.operations?.monitoring.message ?? "unknown error"}</p>
-          )}
-        </section>
-      ) : null}
+            </section>
+          ) : null}
 
-      <section>
-        <h2>App policy controls</h2>
-        {policyFlash?.savedAppId ? <p role="status">Policy saved for {policyFlash.savedAppId}</p> : null}
-        {policyFlash?.formError ? <p role="alert">{policyFlash.formError}</p> : null}
-        {buildPolicyCards(viewModel.policies, viewModel.apps.map((app) => app.appId), policyFlash?.draft).map((card) => (
-          <article key={card.appId}>
-            <h3>{card.appId}</h3>
-            <p>
-              Updated by {card.updatedBy ?? "N/A"} at {formatDate(card.updatedAt)}
-            </p>
-            <form method="post" action="/api/withdrawal-policies" data-testid={`policy-form-${card.appId}`}>
-              <input type="hidden" name="appId" value={card.appId} />
-              <fieldset>
-                <legend>Allowed assets</legend>
-                <label>
-                  <input
-                    type="checkbox"
-                    name="allowedAssets"
-                    value="CKB"
-                    defaultChecked={card.values.allowedAssets.includes("CKB")}
-                  />
-                  CKB
-                </label>
-                <label>
-                  <input
-                    type="checkbox"
-                    name="allowedAssets"
-                    value="USDI"
-                    defaultChecked={card.values.allowedAssets.includes("USDI")}
-                  />
-                  USDI
-                </label>
-              </fieldset>
-              <label>
-                Max Per Request
-                <input type="text" name="maxPerRequest" defaultValue={card.values.maxPerRequest} />
-              </label>
-              <label>
-                Per-User Daily Max
-                <input type="text" name="perUserDailyMax" defaultValue={card.values.perUserDailyMax} />
-              </label>
-              <label>
-                Per-App Daily Max
-                <input type="text" name="perAppDailyMax" defaultValue={card.values.perAppDailyMax} />
-              </label>
-              <label>
-                Cooldown Seconds
-                <input type="number" name="cooldownSeconds" min={0} step={1} defaultValue={card.values.cooldownSeconds} />
-              </label>
-              <button type="submit">Save policy</button>
-            </form>
-          </article>
-        ))}
-      </section>
+          <section className="section-card">
+            <div className="section-header">
+              <h2 className="section-title">Status summaries</h2>
+              <p className="section-caption">Current withdrawal pipeline counts for the apps visible to this operator.</p>
+            </div>
+            <ul className="summary-badges">
+              {viewModel.statusSummaries.map((summary) => (
+                <li className="summary-badge" key={summary.state}>
+                  <p className="summary-badge-label">{summary.state}</p>
+                  <p className="summary-badge-value">{summary.count}</p>
+                </li>
+              ))}
+            </ul>
+          </section>
+        </div>
 
-      {viewModel.roleVisibility.showGlobalControls ? (
-        <section>
-          <h2>Global rate limiting</h2>
-          {viewModel.operations?.rateLimit.status === "ready" ? (
-            <p>
-              Current source: {viewModel.operations.rateLimit.config.sourceLabel} | Redis backend:{" "}
-              {viewModel.operations.rateLimit.config.redisUrl ?? "unset"}
-            </p>
-          ) : (
-            <p role="alert">Rate limit configuration unavailable: {viewModel.operations?.rateLimit.message ?? "unknown error"}</p>
-          )}
-          {operationFlash?.rateLimitError ? <p role="alert">{operationFlash.rateLimitError}</p> : null}
-          <form method="post" action="/api/runtime-policies/rate-limit">
-            <label>
-              <input
-                type="checkbox"
-                name="enabled"
-                value="true"
-                defaultChecked={rateLimitFormValues.enabled}
-              />
-              Enable rate limiting
-            </label>
-            <label>
-              Window (ms)
-              <input type="text" name="windowMs" defaultValue={rateLimitFormValues.windowMs} />
-            </label>
-            <label>
-              Max Requests
-              <input type="text" name="maxRequests" defaultValue={rateLimitFormValues.maxRequests} />
-            </label>
-            <button type="submit">Generate rate-limit change set</button>
-          </form>
+        <div className="card-grid">
+          <section className="section-card">
+            <div className="section-header">
+              <h2 className="section-title">App list</h2>
+              <p className="section-caption">Apps in the current operation-admin scope.</p>
+            </div>
+            {viewModel.apps.length === 0 ? (
+              <p className="empty-state">No apps found.</p>
+            ) : (
+              <div className="table-shell">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>App ID</th>
+                      <th>Created At</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {viewModel.apps.map((app) => (
+                      <tr key={app.appId}>
+                        <td>{app.appId}</td>
+                        <td>{formatDate(app.createdAt)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
 
-          {operationFlash?.rateLimitChangeSet ? (
-            <article>
-              <h3>Generated change set</h3>
-              <p>
-                Changed keys:{" "}
-                {operationFlash.rateLimitChangeSet.changedKeys.length > 0
-                  ? operationFlash.rateLimitChangeSet.changedKeys.join(", ")
-                  : "No effective changes"}
+          <section className="section-card">
+            <div className="section-header">
+              <h2 className="section-title">Withdrawals</h2>
+              <p className="section-caption">Recent payout requests and their current state.</p>
+            </div>
+            {viewModel.withdrawals.length === 0 ? (
+              <p className="empty-state">No withdrawals found.</p>
+            ) : (
+              <div className="table-shell">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      {viewModel.withdrawalColumns.map((column) => (
+                        <th key={column}>{toColumnLabel(column)}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {viewModel.withdrawals.map((withdrawal) => (
+                      <tr key={withdrawal.id}>
+                        <td>{withdrawal.id}</td>
+                        <td>{withdrawal.appId}</td>
+                        {viewModel.roleVisibility.showUserId ? <td>{withdrawal.userId}</td> : null}
+                        <td>{withdrawal.asset}</td>
+                        <td>{withdrawal.amount}</td>
+                        <td>{withdrawal.state}</td>
+                        <td>{formatDate(withdrawal.createdAt)}</td>
+                        <td>{withdrawal.txHash ?? "N/A"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        </div>
+
+        {viewModel.roleVisibility.showGlobalControls ? (
+          <section className="section-card">
+            <div className="section-header">
+              <h2 className="section-title">Monitoring</h2>
+              <p className="section-caption">Runtime health and ops-summary details for the Fiber Link deployment surface.</p>
+            </div>
+            {viewModel.operations?.monitoring.status === "ready" ? (
+              <>
+                <ul className="detail-list">
+                  <li className="detail-item">
+                    <p className="detail-label">Status</p>
+                    <p className="detail-value">{viewModel.operations.monitoring.summary.status}</p>
+                  </li>
+                  <li className="detail-item">
+                    <p className="detail-label">Generated at</p>
+                    <p className="detail-value">{formatDate(viewModel.operations.monitoring.summary.generatedAt)}</p>
+                  </li>
+                  <li className="detail-item">
+                    <p className="detail-label">Readiness</p>
+                    <p className="detail-value">{viewModel.operations.monitoring.summary.readinessStatus}</p>
+                  </li>
+                  <li className="detail-item">
+                    <p className="detail-label">Alerts</p>
+                    <p className="detail-value">{viewModel.operations.monitoring.summary.alertCount}</p>
+                  </li>
+                  <li className="detail-item">
+                    <p className="detail-label">Unpaid backlog</p>
+                    <p className="detail-value">{viewModel.operations.monitoring.summary.unpaidBacklog}</p>
+                  </li>
+                  <li className="detail-item">
+                    <p className="detail-label">Retry pending</p>
+                    <p className="detail-value">{viewModel.operations.monitoring.summary.retryPendingCount}</p>
+                  </li>
+                  <li className="detail-item">
+                    <p className="detail-label">Withdrawal parity issues</p>
+                    <p className="detail-value">{viewModel.operations.monitoring.summary.withdrawalParityIssueCount}</p>
+                  </li>
+                </ul>
+                {viewModel.operations.monitoring.summary.rawJson ? (
+                  <details className="raw-json">
+                    <summary>Raw ops summary JSON</summary>
+                    <pre className="code-block">{viewModel.operations.monitoring.summary.rawJson}</pre>
+                  </details>
+                ) : null}
+              </>
+            ) : (
+              <p className="notice notice--error" role="alert">
+                Monitoring unavailable: {viewModel.operations?.monitoring.message ?? "unknown error"}
               </p>
-              <pre>{operationFlash.rateLimitChangeSet.envSnippet}</pre>
-              <h3>Rollback snapshot</h3>
-              <pre>{operationFlash.rateLimitChangeSet.rollbackSnippet}</pre>
-            </article>
-          ) : null}
-        </section>
-      ) : null}
+            )}
+          </section>
+        ) : null}
 
-      {viewModel.roleVisibility.showGlobalControls ? (
-        <section>
-          <h2>Backups</h2>
-          {operationFlash?.backupCapture ? (
-            <p role={operationFlash.backupCapture.status === "error" ? "alert" : "status"}>
-              {operationFlash.backupCapture.message}
+        <section className="section-card">
+          <div className="section-header">
+            <h2 className="section-title">App policy controls</h2>
+            <p className="section-caption">Direct DB-backed withdrawal policy editing inside the standalone operation admin.</p>
+          </div>
+          {policyFlash?.savedAppId ? (
+            <p className="notice notice--status" role="status">
+              Policy saved for {policyFlash.savedAppId}
             </p>
           ) : null}
-          <form method="post" action="/api/backups/capture">
-            <button type="submit">Capture backup</button>
-          </form>
-
-          {backupBundles.length === 0 ? (
-            <p>No backup bundles found.</p>
-          ) : (
-            backupBundles.map((bundle) => (
-              <article key={bundle.id}>
-                <h3>{bundle.id}</h3>
-                <p>
-                  Generated at {bundle.generatedAt} | Status {bundle.overallStatus} | Retention {bundle.retentionDays} days
-                </p>
-                <p>Source: {bundle.archiveFile ?? bundle.backupDir}</p>
-                <form method="post" action="/api/backups/restore-plan">
-                  <input type="hidden" name="backupId" value={bundle.id} />
-                  <button type="submit">Generate restore plan</button>
+          {policyFlash?.formError ? (
+            <p className="notice notice--error" role="alert">
+              {policyFlash.formError}
+            </p>
+          ) : null}
+          <div className="policy-grid">
+            {buildPolicyCards(viewModel.policies, viewModel.apps.map((app) => app.appId), policyFlash?.draft).map((card) => (
+              <article className="policy-card" key={card.appId}>
+                <div className="section-header">
+                  <h3 className="card-title">{card.appId}</h3>
+                  <p className="card-meta">
+                    Updated by {card.updatedBy ?? "N/A"} at {formatDate(card.updatedAt)}
+                  </p>
+                </div>
+                <form className="form-stack" method="post" action="/api/withdrawal-policies" data-testid={`policy-form-${card.appId}`}>
+                  <input type="hidden" name="appId" value={card.appId} />
+                  <fieldset className="checkbox-group">
+                    <legend>Allowed assets</legend>
+                    <div className="checkbox-row">
+                      <label className="checkbox-option">
+                        <input
+                          type="checkbox"
+                          name="allowedAssets"
+                          value="CKB"
+                          defaultChecked={card.values.allowedAssets.includes("CKB")}
+                        />
+                        CKB
+                      </label>
+                      <label className="checkbox-option">
+                        <input
+                          type="checkbox"
+                          name="allowedAssets"
+                          value="USDI"
+                          defaultChecked={card.values.allowedAssets.includes("USDI")}
+                        />
+                        USDI
+                      </label>
+                    </div>
+                  </fieldset>
+                  <div className="field-grid">
+                    <label className="field">
+                      <span className="field-label">Max Per Request</span>
+                      <input type="text" name="maxPerRequest" defaultValue={card.values.maxPerRequest} />
+                    </label>
+                    <label className="field">
+                      <span className="field-label">Per-User Daily Max</span>
+                      <input type="text" name="perUserDailyMax" defaultValue={card.values.perUserDailyMax} />
+                    </label>
+                    <label className="field">
+                      <span className="field-label">Per-App Daily Max</span>
+                      <input type="text" name="perAppDailyMax" defaultValue={card.values.perAppDailyMax} />
+                    </label>
+                    <label className="field">
+                      <span className="field-label">Cooldown Seconds</span>
+                      <input type="number" name="cooldownSeconds" min={0} step={1} defaultValue={card.values.cooldownSeconds} />
+                    </label>
+                  </div>
+                  <div className="button-row">
+                    <button className="primary-button" type="submit">Save policy</button>
+                  </div>
                 </form>
               </article>
-            ))
-          )}
-
-          {operationFlash?.backupRestorePlan ? (
-            <article>
-              <h3>Restore plan</h3>
-              <p>Selected backup: {operationFlash.backupRestorePlan.backupId}</p>
-              <pre>{operationFlash.backupRestorePlan.command}</pre>
-              {(operationFlash.backupRestorePlan.warnings ?? []).length > 0 ? (
-                <ul>
-                  {operationFlash.backupRestorePlan.warnings?.map((warning) => (
-                    <li key={warning}>{warning}</li>
-                  ))}
-                </ul>
-              ) : null}
-            </article>
-          ) : null}
+            ))}
+          </div>
         </section>
-      ) : null}
+
+        {viewModel.roleVisibility.showGlobalControls ? (
+          <section className="section-card">
+            <div className="section-header">
+              <h2 className="section-title">Global rate limiting</h2>
+              <p className="section-caption">Generate a change set for runtime rate-limit controls without hot-editing deployment env files.</p>
+            </div>
+            {viewModel.operations?.rateLimit.status === "ready" ? (
+              <p className="card-meta">
+                Current source: <span className="inline-source">{viewModel.operations.rateLimit.config.sourceLabel}</span> | Redis backend:{" "}
+                {viewModel.operations.rateLimit.config.redisUrl ?? "unset"}
+              </p>
+            ) : (
+              <p className="notice notice--error" role="alert">
+                Rate limit configuration unavailable: {viewModel.operations?.rateLimit.message ?? "unknown error"}
+              </p>
+            )}
+            {operationFlash?.rateLimitError ? (
+              <p className="notice notice--error" role="alert">
+                {operationFlash.rateLimitError}
+              </p>
+            ) : null}
+            <form className="form-stack" method="post" action="/api/runtime-policies/rate-limit">
+              <div className="toggle-row">
+                <label className="toggle-option">
+                  <input
+                    type="checkbox"
+                    name="enabled"
+                    value="true"
+                    defaultChecked={rateLimitFormValues.enabled}
+                  />
+                  Enable rate limiting
+                </label>
+              </div>
+              <div className="field-grid">
+                <label className="field">
+                  <span className="field-label">Window (ms)</span>
+                  <input type="text" name="windowMs" defaultValue={rateLimitFormValues.windowMs} />
+                </label>
+                <label className="field">
+                  <span className="field-label">Max Requests</span>
+                  <input type="text" name="maxRequests" defaultValue={rateLimitFormValues.maxRequests} />
+                </label>
+              </div>
+              <div className="button-row">
+                <button className="primary-button" type="submit">Generate rate-limit change set</button>
+              </div>
+            </form>
+
+            {operationFlash?.rateLimitChangeSet ? (
+              <article className="change-set-card">
+                <h3 className="card-title">Generated change set</h3>
+                <p className="card-meta">
+                  Changed keys:{" "}
+                  {operationFlash.rateLimitChangeSet.changedKeys.length > 0
+                    ? operationFlash.rateLimitChangeSet.changedKeys.join(", ")
+                    : "No effective changes"}
+                </p>
+                <pre className="code-block">{operationFlash.rateLimitChangeSet.envSnippet}</pre>
+                <h3 className="card-title">Rollback snapshot</h3>
+                <pre className="code-block">{operationFlash.rateLimitChangeSet.rollbackSnippet}</pre>
+              </article>
+            ) : null}
+          </section>
+        ) : null}
+
+        {viewModel.roleVisibility.showGlobalControls ? (
+          <section className="section-card">
+            <div className="section-header">
+              <h2 className="section-title">Backups</h2>
+              <p className="section-caption">Capture backup bundles and generate restore plans without triggering destructive restore from the browser.</p>
+            </div>
+            {operationFlash?.backupCapture ? (
+              <p
+                className={`notice ${operationFlash.backupCapture.status === "error" ? "notice--error" : "notice--status"}`}
+                role={operationFlash.backupCapture.status === "error" ? "alert" : "status"}
+              >
+                {operationFlash.backupCapture.message}
+              </p>
+            ) : null}
+            <form className="form-stack" method="post" action="/api/backups/capture">
+              <div className="button-row">
+                <button className="primary-button" type="submit">Capture backup</button>
+              </div>
+            </form>
+
+            {backupBundles.length === 0 ? (
+              <p className="empty-state">No backup bundles found.</p>
+            ) : (
+              <div className="backup-grid">
+                {backupBundles.map((bundle) => (
+                  <article className="backup-card" key={bundle.id}>
+                    <div className="section-header">
+                      <h3 className="card-title">{bundle.id}</h3>
+                      <p className="card-meta">
+                        Generated at {bundle.generatedAt} | Status {bundle.overallStatus} | Retention {bundle.retentionDays} days
+                      </p>
+                    </div>
+                    <p className="card-meta">Source: {bundle.archiveFile ?? bundle.backupDir}</p>
+                    <form className="form-stack" method="post" action="/api/backups/restore-plan">
+                      <input type="hidden" name="backupId" value={bundle.id} />
+                      <div className="button-row">
+                        <button className="primary-button" type="submit">Generate restore plan</button>
+                      </div>
+                    </form>
+                  </article>
+                ))}
+              </div>
+            )}
+
+            {operationFlash?.backupRestorePlan ? (
+              <article className="restore-plan-card">
+                <h3 className="card-title">Restore plan</h3>
+                <p className="card-meta">Selected backup: {operationFlash.backupRestorePlan.backupId}</p>
+                <pre className="code-block">{operationFlash.backupRestorePlan.command}</pre>
+                {(operationFlash.backupRestorePlan.warnings ?? []).length > 0 ? (
+                  <ul className="restore-warnings">
+                    {operationFlash.backupRestorePlan.warnings?.map((warning) => (
+                      <li key={warning}>{warning}</li>
+                    ))}
+                  </ul>
+                ) : null}
+              </article>
+            ) : null}
+          </section>
+        ) : null}
+      </div>
     </main>
   );
 }
