@@ -18,5 +18,8 @@ describe("admin style entrypoint", () => {
     expect(appShellSource).toContain('import "../styles/globals.css";');
     expect(globalsCssSource).toContain(".dashboard-shell");
     expect(globalsCssSource).toContain(".hero-panel");
+    expect(globalsCssSource).toContain('"Newsreader"');
+    expect(globalsCssSource).toContain('"Manrope"');
+    expect(globalsCssSource).toContain("#f9f9f9");
   });
 });
