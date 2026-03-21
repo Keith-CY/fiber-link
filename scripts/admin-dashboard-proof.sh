@@ -13,7 +13,7 @@ BASE_URL="http://${HOST}:${PORT}"
 FIXTURE_PATH="${ADMIN_DASHBOARD_FIXTURE_PATH:-${APP_DIR}/fixtures/dashboard-proof.json}"
 USE_FIXTURE="${ADMIN_DASHBOARD_USE_FIXTURE:-1}"
 SESSION="${ADMIN_DASHBOARD_SESSION:-admin-dashboard-proof}"
-READY_COMMAND="${ADMIN_DASHBOARD_READY_COMMAND:-curl -fsS ${BASE_URL} | rg -q 'Operations overview'}"
+READY_COMMAND="${ADMIN_DASHBOARD_READY_COMMAND:-curl -fsS ${BASE_URL} | grep -q 'Operations overview'}"
 APP_ID="${ADMIN_DASHBOARD_APP_ID:-app-beta}"
 
 [[ -f "${RUN_CODE_FILE}" ]] || {

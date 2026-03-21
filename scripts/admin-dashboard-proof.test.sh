@@ -53,3 +53,27 @@ fi
 grep -q "\"baseUrl\":\"http://${HOST}:${PORT}\"" "${CAPTURE_DIR}/admin-dashboard-proof.run-code.js"
 grep -q "\"appId\":\"e2e-app-123\"" "${CAPTURE_DIR}/admin-dashboard-proof.run-code.js"
 grep -q "\"artifactDir\":\"${ARTIFACT_DIR}\"" "${CAPTURE_DIR}/admin-dashboard-proof.run-code.js"
+
+READY_BIN_DIR="$(mktemp -d)"
+trap '[[ -n "${SERVER_PID}" ]] && kill "${SERVER_PID}" >/dev/null 2>&1 || true; rm -rf "${CAPTURE_DIR}" "${ARTIFACT_DIR}" "${ENV_CAPTURE}" "${READY_BIN_DIR}"' EXIT
+
+cat > "${READY_BIN_DIR}/curl" <<'EOF_CURL'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'Operations overview\n'
+EOF_CURL
+chmod +x "${READY_BIN_DIR}/curl"
+
+DEFAULT_READY_ENV_CAPTURE="$(mktemp)"
+trap '[[ -n "${SERVER_PID}" ]] && kill "${SERVER_PID}" >/dev/null 2>&1 || true; rm -rf "${CAPTURE_DIR}" "${ARTIFACT_DIR}" "${ENV_CAPTURE}" "${READY_BIN_DIR}" "${DEFAULT_READY_ENV_CAPTURE}"' EXIT
+
+PATH="${READY_BIN_DIR}:/usr/bin:/bin" \
+ADMIN_DASHBOARD_START_COMMAND="${FAKE_START_SCRIPT}" \
+ADMIN_DASHBOARD_ENV_CAPTURE="${DEFAULT_READY_ENV_CAPTURE}" \
+ADMIN_DASHBOARD_PORT="${PORT}" \
+ADMIN_DASHBOARD_HOST="${HOST}" \
+ADMIN_DASHBOARD_ARTIFACT_DIR="${ARTIFACT_DIR}" \
+ADMIN_DASHBOARD_FIXTURE_PATH="${ROOT_DIR}/fiber-link-service/apps/admin/fixtures/dashboard-proof.json" \
+RUN_PLAYWRIGHT_SESSION_SCRIPT="${FAKE_RUNNER}" \
+PW_TEST_CAPTURE_DIR="${CAPTURE_DIR}" \
+  "${ROOT_DIR}/scripts/admin-dashboard-proof.sh"
