@@ -33,3 +33,8 @@ grep -q "Step 1. Forum shows Fiber Link tip entry points" "${OUTPUT_FILE}"
 grep -q "Step 6. Author withdrawal completes with admin and explorer proof" "${OUTPUT_FILE}"
 grep -q "https://raw.githubusercontent.com/Keith-CY/fiber-link/visual-acceptance/pr-1/screenshots/step4-tipper-dashboard.png" "${OUTPUT_FILE}"
 grep -q "https://github.com/Keith-CY/fiber-link/actions/runs/12345" "${OUTPUT_FILE}"
+grep -q "Explorer browser screenshot omitted; use the Explorer proof link above for manual verification." "${OUTPUT_FILE}"
+if grep -q "step6-explorer-tx.png" "${OUTPUT_FILE}"; then
+  echo "explorer screenshot should not be embedded in the PR comment" >&2
+  exit 1
+fi

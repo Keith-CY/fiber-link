@@ -74,15 +74,25 @@ for (const [key, fallbackTitle] of orderedSteps) {
   }
   lines.push("");
 
+  let explorerScreenshotSkipped = false;
   for (const screenshot of Array.isArray(step.screenshots) ? step.screenshots : []) {
+    const label = path.basename(screenshot, path.extname(screenshot));
+    if (step.explorerUrl && /explorer/i.test(label)) {
+      explorerScreenshotSkipped = true;
+      continue;
+    }
     if (screenshotsDir) {
       const screenshotFile = path.join(screenshotsDir, screenshot.replace(/^screenshots\//, ""));
       if (!fs.existsSync(screenshotFile)) {
         throw new Error(`missing screenshot file referenced by summary: ${screenshotFile}`);
       }
     }
-    const label = path.basename(screenshot, path.extname(screenshot));
     lines.push(`![${label}](${baseUrl}/${screenshot})`);
+    lines.push("");
+  }
+
+  if (explorerScreenshotSkipped) {
+    lines.push("Explorer browser screenshot omitted; use the Explorer proof link above for manual verification.");
     lines.push("");
   }
 }
