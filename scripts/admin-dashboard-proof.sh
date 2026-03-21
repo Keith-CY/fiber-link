@@ -11,17 +11,21 @@ HOST="${ADMIN_DASHBOARD_HOST:-127.0.0.1}"
 PORT="${ADMIN_DASHBOARD_PORT:-4318}"
 BASE_URL="http://${HOST}:${PORT}"
 FIXTURE_PATH="${ADMIN_DASHBOARD_FIXTURE_PATH:-${APP_DIR}/fixtures/dashboard-proof.json}"
+USE_FIXTURE="${ADMIN_DASHBOARD_USE_FIXTURE:-1}"
 SESSION="${ADMIN_DASHBOARD_SESSION:-admin-dashboard-proof}"
 READY_COMMAND="${ADMIN_DASHBOARD_READY_COMMAND:-curl -fsS ${BASE_URL} | rg -q 'Operations overview'}"
+APP_ID="${ADMIN_DASHBOARD_APP_ID:-app-beta}"
 
 [[ -f "${RUN_CODE_FILE}" ]] || {
   echo "[admin-dashboard-proof] missing run-code file: ${RUN_CODE_FILE}" >&2
   exit 2
 }
-[[ -f "${FIXTURE_PATH}" ]] || {
-  echo "[admin-dashboard-proof] missing fixture file: ${FIXTURE_PATH}" >&2
-  exit 2
-}
+if [[ "${USE_FIXTURE}" == "1" ]]; then
+  [[ -f "${FIXTURE_PATH}" ]] || {
+    echo "[admin-dashboard-proof] missing fixture file: ${FIXTURE_PATH}" >&2
+    exit 2
+  }
+fi
 [[ -x "${RUN_PLAYWRIGHT_SESSION_SCRIPT}" ]] || {
   echo "[admin-dashboard-proof] missing playwright session runner: ${RUN_PLAYWRIGHT_SESSION_SCRIPT}" >&2
   exit 2
@@ -42,10 +46,16 @@ cleanup() {
 }
 trap cleanup EXIT
 
-ADMIN_DASHBOARD_DEFAULT_ROLE=SUPER_ADMIN \
-ADMIN_DASHBOARD_DEFAULT_ADMIN_USER_ID=proof-admin \
-ADMIN_DASHBOARD_FIXTURE_PATH="${FIXTURE_PATH}" \
-  bash -c "${START_COMMAND}" > "${SERVER_LOG}" 2>&1 &
+if [[ "${USE_FIXTURE}" == "1" ]]; then
+  ADMIN_DASHBOARD_DEFAULT_ROLE=SUPER_ADMIN \
+  ADMIN_DASHBOARD_DEFAULT_ADMIN_USER_ID=proof-admin \
+  ADMIN_DASHBOARD_FIXTURE_PATH="${FIXTURE_PATH}" \
+    bash -c "${START_COMMAND}" > "${SERVER_LOG}" 2>&1 &
+else
+  ADMIN_DASHBOARD_DEFAULT_ROLE=SUPER_ADMIN \
+  ADMIN_DASHBOARD_DEFAULT_ADMIN_USER_ID=proof-admin \
+    bash -c "${START_COMMAND}" > "${SERVER_LOG}" 2>&1 &
+fi
 SERVER_PID=$!
 
 for _attempt in $(seq 1 40); do
@@ -64,7 +74,7 @@ proof_env_json="$(
   jq -cn \
     --arg baseUrl "${BASE_URL}" \
     --arg artifactDir "${ARTIFACT_DIR}" \
-    --arg appId "app-beta" \
+    --arg appId "${APP_ID}" \
     --arg maxPerRequest "1500" \
     --arg perUserDailyMax "4500" \
     --arg perAppDailyMax "25000" \

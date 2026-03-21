@@ -22,7 +22,10 @@ jobs:
         with:
           fetch-depth: 1
       - name: Check compose docs and backup scripts
-        run: ./deploy/compose/compose-reference.test.sh
+        run: |
+          ./deploy/compose/compose-reference.test.sh
+          ./deploy/compose/compose-backup.test.sh
+          ./deploy/compose/compose-ops-runtime-env.test.sh
       - name: Check visual acceptance scripts
         run: |
           ./scripts/admin-dashboard-proof.test.sh

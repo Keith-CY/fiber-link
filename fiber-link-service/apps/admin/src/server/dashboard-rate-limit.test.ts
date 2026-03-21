@@ -40,6 +40,29 @@ describe("dashboard rate limit", () => {
     });
   });
 
+  it("prefers COMPOSE_ENV_FILE from process env when no explicit envFilePath is provided", () => {
+    const dir = mkdtempSync(join(tmpdir(), "fiber-link-rate-limit-runtime-"));
+    tempDirs.push(dir);
+    const envPath = join(dir, "compose.env");
+    writeFileSync(
+      envPath,
+      [
+        "RPC_RATE_LIMIT_ENABLED=true",
+        "RPC_RATE_LIMIT_WINDOW_MS=120000",
+        "RPC_RATE_LIMIT_MAX_REQUESTS=777",
+        "FIBER_LINK_RATE_LIMIT_REDIS_URL=redis://redis:6379/7",
+      ].join("\n"),
+    );
+
+    expect(loadDashboardRateLimitConfig({ env: { COMPOSE_ENV_FILE: envPath } as NodeJS.ProcessEnv })).toEqual({
+      enabled: true,
+      windowMs: "120000",
+      maxRequests: "777",
+      redisUrl: "redis://redis:6379/7",
+      sourceLabel: "deploy/compose/.env",
+    });
+  });
+
   it("builds env and rollback snippets from changed keys", () => {
     const changeSet = buildDashboardRateLimitChangeSet(
       {

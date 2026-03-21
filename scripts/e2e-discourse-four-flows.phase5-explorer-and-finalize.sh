@@ -80,10 +80,12 @@ persist_state_env
 
 attempt_postcheck_dir="${POSTCHECK_DIR}"
 attempt_explorer_dir="${EXPLORER_DIR}"
+attempt_admin_dir="${RUN_DIR}/admin-proof"
 if [[ "${ATTEMPT_LABEL}" != "primary" ]]; then
   attempt_postcheck_dir="${RUN_DIR}/postcheck-${ATTEMPT_LABEL}"
   attempt_explorer_dir="${RUN_DIR}/explorer-${ATTEMPT_LABEL}"
-  mkdir -p "${attempt_postcheck_dir}" "${attempt_explorer_dir}"
+  attempt_admin_dir="${RUN_DIR}/admin-proof-${ATTEMPT_LABEL}"
+  mkdir -p "${attempt_postcheck_dir}" "${attempt_explorer_dir}" "${attempt_admin_dir}"
 fi
 attempt_prefix="withdrawal-${ATTEMPT_LABEL}"
 
@@ -122,6 +124,44 @@ EXPLORER_RESULT_JSON="$(extract_result_json "${attempt_explorer_dir}/playwright-
 
 printf '%s\n' "${EXPLORER_RESULT_JSON}" > "${ARTIFACTS_DIR}/${attempt_prefix}.explorer.json"
 
+admin_result_json=""
+admin_monitoring_ok=false
+admin_rate_limit_ok=false
+admin_backups_ok=false
+admin_policy_ok=false
+
+if [[ "${ATTEMPT_LABEL}" == "primary" ]]; then
+  admin_postgres_user="$(get_env_value POSTGRES_USER)"
+  admin_postgres_user="${admin_postgres_user:-fiber}"
+  admin_postgres_db="$(get_env_value POSTGRES_DB)"
+  admin_postgres_db="${admin_postgres_db:-fiber_link}"
+  admin_postgres_password="$(get_env_value POSTGRES_PASSWORD)"
+  [[ -n "${admin_postgres_password}" ]] || fatal "${EXIT_ARTIFACT}" "phase5 requires POSTGRES_PASSWORD in ${COMPOSE_ENV_FILE}"
+  admin_postgres_port="$(get_env_value POSTGRES_PORT)"
+  admin_postgres_port="${admin_postgres_port:-5432}"
+  admin_database_url="postgresql://${admin_postgres_user}:${admin_postgres_password}@${HOST_ACCESS_HOST}:${admin_postgres_port}/${admin_postgres_db}"
+
+  admin_cmd=(
+    env
+    "DATABASE_URL=${admin_database_url}"
+    "COMPOSE_ENV_FILE=${COMPOSE_ENV_FILE}"
+    "ENV_FILE=${COMPOSE_ENV_FILE}"
+    "ADMIN_DASHBOARD_USE_FIXTURE=0"
+    "ADMIN_DASHBOARD_HOST=${HOST_ACCESS_HOST}"
+    "ADMIN_DASHBOARD_PORT=4318"
+    "ADMIN_DASHBOARD_APP_ID=${APP_ID}"
+    "ADMIN_DASHBOARD_ARTIFACT_DIR=${attempt_admin_dir}"
+    scripts/admin-dashboard-proof.sh
+  )
+  record_cmd "${admin_cmd[*]}"
+  (cd "${ROOT_DIR}" && "${admin_cmd[@]}") > "${LOGS_DIR}/admin-proof.${ATTEMPT_LABEL}.log" 2>&1 \
+    || fatal "${EXIT_ARTIFACT}" "failed to capture standalone admin proof"
+
+  admin_result_json="$(extract_result_json "${attempt_admin_dir}/admin-dashboard-proof-result.log" || true)"
+  [[ -n "${admin_result_json}" ]] || fatal "${EXIT_ARTIFACT}" "missing admin proof result payload"
+  printf '%s\n' "${admin_result_json}" > "${ARTIFACTS_DIR}/admin-proof.${ATTEMPT_LABEL}.json"
+fi
+
 if [[ "${ATTEMPT_LABEL}" != "primary" ]]; then
   copy_or_fail "${attempt_postcheck_dir}/playwright-step5-author-dashboard.png" "${SCREENSHOT_DIR}/flow4-author-balance-history-${ATTEMPT_LABEL}.png"
   copy_or_fail "${attempt_postcheck_dir}/playwright-step7-admin-withdrawal.png" "${SCREENSHOT_DIR}/flow4-admin-withdrawal-${ATTEMPT_LABEL}.png"
@@ -150,6 +190,16 @@ copy_or_fail_many \
   "${attempt_explorer_dir}/playwright-flow4-explorer-withdrawal-tx.png" \
   "${SCREENSHOT_DIR}/flow4-explorer-withdrawal-tx.png" \
   "${SCREENSHOT_DIR}/step6-explorer-tx.png"
+copy_or_fail "${attempt_admin_dir}/01-operations-overview.png" "${SCREENSHOT_DIR}/step7-admin-monitoring.png"
+copy_or_fail "${attempt_admin_dir}/02-rate-limit-change-set.png" "${SCREENSHOT_DIR}/step8-admin-rate-limit.png"
+copy_or_fail "${attempt_admin_dir}/03-backup-captured.png" "${SCREENSHOT_DIR}/step9-admin-backup-captured.png"
+copy_or_fail "${attempt_admin_dir}/04-restore-plan.png" "${SCREENSHOT_DIR}/step9-admin-restore-plan.png"
+copy_or_fail "${attempt_admin_dir}/05-policy-saved.png" "${SCREENSHOT_DIR}/step10-admin-policy-saved.png"
+
+admin_monitoring_ok=true
+admin_rate_limit_ok=true
+admin_backups_ok=true
+admin_policy_ok=true
 
 flow2_tip_create_req="$(json_or_null "${PHASE2_DIR}/tips/topic-post/tip-create.request.json")"
 flow2_tip_create_resp="$(json_or_null "${PHASE2_DIR}/tips/topic-post/tip-create.response.json")"
@@ -267,6 +317,7 @@ jq -n \
   --arg authorBalance "${AUTHOR_BALANCE}" \
   --arg authorTipHistoryCount "${AUTHOR_TIP_HISTORY_COUNT}" \
   --arg explorerUrl "$(printf '%s' "${EXPLORER_RESULT_JSON}" | jq -r '.explorerUrl // empty')" \
+  --arg adminPageUrl "$(printf '%s' "${admin_result_json}" | jq -r '.pageUrl // empty')" \
   --argjson forumEntryOk "${forum_entry_ok}" \
   --argjson topicThreadOk "${topic_thread_ok}" \
   --argjson tipFlowOk "${tip_flow_ok}" \
@@ -277,6 +328,10 @@ jq -n \
   --argjson flow3PollingOk "${flow3_poll_ok}" \
   --argjson authorDashboardOk "${author_dashboard_ok}" \
   --argjson flow4Ok "${flow4_ok}" \
+  --argjson adminMonitoringOk "${admin_monitoring_ok}" \
+  --argjson adminRateLimitingOk "${admin_rate_limit_ok}" \
+  --argjson adminBackupsOk "${admin_backups_ok}" \
+  --argjson adminPolicyOk "${admin_policy_ok}" \
   '{
     artifactDir: $artifactDir,
     appId: $appId,
@@ -321,6 +376,18 @@ jq -n \
           authorBalanceHistory: "screenshots/flow4-author-balance-history.png",
           adminWithdrawal: "screenshots/flow4-admin-withdrawal.png",
           explorerTx: "screenshots/flow4-explorer-withdrawal-tx.png"
+        }
+      },
+      operationAdmin: {
+        ok: ($adminMonitoringOk and $adminRateLimitingOk and $adminBackupsOk and $adminPolicyOk),
+        appId: $appId,
+        pageUrl: $adminPageUrl,
+        screenshots: {
+          monitoring: "screenshots/step7-admin-monitoring.png",
+          rateLimiting: "screenshots/step8-admin-rate-limit.png",
+          backupCaptured: "screenshots/step9-admin-backup-captured.png",
+          restorePlan: "screenshots/step9-admin-restore-plan.png",
+          policySaved: "screenshots/step10-admin-policy-saved.png"
         }
       }
     },
@@ -370,6 +437,29 @@ jq -n \
             "screenshots/step6-admin-withdrawal.png",
             "screenshots/step6-explorer-tx.png"
           ]
+        },
+        adminMonitoring: {
+          label: "Step 7. Operation admin shows monitoring overview",
+          ok: $adminMonitoringOk,
+          screenshots: ["screenshots/step7-admin-monitoring.png"]
+        },
+        adminRateLimiting: {
+          label: "Step 8. Operation admin generates rate-limit change set",
+          ok: $adminRateLimitingOk,
+          screenshots: ["screenshots/step8-admin-rate-limit.png"]
+        },
+        adminBackups: {
+          label: "Step 9. Operation admin captures backup and prepares restore plan",
+          ok: $adminBackupsOk,
+          screenshots: [
+            "screenshots/step9-admin-backup-captured.png",
+            "screenshots/step9-admin-restore-plan.png"
+          ]
+        },
+        adminPolicyControls: {
+          label: "Step 10. Operation admin updates app policy controls",
+          ok: $adminPolicyOk,
+          screenshots: ["screenshots/step10-admin-policy-saved.png"]
         }
       }
     }
@@ -378,7 +468,7 @@ jq -n \
 persist_state_env
 
 overall_ok=false
-if [[ "${flow1_ok}" == "true" && "${flow2_ok}" == "true" && "${flow3_sub_ok}" == "true" && "${flow3_poll_ok}" == "true" && "${flow4_ok}" == "true" ]]; then
+if [[ "${flow1_ok}" == "true" && "${flow2_ok}" == "true" && "${flow3_sub_ok}" == "true" && "${flow3_poll_ok}" == "true" && "${flow4_ok}" == "true" && "${admin_monitoring_ok}" == "true" && "${admin_rate_limit_ok}" == "true" && "${admin_backups_ok}" == "true" && "${admin_policy_ok}" == "true" ]]; then
   overall_ok=true
 fi
 

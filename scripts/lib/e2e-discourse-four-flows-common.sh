@@ -135,6 +135,11 @@ write_checklist() {
 - [ ] screenshots/step6-author-withdrawal.png
 - [ ] screenshots/step6-admin-withdrawal.png
 - [ ] screenshots/step6-explorer-tx.png
+- [ ] screenshots/step7-admin-monitoring.png
+- [ ] screenshots/step8-admin-rate-limit.png
+- [ ] screenshots/step9-admin-backup-captured.png
+- [ ] screenshots/step9-admin-restore-plan.png
+- [ ] screenshots/step10-admin-policy-saved.png
 
 ## Required Evidence
 - [ ] artifacts/flow2-rpc-calls.json

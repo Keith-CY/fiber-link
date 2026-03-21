@@ -120,6 +120,38 @@ run_restore_dry_run() {
   assert_file_contains "${backup_dir}/restore/step-results.tsv" "DRY_RUN"
 }
 
+run_backup_dry_run_with_env_override() {
+  local fake_bin="${TMP_DIR}/fake-bin-env-override"
+  local output_root="${TMP_DIR}/backup-output-env-override"
+  local custom_env_file="${TMP_DIR}/runtime-compose.env"
+  local output
+  local backup_dir
+
+  cat > "${custom_env_file}" <<'EOF_ENV'
+POSTGRES_USER=fiber
+POSTGRES_DB=fiber_link
+POSTGRES_PASSWORD=test-password
+BACKUP_RETENTION_DAYS=12
+EOF_ENV
+
+  export FAKE_DOCKER_LOG="${TMP_DIR}/fake-docker-env-override.log"
+  make_fake_docker "${fake_bin}"
+
+  output="$(
+    PATH="${fake_bin}:${PATH}" \
+    ENV_FILE="${custom_env_file}" \
+    "${BACKUP_SCRIPT}" \
+    --dry-run \
+    --output-root "${output_root}"
+  )"
+
+  assert_contains "${output}" "RESULT=PASS CODE=0"
+  backup_dir="$(printf '%s\n' "${output}" | sed -n 's/.*BACKUP_DIR=\([^ ]*\).*/\1/p')"
+  [[ -n "${backup_dir}" ]] || fail "failed to parse BACKUP_DIR from env override output"
+  grep -Fq -- "--env-file \"${custom_env_file}\"" "${backup_dir}/commands/command-index.log" \
+    || fail "expected ${backup_dir}/commands/command-index.log to contain '--env-file \"${custom_env_file}\"'"
+}
+
 assert_repo_wiring() {
   [[ -f "${BACKUP_RUNBOOK_FILE}" ]] || fail "missing backup runbook"
   [[ -x "${BACKUP_SCRIPT}" ]] || fail "backup script is not executable"
@@ -136,5 +168,6 @@ run_help_checks
 assert_repo_wiring
 run_backup_dry_run
 run_restore_dry_run
+run_backup_dry_run_with_env_override
 
 printf 'compose-backup checks passed\n'

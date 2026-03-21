@@ -44,6 +44,10 @@ const orderedSteps = [
   ["tipperDashboard", "Tipper dashboard"],
   ["authorDashboard", "Author dashboard"],
   ["withdrawalCompletion", "Withdrawal completion"],
+  ["adminMonitoring", "Operation admin monitoring"],
+  ["adminRateLimiting", "Operation admin rate limiting"],
+  ["adminBackups", "Operation admin backups"],
+  ["adminPolicyControls", "Operation admin policy controls"],
 ];
 
 const baseUrl = options["screenshots-base-url"].replace(/\/+$/, "");

@@ -70,11 +70,26 @@ function parseEnvFile(filePath: string): Record<string, string> {
   return parsed;
 }
 
+function resolveRuntimeComposeEnvPath(env: NodeJS.ProcessEnv): string | undefined {
+  const candidates = [env.COMPOSE_ENV_FILE, env.ENV_FILE];
+  for (const candidate of candidates) {
+    const normalized = candidate?.trim();
+    if (normalized) {
+      return normalized;
+    }
+  }
+  return undefined;
+}
+
 export function resolveAdminRepoRoot(cwd: string = process.cwd()): string {
   return resolve(cwd, "../../..");
 }
 
-export function resolveComposeEnvPath(repoRoot: string = resolveAdminRepoRoot()): string {
+export function resolveComposeEnvPath(repoRoot: string = resolveAdminRepoRoot(), env: NodeJS.ProcessEnv = process.env): string {
+  const runtimeEnvPath = resolveRuntimeComposeEnvPath(env);
+  if (runtimeEnvPath) {
+    return runtimeEnvPath;
+  }
   return resolve(repoRoot, "deploy/compose/.env");
 }
 
@@ -83,7 +98,7 @@ export function loadDashboardRateLimitConfig(input: {
   envFilePath?: string;
 } = {}): DashboardRateLimitConfig {
   const env = input.env ?? process.env;
-  const envFilePath = input.envFilePath ?? resolveComposeEnvPath();
+  const envFilePath = input.envFilePath ?? resolveComposeEnvPath(resolveAdminRepoRoot(), env);
   const envFileValues = existsSync(envFilePath) ? parseEnvFile(envFilePath) : undefined;
 
   const enabled = parseBoolean(envFileValues?.RPC_RATE_LIMIT_ENABLED ?? env.RPC_RATE_LIMIT_ENABLED, true);

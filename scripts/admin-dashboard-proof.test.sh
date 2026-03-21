@@ -38,14 +38,18 @@ ADMIN_DASHBOARD_PORT="${PORT}" \
 ADMIN_DASHBOARD_HOST="${HOST}" \
 ADMIN_DASHBOARD_READY_COMMAND="true" \
 ADMIN_DASHBOARD_ARTIFACT_DIR="${ARTIFACT_DIR}" \
-ADMIN_DASHBOARD_FIXTURE_PATH="${ROOT_DIR}/fiber-link-service/apps/admin/fixtures/dashboard-proof.json" \
+ADMIN_DASHBOARD_USE_FIXTURE="0" \
+ADMIN_DASHBOARD_APP_ID="e2e-app-123" \
 RUN_PLAYWRIGHT_SESSION_SCRIPT="${FAKE_RUNNER}" \
 PW_TEST_CAPTURE_DIR="${CAPTURE_DIR}" \
   "${ROOT_DIR}/scripts/admin-dashboard-proof.sh"
 
 grep -q "ADMIN_DASHBOARD_DEFAULT_ROLE=SUPER_ADMIN" "${ENV_CAPTURE}"
 grep -q "ADMIN_DASHBOARD_DEFAULT_ADMIN_USER_ID=proof-admin" "${ENV_CAPTURE}"
-grep -q "ADMIN_DASHBOARD_FIXTURE_PATH=${ROOT_DIR}/fiber-link-service/apps/admin/fixtures/dashboard-proof.json" "${ENV_CAPTURE}"
+if grep -q "ADMIN_DASHBOARD_FIXTURE_PATH=" "${ENV_CAPTURE}"; then
+  echo "fixture path should not be exported when ADMIN_DASHBOARD_USE_FIXTURE=0" >&2
+  exit 1
+fi
 grep -q "\"baseUrl\":\"http://${HOST}:${PORT}\"" "${CAPTURE_DIR}/admin-dashboard-proof.run-code.js"
-grep -q "\"appId\":\"app-beta\"" "${CAPTURE_DIR}/admin-dashboard-proof.run-code.js"
+grep -q "\"appId\":\"e2e-app-123\"" "${CAPTURE_DIR}/admin-dashboard-proof.run-code.js"
 grep -q "\"artifactDir\":\"${ARTIFACT_DIR}\"" "${CAPTURE_DIR}/admin-dashboard-proof.run-code.js"
