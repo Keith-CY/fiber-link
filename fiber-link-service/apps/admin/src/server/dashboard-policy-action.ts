@@ -80,6 +80,9 @@ export async function handleDashboardPolicyAction(
     if (!role) {
       throw new Error("Missing or invalid x-admin-role header");
     }
+    if (!adminUserId) {
+      throw new Error("Missing x-admin-user-id header");
+    }
 
     const input = parseWithdrawalPolicyInput(request.body);
     await deps.upsertPolicy({

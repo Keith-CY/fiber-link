@@ -193,4 +193,58 @@ describe("dashboard page", () => {
     expect(html).not.toContain("Capture backup");
     expect(html).not.toContain("Operations overview");
   });
+
+  it("surfaces backup integration failures instead of rendering an empty state", () => {
+    const AnyHomePage = HomePage as React.ComponentType<any>;
+    const html = renderToStaticMarkup(
+      <AnyHomePage
+        initialState={{
+          status: "ready",
+          role: "SUPER_ADMIN",
+          apps: [{ appId: "app-beta", createdAt: "2026-03-18T00:00:00.000Z" }],
+          withdrawals: [],
+          statusSummaries: [
+            { state: "LIQUIDITY_PENDING", count: 0 },
+            { state: "PENDING", count: 0 },
+            { state: "PROCESSING", count: 0 },
+            { state: "RETRY_PENDING", count: 0 },
+            { state: "COMPLETED", count: 0 },
+            { state: "FAILED", count: 0 },
+          ],
+          policies: [],
+          operations: {
+            monitoring: {
+              status: "ready",
+              summary: {
+                status: "ok",
+                generatedAt: "2026-03-21T08:00:00.000Z",
+                readinessStatus: "ready",
+                unpaidBacklog: 0,
+                retryPendingCount: 0,
+                withdrawalParityIssueCount: 0,
+                alertCount: 0,
+              },
+            },
+            rateLimit: {
+              status: "ready",
+              config: {
+                enabled: true,
+                windowMs: "60000",
+                maxRequests: "300",
+                redisUrl: "redis://redis:6379/1",
+                sourceLabel: "deploy/compose/.env",
+              },
+            },
+            backups: {
+              status: "error",
+              message: "backup manifest unavailable",
+            },
+          },
+        }}
+      />,
+    );
+
+    expect(html).toContain("Backups unavailable: backup manifest unavailable");
+    expect(html).not.toContain("No backup bundles found.");
+  });
 });

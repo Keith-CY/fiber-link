@@ -111,7 +111,7 @@ export default function HomePage({
               </article>
               <article className="metric-tile">
                 <p className="metric-label">Backups</p>
-                <p className="metric-value">{describeBackups(backupBundles)}</p>
+                <p className="metric-value">{describeBackups(viewModel)}</p>
               </article>
             </div>
           ) : null}
@@ -135,7 +135,7 @@ export default function HomePage({
                 </li>
                 <li className="overview-item">
                   <p className="overview-label">Backups</p>
-                  <p className="overview-value">{describeBackups(backupBundles)}</p>
+                  <p className="overview-value">{describeBackups(viewModel)}</p>
                 </li>
               </ul>
             </section>
@@ -438,7 +438,11 @@ export default function HomePage({
               </div>
             </form>
 
-            {backupBundles.length === 0 ? (
+            {viewModel.operations?.backups.status === "error" ? (
+              <p className="notice notice--error" role="alert">
+                Backups unavailable: {viewModel.operations.backups.message}
+              </p>
+            ) : backupBundles.length === 0 ? (
               <p className="empty-state">No backup bundles found.</p>
             ) : (
               <div className="backup-grid">
@@ -609,7 +613,15 @@ function describeRateLimiting(viewModel: ReturnType<typeof buildDashboardViewMod
     : "Disabled";
 }
 
-function describeBackups(bundles: DashboardBackupBundle[]): string {
+function describeBackups(viewModel: ReturnType<typeof buildDashboardViewModel>): string {
+  if (viewModel.status !== "ready" || !viewModel.operations) {
+    return "Unavailable";
+  }
+  if (viewModel.operations.backups.status !== "ready") {
+    return "Unavailable";
+  }
+
+  const bundles = viewModel.operations.backups.bundles as DashboardBackupBundle[];
   if (bundles.length === 0) {
     return "No bundles";
   }

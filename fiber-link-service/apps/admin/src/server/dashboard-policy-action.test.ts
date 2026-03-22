@@ -141,4 +141,29 @@ describe("dashboard policy action", () => {
     expect(result.location).toContain("draftAllowedAssets=USDI");
     expect(result.location).toContain("draftAppId=app-beta");
   });
+
+  it("requires an admin user id before persisting a policy update", async () => {
+    const result = await handleDashboardPolicyAction(
+      {
+        roleHeader: "SUPER_ADMIN",
+        body: {
+          appId: "app-beta",
+          allowedAssets: ["USDI"],
+          maxPerRequest: "1500",
+          perUserDailyMax: "4500",
+          perAppDailyMax: "25000",
+          cooldownSeconds: "45",
+        },
+      },
+      {
+        createDb: () => ({} as never),
+        upsertPolicy: async () => {
+          throw new Error("should not be called");
+        },
+      },
+    );
+
+    expect(result.statusCode).toBe(303);
+    expect(result.location).toContain("formError=Missing+x-admin-user-id+header");
+  });
 });
