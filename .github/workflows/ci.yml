@@ -22,9 +22,13 @@ jobs:
         with:
           fetch-depth: 1
       - name: Check compose docs and backup scripts
-        run: ./deploy/compose/compose-reference.test.sh
+        run: |
+          ./deploy/compose/compose-reference.test.sh
+          ./deploy/compose/compose-backup.test.sh
+          ./deploy/compose/compose-ops-runtime-env.test.sh
       - name: Check visual acceptance scripts
         run: |
+          ./scripts/admin-dashboard-proof.test.sh
           ./scripts/run-visual-acceptance-local.test.sh
           ./scripts/render-visual-acceptance-comment.test.sh
           ./scripts/playwright-workflow-flow12.test.sh
@@ -418,7 +422,9 @@ jobs:
           POSTGRES_DB=fiber_link
           POSTGRES_USER=fiber
           POSTGRES_PASSWORD=ci-postgres-password
+          POSTGRES_IMAGE=mirror.gcr.io/library/postgres:16-alpine
           POSTGRES_PORT=5432
+          REDIS_IMAGE=mirror.gcr.io/library/redis:7-alpine
           REDIS_PORT=6379
           RPC_PORT=3000
           FNN_VERSION=v0.6.1

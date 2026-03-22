@@ -165,10 +165,11 @@ export function createDbTipIntentRepo(db: DbClient): TipIntentRepo {
       filters.push(lte(tipIntents.createdAt, options.createdAtTo));
     }
     if ("after" in options && options.after) {
+      const after = options.after;
       filters.push(
         or(
-          gt(tipIntents.createdAt, options.after.createdAt),
-          and(eq(tipIntents.createdAt, options.after.createdAt), gt(tipIntents.id, options.after.id)),
+          gt(tipIntents.createdAt, after.createdAt),
+          and(eq(tipIntents.createdAt, after.createdAt), gt(tipIntents.id, after.id)),
         )!,
       );
     }
@@ -219,6 +220,19 @@ export function createDbTipIntentRepo(db: DbClient): TipIntentRepo {
       const now = new Date();
       const nextSettledAt = state === "SETTLED" ? sql`COALESCE(${tipIntents.settledAt}, ${now})` : null;
       const clearFailure = state === "SETTLED";
+      const updateFields = {
+        invoiceState: state,
+        settledAt: nextSettledAt,
+        settlementLastCheckedAt: now,
+        ...(clearFailure
+          ? {
+              settlementRetryCount: 0,
+              settlementNextRetryAt: null,
+              settlementLastError: null,
+              settlementFailureReason: null,
+            }
+          : {}),
+      };
       const stateFilter =
         state === "SETTLED"
           ? or(eq(tipIntents.invoiceState, "UNPAID"), eq(tipIntents.invoiceState, "SETTLED"))
@@ -227,15 +241,7 @@ export function createDbTipIntentRepo(db: DbClient): TipIntentRepo {
             : eq(tipIntents.invoiceState, "UNPAID");
       const [row] = await db
         .update(tipIntents)
-        .set({
-          invoiceState: state,
-          settledAt: nextSettledAt,
-          settlementLastCheckedAt: now,
-          settlementRetryCount: clearFailure ? 0 : tipIntents.settlementRetryCount,
-          settlementNextRetryAt: clearFailure ? null : tipIntents.settlementNextRetryAt,
-          settlementLastError: clearFailure ? null : tipIntents.settlementLastError,
-          settlementFailureReason: clearFailure ? null : tipIntents.settlementFailureReason,
-        })
+        .set(updateFields)
         .where(and(eq(tipIntents.invoice, invoice), stateFilter))
         .returning();
       if (row) {
@@ -313,14 +319,12 @@ export function createDbTipIntentRepo(db: DbClient): TipIntentRepo {
     async listByInvoiceState(state, options = {}) {
       const filters = buildStateFilters(state, options);
 
-      let query = db
+      const baseQuery = db
         .select()
         .from(tipIntents)
         .where(and(...filters))
         .orderBy(asc(tipIntents.createdAt), asc(tipIntents.id));
-      if (options.limit && options.limit > 0) {
-        query = query.limit(options.limit);
-      }
+      const query = options.limit && options.limit > 0 ? baseQuery.limit(options.limit) : baseQuery;
       const rows = await query;
       return rows.map(toRecord);
     },
@@ -336,14 +340,12 @@ export function createDbTipIntentRepo(db: DbClient): TipIntentRepo {
         );
       }
 
-      let query = db
+      const baseQuery = db
         .select()
         .from(tipIntents)
         .where(and(...filters))
         .orderBy(asc(tipIntents.settledAt), asc(tipIntents.id));
-      if (options.limit && options.limit > 0) {
-        query = query.limit(options.limit);
-      }
+      const query = options.limit && options.limit > 0 ? baseQuery.limit(options.limit) : baseQuery;
       const rows = await query;
       return rows.map(toRecord);
     },
@@ -492,10 +494,11 @@ export function createInMemoryTipIntentRepo(): TipIntentRepo {
         items = items.filter((item) => item.createdAt <= options.createdAtTo!);
       }
       if (options.after) {
-        const cursorTime = options.after.createdAt.getTime();
+        const after = options.after;
+        const cursorTime = after.createdAt.getTime();
         items = items.filter((item) => {
           const itemTime = item.createdAt.getTime();
-          return itemTime > cursorTime || (itemTime === cursorTime && item.id > options.after!.id);
+          return itemTime > cursorTime || (itemTime === cursorTime && item.id > after.id);
         });
       }
       items = items.sort((left, right) => {
@@ -514,10 +517,11 @@ export function createInMemoryTipIntentRepo(): TipIntentRepo {
     async listSettled(options) {
       let items = records.filter((item) => item.appId === options.appId && item.invoiceState === "SETTLED" && item.settledAt);
       if (options.after) {
-        const cursorTime = options.after.settledAt.getTime();
+        const after = options.after;
+        const cursorTime = after.settledAt.getTime();
         items = items.filter((item) => {
           const settledAt = item.settledAt?.getTime() ?? 0;
-          return settledAt > cursorTime || (settledAt === cursorTime && item.id > options.after.id);
+          return settledAt > cursorTime || (settledAt === cursorTime && item.id > after.id);
         });
       }
       items = items.sort((left, right) => {

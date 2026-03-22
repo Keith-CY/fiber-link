@@ -18,6 +18,11 @@ touch "${SCREENSHOT_DIR}/screenshots/step5-author-dashboard.png"
 touch "${SCREENSHOT_DIR}/screenshots/step6-author-withdrawal.png"
 touch "${SCREENSHOT_DIR}/screenshots/step6-admin-withdrawal.png"
 touch "${SCREENSHOT_DIR}/screenshots/step6-explorer-tx.png"
+touch "${SCREENSHOT_DIR}/screenshots/step7-admin-monitoring.png"
+touch "${SCREENSHOT_DIR}/screenshots/step8-admin-rate-limit.png"
+touch "${SCREENSHOT_DIR}/screenshots/step9-admin-backup-captured.png"
+touch "${SCREENSHOT_DIR}/screenshots/step9-admin-restore-plan.png"
+touch "${SCREENSHOT_DIR}/screenshots/step10-admin-policy-saved.png"
 
 node "${ROOT_DIR}/scripts/render-visual-acceptance-comment.mjs" \
   --summary-file "${SUMMARY_FILE}" \
@@ -31,5 +36,16 @@ grep -q "<!-- fiber-link-visual-acceptance -->" "${OUTPUT_FILE}"
 grep -q "## Visual Acceptance" "${OUTPUT_FILE}"
 grep -q "Step 1. Forum shows Fiber Link tip entry points" "${OUTPUT_FILE}"
 grep -q "Step 6. Author withdrawal completes with admin and explorer proof" "${OUTPUT_FILE}"
+grep -q "Step 7. Operation admin shows monitoring overview" "${OUTPUT_FILE}"
+grep -q "Step 8. Operation admin generates rate-limit change set" "${OUTPUT_FILE}"
+grep -q "Step 9. Operation admin captures backup and prepares restore plan" "${OUTPUT_FILE}"
+grep -q "Step 10. Operation admin updates app policy controls" "${OUTPUT_FILE}"
 grep -q "https://raw.githubusercontent.com/Keith-CY/fiber-link/visual-acceptance/pr-1/screenshots/step4-tipper-dashboard.png" "${OUTPUT_FILE}"
+grep -q "https://raw.githubusercontent.com/Keith-CY/fiber-link/visual-acceptance/pr-1/screenshots/step7-admin-monitoring.png" "${OUTPUT_FILE}"
+grep -q "https://raw.githubusercontent.com/Keith-CY/fiber-link/visual-acceptance/pr-1/screenshots/step10-admin-policy-saved.png" "${OUTPUT_FILE}"
 grep -q "https://github.com/Keith-CY/fiber-link/actions/runs/12345" "${OUTPUT_FILE}"
+grep -q "Explorer browser screenshot omitted; use the Explorer proof link above for manual verification." "${OUTPUT_FILE}"
+if grep -q "step6-explorer-tx.png" "${OUTPUT_FILE}"; then
+  echo "explorer screenshot should not be embedded in the PR comment" >&2
+  exit 1
+fi

@@ -51,6 +51,35 @@
           "screenshots/step6-admin-withdrawal.png",
           "screenshots/step6-explorer-tx.png"
         ]
+      },
+      "adminMonitoring": {
+        "label": "Step 7. Operation admin shows monitoring overview",
+        "ok": true,
+        "screenshots": [
+          "screenshots/step7-admin-monitoring.png"
+        ]
+      },
+      "adminRateLimiting": {
+        "label": "Step 8. Operation admin generates rate-limit change set",
+        "ok": true,
+        "screenshots": [
+          "screenshots/step8-admin-rate-limit.png"
+        ]
+      },
+      "adminBackups": {
+        "label": "Step 9. Operation admin captures backup and prepares restore plan",
+        "ok": true,
+        "screenshots": [
+          "screenshots/step9-admin-backup-captured.png",
+          "screenshots/step9-admin-restore-plan.png"
+        ]
+      },
+      "adminPolicyControls": {
+        "label": "Step 10. Operation admin updates app policy controls",
+        "ok": true,
+        "screenshots": [
+          "screenshots/step10-admin-policy-saved.png"
+        ]
       }
     }
   }

@@ -135,6 +135,11 @@ write_checklist() {
 - [ ] screenshots/step6-author-withdrawal.png
 - [ ] screenshots/step6-admin-withdrawal.png
 - [ ] screenshots/step6-explorer-tx.png
+- [ ] screenshots/step7-admin-monitoring.png
+- [ ] screenshots/step8-admin-rate-limit.png
+- [ ] screenshots/step9-admin-backup-captured.png
+- [ ] screenshots/step9-admin-restore-plan.png
+- [ ] screenshots/step10-admin-policy-saved.png
 
 ## Required Evidence
 - [ ] artifacts/flow2-rpc-calls.json
@@ -158,6 +163,24 @@ fatal() {
 require_cmd() {
   local cmd="$1"
   command -v "${cmd}" >/dev/null 2>&1 || fatal "${EXIT_PRECHECK}" "missing required command: ${cmd}"
+}
+
+uri_encode() {
+  jq -nr --arg value "$1" '$value|@uri'
+}
+
+build_postgres_database_url() {
+  local username="$1"
+  local password="$2"
+  local host="$3"
+  local port="$4"
+  local database="$5"
+  printf 'postgresql://%s:%s@%s:%s/%s' \
+    "$(uri_encode "${username}")" \
+    "$(uri_encode "${password}")" \
+    "${host}" \
+    "${port}" \
+    "$(uri_encode "${database}")"
 }
 
 ensure_run_dir() {

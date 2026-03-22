@@ -1,6 +1,7 @@
-import { createDbClient, type Asset, type DbClient, type UserRole, type WithdrawalPolicyRecord } from "@fiber-link/db";
+import { createDbClient, type DbClient, type UserRole, type WithdrawalPolicyRecord } from "@fiber-link/db";
 import { withdrawalPolicyRouter } from "./server/api/routers/withdrawal-policy";
 import type { TrpcContext } from "./server/api/trpc";
+import { parseWithdrawalPolicyInput, type WithdrawalPolicyInput } from "./withdrawal-policy-input";
 
 type ListCommand = {
   action: "list";
@@ -12,14 +13,7 @@ type UpsertCommand = {
   action: "upsert";
   role: UserRole;
   adminUserId: string;
-  input: {
-    appId: string;
-    allowedAssets: Asset[];
-    maxPerRequest: string;
-    perUserDailyMax: string;
-    perAppDailyMax: string;
-    cooldownSeconds: number;
-  };
+  input: WithdrawalPolicyInput;
 };
 
 export type WithdrawalPolicyCommand = ListCommand | UpsertCommand;
@@ -46,41 +40,10 @@ function parseRole(raw: string | undefined): UserRole {
   throw new Error("ADMIN_ROLE is required and must be SUPER_ADMIN or COMMUNITY_ADMIN");
 }
 
-function parseAssetList(raw: string | undefined): Asset[] {
-  if (!raw) {
-    throw new Error("--allowed-assets is required");
-  }
-
-  const assets = raw
-    .split(",")
-    .map((item) => item.trim())
-    .filter((item): item is Asset => item === "CKB" || item === "USDI");
-  if (assets.length === 0) {
-    throw new Error("--allowed-assets must include CKB or USDI");
-  }
-  return Array.from(new Set(assets));
-}
-
 function getFlag(argv: string[], key: string): string | undefined {
   const prefix = `--${key}=`;
   const match = argv.find((token) => token.startsWith(prefix));
   return match ? match.slice(prefix.length) : undefined;
-}
-
-function requireNonEmpty(raw: string | undefined, key: string): string {
-  const value = raw?.trim();
-  if (!value) {
-    throw new Error(`${key} is required`);
-  }
-  return value;
-}
-
-function parseCooldown(raw: string | undefined): number {
-  const value = Number(requireNonEmpty(raw, "--cooldown-seconds"));
-  if (!Number.isInteger(value) || value < 0) {
-    throw new Error("--cooldown-seconds must be an integer >= 0");
-  }
-  return value;
 }
 
 export function parseWithdrawalPolicyCommand(
@@ -108,14 +71,14 @@ export function parseWithdrawalPolicyCommand(
       action,
       role,
       adminUserId,
-      input: {
-        appId: requireNonEmpty(getFlag(argv, "app-id"), "--app-id"),
-        allowedAssets: parseAssetList(getFlag(argv, "allowed-assets")),
-        maxPerRequest: requireNonEmpty(getFlag(argv, "max-per-request"), "--max-per-request"),
-        perUserDailyMax: requireNonEmpty(getFlag(argv, "per-user-daily-max"), "--per-user-daily-max"),
-        perAppDailyMax: requireNonEmpty(getFlag(argv, "per-app-daily-max"), "--per-app-daily-max"),
-        cooldownSeconds: parseCooldown(getFlag(argv, "cooldown-seconds")),
-      },
+      input: parseWithdrawalPolicyInput({
+        appId: getFlag(argv, "app-id"),
+        allowedAssets: getFlag(argv, "allowed-assets"),
+        maxPerRequest: getFlag(argv, "max-per-request"),
+        perUserDailyMax: getFlag(argv, "per-user-daily-max"),
+        perAppDailyMax: getFlag(argv, "per-app-daily-max"),
+        cooldownSeconds: getFlag(argv, "cooldown-seconds"),
+      }),
     };
   }
 

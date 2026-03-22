@@ -1,7 +1,7 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
 import { appRouter } from "../server/api/routers/app";
 import { withdrawalRouter } from "../server/api/routers/withdrawal";
-import { WITHDRAWAL_STATE_ORDER, type DashboardApp, type DashboardWithdrawal } from "./dashboard-model";
+import { WITHDRAWAL_STATE_ORDER, type DashboardApp, type DashboardWithdrawal } from "../dashboard/dashboard-model";
 
 type AppListOutput = Awaited<ReturnType<ReturnType<typeof appRouter.createCaller>["list"]>>;
 type WithdrawalListOutput = Awaited<ReturnType<ReturnType<typeof withdrawalRouter.createCaller>["list"]>>;

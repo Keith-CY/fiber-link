@@ -153,6 +153,15 @@ test_default_runtime_preferences() {
   assert_contains "${defaults_output}" "defaultTarget=6100000000"
 }
 
+test_build_postgres_database_url_encodes_reserved_components() {
+  local output
+  output="$(
+    bash -lc "source '${ROOT_DIR}/scripts/lib/e2e-discourse-four-flows-common.sh'; build_postgres_database_url 'user:name' 'pa@ss/word' '127.0.0.1' '5432' 'fiber/link'"
+  )"
+
+  assert_contains "${output}" "postgresql://user%3Aname:pa%40ss%2Fword@127.0.0.1:5432/fiber%2Flink"
+}
+
 test_orchestrator_calls_phase_scripts_in_order() {
   local phase_dir="${TMP_DIR}/phase-bin"
   local artifact_dir="${TMP_DIR}/run-artifacts"
@@ -271,6 +280,7 @@ test_channel_rotation_smoke_can_use_orchestrator_override() {
 
 test_help_outputs
 test_default_runtime_preferences
+test_build_postgres_database_url_encodes_reserved_components
 test_orchestrator_calls_phase_scripts_in_order
 test_orchestrator_calls_optional_liquidity_regression_when_enabled
 test_orchestrator_seeds_legacy_channel_before_withdrawal_when_channel_rotation_enabled

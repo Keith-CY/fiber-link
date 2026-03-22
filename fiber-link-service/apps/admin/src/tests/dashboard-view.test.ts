@@ -6,8 +6,8 @@ import {
   type DashboardApp,
   type DashboardState,
   type DashboardWithdrawal,
-} from "./dashboard-model";
-import { buildDashboardRenderModel } from "./dashboard-view";
+} from "../dashboard/dashboard-model";
+import { buildDashboardRenderModel } from "../dashboard/dashboard-view";
 
 function createFixtures() {
   const now = new Date("2026-02-17T10:00:00.000Z");

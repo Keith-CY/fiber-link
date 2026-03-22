@@ -13,7 +13,7 @@ RETENTION_DAYS=""
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPOSE_FILE="${ROOT_DIR}/deploy/compose/docker-compose.yml"
-ENV_FILE="${ROOT_DIR}/deploy/compose/.env"
+ENV_FILE="${ENV_FILE:-${COMPOSE_ENV_FILE:-${ROOT_DIR}/deploy/compose/.env}}"
 OUTPUT_ROOT="${ROOT_DIR}/deploy/compose/backups"
 TIMESTAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 BACKUP_DIR=""
@@ -192,12 +192,12 @@ run_capture_step "git-head" \
 
 run_capture_step "compose-config" \
   "${BACKUP_DIR}/snapshots/compose-config.txt" \
-  "cd \"${ROOT_DIR}\" && docker compose -f \"${COMPOSE_FILE}\" config" \
+  "cd \"${ROOT_DIR}\" && docker compose --env-file \"${ENV_FILE}\" -f \"${COMPOSE_FILE}\" config" \
   "DRY_RUN compose config"
 
 run_capture_step "compose-ps" \
   "${BACKUP_DIR}/snapshots/compose-ps.txt" \
-  "cd \"${ROOT_DIR}\" && docker compose -f \"${COMPOSE_FILE}\" ps" \
+  "cd \"${ROOT_DIR}\" && docker compose --env-file \"${ENV_FILE}\" -f \"${COMPOSE_FILE}\" ps" \
   "DRY_RUN compose ps"
 
 run_capture_step "postgres-inspect" \

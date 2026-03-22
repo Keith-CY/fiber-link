@@ -1,12 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { DbClient, WithdrawalState } from "@fiber-link/db";
+import { buildDashboardViewModel, summarizeWithdrawalStates, type DashboardPageState } from "../dashboard/dashboard-page-model";
 import {
-  buildDashboardViewModel,
   loadDashboardState,
-  summarizeWithdrawalStates,
   type DashboardDataDependencies,
-  type DashboardPageState,
-} from "./dashboard-data";
+} from "../server/dashboard-data";
 
 type DashboardAppRow = {
   appId: string;
@@ -67,21 +65,50 @@ describe("dashboard data", () => {
 
   it("loads ready state for SUPER_ADMIN and keeps full visibility", async () => {
     const now = "2026-02-17T00:00:00.000Z";
-    const deps = createDeps({
-      apps: [{ appId: "app-1", createdAt: now }],
-      withdrawals: [
+    const deps = {
+      ...createDeps({
+        apps: [{ appId: "app-1", createdAt: now }],
+        withdrawals: [
+          {
+            id: "w-1",
+            appId: "app-1",
+            userId: "u-1",
+            asset: "USDI",
+            amount: "5",
+            state: "PENDING",
+            createdAt: now,
+            txHash: null,
+          },
+        ],
+      }),
+      loadMonitoringSummary: async () => ({
+        status: "ok",
+        generatedAt: now,
+        readinessStatus: "ready",
+        unpaidBacklog: 0,
+        retryPendingCount: 0,
+        withdrawalParityIssueCount: 0,
+        alertCount: 0,
+      }),
+      loadRateLimitConfig: async () => ({
+        enabled: true,
+        windowMs: "60000",
+        maxRequests: "300",
+        redisUrl: "redis://redis:6379/1",
+        sourceLabel: "deploy/compose/.env",
+      }),
+      listBackupBundles: async () => [
         {
-          id: "w-1",
-          appId: "app-1",
-          userId: "u-1",
-          asset: "USDI",
-          amount: "5",
-          state: "PENDING",
-          createdAt: now,
-          txHash: null,
+          id: "20260321T080000Z",
+          generatedAt: "20260321T080000Z",
+          overallStatus: "PASS",
+          retentionDays: 30,
+          dryRun: false,
+          backupDir: "/tmp/backups/20260321T080000Z",
+          archiveFile: "/tmp/backups/20260321T080000Z.tar.gz",
         },
       ],
-    });
+    } as DashboardDataDependencies & Record<string, unknown>;
 
     const state = await loadDashboardState(
       {
@@ -93,6 +120,27 @@ describe("dashboard data", () => {
     expect(state).toMatchObject({
       status: "ready",
       role: "SUPER_ADMIN",
+      operations: {
+        monitoring: {
+          status: "ready",
+          summary: {
+            status: "ok",
+            readinessStatus: "ready",
+          },
+        },
+        rateLimit: {
+          status: "ready",
+          config: {
+            enabled: true,
+            windowMs: "60000",
+            maxRequests: "300",
+          },
+        },
+        backups: {
+          status: "ready",
+          bundles: [expect.objectContaining({ id: "20260321T080000Z" })],
+        },
+      },
     });
 
     const viewModel = buildDashboardViewModel(state);
@@ -101,6 +149,7 @@ describe("dashboard data", () => {
       roleVisibility: {
         scopeDescription: "Global visibility across all communities",
         showUserId: true,
+        showGlobalControls: true,
       },
     });
     if (viewModel.status === "ready") {
@@ -145,11 +194,39 @@ describe("dashboard data", () => {
       roleVisibility: {
         scopeDescription: "Scoped visibility for assigned communities",
         showUserId: false,
+        showGlobalControls: false,
       },
     });
     if (viewModel.status === "ready") {
       expect(viewModel.withdrawalColumns).not.toContain("userId");
     }
+  });
+
+  it("uses env-backed default headers for local proof mode", async () => {
+    const now = "2026-02-17T00:00:00.000Z";
+    const deps = createDeps({
+      apps: [{ appId: "app-proof", createdAt: now }],
+      withdrawals: [],
+      policies: [],
+    });
+
+    const state = await loadDashboardState(
+      {
+        roleHeader: undefined,
+        adminUserIdHeader: undefined,
+      },
+      deps,
+      {
+        ADMIN_DASHBOARD_DEFAULT_ROLE: "COMMUNITY_ADMIN",
+        ADMIN_DASHBOARD_DEFAULT_ADMIN_USER_ID: "fixture-admin",
+      } as NodeJS.ProcessEnv,
+    );
+
+    expect(state).toMatchObject({
+      status: "ready",
+      role: "COMMUNITY_ADMIN",
+      apps: [{ appId: "app-proof" }],
+    });
   });
 
   it("returns error state when data loading throws", async () => {

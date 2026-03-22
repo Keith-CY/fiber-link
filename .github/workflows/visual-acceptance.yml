@@ -26,10 +26,30 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
 
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.1.8
+
+      - name: Cache Bun install artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.bun/install/cache
+            fiber-link-service/node_modules
+          key: ${{ runner.os }}-bun-${{ hashFiles('fiber-link-service/bun.lockb') }}-visual-acceptance
+          restore-keys: |
+            ${{ runner.os }}-bun-
+
+      - name: Install service dependencies
+        working-directory: fiber-link-service
+        run: bun install --frozen-lockfile
+
       - name: Run visual acceptance in Docker
         env:
           GITHUB_TOKEN: ${{ github.token }}
           VISUAL_ACCEPTANCE_OUTPUT_DIR: ${{ github.workspace }}/.tmp/visual-acceptance
+          VISUAL_ACCEPTANCE_POSTGRES_IMAGE: mirror.gcr.io/library/postgres:16-alpine
+          VISUAL_ACCEPTANCE_REDIS_IMAGE: mirror.gcr.io/library/redis:7-alpine
           VISUAL_ACCEPTANCE_EXPLORER_TX_URL_TEMPLATE: https://pudge.explorer.nervos.org/transaction/{txHash}
           VISUAL_ACCEPTANCE_DISCOURSE_UI_BASE_URL: http://127.0.0.1:4200
           VISUAL_ACCEPTANCE_HOST_ACCESS_HOST: 127.0.0.1

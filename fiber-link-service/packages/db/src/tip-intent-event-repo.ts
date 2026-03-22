@@ -90,14 +90,12 @@ export function createDbTipIntentEventRepo(db: DbClient): TipIntentEventRepo {
     },
 
     async listByTipIntentId(tipIntentId, options = {}) {
-      let query = db
+      const baseQuery = db
         .select()
         .from(tipIntentEvents)
         .where(eq(tipIntentEvents.tipIntentId, tipIntentId))
         .orderBy(asc(tipIntentEvents.createdAt), asc(tipIntentEvents.id));
-      if (options.limit && options.limit > 0) {
-        query = query.limit(options.limit);
-      }
+      const query = options.limit && options.limit > 0 ? baseQuery.limit(options.limit) : baseQuery;
       const rows = await query;
       return rows.map(toRecord);
     },
