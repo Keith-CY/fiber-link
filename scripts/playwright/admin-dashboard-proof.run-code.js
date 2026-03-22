@@ -6,6 +6,8 @@ async (page) => {
   const baseUrl = String(env.baseUrl ?? "http://127.0.0.1:4318").replace(/\/+$/, "");
   const artifactDir = String(env.artifactDir ?? ".");
   const appId = String(env.appId ?? "app-beta");
+  const adminRole = String(env.adminRole ?? "SUPER_ADMIN");
+  const adminUserId = String(env.adminUserId ?? "proof-admin");
   const maxPerRequest = String(env.maxPerRequest ?? "1500");
   const perUserDailyMax = String(env.perUserDailyMax ?? "4500");
   const perAppDailyMax = String(env.perAppDailyMax ?? "25000");
@@ -26,6 +28,11 @@ async (page) => {
     ]);
     await page.waitForLoadState("domcontentloaded", { timeout: 20_000 });
   };
+
+  await page.context().setExtraHTTPHeaders({
+    "x-admin-role": adminRole,
+    "x-admin-user-id": adminUserId,
+  });
 
   await page.goto(baseUrl, { waitUntil: "domcontentloaded" });
   await page.getByRole("heading", { name: /fiber link admin dashboard/i }).waitFor({ timeout: 20_000 });

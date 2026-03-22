@@ -139,7 +139,14 @@ if [[ "${ATTEMPT_LABEL}" == "primary" ]]; then
   [[ -n "${admin_postgres_password}" ]] || fatal "${EXIT_ARTIFACT}" "phase5 requires POSTGRES_PASSWORD in ${COMPOSE_ENV_FILE}"
   admin_postgres_port="$(get_env_value POSTGRES_PORT)"
   admin_postgres_port="${admin_postgres_port:-5432}"
-  admin_database_url="postgresql://${admin_postgres_user}:${admin_postgres_password}@${HOST_ACCESS_HOST}:${admin_postgres_port}/${admin_postgres_db}"
+  admin_database_url="$(
+    build_postgres_database_url \
+      "${admin_postgres_user}" \
+      "${admin_postgres_password}" \
+      "${HOST_ACCESS_HOST}" \
+      "${admin_postgres_port}" \
+      "${admin_postgres_db}"
+  )"
 
   admin_cmd=(
     env

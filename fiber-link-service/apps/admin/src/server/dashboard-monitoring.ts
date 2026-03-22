@@ -12,6 +12,21 @@ function defaultRunner(file: string, args: string[]) {
   return execFileAsync(file, args);
 }
 
+function parseMonitoringStdout(stdout: string): DashboardMonitoringSummary {
+  const normalizedStdout = stdout.trim();
+  const payload = JSON.parse(normalizedStdout);
+  return buildDashboardMonitoringSummary(payload, normalizedStdout);
+}
+
+function readStdoutFromError(error: unknown): string | undefined {
+  if (!error || typeof error !== "object") {
+    return undefined;
+  }
+
+  const stdout = Reflect.get(error, "stdout");
+  return typeof stdout === "string" ? stdout : undefined;
+}
+
 export function buildDashboardMonitoringSummary(raw: Record<string, any>, rawJson: string): DashboardMonitoringSummary {
   return {
     status: raw.status === "alert" ? "alert" : "ok",
@@ -32,7 +47,15 @@ export async function loadDashboardMonitoringSummary(input: {
   const repoRoot = input.repoRoot ?? resolveAdminRepoRoot();
   const runner = input.runner ?? defaultRunner;
   const scriptPath = resolve(repoRoot, "deploy/compose/compose-ops-summary.sh");
-  const { stdout } = await runner(scriptPath, []);
-  const payload = JSON.parse(stdout);
-  return buildDashboardMonitoringSummary(payload, stdout.trim());
+
+  try {
+    const { stdout } = await runner(scriptPath, []);
+    return parseMonitoringStdout(stdout);
+  } catch (error) {
+    const stdout = readStdoutFromError(error);
+    if (stdout?.trim()) {
+      return parseMonitoringStdout(stdout);
+    }
+    throw error;
+  }
 }

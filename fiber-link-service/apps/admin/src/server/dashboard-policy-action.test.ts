@@ -60,7 +60,7 @@ describe("dashboard policy action", () => {
     });
   });
 
-  it("falls back to env-backed trusted identity for local fixture proof mode", async () => {
+  it("rejects env-backed identity defaults outside fixture mode", async () => {
     const result = await handleDashboardPolicyAction(
       {
         body: {
@@ -73,6 +73,33 @@ describe("dashboard policy action", () => {
         },
       },
       {
+        env: {
+          ADMIN_DASHBOARD_DEFAULT_ROLE: "COMMUNITY_ADMIN",
+          ADMIN_DASHBOARD_DEFAULT_ADMIN_USER_ID: "fixture-admin",
+        } as NodeJS.ProcessEnv,
+        upsertPolicy: async () => {
+          throw new Error("should not be called");
+        },
+      },
+    );
+
+    expect(result.location).toContain("formError=Missing+or+invalid+x-admin-role+header");
+  });
+
+  it("allows env-backed trusted identity only in fixture mode", async () => {
+    const result = await handleDashboardPolicyAction(
+      {
+        body: {
+          appId: "app-beta",
+          allowedAssets: "USDI",
+          maxPerRequest: "1500",
+          perUserDailyMax: "4500",
+          perAppDailyMax: "25000",
+          cooldownSeconds: "45",
+        },
+      },
+      {
+        allowDefaultIdentityFallback: true,
         env: {
           ADMIN_DASHBOARD_DEFAULT_ROLE: "COMMUNITY_ADMIN",
           ADMIN_DASHBOARD_DEFAULT_ADMIN_USER_ID: "fixture-admin",

@@ -14,6 +14,7 @@ type DashboardBackupActionRequest = {
 };
 
 type DashboardBackupActionDependencies = {
+  allowDefaultIdentityFallback?: boolean;
   env?: NodeJS.ProcessEnv;
   captureBackup?: () => Promise<DashboardBackupCaptureResult>;
   listBackupBundles?: () => Promise<DashboardBackupBundle[]>;
@@ -25,8 +26,19 @@ export type DashboardBackupActionResult = {
   location: string;
 };
 
-function readRole(roleHeader: string | undefined, env: NodeJS.ProcessEnv | undefined) {
-  return parseAdminRole(roleHeader) ?? parseAdminRole(env?.ADMIN_DASHBOARD_DEFAULT_ROLE);
+function readRole(
+  roleHeader: string | undefined,
+  env: NodeJS.ProcessEnv | undefined,
+  allowDefaultIdentityFallback: boolean | undefined,
+) {
+  const headerRole = parseAdminRole(roleHeader);
+  if (headerRole) {
+    return headerRole;
+  }
+  if (!allowDefaultIdentityFallback) {
+    return undefined;
+  }
+  return parseAdminRole(env?.ADMIN_DASHBOARD_DEFAULT_ROLE);
 }
 
 function readBackupId(body: Record<string, unknown> | undefined): string {
@@ -48,7 +60,7 @@ export async function handleDashboardBackupCaptureAction(
   request: DashboardBackupActionRequest,
   deps: DashboardBackupActionDependencies = {},
 ): Promise<DashboardBackupActionResult> {
-  const role = readRole(request.roleHeader, deps.env);
+  const role = readRole(request.roleHeader, deps.env, deps.allowDefaultIdentityFallback);
 
   try {
     if (role !== "SUPER_ADMIN") {
@@ -84,7 +96,7 @@ export async function handleDashboardBackupRestorePlanAction(
   request: DashboardBackupActionRequest,
   deps: DashboardBackupActionDependencies = {},
 ): Promise<DashboardBackupActionResult> {
-  const role = readRole(request.roleHeader, deps.env);
+  const role = readRole(request.roleHeader, deps.env, deps.allowDefaultIdentityFallback);
   const backupId = readBackupId(request.body);
 
   try {

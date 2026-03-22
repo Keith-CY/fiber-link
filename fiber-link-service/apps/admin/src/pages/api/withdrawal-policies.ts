@@ -27,11 +27,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     },
     fixtureDeps
       ? {
+          allowDefaultIdentityFallback: true,
           createDb: fixtureDeps.createDb,
           upsertPolicy: fixtureDeps.upsertPolicy,
           env: process.env,
         }
       : {
+          allowDefaultIdentityFallback: false,
           createDb: () => createDbClient(),
           upsertPolicy: async ({ ctx, input }) => withdrawalPolicyRouter.createCaller(ctx).upsert(input),
           env: process.env,

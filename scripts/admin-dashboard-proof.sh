@@ -75,6 +75,8 @@ proof_env_json="$(
     --arg baseUrl "${BASE_URL}" \
     --arg artifactDir "${ARTIFACT_DIR}" \
     --arg appId "${APP_ID}" \
+    --arg adminRole "SUPER_ADMIN" \
+    --arg adminUserId "proof-admin" \
     --arg maxPerRequest "1500" \
     --arg perUserDailyMax "4500" \
     --arg perAppDailyMax "25000" \
@@ -85,6 +87,8 @@ proof_env_json="$(
       baseUrl: $baseUrl,
       artifactDir: $artifactDir,
       appId: $appId,
+      adminRole: $adminRole,
+      adminUserId: $adminUserId,
       maxPerRequest: $maxPerRequest,
       perUserDailyMax: $perUserDailyMax,
       perAppDailyMax: $perAppDailyMax,

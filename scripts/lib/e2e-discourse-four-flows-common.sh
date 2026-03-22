@@ -165,6 +165,24 @@ require_cmd() {
   command -v "${cmd}" >/dev/null 2>&1 || fatal "${EXIT_PRECHECK}" "missing required command: ${cmd}"
 }
 
+uri_encode() {
+  jq -nr --arg value "$1" '$value|@uri'
+}
+
+build_postgres_database_url() {
+  local username="$1"
+  local password="$2"
+  local host="$3"
+  local port="$4"
+  local database="$5"
+  printf 'postgresql://%s:%s@%s:%s/%s' \
+    "$(uri_encode "${username}")" \
+    "$(uri_encode "${password}")" \
+    "${host}" \
+    "${port}" \
+    "$(uri_encode "${database}")"
+}
+
 ensure_run_dir() {
   if [[ -z "${RUN_DIR}" ]]; then
     RUN_DIR="${DEFAULT_RUN_DIR}"

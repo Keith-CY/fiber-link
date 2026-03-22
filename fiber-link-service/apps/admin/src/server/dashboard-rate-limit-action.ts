@@ -17,6 +17,7 @@ type DashboardRateLimitActionRequest = {
 };
 
 type DashboardRateLimitActionDependencies = {
+  allowDefaultIdentityFallback?: boolean;
   env?: NodeJS.ProcessEnv;
   loadRateLimitConfig?: () => Promise<ReturnType<typeof loadDashboardRateLimitConfig>>;
   createRateLimitChangeSet?: (input: DashboardRateLimitDraft) => Promise<DashboardRateLimitChangeSet>;
@@ -27,8 +28,19 @@ export type DashboardRateLimitActionResult = {
   location: string;
 };
 
-function readRole(roleHeader: string | undefined, env: NodeJS.ProcessEnv | undefined) {
-  return parseAdminRole(roleHeader) ?? parseAdminRole(env?.ADMIN_DASHBOARD_DEFAULT_ROLE);
+function readRole(
+  roleHeader: string | undefined,
+  env: NodeJS.ProcessEnv | undefined,
+  allowDefaultIdentityFallback: boolean | undefined,
+) {
+  const headerRole = parseAdminRole(roleHeader);
+  if (headerRole) {
+    return headerRole;
+  }
+  if (!allowDefaultIdentityFallback) {
+    return undefined;
+  }
+  return parseAdminRole(env?.ADMIN_DASHBOARD_DEFAULT_ROLE);
 }
 
 function getErrorMessage(error: unknown): string {
@@ -42,7 +54,7 @@ export async function handleDashboardRateLimitAction(
   request: DashboardRateLimitActionRequest,
   deps: DashboardRateLimitActionDependencies = {},
 ): Promise<DashboardRateLimitActionResult> {
-  const role = readRole(request.roleHeader, deps.env);
+  const role = readRole(request.roleHeader, deps.env, deps.allowDefaultIdentityFallback);
   const draft = parseDashboardRateLimitDraft(request.body);
 
   try {

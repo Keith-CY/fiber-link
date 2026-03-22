@@ -11,6 +11,7 @@ type DashboardPolicyActionRequest = {
 };
 
 type DashboardPolicyActionDependencies = {
+  allowDefaultIdentityFallback?: boolean;
   env?: NodeJS.ProcessEnv;
   createDb?: () => DbClient;
   upsertPolicy: (input: {
@@ -27,18 +28,34 @@ export type DashboardPolicyActionResult = {
 function readAdminUserId(
   headerValue: string | undefined,
   env: NodeJS.ProcessEnv | undefined,
+  allowDefaultIdentityFallback: boolean | undefined,
 ): string | undefined {
   const header = headerValue?.trim();
   if (header) {
     return header;
   }
 
+  if (!allowDefaultIdentityFallback) {
+    return undefined;
+  }
+
   const fallback = env?.ADMIN_DASHBOARD_DEFAULT_ADMIN_USER_ID?.trim();
   return fallback || undefined;
 }
 
-function readRole(roleHeader: string | undefined, env: NodeJS.ProcessEnv | undefined): UserRole | undefined {
-  return parseAdminRole(roleHeader) ?? parseAdminRole(env?.ADMIN_DASHBOARD_DEFAULT_ROLE);
+function readRole(
+  roleHeader: string | undefined,
+  env: NodeJS.ProcessEnv | undefined,
+  allowDefaultIdentityFallback: boolean | undefined,
+): UserRole | undefined {
+  const headerRole = parseAdminRole(roleHeader);
+  if (headerRole) {
+    return headerRole;
+  }
+  if (!allowDefaultIdentityFallback) {
+    return undefined;
+  }
+  return parseAdminRole(env?.ADMIN_DASHBOARD_DEFAULT_ROLE);
 }
 
 function getErrorMessage(error: unknown): string {
@@ -52,8 +69,12 @@ export async function handleDashboardPolicyAction(
   request: DashboardPolicyActionRequest,
   deps: DashboardPolicyActionDependencies,
 ): Promise<DashboardPolicyActionResult> {
-  const role = readRole(request.roleHeader, deps.env);
-  const adminUserId = readAdminUserId(request.adminUserIdHeader, deps.env);
+  const role = readRole(request.roleHeader, deps.env, deps.allowDefaultIdentityFallback);
+  const adminUserId = readAdminUserId(
+    request.adminUserIdHeader,
+    deps.env,
+    deps.allowDefaultIdentityFallback,
+  );
 
   try {
     if (!role) {

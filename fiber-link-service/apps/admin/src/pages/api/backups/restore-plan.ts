@@ -24,11 +24,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     },
     fixtureDeps
       ? {
+          allowDefaultIdentityFallback: true,
           env: process.env,
           listBackupBundles: fixtureDeps.listBackupBundles,
           buildBackupRestorePlan: fixtureDeps.buildBackupRestorePlan,
         }
       : {
+          allowDefaultIdentityFallback: false,
           env: process.env,
         },
   );

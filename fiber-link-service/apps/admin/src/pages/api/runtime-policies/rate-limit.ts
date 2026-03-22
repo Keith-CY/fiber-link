@@ -24,11 +24,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     },
     fixtureDeps
       ? {
+          allowDefaultIdentityFallback: true,
           env: process.env,
           loadRateLimitConfig: fixtureDeps.loadRateLimitConfig,
           createRateLimitChangeSet: fixtureDeps.createRateLimitChangeSet,
         }
       : {
+          allowDefaultIdentityFallback: false,
           env: process.env,
         },
   );
