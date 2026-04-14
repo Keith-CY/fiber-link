@@ -499,11 +499,11 @@ jobs:
             -e UNICORN_BIND_ALL=true \
             "$DISCOURSE_DEV_IMAGE" /sbin/boot
 
-      - name: Fix checkout permissions for container user
+      - name: Fix checkout and Postgres permissions for container users
         working-directory: discourse-dev
         run: |
           docker exec -u root discourse_dev bash -lc \
-            "chown -R discourse:discourse /src && chmod -R u+rwX /src"
+            "mkdir -p /shared/postgres_data && chown -R discourse:discourse /src && chmod -R u+rwX /src && chown -R postgres:postgres /shared/postgres_data && chmod 700 /shared/postgres_data"
 
       - name: Install Discourse gems
         working-directory: discourse-dev
