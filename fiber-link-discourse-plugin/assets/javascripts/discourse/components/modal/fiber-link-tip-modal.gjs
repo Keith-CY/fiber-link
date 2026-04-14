@@ -11,6 +11,8 @@ import { createTip, getTipStatus } from "../../services/fiber-link-api";
 
 const AMOUNT_PATTERN = /^(?:\d+)(?:\.\d{1,8})?$/;
 const TIP_STATUS_AUTO_POLL_INTERVAL_MS = 1000;
+const FIBER_LINK_HOMEPAGE_URL = "https://fiberlink.me/";
+const FIBER_LINK_LOGO_URL = "https://fiberlink.me/brand/fiber-link-logo.png";
 
 function normalizeMessage(value) {
   if (typeof value !== "string") {
@@ -122,6 +124,32 @@ export default class FiberLinkTipModal extends Component {
   get targetUsername() {
     const value = normalizeMessage(this.args?.model?.targetUsername);
     return value || "post author";
+  }
+
+  get topicTitle() {
+    const value = normalizeMessage(this.args?.model?.topicTitle);
+    return value || "Community post";
+  }
+
+  get postSummary() {
+    const value = normalizeMessage(this.args?.model?.postSummary);
+    return value || "Support this contributor directly from the conversation.";
+  }
+
+  get brandHomepageUrl() {
+    return FIBER_LINK_HOMEPAGE_URL;
+  }
+
+  get brandLogoUrl() {
+    return FIBER_LINK_LOGO_URL;
+  }
+
+  get trimmedMessage() {
+    return normalizeMessage(this.message);
+  }
+
+  get hasMessage() {
+    return !!this.trimmedMessage;
   }
 
   get isSelfTip() {
@@ -359,134 +387,252 @@ export default class FiberLinkTipModal extends Component {
   <template>
     <DModal @closeModal={{@closeModal}} @title="Pay with Fiber" class="fiber-link-tip-modal">
       <:body>
-        <div class="fiber-link-tip-modal__content">
-          <header class="fiber-link-tip-modal__header">
-            <p class="fiber-link-tip-modal__recipient">Recipient</p>
-            <strong class="fiber-link-tip-modal__recipient-name">@{{this.targetUsername}}</strong>
-            <p class="fiber-link-tip-modal__amount">{{this.displayAmount}} CKB</p>
-          </header>
-
-          {{#if this.errorMessage}}
-            <p class="fiber-link-tip-alert is-error">{{this.errorMessage}}</p>
-          {{/if}}
-
-          {{#if this.isSelfTip}}
-            <p class="fiber-link-tip-alert is-warning">You can’t tip your own post.</p>
-          {{/if}}
-
-          {{#if this.isGenerateStep}}
-            <section class="fiber-link-tip-step-card" data-fiber-link-tip-modal-step="generate">
-              <div class="fiber-link-tip-step-card__header">
-                <p class="fiber-link-tip-step-card__eyebrow">Step 1</p>
-                <h3>Generate Invoice</h3>
-              </div>
-              <div class="fiber-link-tip-form">
-                <label class="fiber-link-tip-field">
-                  <span class="fiber-link-tip-label">Amount</span>
-                  <input
-                    class="fiber-link-tip-input"
-                    inputmode="decimal"
-                    value={{this.amount}}
-                    {{on "input" this.onAmountInput}}
-                  />
-                </label>
-                {{#if this.amountErrorMessage}}
-                  <p class="fiber-link-tip-input-error">{{this.amountErrorMessage}}</p>
-                {{/if}}
-                <label class="fiber-link-tip-field">
-                  <span class="fiber-link-tip-label">Tip message (optional)</span>
-                  <textarea
-                    class="fiber-link-tip-input fiber-link-tip-textarea"
-                    rows="3"
-                    value={{this.message}}
-                    {{on "input" this.onMessageInput}}
-                  ></textarea>
-                </label>
-              </div>
-              <DButton
-                class="btn-primary fiber-link-tip-step-card__action"
-                @action={{this.generateInvoice}}
-                @disabled={{this.isGenerateInvoiceDisabled}}
-                @translatedLabel="Generate Invoice"
+        <div class="fiber-link-tip-modal__content fiber-link-tip-modal__content--productized">
+          <aside class="fiber-link-tip-modal__brand-rail">
+            <a
+              href={{this.brandHomepageUrl}}
+              class="fiber-link-tip-brand"
+              target="_blank"
+              rel="noopener noreferrer"
+              data-fiber-link-tip-modal="brand-link"
+            >
+              <img
+                src={{this.brandLogoUrl}}
+                alt="Fiber Link"
+                class="fiber-link-tip-brand__logo"
+                data-fiber-link-tip-modal="brand-logo"
               />
-            </section>
-          {{/if}}
+              <span class="fiber-link-tip-brand__meta">
+                <span class="fiber-link-tip-brand__eyebrow">Powered by Fiber Link</span>
+                <span class="fiber-link-tip-brand__url">fiberlink.me</span>
+              </span>
+            </a>
 
-          {{#if this.isPayStep}}
-            <section class="fiber-link-tip-step-card" data-fiber-link-tip-modal-step="pay">
-              <div class="fiber-link-tip-step-card__header">
-                <p class="fiber-link-tip-step-card__eyebrow">Step 2</p>
-                <h3>Pay with Wallet</h3>
+            <section class="fiber-link-tip-hero">
+              <p class="fiber-link-tip-hero__eyebrow">Payments uncompromised</p>
+              <h3>Creator rewards inside the conversation</h3>
+              <p>
+                Send a native CKB tip without leaving the discussion. Fiber Link keeps payment context,
+                wallet handoff, and confirmation in one place.
+              </p>
+            </section>
+
+            <section class="fiber-link-tip-context-card">
+              <p class="fiber-link-tip-context-card__eyebrow">Tip target</p>
+              <strong class="fiber-link-tip-context-card__recipient">@{{this.targetUsername}}</strong>
+              <p class="fiber-link-tip-context-card__title">{{this.topicTitle}}</p>
+              <p class="fiber-link-tip-context-card__summary">{{this.postSummary}}</p>
+              <div class="fiber-link-tip-context-card__metrics">
+                <div>
+                  <span>Amount</span>
+                  <strong>{{this.displayAmount}} CKB</strong>
+                </div>
+                <div>
+                  <span>Network</span>
+                  <strong>Fiber Link</strong>
+                </div>
               </div>
-              {{#if this.invoice}}
-                <p class="fiber-link-tip-step-card__caption">Scan with Fiber Wallet</p>
-                {{#if this.shouldShowInvoiceQr}}
-                  <div class="fiber-link-tip-invoice-visual">
-                    <img
-                      class="fiber-link-tip-invoice-qr"
-                      data-fiber-link-tip-modal="invoice-qr"
-                      src={{this.invoiceQrDataUrl}}
-                      alt="Invoice QR code"
-                    />
-                  </div>
-                {{/if}}
-                <div class="fiber-link-tip-status-row">
-                  <span class={{this.statusClass}}>{{this.statusLabel}}</span>
-                  <p class="fiber-link-tip-step-card__caption">{{this.autoPollMessage}}</p>
+              {{#if this.hasMessage}}
+                <div class="fiber-link-tip-context-card__message">
+                  <span>Message</span>
+                  <p>{{this.trimmedMessage}}</p>
                 </div>
-                <div class="fiber-link-tip-step-card__actions">
-                  <DButton @translatedLabel="Copy Invoice" @action={{this.copyInvoice}} />
-                  {{#if this.walletHref}}
-                    <a
-                      class="btn fiber-link-tip-wallet-link"
-                      data-fiber-link-tip-modal="wallet-link"
-                      href={{this.walletHref}}
-                    >
-                      Open Fiber Wallet
-                    </a>
-                  {{/if}}
-                </div>
-                {{#if this.copyFeedback}}
-                  <span class="fiber-link-tip-copy-feedback">{{this.copyFeedback}}</span>
-                {{/if}}
-                <button
-                  type="button"
-                  class="btn-link fiber-link-tip-advanced-toggle"
-                  {{on "click" this.toggleAdvanced}}
-                >
-                  Advanced
-                </button>
-                {{#if this.showAdvanced}}
-                  <div class="fiber-link-tip-advanced-panel">
-                    <p class="fiber-link-tip-invoice-label">Invoice</p>
-                    <code class="fiber-link-tip-invoice" title={{this.invoice}}>{{this.invoice}}</code>
-                    <DButton
-                      class="fiber-link-tip-advanced-action"
-                      @action={{this.checkStatus}}
-                      @translatedLabel={{this.checkStatusLabel}}
-                      @disabled={{this.isCheckStatusDisabled}}
-                    />
-                  </div>
-                {{/if}}
-              {{else}}
-                <p class="fiber-link-tip-step-card__placeholder">
-                  Generate an invoice first. Then scan it in your Fiber wallet or copy it manually.
-                </p>
               {{/if}}
             </section>
-          {{/if}}
 
-          {{#if this.isConfirmedStep}}
-            <section class="fiber-link-tip-step-card" data-fiber-link-tip-modal-step="confirmed">
-              <div class="fiber-link-tip-step-card__header">
-                <p class="fiber-link-tip-step-card__eyebrow">Step 3</p>
-                <h3>Payment Confirmed</h3>
-              </div>
-              <div class="fiber-link-tip-status-row">
-                <span class={{this.statusClass}}>{{this.statusLabel}}</span>
-              </div>
-            </section>
-          {{/if}}
+            <ol class="fiber-link-tip-progress" aria-label="Tip payment progress">
+              <li class={{if this.isGenerateStep "is-active" (if this.invoice "is-complete" "")}}>
+                <span>1</span>
+                <div>
+                  <strong>Configure</strong>
+                  <p>Set amount and personalize the tip.</p>
+                </div>
+              </li>
+              <li class={{if this.isPayStep "is-active" (if this.isConfirmedStep "is-complete" "")}}>
+                <span>2</span>
+                <div>
+                  <strong>Pay</strong>
+                  <p>Scan the request in Fiber Wallet or hand off via deep link.</p>
+                </div>
+              </li>
+              <li class={{if this.isConfirmedStep "is-active" "")}}>
+                <span>3</span>
+                <div>
+                  <strong>Confirm</strong>
+                  <p>Watch settlement complete and close with confidence.</p>
+                </div>
+              </li>
+            </ol>
+          </aside>
+
+          <div class="fiber-link-tip-modal__main">
+            <header class="fiber-link-tip-modal__header fiber-link-tip-modal__header--productized">
+              <p class="fiber-link-tip-modal__recipient">Recipient</p>
+              <strong class="fiber-link-tip-modal__recipient-name">@{{this.targetUsername}}</strong>
+              <p class="fiber-link-tip-modal__amount">{{this.displayAmount}} CKB</p>
+            </header>
+
+            {{#if this.errorMessage}}
+              <p class="fiber-link-tip-alert is-error">{{this.errorMessage}}</p>
+            {{/if}}
+
+            {{#if this.isSelfTip}}
+              <p class="fiber-link-tip-alert is-warning">You can’t tip your own post.</p>
+            {{/if}}
+
+            {{#if this.isGenerateStep}}
+              <section class="fiber-link-tip-step-card fiber-link-tip-step-card--immersive" data-fiber-link-tip-modal-step="generate">
+                <div class="fiber-link-tip-step-card__header">
+                  <p class="fiber-link-tip-step-card__eyebrow">Step 1</p>
+                  <h3>Configure the tip</h3>
+                  <p class="fiber-link-tip-step-card__description">
+                    Choose an amount, add an optional note, then generate the payment request.
+                  </p>
+                </div>
+                <div class="fiber-link-tip-form">
+                  <label class="fiber-link-tip-field">
+                    <span class="fiber-link-tip-label">Amount</span>
+                    <input
+                      class="fiber-link-tip-input"
+                      inputmode="decimal"
+                      value={{this.amount}}
+                      {{on "input" this.onAmountInput}}
+                    />
+                  </label>
+                  {{#if this.amountErrorMessage}}
+                    <p class="fiber-link-tip-input-error">{{this.amountErrorMessage}}</p>
+                  {{/if}}
+                  <label class="fiber-link-tip-field">
+                    <span class="fiber-link-tip-label">Tip message (optional)</span>
+                    <textarea
+                      class="fiber-link-tip-input fiber-link-tip-textarea"
+                      rows="3"
+                      value={{this.message}}
+                      {{on "input" this.onMessageInput}}
+                    ></textarea>
+                  </label>
+                </div>
+                <div class="fiber-link-tip-step-card__footer-actions">
+                  <DButton
+                    class="btn-primary fiber-link-tip-step-card__action"
+                    @action={{this.generateInvoice}}
+                    @disabled={{this.isGenerateInvoiceDisabled}}
+                    @translatedLabel="Generate Invoice"
+                  />
+                  <p class="fiber-link-tip-step-card__helper">
+                    Fiber Link will create a wallet-ready request and keep checking settlement automatically.
+                  </p>
+                </div>
+              </section>
+            {{/if}}
+
+            {{#if this.isPayStep}}
+              <section class="fiber-link-tip-step-card fiber-link-tip-step-card--immersive" data-fiber-link-tip-modal-step="pay">
+                <div class="fiber-link-tip-step-card__header">
+                  <p class="fiber-link-tip-step-card__eyebrow">Step 2</p>
+                  <h3>Scan and pay</h3>
+                  <p class="fiber-link-tip-step-card__description">
+                    Use Fiber Wallet to scan the QR code, or open the request directly in a compatible wallet.
+                  </p>
+                </div>
+                {{#if this.invoice}}
+                  <div class="fiber-link-tip-payment-shell">
+                    <div class="fiber-link-tip-payment-shell__qr-column">
+                      <p class="fiber-link-tip-step-card__caption">Scan with Fiber Wallet</p>
+                      {{#if this.shouldShowInvoiceQr}}
+                        <div class="fiber-link-tip-invoice-visual fiber-link-tip-invoice-visual--hero">
+                          <img
+                            class="fiber-link-tip-invoice-qr"
+                            data-fiber-link-tip-modal="invoice-qr"
+                            src={{this.invoiceQrDataUrl}}
+                            alt="Invoice QR code"
+                          />
+                        </div>
+                      {{else}}
+                        <div class="fiber-link-tip-invoice-visual fiber-link-tip-invoice-visual--placeholder">
+                          <p class="fiber-link-tip-step-card__placeholder">
+                            QR preview unavailable. Use the wallet deep link or copy the invoice below.
+                          </p>
+                        </div>
+                      {{/if}}
+                    </div>
+                    <div class="fiber-link-tip-payment-shell__details">
+                      <div class="fiber-link-tip-status-row fiber-link-tip-status-row--panel">
+                        <span class={{this.statusClass}}>{{this.statusLabel}}</span>
+                        <p class="fiber-link-tip-step-card__caption">{{this.autoPollMessage}}</p>
+                      </div>
+                      <div class="fiber-link-tip-step-card__actions fiber-link-tip-step-card__actions--stacked">
+                        <DButton @translatedLabel="Copy Invoice" @action={{this.copyInvoice}} />
+                        {{#if this.walletHref}}
+                          <a
+                            class="btn fiber-link-tip-wallet-link"
+                            data-fiber-link-tip-modal="wallet-link"
+                            href={{this.walletHref}}
+                          >
+                            Open Fiber Wallet
+                          </a>
+                        {{/if}}
+                      </div>
+                      {{#if this.copyFeedback}}
+                        <span class="fiber-link-tip-copy-feedback">{{this.copyFeedback}}</span>
+                      {{/if}}
+                      <button
+                        type="button"
+                        class="btn-link fiber-link-tip-advanced-toggle"
+                        {{on "click" this.toggleAdvanced}}
+                      >
+                        Advanced
+                      </button>
+                      {{#if this.showAdvanced}}
+                        <div class="fiber-link-tip-advanced-panel">
+                          <p class="fiber-link-tip-invoice-label">Invoice</p>
+                          <code class="fiber-link-tip-invoice" title={{this.invoice}}>{{this.invoice}}</code>
+                          <DButton
+                            class="fiber-link-tip-advanced-action"
+                            @action={{this.checkStatus}}
+                            @translatedLabel={{this.checkStatusLabel}}
+                            @disabled={{this.isCheckStatusDisabled}}
+                          />
+                        </div>
+                      {{/if}}
+                    </div>
+                  </div>
+                {{else}}
+                  <p class="fiber-link-tip-step-card__placeholder">
+                    Generate an invoice first. Then scan it in your Fiber wallet or copy it manually.
+                  </p>
+                {{/if}}
+              </section>
+            {{/if}}
+
+            {{#if this.isConfirmedStep}}
+              <section class="fiber-link-tip-step-card fiber-link-tip-step-card--immersive fiber-link-tip-step-card--confirmed" data-fiber-link-tip-modal-step="confirmed">
+                <div class="fiber-link-tip-success-mark" aria-hidden="true">
+                  <span>✓</span>
+                </div>
+                <div class="fiber-link-tip-step-card__header fiber-link-tip-step-card__header--centered">
+                  <p class="fiber-link-tip-step-card__eyebrow">Step 3</p>
+                  <h3>Payment confirmed</h3>
+                  <p class="fiber-link-tip-step-card__description">
+                    {{this.displayAmount}} CKB is on its way to @{{this.targetUsername}} through Fiber Link.
+                  </p>
+                </div>
+                <div class="fiber-link-tip-status-row fiber-link-tip-status-row--success">
+                  <span class={{this.statusClass}}>{{this.statusLabel}}</span>
+                </div>
+                <div class="fiber-link-tip-success-actions">
+                  <a
+                    href={{this.brandHomepageUrl}}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="btn fiber-link-tip-wallet-link"
+                  >
+                    Explore Fiber Link
+                  </a>
+                </div>
+              </section>
+            {{/if}}
+          </div>
         </div>
       </:body>
 

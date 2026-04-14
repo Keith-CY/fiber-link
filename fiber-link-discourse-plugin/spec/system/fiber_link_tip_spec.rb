@@ -50,6 +50,9 @@ RSpec.describe "Fiber Link Tip", type: :system do
 
     expect(page).to have_content("Pay with Fiber")
     expect(page).to have_content("@#{topic.first_post.user.username}")
+    expect(page).to have_css("img[data-fiber-link-tip-modal='brand-logo']")
+    expect(page).to have_link("fiberlink.me", href: "https://fiberlink.me/")
+    expect(page).to have_content("Payments uncompromised")
     expect(page).to have_css("[data-fiber-link-tip-modal-step='generate']")
     expect(page).to have_no_css("[data-fiber-link-tip-modal-step='pay']")
     expect(page).to have_no_css("[data-fiber-link-tip-modal-step='confirmed']")

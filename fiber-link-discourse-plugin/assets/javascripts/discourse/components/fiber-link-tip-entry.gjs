@@ -43,6 +43,22 @@ export default class FiberLinkTipEntry extends Component {
     return "post author";
   }
 
+  get topicTitle() {
+    const value = this.post?.topic?.title ?? this.post?.topic_title ?? this.post?.topicTitle;
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+    return "Community post";
+  }
+
+  get postSummary() {
+    const value = this.post?.excerpt ?? this.post?.cooked_excerpt ?? this.post?.blurb ?? this.post?.raw;
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+    return "Support this contributor directly from the conversation.";
+  }
+
   get currentUserId() {
     const parsed = Number(this.currentUser?.id);
     return Number.isFinite(parsed) && parsed > 0 ? Math.trunc(parsed) : null;
@@ -81,6 +97,8 @@ export default class FiberLinkTipEntry extends Component {
         fromUserId: this.currentUserId,
         targetUserId: this.targetUserId,
         targetUsername: this.targetUsername,
+        topicTitle: this.topicTitle,
+        postSummary: this.postSummary,
         isSelfTip: this.isSelfTip,
       },
     });
