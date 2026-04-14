@@ -175,7 +175,12 @@ export function buildTipSettlementParityReport(args: {
         });
       }
 
-      if (credit.amount !== tipIntent.amount) {
+      const creditAmount = Number(credit.amount);
+      const tipAmount = Number(tipIntent.amount);
+      const amountsMatch = Number.isFinite(creditAmount) && Number.isFinite(tipAmount)
+        ? creditAmount === tipAmount
+        : credit.amount === tipIntent.amount;
+      if (!amountsMatch) {
         addIssue({
           kind: "CREDIT_AMOUNT_MISMATCH",
           tipIntentId: tipIntent.id,

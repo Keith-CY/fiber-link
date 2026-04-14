@@ -1,12 +1,29 @@
-import { and, desc, eq, gte, like, lte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, like, lte, ne, sql } from "drizzle-orm";
 import { createDbClient, ledgerEntries, tipIntents } from "@fiber-link/db";
-import { buildTipSettlementParityReport } from "../tip-settlement-reconciliation";
+import {
+  buildTipSettlementParityReport,
+  parseTipIntentIdFromSettlementCreditIdempotencyKey,
+  type TipSettlementParityCreditRow,
+} from "../tip-settlement-reconciliation";
 
 type ReconcileArgs = {
   appId?: string;
   from?: Date;
   to?: Date;
   limit: number;
+};
+
+type TipParityScriptRow = {
+  id: string;
+  appId: string;
+  postId: string;
+  fromUserId: string;
+  toUserId: string;
+  asset: (typeof tipIntents.$inferSelect)["asset"];
+  amount: string;
+  invoice: string;
+  state: (typeof tipIntents.$inferSelect)["invoiceState"];
+  settledAt: string | null;
 };
 
 function parseDateFlag(value: string, key: string): Date {
@@ -52,19 +69,86 @@ function parseArgs(argv: string[]): ReconcileArgs {
   return args;
 }
 
+function mapTipRow(row: {
+  id: string;
+  appId: string;
+  postId: string;
+  fromUserId: string;
+  toUserId: string;
+  asset: (typeof tipIntents.$inferSelect)["asset"];
+  amount: unknown;
+  invoice: string;
+  state: (typeof tipIntents.$inferSelect)["invoiceState"];
+  settledAt: Date | null;
+}): TipParityScriptRow {
+  return {
+    ...row,
+    amount: String(row.amount),
+    settledAt: row.settledAt ? row.settledAt.toISOString() : null,
+  };
+}
+
+function mapCreditRow(row: {
+  appId: string;
+  userId: string;
+  asset: (typeof ledgerEntries.$inferSelect)["asset"];
+  amount: unknown;
+  refId: string;
+  idempotencyKey: string;
+}): TipSettlementParityCreditRow {
+  return {
+    ...row,
+    amount: String(row.amount),
+  };
+}
+
+export function collectReferencedTipIntentIds(credits: TipSettlementParityCreditRow[]): string[] {
+  const ids = new Set<string>();
+  for (const credit of credits) {
+    const tipIntentId = parseTipIntentIdFromSettlementCreditIdempotencyKey(credit.idempotencyKey);
+    if (tipIntentId) {
+      ids.add(tipIntentId);
+    }
+  }
+  return [...ids];
+}
+
+export function mergeTipRows(...groups: TipParityScriptRow[][]): TipParityScriptRow[] {
+  const byId = new Map<string, TipParityScriptRow>();
+  for (const rows of groups) {
+    for (const row of rows) {
+      if (!byId.has(row.id)) {
+        byId.set(row.id, row);
+      }
+    }
+  }
+  return [...byId.values()];
+}
+
 async function main() {
   const { appId, from, to, limit } = parseArgs(process.argv.slice(2));
   const db = createDbClient();
 
-  const tipPredicates = [sql`TRUE`];
+  const settledTipPredicates = [sql`TRUE`, eq(tipIntents.invoiceState, "SETTLED")];
   if (appId) {
-    tipPredicates.push(eq(tipIntents.appId, appId));
+    settledTipPredicates.push(eq(tipIntents.appId, appId));
   }
   if (from) {
-    tipPredicates.push(gte(tipIntents.createdAt, from));
+    settledTipPredicates.push(gte(tipIntents.settledAt, from));
   }
   if (to) {
-    tipPredicates.push(lte(tipIntents.createdAt, to));
+    settledTipPredicates.push(lte(tipIntents.settledAt, to));
+  }
+
+  const unsettledTipPredicates = [sql`TRUE`, ne(tipIntents.invoiceState, "SETTLED")];
+  if (appId) {
+    unsettledTipPredicates.push(eq(tipIntents.appId, appId));
+  }
+  if (from) {
+    unsettledTipPredicates.push(gte(tipIntents.createdAt, from));
+  }
+  if (to) {
+    unsettledTipPredicates.push(lte(tipIntents.createdAt, to));
   }
 
   const creditPredicates = [sql`TRUE`, eq(ledgerEntries.type, "credit"), like(ledgerEntries.idempotencyKey, "settlement:tip_intent:%")];
@@ -78,7 +162,7 @@ async function main() {
     creditPredicates.push(lte(ledgerEntries.createdAt, to));
   }
 
-  const [tipRows, creditRows] = await Promise.all([
+  const [settledTipRowsRaw, unsettledTipRowsRaw, creditRowsRaw] = await Promise.all([
     db
       .select({
         id: tipIntents.id,
@@ -93,7 +177,24 @@ async function main() {
         settledAt: tipIntents.settledAt,
       })
       .from(tipIntents)
-      .where(and(...tipPredicates))
+      .where(and(...settledTipPredicates))
+      .orderBy(desc(tipIntents.settledAt), desc(tipIntents.id))
+      .limit(limit),
+    db
+      .select({
+        id: tipIntents.id,
+        appId: tipIntents.appId,
+        postId: tipIntents.postId,
+        fromUserId: tipIntents.fromUserId,
+        toUserId: tipIntents.toUserId,
+        asset: tipIntents.asset,
+        amount: tipIntents.amount,
+        invoice: tipIntents.invoice,
+        state: tipIntents.invoiceState,
+        settledAt: tipIntents.settledAt,
+      })
+      .from(tipIntents)
+      .where(and(...unsettledTipPredicates))
       .orderBy(desc(tipIntents.createdAt), desc(tipIntents.id))
       .limit(limit),
     db
@@ -111,16 +212,35 @@ async function main() {
       .limit(limit * 4),
   ]);
 
+  const settledTipRows = settledTipRowsRaw.map(mapTipRow);
+  const unsettledTipRows = unsettledTipRowsRaw.map(mapTipRow);
+  const creditRows = creditRowsRaw.map(mapCreditRow);
+
+  const loadedTipIds = new Set([...settledTipRows, ...unsettledTipRows].map((row) => row.id));
+  const referencedTipIntentIds = collectReferencedTipIntentIds(creditRows).filter((id) => !loadedTipIds.has(id));
+
+  const referencedTipRows = referencedTipIntentIds.length === 0
+    ? []
+    : (await db
+      .select({
+        id: tipIntents.id,
+        appId: tipIntents.appId,
+        postId: tipIntents.postId,
+        fromUserId: tipIntents.fromUserId,
+        toUserId: tipIntents.toUserId,
+        asset: tipIntents.asset,
+        amount: tipIntents.amount,
+        invoice: tipIntents.invoice,
+        state: tipIntents.invoiceState,
+        settledAt: tipIntents.settledAt,
+      })
+      .from(tipIntents)
+      .where(inArray(tipIntents.id, referencedTipIntentIds))
+    ).map(mapTipRow);
+
   const report = buildTipSettlementParityReport({
-    tipIntents: tipRows.map((row) => ({
-      ...row,
-      amount: String(row.amount),
-      settledAt: row.settledAt ? row.settledAt.toISOString() : null,
-    })),
-    credits: creditRows.map((row) => ({
-      ...row,
-      amount: String(row.amount),
-    })),
+    tipIntents: mergeTipRows(settledTipRows, unsettledTipRows, referencedTipRows),
+    credits: creditRows,
   });
 
   console.log(
@@ -145,7 +265,9 @@ async function main() {
   }
 }
 
-void main().catch((error) => {
-  console.error("reconcile-tip-settlement-parity failed", error);
-  process.exit(1);
-});
+if (import.meta.main) {
+  void main().catch((error) => {
+    console.error("reconcile-tip-settlement-parity failed", error);
+    process.exit(1);
+  });
+}

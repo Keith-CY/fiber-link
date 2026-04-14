@@ -156,6 +156,38 @@ describe("tip settlement reconciliation report", () => {
     expect(report.issuesByKind.CREDIT_AMOUNT_MISMATCH).toBe(1);
   });
 
+  it("treats equivalent numeric amount strings as a match", () => {
+    const report = buildTipSettlementParityReport({
+      tipIntents: [
+        {
+          id: "tip-amount",
+          appId: "app-1",
+          postId: "post-1",
+          fromUserId: "u-from",
+          toUserId: "u-to",
+          asset: "USDI",
+          amount: "10.00",
+          invoice: "inv-amount",
+          state: "SETTLED",
+          settledAt: "2026-04-13T00:00:00.000Z",
+        },
+      ],
+      credits: [
+        {
+          appId: "app-1",
+          userId: "u-to",
+          asset: "USDI",
+          amount: "10",
+          refId: "tip-amount",
+          idempotencyKey: "settlement:tip_intent:tip-amount",
+        },
+      ],
+    });
+
+    expect(report.healthy).toBe(true);
+    expect(report.issuesByKind.CREDIT_AMOUNT_MISMATCH).toBe(0);
+  });
+
   it("parses tip intent id from settlement credit idempotency key", () => {
     expect(parseTipIntentIdFromSettlementCreditIdempotencyKey("settlement:tip_intent:tip-123")).toBe("tip-123");
     expect(parseTipIntentIdFromSettlementCreditIdempotencyKey("settlement:tip_intent:")).toBeNull();
