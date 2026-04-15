@@ -540,7 +540,40 @@ jobs:
 
       - name: Prepare test DB
         working-directory: discourse-dev
-        run: docker exec -u discourse:discourse -w /src -e RAILS_ENV=test -e LOAD_PLUGINS=1 discourse_dev bin/rake db:create db:migrate
+        run: |
+          if ! docker exec -u root discourse_dev bash -lc '
+            set -euo pipefail
+            sv start postgres >/dev/null 2>&1 || true
+            pg_ctlcluster 15 main start >/dev/null 2>&1 || true
+            exec chpst -u discourse:discourse env RAILS_ENV=test LOAD_PLUGINS=1 sh -lc "cd /src && bin/rake db:create db:migrate"
+          '; then
+            docker exec -u root discourse_dev bash -lc '
+              set +e
+              echo "--- postgres service status ---"
+              sv status postgres || true
+              echo "--- pg_isready ---"
+              pg_isready -h /var/run/postgresql -p 5432 || true
+              echo "--- postgres log tail ---"
+              tail -n 200 /var/log/postgres/current || true
+            ' || true
+            docker logs discourse_dev | tail -n 200 || true
+            echo "retrying Prepare test DB after restarting postgres" >&2
+            docker exec -u root discourse_dev bash -lc '
+              set -euo pipefail
+              sv start postgres >/dev/null 2>&1 || true
+              pg_ctlcluster 15 main start >/dev/null 2>&1 || true
+              for i in {1..60}; do
+                if [ -S /var/run/postgresql/.s.PGSQL.5432 ] \
+                  && command -v pg_isready >/dev/null 2>&1 \
+                  && pg_isready -q -h /var/run/postgresql -p 5432
+                then
+                  break
+                fi
+                sleep 1
+              done
+              exec chpst -u discourse:discourse env RAILS_ENV=test LOAD_PLUGINS=1 sh -lc "cd /src && bin/rake db:create db:migrate"
+            '
+          fi
 
       - name: Plugin smoke spec (requests + optional extras)
         working-directory: discourse-dev
