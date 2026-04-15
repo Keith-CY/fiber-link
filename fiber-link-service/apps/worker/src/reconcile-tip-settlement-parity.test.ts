@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   collectReferencedTipIntentIds,
   mergeTipRows,
+  shouldIncludeNullSettledAtSettledTip,
 } from "./scripts/reconcile-tip-settlement-parity";
 
 describe("reconcile tip settlement parity script helpers", () => {
@@ -58,6 +59,7 @@ describe("reconcile tip settlement parity script helpers", () => {
             amount: "10",
             invoice: "inv-1",
             state: "SETTLED",
+            createdAt: "2026-04-13T00:00:00.000Z",
             settledAt: "2026-04-14T00:00:00.000Z",
           },
         ],
@@ -72,6 +74,7 @@ describe("reconcile tip settlement parity script helpers", () => {
             amount: "10",
             invoice: "inv-1",
             state: "SETTLED",
+            createdAt: "2026-04-13T00:00:00.000Z",
             settledAt: "2026-04-14T00:00:00.000Z",
           },
           {
@@ -84,6 +87,7 @@ describe("reconcile tip settlement parity script helpers", () => {
             amount: "3",
             invoice: "inv-2",
             state: "UNPAID",
+            createdAt: "2026-04-14T00:00:00.000Z",
             settledAt: null,
           },
         ],
@@ -99,6 +103,7 @@ describe("reconcile tip settlement parity script helpers", () => {
         amount: "10",
         invoice: "inv-1",
         state: "SETTLED",
+        createdAt: "2026-04-13T00:00:00.000Z",
         settledAt: "2026-04-14T00:00:00.000Z",
       },
       {
@@ -111,8 +116,21 @@ describe("reconcile tip settlement parity script helpers", () => {
         amount: "3",
         invoice: "inv-2",
         state: "UNPAID",
+        createdAt: "2026-04-14T00:00:00.000Z",
         settledAt: null,
       },
     ]);
+  });
+
+  it("includes null-settledAt settled tips using createdAt fallback within the requested window", () => {
+    const args = {
+      from: new Date("2026-04-14T00:00:00.000Z"),
+      to: new Date("2026-04-14T23:59:59.999Z"),
+      limit: 500,
+    };
+
+    expect(shouldIncludeNullSettledAtSettledTip(args, new Date("2026-04-14T08:00:00.000Z"))).toBe(true);
+    expect(shouldIncludeNullSettledAtSettledTip(args, new Date("2026-04-13T23:59:59.999Z"))).toBe(false);
+    expect(shouldIncludeNullSettledAtSettledTip(args, null)).toBe(true);
   });
 });

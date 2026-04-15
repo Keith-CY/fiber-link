@@ -1,4 +1,4 @@
-import type { Asset, InvoiceState } from "@fiber-link/db";
+import { compareDecimalStrings, type Asset, type InvoiceState } from "@fiber-link/db";
 
 const SETTLEMENT_CREDIT_PREFIX = "settlement:tip_intent:";
 
@@ -175,12 +175,7 @@ export function buildTipSettlementParityReport(args: {
         });
       }
 
-      const creditAmount = Number(credit.amount);
-      const tipAmount = Number(tipIntent.amount);
-      const amountsMatch = Number.isFinite(creditAmount) && Number.isFinite(tipAmount)
-        ? creditAmount === tipAmount
-        : credit.amount === tipIntent.amount;
-      if (!amountsMatch) {
+      if (compareDecimalStrings(credit.amount, tipIntent.amount) !== 0) {
         addIssue({
           kind: "CREDIT_AMOUNT_MISMATCH",
           tipIntentId: tipIntent.id,

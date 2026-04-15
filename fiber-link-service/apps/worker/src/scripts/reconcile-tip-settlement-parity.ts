@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, like, lte, ne, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, like, lte, ne, or, sql } from "drizzle-orm";
 import { createDbClient, ledgerEntries, tipIntents } from "@fiber-link/db";
 import {
   buildTipSettlementParityReport,
@@ -6,12 +6,25 @@ import {
   type TipSettlementParityCreditRow,
 } from "../tip-settlement-reconciliation";
 
-type ReconcileArgs = {
+export type ReconcileArgs = {
   appId?: string;
   from?: Date;
   to?: Date;
   limit: number;
 };
+
+export function shouldIncludeNullSettledAtSettledTip(args: ReconcileArgs, createdAt: Date | null): boolean {
+  if (!createdAt) {
+    return true;
+  }
+  if (args.from && createdAt < args.from) {
+    return false;
+  }
+  if (args.to && createdAt > args.to) {
+    return false;
+  }
+  return true;
+}
 
 type TipParityScriptRow = {
   id: string;
@@ -23,6 +36,7 @@ type TipParityScriptRow = {
   amount: string;
   invoice: string;
   state: (typeof tipIntents.$inferSelect)["invoiceState"];
+  createdAt: string;
   settledAt: string | null;
 };
 
@@ -79,11 +93,13 @@ function mapTipRow(row: {
   amount: unknown;
   invoice: string;
   state: (typeof tipIntents.$inferSelect)["invoiceState"];
+  createdAt: Date;
   settledAt: Date | null;
 }): TipParityScriptRow {
   return {
     ...row,
     amount: String(row.amount),
+    createdAt: row.createdAt.toISOString(),
     settledAt: row.settledAt ? row.settledAt.toISOString() : null,
   };
 }
@@ -133,11 +149,29 @@ async function main() {
   if (appId) {
     settledTipPredicates.push(eq(tipIntents.appId, appId));
   }
-  if (from) {
-    settledTipPredicates.push(gte(tipIntents.settledAt, from));
-  }
-  if (to) {
-    settledTipPredicates.push(lte(tipIntents.settledAt, to));
+  if (from || to) {
+    const settledAtWindowPredicates = [sql`TRUE`];
+    if (from) {
+      settledAtWindowPredicates.push(gte(tipIntents.settledAt, from));
+    }
+    if (to) {
+      settledAtWindowPredicates.push(lte(tipIntents.settledAt, to));
+    }
+
+    const nullSettledAtFallbackPredicates = [sql`TRUE`, isNull(tipIntents.settledAt)];
+    if (from) {
+      nullSettledAtFallbackPredicates.push(gte(tipIntents.createdAt, from));
+    }
+    if (to) {
+      nullSettledAtFallbackPredicates.push(lte(tipIntents.createdAt, to));
+    }
+
+    settledTipPredicates.push(
+      or(
+        and(...settledAtWindowPredicates),
+        and(...nullSettledAtFallbackPredicates),
+      )!,
+    );
   }
 
   const unsettledTipPredicates = [sql`TRUE`, ne(tipIntents.invoiceState, "SETTLED")];
@@ -174,6 +208,7 @@ async function main() {
         amount: tipIntents.amount,
         invoice: tipIntents.invoice,
         state: tipIntents.invoiceState,
+        createdAt: tipIntents.createdAt,
         settledAt: tipIntents.settledAt,
       })
       .from(tipIntents)
@@ -191,6 +226,7 @@ async function main() {
         amount: tipIntents.amount,
         invoice: tipIntents.invoice,
         state: tipIntents.invoiceState,
+        createdAt: tipIntents.createdAt,
         settledAt: tipIntents.settledAt,
       })
       .from(tipIntents)
@@ -232,6 +268,7 @@ async function main() {
         amount: tipIntents.amount,
         invoice: tipIntents.invoice,
         state: tipIntents.invoiceState,
+        createdAt: tipIntents.createdAt,
         settledAt: tipIntents.settledAt,
       })
       .from(tipIntents)
