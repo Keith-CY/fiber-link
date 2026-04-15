@@ -541,12 +541,22 @@ jobs:
       - name: Prepare test DB
         working-directory: discourse-dev
         run: |
-          if ! docker exec -u root discourse_dev bash -lc '
-            set -euo pipefail
-            sv start postgres >/dev/null 2>&1 || true
-            pg_ctlcluster 15 main start >/dev/null 2>&1 || true
-            exec chpst -u discourse:discourse env RAILS_ENV=test LOAD_PLUGINS=1 sh -lc "cd /src && bin/rake db:create db:migrate"
-          '; then
+          start_postgres() {
+            docker exec -u root discourse_dev bash -lc '
+              set -euo pipefail
+              sv start postgres >/dev/null 2>&1 || true
+              pg_ctlcluster 15 main start >/dev/null 2>&1 || true
+            '
+          }
+
+          run_prepare_db() {
+            docker exec -u discourse:discourse -w /src \
+              -e HOME=/home/discourse -e RAILS_ENV=test -e LOAD_PLUGINS=1 \
+              discourse_dev bash -lc 'bin/rake db:create db:migrate'
+          }
+
+          start_postgres
+          if ! run_prepare_db; then
             docker exec -u root discourse_dev bash -lc '
               set +e
               echo "--- postgres service status ---"
@@ -558,21 +568,22 @@ jobs:
             ' || true
             docker logs discourse_dev | tail -n 200 || true
             echo "retrying Prepare test DB after restarting postgres" >&2
+            start_postgres
             docker exec -u root discourse_dev bash -lc '
               set -euo pipefail
-              sv start postgres >/dev/null 2>&1 || true
-              pg_ctlcluster 15 main start >/dev/null 2>&1 || true
               for i in {1..60}; do
                 if [ -S /var/run/postgresql/.s.PGSQL.5432 ] \
                   && command -v pg_isready >/dev/null 2>&1 \
                   && pg_isready -q -h /var/run/postgresql -p 5432
                 then
-                  break
+                  exit 0
                 fi
                 sleep 1
               done
-              exec chpst -u discourse:discourse env RAILS_ENV=test LOAD_PLUGINS=1 sh -lc "cd /src && bin/rake db:create db:migrate"
+              echo "postgres did not recover before retry"
+              exit 1
             '
+            run_prepare_db
           fi
 
       - name: Plugin smoke spec (requests + optional extras)
