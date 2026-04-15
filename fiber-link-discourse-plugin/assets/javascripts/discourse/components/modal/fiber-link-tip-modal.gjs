@@ -455,7 +455,7 @@ export default class FiberLinkTipModal extends Component {
                   <p>Scan the request in Fiber Wallet or hand off via deep link.</p>
                 </div>
               </li>
-              <li class={{if this.isConfirmedStep "is-active" "")}}>
+              <li class={{if this.isConfirmedStep "is-active" ""}}>
                 <span>3</span>
                 <div>
                   <strong>Confirm</strong>
