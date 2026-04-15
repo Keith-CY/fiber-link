@@ -49,30 +49,31 @@ RSpec.describe "Fiber Link Tip", type: :system do
     click_button "Tip", match: :first
 
     expect(page).to have_content("Pay with Fiber")
-    expect(page).to have_content("@#{topic.first_post.user.username}")
+    expect(page).to have_content("Pay 1 CKB")
+    expect(page).to have_content("to @#{topic.first_post.user.username}")
     expect(page).to have_css("img[data-fiber-link-tip-modal='brand-logo']")
-    expect(page).to have_link("fiberlink.me", href: "https://fiberlink.me/")
-    expect(page).to have_content("Payments uncompromised")
+    expect(page).to have_link("Fiber Link", href: "https://fiberlink.me/")
+    expect(page).to have_css("[data-fiber-link-tip-modal='summary']")
     expect(page).to have_css("[data-fiber-link-tip-modal-step='generate']")
     expect(page).to have_no_css("[data-fiber-link-tip-modal-step='pay']")
     expect(page).to have_no_css("[data-fiber-link-tip-modal-step='confirmed']")
 
     fill_in "Amount", with: "31"
-    fill_in "Tip message (optional)", with: "Great post"
-    click_button "Generate Invoice"
+    fill_in "Message (optional)", with: "Great post"
+    click_button "Continue to Payment"
 
     expect(page).to have_no_css("[data-fiber-link-tip-modal-step='generate']")
     expect(page).to have_css("[data-fiber-link-tip-modal-step='pay']")
     expect(page).to have_no_css("[data-fiber-link-tip-modal-step='confirmed']")
     expect(page).to have_content("31 CKB")
-    expect(page).to have_content("Scan with Fiber Wallet")
+    expect(page).to have_content("Awaiting payment")
     expect(page).to have_content("Status updates automatically")
     expect(page).to have_css("img[data-fiber-link-tip-modal=invoice-qr]")
     expect(page).to have_button("Copy Invoice")
     expect(page).to have_link("Open Fiber Wallet", href: "fiber://invoice/inv-tip-1")
     expect(page).to have_no_text("inv-tip-1")
 
-    click_button "Advanced"
+    click_button "More options"
     expect(page).to have_text("inv-tip-1")
     expect(page).to have_button("Check status")
 
@@ -88,7 +89,8 @@ RSpec.describe "Fiber Link Tip", type: :system do
     expect(page).to have_no_css("[data-fiber-link-tip-modal-step='generate']")
     expect(page).to have_no_css("[data-fiber-link-tip-modal-step='pay']")
     expect(page).to have_css("[data-fiber-link-tip-modal-step='confirmed']")
-    expect(page).to have_content("Payment received")
+    expect(page).to have_content("Payment complete")
+    expect(page).to have_button("Done")
   end
 
   it "keeps manual status checks available inside advanced details" do
@@ -117,14 +119,14 @@ RSpec.describe "Fiber Link Tip", type: :system do
     click_button "Tip", match: :first
     expect(page).to have_css("[data-fiber-link-tip-modal-step='generate']")
     expect(page).to have_no_css("[data-fiber-link-tip-modal-step='pay']")
-    click_button "Generate Invoice"
+    click_button "Continue to Payment"
     expect(page).to have_no_css("[data-fiber-link-tip-modal-step='generate']")
     expect(page).to have_css("[data-fiber-link-tip-modal-step='pay']")
-    click_button "Advanced"
+    click_button "More options"
     click_button "Check status"
 
     expect(page).to have_no_css("[data-fiber-link-tip-modal-step='pay']")
     expect(page).to have_css("[data-fiber-link-tip-modal-step='confirmed']")
-    expect(page).to have_content("Payment received")
+    expect(page).to have_content("Payment complete")
   end
 end
