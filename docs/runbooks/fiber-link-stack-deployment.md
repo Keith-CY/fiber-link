@@ -135,6 +135,23 @@ For production-style deployments, also explicitly set:
 - `FIBER_WITHDRAWAL_POLICY_COOLDOWN_SECONDS`
 - `FIBER_WITHDRAWAL_CKB_PRIVATE_KEY`
 
+If you intend to enable worker-side channel rotation fallback for underfunded CKB withdrawals, also set:
+
+- `FIBER_LIQUIDITY_FALLBACK_MODE=channel_rotation`
+- `FIBER_CHANNEL_ACCEPT_RPC_URL=<reachable payer-side accept RPC endpoint>`
+- `FIBER_CHANNEL_ROTATION_BOOTSTRAP_RESERVE`
+- `FIBER_CHANNEL_ROTATION_MIN_RECOVERABLE_AMOUNT`
+- `FIBER_CHANNEL_ROTATION_MAX_CONCURRENT`
+- `FIBER_WITHDRAWAL_CKB_LIQUIDITY_FEE_BUFFER`
+- `FIBER_WITHDRAWAL_CKB_LIQUIDITY_POST_TX_RESERVE`
+- `FIBER_WITHDRAWAL_CKB_LIQUIDITY_WARM_BUFFER`
+
+Operator note:
+
+- the payer-side accept RPC endpoint may be owned by another operator or stack
+- this runbook assumes you have been given a reachable RPC endpoint and peer address for that payer node
+- do not assume `fnn` alone is sufficient when channel rotation fallback is enabled
+
 ## 6. Stage 1 — Deploy FNN with Docker
 
 FNN is part of the Compose stack, but operationally treat it as its own dependency.
@@ -193,6 +210,19 @@ Minimum acceptance for this stage:
 - no crash/restart storm in the first 10 minutes
 - RPC can reach Postgres/Redis/FNN
 - worker can reach Postgres/Redis/FNN
+
+Before treating this stage as complete, verify runtime env propagation for the values that materially affect withdrawal behavior:
+
+```bash
+docker compose exec rpc env | grep -E 'FIBER_WITHDRAWAL_CKB_PRIVATE_KEY|FIBER_LIQUIDITY_FALLBACK_MODE|FIBER_CHANNEL_ACCEPT_RPC_URL'
+docker compose exec worker env | grep -E 'FIBER_WITHDRAWAL_CKB_PRIVATE_KEY|FIBER_LIQUIDITY_FALLBACK_MODE|FIBER_CHANNEL_ACCEPT_RPC_URL'
+```
+
+Why this matters:
+
+- having a value in `.env` is not enough if the running containers were not recreated with it
+- on-chain withdrawals require `FIBER_WITHDRAWAL_CKB_PRIVATE_KEY` to be present in the live `rpc`/`worker` runtime, not just in source control or operator notes
+- channel rotation fallback requires the live worker to see `FIBER_LIQUIDITY_FALLBACK_MODE=channel_rotation` and a reachable `FIBER_CHANNEL_ACCEPT_RPC_URL`
 
 ## 8. Stage 3 — Service health verification
 
@@ -303,7 +333,52 @@ docker exec -i fiber-link-postgres psql \
   -c "select app_id, allowed_assets, max_per_request, per_user_daily_max, per_app_daily_max, cooldown_seconds, updated_at from withdrawal_policies order by app_id;"
 ```
 
-## 12. Common deployment pitfalls
+## 12. Channel rotation fallback enablement
+
+Use this section only if you want underfunded CKB withdrawals to recover via channel rotation instead of remaining stuck in `LIQUIDITY_PENDING`.
+
+### Preconditions
+
+Before enabling the fallback, verify all of the following:
+
+- the live worker has `FIBER_LIQUIDITY_FALLBACK_MODE=channel_rotation`
+- `FIBER_CHANNEL_ACCEPT_RPC_URL` points to a reachable payer-side accept RPC endpoint
+- the worker has a valid `FIBER_WITHDRAWAL_CKB_PRIVATE_KEY`
+- at least one eligible legacy channel exists
+- the legacy channel is already `CHANNEL_READY`
+- the legacy channel has no pending TLCs
+- the legacy channel local balance is large enough to satisfy your configured minimum recoverable amount
+
+### Database / schema gate
+
+Do not enable new worker-side liquidity fallback code against an old schema.
+
+Before rollout, verify that the current migrations have been applied, especially anything introducing:
+
+- `liquidity_requests`
+- `withdrawals.liquidity_request_id`
+- `withdrawals.liquidity_pending_reason`
+- `withdrawals.liquidity_checked_at`
+
+If these objects are missing, worker may start but channel-rotation and withdrawal flows will fail at runtime.
+
+### Recommended verification sequence
+
+The operator acceptance test for channel rotation should prove the entire state transition, not just config presence:
+
+1. confirm hot wallet inventory is below the total amount required to satisfy the target withdrawal directly
+2. submit a normal `withdrawal.request`
+3. verify the withdrawal first enters `LIQUIDITY_PENDING`
+4. verify a `liquidity_requests` row is created with `recoveryStrategy = CHANNEL_ROTATION`
+5. verify replacement-channel metadata appears (`legacyChannelId`, `replacementChannelId`, `expectedRecoveredAmount`)
+6. verify the old channel eventually becomes `CLOSED`
+7. capture the channel shutdown tx hash from the closed legacy channel
+8. verify the withdrawal reaches `COMPLETED`
+9. confirm the completed withdrawal tx consumes funds made available by the rotation flow
+
+This is the operational proof that rotation is really enabled.
+
+## 13. Common deployment pitfalls
 
 ### Pitfall 1 — container health is green but cross-service wiring is broken
 
@@ -345,7 +420,19 @@ Rule:
   - secret map override
   - default HMAC secret
 
-### Pitfall 4 — deployment success is mistaken for operational readiness
+### Pitfall 4 — `.env` and image changes are not enough unless runtime is recreated
+
+Symptoms:
+
+- `.env` contains the right values but live containers do not
+- worker behaves like fallback is disabled even though config was edited
+- on-chain withdrawal still fails with signer-missing errors after secrets were added
+
+Rule:
+
+- after changing signer, liquidity fallback, or channel-accept endpoint values, recreate the affected containers and re-check runtime env from inside the containers
+
+### Pitfall 5 — deployment success is mistaken for operational readiness
 
 Symptoms observed in later operation:
 
@@ -360,8 +447,9 @@ Rule:
   - scheduled tasks / cron execution
   - settlement loops
   - withdrawal readiness
+  - channel-rotation readiness if fallback is enabled
 
-## 13. Minimum handoff checklist
+## 14. Minimum handoff checklist
 
 Before handing this backend to a Discourse admin or another operator:
 
@@ -372,9 +460,12 @@ Before handing this backend to a Discourse admin or another operator:
 - [ ] invoice generation works
 - [ ] key service URL is recorded
 - [ ] app id / app secret to use from the plugin side is recorded
+- [ ] runtime env for signer / fallback-sensitive values was verified inside `rpc` and `worker`
+- [ ] latest DB migrations required by the deployed worker are applied
+- [ ] if channel rotation fallback is enabled, one end-to-end `LIQUIDITY_PENDING -> CHANNEL_ROTATION -> COMPLETED` proof has been captured
 - [ ] evidence/logs from first bring-up are preserved
 
-## 14. Next step
+## 15. Next step
 
 After this runbook is complete, continue with:
 
