@@ -77,7 +77,8 @@
 
 - `docs/runbooks/deployment-evidence.md` — deployment evidence artifacts, checklist, and retention policy.
 - `scripts/capture-deployment-evidence.sh` — one-command evidence and log capture bundle.
-- `docs/runbooks/coolify-deployment.md` — staged Coolify deployment workflow for Fiber Link/FNN, including known pitfalls and Discourse fallback guidance.
+- `docs/runbooks/fiber-link-stack-deployment.md` — operator runbook for deploying FNN + Fiber Link services with Docker/Docker Compose, through health checks and backend admin-side handoff.
+- `docs/runbooks/discourse-plugin-admin.md` — Discourse administrator workflow for installing the Fiber Link plugin, enabling it, and connecting it to a live Fiber Link backend.
 - `scripts/capture-compose-backup.sh` — one-command compose backup bundle capture with retention metadata and archive output.
 - `scripts/restore-compose-backup.sh` — restore flow for a compose backup bundle or archive with dry-run support.
 - `docs/runbooks/mainnet-deployment-checklist.md` — mainnet preflight, rollback, and post-deploy verification gate.
