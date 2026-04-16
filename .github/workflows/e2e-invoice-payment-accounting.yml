@@ -11,7 +11,7 @@ jobs:
       FNN_ASSET_SHA256: 8f9a69361f662438fa1fc29ddc668192810b13021536ebd1101c84dc0cfa330f
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Prepare Compose Env
         shell: bash
@@ -44,7 +44,7 @@ jobs:
 
       - name: Upload E2E Artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: e2e-invoice-payment-accounting-artifacts
           path: .tmp/e2e-invoice-payment-accounting
