@@ -76,10 +76,8 @@
 ## Deployment evidence
 
 - `docs/runbooks/deployment-evidence.md` — deployment evidence artifacts, checklist, and retention policy.
-- `docs/runbooks/compose-backup-recovery.md` — repeatable compose backup and restore runbook for Postgres, worker cursor state, and runtime snapshots.
-- `docs/runbooks/compose-ops-monitoring.md` — machine-consumable compose monitoring baseline with exit-code semantics for cron/CI/on-call routing.
-- `docs/runbooks/withdrawal-policy-operations.md` — trusted operator workflow for listing and upserting per-app withdrawal policy rows.
 - `scripts/capture-deployment-evidence.sh` — one-command evidence and log capture bundle.
+- `docs/runbooks/coolify-deployment.md` — staged Coolify deployment workflow for Fiber Link/FNN, including known pitfalls and Discourse fallback guidance.
 - `scripts/capture-compose-backup.sh` — one-command compose backup bundle capture with retention metadata and archive output.
 - `scripts/restore-compose-backup.sh` — restore flow for a compose backup bundle or archive with dry-run support.
 - `docs/runbooks/mainnet-deployment-checklist.md` — mainnet preflight, rollback, and post-deploy verification gate.
