@@ -521,9 +521,7 @@ jobs:
             sv start postgres >/dev/null 2>&1 || true
             pg_ctlcluster 15 main start >/dev/null 2>&1 || true
             for i in {1..180}; do
-              if [ -S /var/run/postgresql/.s.PGSQL.5432 ] \
-                && command -v pg_isready >/dev/null 2>&1 \
-                && pg_isready -q -h /var/run/postgresql -p 5432
+              if [ -S /var/run/postgresql/.s.PGSQL.5432 ]                 && command -v pg_isready >/dev/null 2>&1                 && pg_isready -q -h /var/run/postgresql -p 5432
               then
                 exit 0
               fi
@@ -549,13 +547,31 @@ jobs:
             '
           }
 
+          wait_for_postgres() {
+            docker exec -u root discourse_dev bash -lc '
+              set -euo pipefail
+              for i in {1..180}; do
+                if [ -S /var/run/postgresql/.s.PGSQL.5432 ]                   && command -v psql >/dev/null 2>&1                   && psql -h /var/run/postgresql -p 5432 -U discourse postgres -c "SELECT 1" >/dev/null 2>&1; then
+                  exit 0
+                fi
+                if [ -x /usr/bin/pg_isready ]; then
+                  pg_isready -q -h /var/run/postgresql -p 5432 || true
+                fi
+                sleep 1
+              done
+              echo "postgres did not accept SQL connections after startup"
+              sv status postgres || true
+              tail -n 200 /var/log/postgres/current || true
+              exit 1
+            '
+          }
+
           run_prepare_db() {
-            docker exec -u discourse:discourse -w /src \
-              -e HOME=/home/discourse -e RAILS_ENV=test -e LOAD_PLUGINS=1 \
-              discourse_dev bash -lc 'bin/rake db:create db:migrate'
+            docker exec -u discourse:discourse -w /src               -e HOME=/home/discourse -e RAILS_ENV=test -e LOAD_PLUGINS=1               discourse_dev bash -lc 'bin/rake db:create db:migrate'
           }
 
           start_postgres
+          wait_for_postgres
           if ! run_prepare_db; then
             docker exec -u root discourse_dev bash -lc '
               set +e
@@ -569,20 +585,7 @@ jobs:
             docker logs discourse_dev | tail -n 200 || true
             echo "retrying Prepare test DB after restarting postgres" >&2
             start_postgres
-            docker exec -u root discourse_dev bash -lc '
-              set -euo pipefail
-              for i in {1..60}; do
-                if [ -S /var/run/postgresql/.s.PGSQL.5432 ] \
-                  && command -v pg_isready >/dev/null 2>&1 \
-                  && pg_isready -q -h /var/run/postgresql -p 5432
-                then
-                  exit 0
-                fi
-                sleep 1
-              done
-              echo "postgres did not recover before retry"
-              exit 1
-            '
+            wait_for_postgres
             run_prepare_db
           fi
 
@@ -593,10 +596,8 @@ jobs:
             set -euo pipefail
             sv start postgres >/dev/null 2>&1 || true
             pg_ctlcluster 15 main start >/dev/null 2>&1 || true
-            for i in {1..120}; do
-              if [ -S /var/run/postgresql/.s.PGSQL.5432 ] \
-                && command -v pg_isready >/dev/null 2>&1 \
-                && pg_isready -q -h /var/run/postgresql -p 5432
+            for i in {1..180}; do
+              if [ -S /var/run/postgresql/.s.PGSQL.5432 ]                 && command -v psql >/dev/null 2>&1                 && psql -h /var/run/postgresql -p 5432 -U discourse postgres -c "SELECT 1" >/dev/null 2>&1
               then
                 exit 0
               fi
@@ -606,10 +607,7 @@ jobs:
             tail -n 200 /var/log/postgres/current || true
             exit 1
           '
-          docker exec -u discourse:discourse -w /src \
-            -e HOME=/home/discourse -e RAILS_ENV=test -e LOAD_PLUGINS=1 \
-            -e PLUGIN_SMOKE_REQUEST_SPECS -e PLUGIN_SMOKE_EXTRA_SPECS \
-            discourse_dev bash -lc '
+          docker exec -u discourse:discourse -w /src             -e HOME=/home/discourse -e RAILS_ENV=test -e LOAD_PLUGINS=1             -e PLUGIN_SMOKE_REQUEST_SPECS -e PLUGIN_SMOKE_EXTRA_SPECS             discourse_dev bash -lc '
               set -euo pipefail
 
               specs=($PLUGIN_SMOKE_REQUEST_SPECS)
