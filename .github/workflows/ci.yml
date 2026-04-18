@@ -516,29 +516,32 @@ jobs:
       - name: Wait for Postgres
         working-directory: discourse-dev
         run: |
-          if ! docker exec -u discourse discourse_dev bash -lc '
+          docker exec -u root discourse_dev bash -lc "
             set -euo pipefail
-            sv start postgres >/dev/null 2>&1 || true
-            pg_ctlcluster 15 main start >/dev/null 2>&1 || true
+
             for i in {1..240}; do
-              if psql -h /var/run/postgresql -p 5432 -U discourse postgres -c "SELECT 1" >/dev/null 2>&1; then
+              if su - postgres -c 'psql -h /var/run/postgresql -p 5432 -d postgres -c "SELECT 1"' >/dev/null 2>&1; then
                 exit 0
               fi
+
+              sv status postgres || true
+              if [ $i -ge 60 ] && [ $((i % 15)) -eq 0 ]; then
+                echo "restarting postgres (attempt ${i})"
+                sv restart postgres || true
+              fi
+
               if command -v pg_isready >/dev/null 2>&1 && pg_isready -q -h /var/run/postgresql -p 5432; then
                 exit 0
               fi
               sleep 2
             done
+
             echo "postgres did not become query-ready after 240s"
             sv status postgres || true
             ls -la /var/run/postgresql || true
-            tail -n 200 /var/log/postgres/current || true
+            tail -n 260 /var/log/postgres/current || true
             exit 1
-          '; then
-            docker logs discourse_dev | tail -n 260 || true
-            exit 1
-          fi
-
+          "
       - name: Prepare test DB
         working-directory: discourse-dev
         run: |
@@ -551,20 +554,21 @@ jobs:
           }
 
           wait_for_postgres() {
-            docker exec -u discourse discourse_dev bash -lc '
+            docker exec -u root discourse_dev bash -lc "
               set -euo pipefail
-              for i in {1..180}; do
-                if [ -S /var/run/postgresql/.s.PGSQL.5432 ]                   && command -v psql >/dev/null 2>&1                   && psql -h /var/run/postgresql -p 5432 -U discourse postgres -c "SELECT 1" >/dev/null 2>&1; then
+              for i in {1..240}; do
+                if su - postgres -c 'psql -h /var/run/postgresql -p 5432 -d postgres -c "SELECT 1"' >/dev/null 2>&1; then
                   exit 0
                 fi
-                if [ -x /usr/bin/pg_isready ]; then
-                  pg_isready -q -h /var/run/postgresql -p 5432 || true
+                if command -v pg_isready >/dev/null 2>&1 && pg_isready -q -h /var/run/postgresql -p 5432; then
+                  exit 0
                 fi
-                sleep 1
+                sleep 2
               done
               echo "postgres did not accept SQL connections after startup"
               sv status postgres || true
-              tail -n 200 /var/log/postgres/current || true
+              ls -la /var/run/postgresql || true
+              tail -n 260 /var/log/postgres/current || true
               exit 1
             '
           }
@@ -583,24 +587,21 @@ jobs:
               echo "--- pg_isready ---"
               pg_isready -h /var/run/postgresql -p 5432 || true
               echo "--- postgres log tail ---"
-              tail -n 200 /var/log/postgres/current || true
+              tail -n 260 /var/log/postgres/current || true
             ' || true
-            docker logs discourse_dev | tail -n 200 || true
+            docker logs discourse_dev | tail -n 260 || true
             echo "retrying Prepare test DB after restarting postgres" >&2
             start_postgres
             wait_for_postgres
             run_prepare_db
           fi
-
       - name: Plugin smoke spec (requests + optional extras)
         working-directory: discourse-dev
         run: |
-          docker exec -u discourse discourse_dev bash -lc '
+          docker exec -u root discourse_dev bash -lc "
             set -euo pipefail
-            sv start postgres >/dev/null 2>&1 || true
-            pg_ctlcluster 15 main start >/dev/null 2>&1 || true
             for i in {1..240}; do
-              if psql -h /var/run/postgresql -p 5432 -U discourse postgres -c "SELECT 1" >/dev/null 2>&1; then
+              if su - postgres -c 'psql -h /var/run/postgresql -p 5432 -d postgres -c "SELECT 1"' >/dev/null 2>&1; then
                 exit 0
               fi
               if command -v pg_isready >/dev/null 2>&1 && pg_isready -q -h /var/run/postgresql -p 5432 >/dev/null 2>&1; then
@@ -611,9 +612,9 @@ jobs:
             echo "postgres was not query-ready before plugin smoke"
             sv status postgres || true
             ls -la /var/run/postgresql || true
-            tail -n 200 /var/log/postgres/current || true
+            tail -n 260 /var/log/postgres/current || true
             exit 1
-          '
+          "
           docker exec -u discourse:discourse -w /src             -e HOME=/home/discourse -e RAILS_ENV=test -e LOAD_PLUGINS=1             -e PLUGIN_SMOKE_REQUEST_SPECS -e PLUGIN_SMOKE_EXTRA_SPECS             discourse_dev bash -lc '
             set -euo pipefail
 
@@ -624,7 +625,6 @@ jobs:
 
             bundle exec rspec "${specs[@]}"
           '
-
       - name: Shutdown Discourse dev container
         if: always()
         run: docker rm -f discourse_dev
