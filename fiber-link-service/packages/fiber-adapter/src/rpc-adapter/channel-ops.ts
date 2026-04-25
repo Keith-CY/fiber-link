@@ -1,4 +1,5 @@
 import { FiberRpcError, rpcCall } from "../fiber-client";
+import { hasLocalChainLiquiditySweepSupport } from "./rebalance-ops";
 import { normalizeRpcAmount, normalizeRpcInteger, pickRequiredAmount, pickStringCandidate, pickTxEvidence, toHexQuantity } from "./normalize";
 import { rpcCallWithoutParams, toRpcUdtTypeScript } from "./invoice-ops";
 import type {
@@ -81,6 +82,9 @@ function isUnsupportedRpcMethodError(error: unknown): boolean {
 }
 
 async function probeDirectRebalanceSupport(endpoint: string): Promise<boolean> {
+  if (hasLocalChainLiquiditySweepSupport()) {
+    return true;
+  }
   try {
     await rpcCall(endpoint, "get_rebalance_status", {
       request_id: "__capability_probe__",

@@ -62,10 +62,10 @@ function parseOptionalBigIntEnv(name: string): bigint | null {
   return BigInt(raw.trim());
 }
 
-function normalizeHexPrivateKey(input: string): string {
+export function normalizeCkbPrivateKey(input: string, envName = "FIBER_WITHDRAWAL_CKB_PRIVATE_KEY"): string {
   const normalized = input.startsWith("0x") || input.startsWith("0X") ? `0x${input.slice(2)}` : `0x${input}`;
   if (!/^0x[0-9a-fA-F]{64}$/.test(normalized)) {
-    throw new WithdrawalExecutionError("FIBER_WITHDRAWAL_CKB_PRIVATE_KEY must be a 32-byte hex private key", "permanent");
+    throw new WithdrawalExecutionError(`${envName} must be a 32-byte hex private key`, "permanent");
   }
   return normalized.toLowerCase();
 }
@@ -75,7 +75,7 @@ export function resolvePrivateKey(): string {
   if (!raw) {
     throw new WithdrawalExecutionError("FIBER_WITHDRAWAL_CKB_PRIVATE_KEY is required for on-chain withdrawal", "permanent");
   }
-  return normalizeHexPrivateKey(raw);
+  return normalizeCkbPrivateKey(raw);
 }
 
 export function resolveCkbNetworkConfig(toAddress: string): CkbNetworkConfig {
@@ -287,25 +287,35 @@ export function getDefaultCkbChangeCellCapacityShannons(network: CkbNetwork): bi
   });
 }
 
-async function submitCkbTransfer(args: ExecuteWithdrawalArgs): Promise<{ txHash: string }> {
-  if (args.asset !== "CKB") {
-    throw new WithdrawalExecutionError(
-      "on-chain withdrawal supports only CKB asset currently",
-      "permanent",
-    );
-  }
+export function resolveAddressFromPrivateKey(privateKey: string, network: CkbNetwork): string {
+  const cfg = network === "AGGRON4" ? config.predefined.AGGRON4 : config.predefined.LINA;
+  config.initializeConfig(cfg);
+  return helpers.encodeToConfigAddress(
+    hd.key.privateKeyToBlake160(privateKey),
+    "SECP256K1_BLAKE160",
+    { config: cfg },
+  );
+}
 
-  if (args.destination.kind !== "CKB_ADDRESS") {
-    throw new WithdrawalExecutionError(
-      "on-chain withdrawal requires CKB_ADDRESS destination kind",
-      "permanent",
-    );
-  }
+export function resolveHotWalletAddress(network: CkbNetwork): string {
+  return resolveAddressFromPrivateKey(resolvePrivateKey(), network);
+}
 
+export type ExecuteCkbOnchainTransferArgs = {
+  amount: string;
+  destination: { kind: "CKB_ADDRESS"; address: string };
+  network?: CkbNetwork;
+  privateKey: string;
+  requestId: string;
+};
+
+async function submitCkbTransfer(
+  args: ExecuteCkbOnchainTransferArgs,
+): Promise<{ txHash: string }> {
   const toAddress = args.destination.address;
   const { cfg, isTestnet } = resolveCkbNetworkConfig(toAddress);
   const amountShannons = parseCkbAmountToShannons(args.amount);
-  const privateKey = resolvePrivateKey();
+  const privateKey = args.privateKey;
   const feeRateShannonsPerKb = resolveFeeRateShannonsPerKb();
   const rpcUrl = resolveCkbRpcUrl(isTestnet);
   const indexerUrl = resolveIndexerUrl(rpcUrl, isTestnet);
@@ -324,11 +334,8 @@ async function submitCkbTransfer(args: ExecuteWithdrawalArgs): Promise<{ txHash:
     );
   }
 
-  const fromAddress = helpers.encodeToConfigAddress(
-    hd.key.privateKeyToBlake160(privateKey),
-    "SECP256K1_BLAKE160",
-    { config: cfg },
-  );
+  const sourceNetwork = args.network ?? (isTestnet ? "AGGRON4" : "LINA");
+  const fromAddress = resolveAddressFromPrivateKey(privateKey, sourceNetwork);
 
   const indexer = new Indexer(indexerUrl, rpcUrl);
   let txSkeleton = helpers.TransactionSkeleton({ cellProvider: indexer });
@@ -356,6 +363,7 @@ async function submitCkbTransfer(args: ExecuteWithdrawalArgs): Promise<{ txHash:
 
   const rpc = new RPC(rpcUrl) as unknown as {
     sendTransaction: (tx: unknown, outputsValidator?: "default" | "passthrough") => Promise<string>;
+    getTransaction: (txHash: string) => Promise<{ txStatus?: { status?: string } } | null>;
   };
   const txHash = await rpc.sendTransaction(signedTx, "passthrough");
   if (typeof txHash !== "string" || !txHash) {
@@ -365,9 +373,36 @@ async function submitCkbTransfer(args: ExecuteWithdrawalArgs): Promise<{ txHash:
   return { txHash };
 }
 
-export async function executeCkbOnchainWithdrawal(args: ExecuteWithdrawalArgs): Promise<{ txHash: string }> {
+export async function getCkbTransactionStatus(args: {
+  txHash: string;
+  network: CkbNetwork;
+}): Promise<"PENDING" | "COMMITTED" | "REJECTED" | "UNKNOWN"> {
+  const rpcUrl = resolveCkbRpcUrl(args.network === "AGGRON4");
+  const rpc = new RPC(rpcUrl) as unknown as {
+    getTransaction: (txHash: string) => Promise<{ txStatus?: { status?: string } } | null>;
+  };
+  const result = await rpc.getTransaction(args.txHash);
+  const status = result?.txStatus?.status?.trim().toLowerCase();
+  if (status === "pending" || status === "proposed") {
+    return "PENDING";
+  }
+  if (status === "committed") {
+    return "COMMITTED";
+  }
+  if (status === "rejected") {
+    return "REJECTED";
+  }
+  return "UNKNOWN";
+}
+
+export async function executeCkbOnchainTransfer(
+  args: ExecuteCkbOnchainTransferArgs,
+): Promise<{ txHash: string }> {
   try {
-    return await submitCkbTransfer(args);
+    return await submitCkbTransfer({
+      ...args,
+      privateKey: normalizeCkbPrivateKey(args.privateKey, "privateKey"),
+    });
   } catch (error) {
     if (error instanceof WithdrawalExecutionError) {
       throw error;
@@ -377,4 +412,27 @@ export async function executeCkbOnchainWithdrawal(args: ExecuteWithdrawalArgs): 
       cause: error instanceof Error ? error : undefined,
     });
   }
+}
+
+export async function executeCkbOnchainWithdrawal(args: ExecuteWithdrawalArgs): Promise<{ txHash: string }> {
+  if (args.asset !== "CKB") {
+    throw new WithdrawalExecutionError(
+      "on-chain withdrawal supports only CKB asset currently",
+      "permanent",
+    );
+  }
+
+  if (args.destination.kind !== "CKB_ADDRESS") {
+    throw new WithdrawalExecutionError(
+      "on-chain withdrawal requires CKB_ADDRESS destination kind",
+      "permanent",
+    );
+  }
+
+  return executeCkbOnchainTransfer({
+    amount: args.amount,
+    destination: args.destination,
+    privateKey: resolvePrivateKey(),
+    requestId: args.requestId,
+  });
 }

@@ -1,12 +1,45 @@
-import { rpcCall } from "../fiber-client";
+import { FiberRpcError, rpcCall } from "../fiber-client";
+import {
+  executeCkbOnchainTransfer,
+  getCkbTransactionStatus,
+  normalizeCkbPrivateKey,
+  resolveHotWalletAddress,
+} from "../ckb-onchain-withdrawal";
 import { toHexQuantity } from "./normalize";
 import type {
+  CkbNetwork,
   EnsureChainLiquidityArgs,
   EnsureChainLiquidityResult,
   GetRebalanceStatusArgs,
   GetRebalanceStatusResult,
   RebalanceStatusState,
 } from "../types";
+
+const localSweepRequests = new Map<string, { txHash: string; network: CkbNetwork }>();
+
+export function hasLocalChainLiquiditySweepSupport(): boolean {
+  return Boolean(
+    process.env.FIBER_LIQUIDITY_CKB_SOURCE_PRIVATE_KEY?.trim() &&
+      process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY?.trim(),
+  );
+}
+
+function resolveLocalChainLiquiditySourcePrivateKey(): string {
+  const raw = process.env.FIBER_LIQUIDITY_CKB_SOURCE_PRIVATE_KEY?.trim();
+  if (!raw) {
+    throw new Error("FIBER_LIQUIDITY_CKB_SOURCE_PRIVATE_KEY is required for local chain liquidity sweep");
+  }
+  return normalizeCkbPrivateKey(raw, "FIBER_LIQUIDITY_CKB_SOURCE_PRIVATE_KEY");
+}
+
+function isUnsupportedRebalanceRpcError(error: unknown): boolean {
+  if (error instanceof FiberRpcError && error.code === -32601) {
+    return true;
+  }
+  const message = error instanceof Error ? error.message : String(error);
+  const normalized = message.trim().toLowerCase();
+  return normalized === "unauthorized" || normalized.includes("method not found") || normalized.includes("unknown method");
+}
 
 function mapRebalanceStatus(value: unknown): RebalanceStatusState {
   if (typeof value !== "string") {
@@ -47,26 +80,89 @@ function parseGetRebalanceStatusResult(result: Record<string, unknown> | undefin
   };
 }
 
+async function ensureLocalChainLiquidity({ requestId, network, requiredAmount }: EnsureChainLiquidityArgs) {
+  const destinationAddress = resolveHotWalletAddress(network);
+  const result = await executeCkbOnchainTransfer({
+    amount: requiredAmount,
+    destination: {
+      kind: "CKB_ADDRESS",
+      address: destinationAddress,
+    },
+    network,
+    privateKey: resolveLocalChainLiquiditySourcePrivateKey(),
+    requestId,
+  });
+  localSweepRequests.set(requestId, { txHash: result.txHash, network });
+  return {
+    state: "PENDING" as const,
+    started: true,
+  };
+}
+
+async function getLocalChainLiquidityStatus(requestId: string): Promise<GetRebalanceStatusResult | null> {
+  const pending = localSweepRequests.get(requestId);
+  if (!pending) {
+    return null;
+  }
+
+  const status = await getCkbTransactionStatus({
+    txHash: pending.txHash,
+    network: pending.network,
+  });
+
+  if (status === "COMMITTED") {
+    localSweepRequests.delete(requestId);
+    return { state: "FUNDED" };
+  }
+  if (status === "REJECTED") {
+    localSweepRequests.delete(requestId);
+    return { state: "FAILED", error: `local liquidity sweep transaction ${pending.txHash} was rejected` };
+  }
+  return { state: "PENDING" };
+}
+
 export async function ensureChainLiquidity(
   endpoint: string,
-  { requestId, asset, network, requiredAmount, sourceKind }: EnsureChainLiquidityArgs,
+  args: EnsureChainLiquidityArgs,
 ) {
-  const result = (await rpcCall(endpoint, "rebalance_to_ckb_chain", {
-    request_id: requestId,
-    asset,
-    network,
-    required_amount: toHexQuantity(requiredAmount),
-    source_kind: sourceKind,
-  })) as Record<string, unknown> | undefined;
-  return parseEnsureChainLiquidityResult(result);
+  try {
+    const result = (await rpcCall(endpoint, "rebalance_to_ckb_chain", {
+      request_id: args.requestId,
+      asset: args.asset,
+      network: args.network,
+      required_amount: toHexQuantity(args.requiredAmount),
+      source_kind: args.sourceKind,
+    })) as Record<string, unknown> | undefined;
+    return parseEnsureChainLiquidityResult(result);
+  } catch (error) {
+    if (!hasLocalChainLiquiditySweepSupport() || args.asset !== "CKB") {
+      throw error;
+    }
+    if (isUnsupportedRebalanceRpcError(error) || /invalid amount:/i.test(String(error))) {
+      return ensureLocalChainLiquidity(args);
+    }
+    throw error;
+  }
 }
 
 export async function getRebalanceStatus(
   endpoint: string,
   { requestId }: GetRebalanceStatusArgs,
 ) {
-  const result = (await rpcCall(endpoint, "get_rebalance_status", {
-    request_id: requestId,
-  })) as Record<string, unknown> | undefined;
-  return parseGetRebalanceStatusResult(result);
+  const localStatus = await getLocalChainLiquidityStatus(requestId);
+  if (localStatus) {
+    return localStatus;
+  }
+
+  try {
+    const result = (await rpcCall(endpoint, "get_rebalance_status", {
+      request_id: requestId,
+    })) as Record<string, unknown> | undefined;
+    return parseGetRebalanceStatusResult(result);
+  } catch (error) {
+    if (hasLocalChainLiquiditySweepSupport() && isUnsupportedRebalanceRpcError(error)) {
+      return { state: "IDLE" as const };
+    }
+    throw error;
+  }
 }
