@@ -150,7 +150,8 @@ export async function runLiquidityBatch(options: RunLiquidityBatchOptions) {
     });
 
     if (compareDecimalStrings(inventory.availableAmount, targetAvailableAmount) < 0) {
-      if (capabilities.directRebalance) {
+      const canUseDirectLiquidityPath = capabilities.directRebalance || (request.asset === "CKB" && capabilities.localCkbSweep);
+      if (canUseDirectLiquidityPath) {
         const status = await options.liquidityProvider.getRebalanceStatus({
           requestId: request.id,
           txHash:

@@ -45,8 +45,9 @@ describe("runLiquidityBatch", () => {
       state: "IDLE" as const,
     }));
     const getLiquidityCapabilities = vi.fn(async () => ({
-      directRebalance: true,
+      directRebalance: false,
       channelLifecycle: true,
+      localCkbSweep: true,
     }));
     const inventoryProvider = vi.fn(async () => ({
       asset: "CKB" as const,
@@ -86,6 +87,71 @@ describe("runLiquidityBatch", () => {
     );
     await expect(repo.findByIdOrThrow(withdrawal.id)).resolves.toMatchObject({
       state: "LIQUIDITY_PENDING",
+    });
+  });
+
+  it("does not route USDI liquidity through local CKB sweep capability", async () => {
+    const repo = createInMemoryWithdrawalRepo();
+    const liquidityRequestRepo = createInMemoryLiquidityRequestRepo();
+    const liquidityRequest = await liquidityRequestRepo.create({
+      appId: "app1",
+      asset: "USDI",
+      network: "AGGRON4",
+      sourceKind: "FIBER_TO_CKB_CHAIN",
+      requiredAmount: "100",
+    });
+    await repo.createLiquidityPending({
+      appId: "app1",
+      userId: "u1",
+      asset: "USDI",
+      amount: "61",
+      toAddress: "fiber:invoice:usdi-test",
+      liquidityRequestId: liquidityRequest.id,
+      liquidityPendingReason: "hot wallet underfunded",
+    });
+
+    const ensureChainLiquidity = vi.fn(async () => ({
+      state: "PENDING" as const,
+      started: true,
+    }));
+    const getRebalanceStatus = vi.fn(async () => ({
+      state: "IDLE" as const,
+    }));
+
+    await runLiquidityBatch({
+      now: new Date("2026-03-07T00:02:00.000Z"),
+      repo,
+      liquidityRequestRepo,
+      liquidityProvider: {
+        getLiquidityCapabilities: async () => ({
+          directRebalance: false,
+          channelLifecycle: true,
+          localCkbSweep: true,
+        }),
+        listChannels: async () => ({ channels: [] }),
+        openChannel: async () => ({ temporaryChannelId: "0xunused" }),
+        acceptChannel: async () => ({}),
+        getCkbChannelAcceptancePolicy: async () => ({
+          openChannelAutoAcceptMinFundingAmount: "0",
+          acceptChannelFundingAmount: "0",
+        }),
+        shutdownChannel: async () => ({}),
+        ensureChainLiquidity,
+        getRebalanceStatus,
+      },
+      inventoryProvider: async () => ({
+        asset: "USDI" as const,
+        network: "AGGRON4" as const,
+        availableAmount: "0",
+        supportingCkbAmount: "0",
+      }),
+      fallbackMode: "none",
+    });
+
+    expect(getRebalanceStatus).not.toHaveBeenCalled();
+    expect(ensureChainLiquidity).not.toHaveBeenCalled();
+    await expect(liquidityRequestRepo.findByIdOrThrow(liquidityRequest.id)).resolves.toMatchObject({
+      state: "REQUESTED",
     });
   });
 
@@ -130,6 +196,7 @@ describe("runLiquidityBatch", () => {
     const getLiquidityCapabilities = vi.fn(async () => ({
       directRebalance: true,
       channelLifecycle: true,
+      localCkbSweep: false,
     }));
     const inventoryProvider = vi.fn(async () => ({
       asset: "CKB" as const,
@@ -206,6 +273,7 @@ describe("runLiquidityBatch", () => {
     const getLiquidityCapabilities = vi.fn(async () => ({
       directRebalance: true,
       channelLifecycle: true,
+      localCkbSweep: false,
     }));
     const inventoryProvider = vi
       .fn(async () => ({
@@ -280,6 +348,7 @@ describe("runLiquidityBatch", () => {
     const getLiquidityCapabilities = vi.fn(async () => ({
       directRebalance: true,
       channelLifecycle: true,
+      localCkbSweep: false,
     }));
     const inventoryProvider = vi.fn(async () => ({
       asset: "CKB" as const,
@@ -389,6 +458,7 @@ describe("runLiquidityBatch", () => {
     const getLiquidityCapabilities = vi.fn(async () => ({
       directRebalance: false,
       channelLifecycle: true,
+      localCkbSweep: false,
     }));
     const listChannels = vi
       .fn(async () => ({
@@ -591,6 +661,7 @@ describe("runLiquidityBatch", () => {
         getLiquidityCapabilities: async () => ({
           directRebalance: false,
           channelLifecycle: true,
+          localCkbSweep: false,
         }),
         listChannels: async () => ({ channels: input.channels }),
         openChannel: async () => ({ temporaryChannelId: "0xreplacement" }),

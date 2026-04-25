@@ -7,6 +7,7 @@ describe("channel lifecycle support", () => {
       liquidityCapabilities: {
         directRebalance: false,
         channelLifecycle: true,
+        localCkbSweep: false,
       },
       channels: [
         {
@@ -23,6 +24,7 @@ describe("channel lifecycle support", () => {
     await expect(adapter.getLiquidityCapabilities()).resolves.toEqual({
       directRebalance: false,
       channelLifecycle: true,
+      localCkbSweep: false,
     });
     await expect(adapter.listChannels({ includeClosed: false })).resolves.toMatchObject({
       channels: [

@@ -82,9 +82,6 @@ function isUnsupportedRpcMethodError(error: unknown): boolean {
 }
 
 async function probeDirectRebalanceSupport(endpoint: string): Promise<boolean> {
-  if (hasLocalChainLiquiditySweepSupport()) {
-    return true;
-  }
   try {
     await rpcCall(endpoint, "get_rebalance_status", {
       request_id: "__capability_probe__",
@@ -200,5 +197,9 @@ export async function getLiquidityCapabilities(endpoint: string): Promise<Liquid
     probeDirectRebalanceSupport(endpoint),
     probeChannelLifecycleSupport(endpoint),
   ]);
-  return { directRebalance, channelLifecycle };
+  return {
+    directRebalance,
+    channelLifecycle,
+    localCkbSweep: hasLocalChainLiquiditySweepSupport(),
+  };
 }

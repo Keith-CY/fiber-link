@@ -524,10 +524,11 @@ describe("fiber adapter", () => {
 
     expect(result.directRebalance).toBe(false);
     expect(result.channelLifecycle).toBe(true);
+    expect(result.localCkbSweep).toBe(false);
     expect(fetchSpy).toHaveBeenCalledTimes(2);
   });
 
-  it("treats local CKB liquidity sweep as direct rebalance support when configured", async () => {
+  it("reports local CKB liquidity sweep support separately when configured", async () => {
     process.env.FIBER_LIQUIDITY_CKB_SOURCE_PRIVATE_KEY =
       "0x2222222222222222222222222222222222222222222222222222222222222222";
     process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY =
@@ -540,6 +541,14 @@ describe("fiber adapter", () => {
         json: async () => ({
           jsonrpc: "2.0",
           id: 1,
+          error: { code: -32601, message: "Method not found" },
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          jsonrpc: "2.0",
+          id: 1,
           result: { channels: [] },
         }),
       } as Response);
@@ -547,9 +556,10 @@ describe("fiber adapter", () => {
     const adapter = createAdapter({ endpoint: "http://localhost:8119" });
     const result = await adapter.getLiquidityCapabilities();
 
-    expect(result.directRebalance).toBe(true);
+    expect(result.directRebalance).toBe(false);
     expect(result.channelLifecycle).toBe(true);
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(result.localCkbSweep).toBe(true);
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
   });
 
   it("executeWithdrawal keeps explicit requestId in send_payment", async () => {

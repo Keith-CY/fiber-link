@@ -34,6 +34,7 @@ export type EnsureChainLiquidityArgs = {
 export type LiquidityCapabilities = {
   directRebalance: boolean;
   channelLifecycle: boolean;
+  localCkbSweep: boolean;
 };
 
 export type ListChannelsArgs = {
