@@ -96,11 +96,14 @@ async function ensureLocalChainLiquidity({ requestId, network, requiredAmount }:
   return {
     state: "PENDING" as const,
     started: true,
+    txHash: result.txHash,
+    trackingNetwork: network,
   };
 }
 
-async function getLocalChainLiquidityStatus(requestId: string): Promise<GetRebalanceStatusResult | null> {
-  const pending = localSweepRequests.get(requestId);
+async function getLocalChainLiquidityStatus(args: GetRebalanceStatusArgs): Promise<GetRebalanceStatusResult | null> {
+  const pending = localSweepRequests.get(args.requestId)
+    ?? (args.txHash && args.network ? { txHash: args.txHash, network: args.network } : null);
   if (!pending) {
     return null;
   }
@@ -111,11 +114,11 @@ async function getLocalChainLiquidityStatus(requestId: string): Promise<GetRebal
   });
 
   if (status === "COMMITTED") {
-    localSweepRequests.delete(requestId);
+    localSweepRequests.delete(args.requestId);
     return { state: "FUNDED" };
   }
   if (status === "REJECTED") {
-    localSweepRequests.delete(requestId);
+    localSweepRequests.delete(args.requestId);
     return { state: "FAILED", error: `local liquidity sweep transaction ${pending.txHash} was rejected` };
   }
   return { state: "PENDING" };
@@ -147,16 +150,16 @@ export async function ensureChainLiquidity(
 
 export async function getRebalanceStatus(
   endpoint: string,
-  { requestId }: GetRebalanceStatusArgs,
+  args: GetRebalanceStatusArgs,
 ) {
-  const localStatus = await getLocalChainLiquidityStatus(requestId);
+  const localStatus = await getLocalChainLiquidityStatus(args);
   if (localStatus) {
     return localStatus;
   }
 
   try {
     const result = (await rpcCall(endpoint, "get_rebalance_status", {
-      request_id: requestId,
+      request_id: args.requestId,
     })) as Record<string, unknown> | undefined;
     return parseGetRebalanceStatusResult(result);
   } catch (error) {

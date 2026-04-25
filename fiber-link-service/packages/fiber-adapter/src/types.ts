@@ -98,10 +98,14 @@ export type EnsureChainLiquidityResult = {
   state: Exclude<RebalanceStatusState, "IDLE">;
   started: boolean;
   error?: string;
+  txHash?: string;
+  trackingNetwork?: CkbNetwork;
 };
 
 export type GetRebalanceStatusArgs = {
   requestId: string;
+  txHash?: string;
+  network?: CkbNetwork;
 };
 
 export type GetRebalanceStatusResult = {

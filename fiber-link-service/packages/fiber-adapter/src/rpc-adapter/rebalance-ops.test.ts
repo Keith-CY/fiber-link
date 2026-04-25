@@ -78,7 +78,12 @@ describe("rebalance-ops local CKB liquidity fallback", () => {
       sourceKind: "FIBER_TO_CKB_CHAIN",
     });
 
-    expect(result).toEqual({ state: "PENDING", started: true });
+    expect(result).toEqual({
+      state: "PENDING",
+      started: true,
+      txHash: "0xsweep",
+      trackingNetwork: "AGGRON4",
+    });
     expect(resolveHotWalletAddressMock).toHaveBeenCalledWith("AGGRON4");
     expect(executeTransferMock).toHaveBeenCalledWith({
       amount: "62.5",
@@ -114,6 +119,29 @@ describe("rebalance-ops local CKB liquidity fallback", () => {
     });
     await expect(getRebalanceStatus("http://fnn:8227", { requestId: "liq-1" })).resolves.toEqual({
       state: "FUNDED",
+    });
+  });
+
+  it("can resume local sweep status tracking from persisted tx metadata", async () => {
+    process.env.FIBER_LIQUIDITY_CKB_SOURCE_PRIVATE_KEY =
+      "0x2222222222222222222222222222222222222222222222222222222222222222";
+    process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY =
+      "0x1111111111111111111111111111111111111111111111111111111111111111";
+
+    getTransactionStatusMock.mockResolvedValueOnce("COMMITTED");
+
+    const { getRebalanceStatus } = await import("./rebalance-ops");
+
+    await expect(
+      getRebalanceStatus("http://fnn:8227", {
+        requestId: "liq-restart",
+        txHash: "0xpersisted",
+        network: "AGGRON4",
+      }),
+    ).resolves.toEqual({ state: "FUNDED" });
+    expect(getTransactionStatusMock).toHaveBeenCalledWith({
+      txHash: "0xpersisted",
+      network: "AGGRON4",
     });
   });
 });
