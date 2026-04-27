@@ -34,6 +34,12 @@ describe("rebalance-ops local CKB liquidity fallback", () => {
   afterEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
+    rpcCallMock.mockReset();
+    executeTransferMock.mockReset();
+    getTransactionStatusMock.mockReset();
+    resolveHotWalletAddressMock.mockReset();
+    normalizeCkbPrivateKeyMock.mockReset();
+    normalizeCkbPrivateKeyMock.mockImplementation((value: string) => value);
 
     if (originalSourceKey === undefined) {
       delete process.env.FIBER_LIQUIDITY_CKB_SOURCE_PRIVATE_KEY;
@@ -74,7 +80,7 @@ describe("rebalance-ops local CKB liquidity fallback", () => {
       requestId: "liq-1",
       asset: "CKB",
       network: "AGGRON4",
-      requiredAmount: "62.5",
+      requiredAmount: "62",
       sourceKind: "FIBER_TO_CKB_CHAIN",
     });
 
@@ -86,12 +92,93 @@ describe("rebalance-ops local CKB liquidity fallback", () => {
     });
     expect(resolveHotWalletAddressMock).toHaveBeenCalledWith("AGGRON4");
     expect(executeTransferMock).toHaveBeenCalledWith({
-      amount: "62.5",
+      amount: "62",
       destination: { kind: "CKB_ADDRESS", address: "ckt1qhotwallet" },
       network: "AGGRON4",
       privateKey: "0x2222222222222222222222222222222222222222222222222222222222222222",
       requestId: "liq-1",
     });
+  });
+
+  it("does not fall back to a local sweep for invalid amount errors", async () => {
+    process.env.FIBER_LIQUIDITY_CKB_SOURCE_PRIVATE_KEY =
+      "0x2222222222222222222222222222222222222222222222222222222222222222";
+    process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY =
+      "0x1111111111111111111111111111111111111111111111111111111111111111";
+
+    rpcCallMock.mockRejectedValueOnce(new Error("invalid amount: below channel minimum"));
+
+    const { ensureChainLiquidity } = await import("./rebalance-ops");
+
+    await expect(
+      ensureChainLiquidity("http://fnn:8227", {
+        requestId: "liq-invalid-amount",
+        asset: "CKB",
+        network: "AGGRON4",
+        requiredAmount: "1",
+        sourceKind: "FIBER_TO_CKB_CHAIN",
+      }),
+    ).rejects.toThrow("invalid amount: below channel minimum");
+    expect(executeTransferMock).not.toHaveBeenCalled();
+  });
+
+  it("does not hide unauthorized rebalance status errors as unsupported rpc", async () => {
+    process.env.FIBER_LIQUIDITY_CKB_SOURCE_PRIVATE_KEY =
+      "0x2222222222222222222222222222222222222222222222222222222222222222";
+    process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY =
+      "0x1111111111111111111111111111111111111111111111111111111111111111";
+
+    rpcCallMock.mockRejectedValueOnce(new Error("unauthorized"));
+
+    const { getRebalanceStatus } = await import("./rebalance-ops");
+
+    await expect(getRebalanceStatus("http://fnn:8227", { requestId: "liq-auth" })).rejects.toThrow("unauthorized");
+  });
+
+  it("reuses an in-flight local sweep instead of submitting a duplicate transfer", async () => {
+    process.env.FIBER_LIQUIDITY_CKB_SOURCE_PRIVATE_KEY =
+      "0x2222222222222222222222222222222222222222222222222222222222222222";
+    process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY =
+      "0x1111111111111111111111111111111111111111111111111111111111111111";
+
+    rpcCallMock.mockRejectedValueOnce({ code: -32601, message: "Method not found" });
+    resolveHotWalletAddressMock.mockReturnValue("ckt1qhotwallet");
+    executeTransferMock.mockResolvedValue({ txHash: "0xsweep" });
+    getTransactionStatusMock.mockResolvedValueOnce("PENDING");
+
+    const { ensureChainLiquidity } = await import("./rebalance-ops");
+
+    await expect(
+      ensureChainLiquidity("http://fnn:8227", {
+        requestId: "liq-duplicate",
+        asset: "CKB",
+        network: "AGGRON4",
+        requiredAmount: "62",
+        sourceKind: "FIBER_TO_CKB_CHAIN",
+      }),
+    ).resolves.toEqual({
+      state: "PENDING",
+      started: true,
+      txHash: "0xsweep",
+      trackingNetwork: "AGGRON4",
+    });
+
+    await expect(
+      ensureChainLiquidity("http://fnn:8227", {
+        requestId: "liq-duplicate",
+        asset: "CKB",
+        network: "AGGRON4",
+        requiredAmount: "62",
+        sourceKind: "FIBER_TO_CKB_CHAIN",
+      }),
+    ).resolves.toEqual({
+      state: "PENDING",
+      started: false,
+      txHash: "0xsweep",
+      trackingNetwork: "AGGRON4",
+    });
+
+    expect(executeTransferMock).toHaveBeenCalledTimes(1);
   });
 
   it("tracks local sweep transaction status by request id", async () => {
@@ -110,7 +197,7 @@ describe("rebalance-ops local CKB liquidity fallback", () => {
       requestId: "liq-1",
       asset: "CKB",
       network: "AGGRON4",
-      requiredAmount: "62.5",
+      requiredAmount: "62",
       sourceKind: "FIBER_TO_CKB_CHAIN",
     });
 
@@ -142,6 +229,35 @@ describe("rebalance-ops local CKB liquidity fallback", () => {
     expect(getTransactionStatusMock).toHaveBeenCalledWith({
       txHash: "0xpersisted",
       network: "AGGRON4",
+    });
+  });
+
+  it("keeps terminal local sweep status visible for repeated polls in the same process", async () => {
+    process.env.FIBER_LIQUIDITY_CKB_SOURCE_PRIVATE_KEY =
+      "0x2222222222222222222222222222222222222222222222222222222222222222";
+    process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY =
+      "0x1111111111111111111111111111111111111111111111111111111111111111";
+
+    rpcCallMock.mockRejectedValueOnce({ code: -32601, message: "Method not found" });
+    resolveHotWalletAddressMock.mockReturnValue("ckt1qhotwallet");
+    executeTransferMock.mockResolvedValue({ txHash: "0xsweep" });
+    getTransactionStatusMock.mockResolvedValueOnce("COMMITTED").mockResolvedValueOnce("COMMITTED");
+
+    const { ensureChainLiquidity, getRebalanceStatus } = await import("./rebalance-ops");
+
+    await ensureChainLiquidity("http://fnn:8227", {
+      requestId: "liq-terminal",
+      asset: "CKB",
+      network: "AGGRON4",
+      requiredAmount: "62",
+      sourceKind: "FIBER_TO_CKB_CHAIN",
+    });
+
+    await expect(getRebalanceStatus("http://fnn:8227", { requestId: "liq-terminal" })).resolves.toEqual({
+      state: "FUNDED",
+    });
+    await expect(getRebalanceStatus("http://fnn:8227", { requestId: "liq-terminal" })).resolves.toEqual({
+      state: "FUNDED",
     });
   });
 });

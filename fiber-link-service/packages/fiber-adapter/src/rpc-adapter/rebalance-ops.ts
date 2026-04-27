@@ -15,7 +15,16 @@ import type {
   RebalanceStatusState,
 } from "../types";
 
-const localSweepRequests = new Map<string, { txHash: string; network: CkbNetwork }>();
+type LocalSweepState = Exclude<RebalanceStatusState, "IDLE">;
+
+type LocalSweepTracking = {
+  txHash: string;
+  network: CkbNetwork;
+  state: LocalSweepState;
+  error?: string;
+};
+
+const localSweepRequests = new Map<string, LocalSweepTracking>();
 
 export function hasLocalChainLiquiditySweepSupport(): boolean {
   return Boolean(
@@ -36,9 +45,21 @@ function isUnsupportedRebalanceRpcError(error: unknown): boolean {
   if (error instanceof FiberRpcError && error.code === -32601) {
     return true;
   }
-  const message = error instanceof Error ? error.message : String(error);
+  if (
+    typeof error === "object"
+    && error !== null
+    && "code" in error
+    && (error as { code?: unknown }).code === -32601
+  ) {
+    return true;
+  }
+  const message = error instanceof Error
+    ? error.message
+    : typeof error === "object" && error !== null && "message" in error && typeof (error as { message?: unknown }).message === "string"
+      ? (error as { message: string }).message
+      : String(error);
   const normalized = message.trim().toLowerCase();
-  return normalized === "unauthorized" || normalized.includes("method not found") || normalized.includes("unknown method");
+  return normalized.includes("method not found") || normalized.includes("unknown method");
 }
 
 function mapRebalanceStatus(value: unknown): RebalanceStatusState {
@@ -80,6 +101,23 @@ function parseGetRebalanceStatusResult(result: Record<string, unknown> | undefin
   };
 }
 
+function toEnsureResult(tracking: LocalSweepTracking, started: boolean): EnsureChainLiquidityResult {
+  return {
+    state: tracking.state,
+    started,
+    error: tracking.error,
+    txHash: tracking.txHash,
+    trackingNetwork: tracking.network,
+  };
+}
+
+function toStatusResult(tracking: LocalSweepTracking): GetRebalanceStatusResult {
+  return {
+    state: tracking.state,
+    error: tracking.error,
+  };
+}
+
 async function ensureLocalChainLiquidity({ requestId, network, requiredAmount }: EnsureChainLiquidityArgs) {
   const destinationAddress = resolveHotWalletAddress(network);
   const result = await executeCkbOnchainTransfer({
@@ -92,42 +130,83 @@ async function ensureLocalChainLiquidity({ requestId, network, requiredAmount }:
     privateKey: resolveLocalChainLiquiditySourcePrivateKey(),
     requestId,
   });
-  localSweepRequests.set(requestId, { txHash: result.txHash, network });
-  return {
-    state: "PENDING" as const,
-    started: true,
+  const tracking: LocalSweepTracking = {
     txHash: result.txHash,
-    trackingNetwork: network,
+    network,
+    state: "PENDING",
   };
+  localSweepRequests.set(requestId, tracking);
+  return toEnsureResult(tracking, true);
 }
 
-async function getLocalChainLiquidityStatus(args: GetRebalanceStatusArgs): Promise<GetRebalanceStatusResult | null> {
-  const pending = localSweepRequests.get(args.requestId)
-    ?? (args.txHash && args.network ? { txHash: args.txHash, network: args.network } : null);
-  if (!pending) {
+async function getOrRefreshLocalSweepTracking(args: GetRebalanceStatusArgs): Promise<LocalSweepTracking | null> {
+  const cached = localSweepRequests.get(args.requestId);
+  if (cached && cached.state !== "PENDING") {
+    return cached;
+  }
+
+  const tracking = cached
+    ?? (args.txHash && args.network
+      ? {
+          txHash: args.txHash,
+          network: args.network,
+          state: "PENDING" as const,
+        }
+      : null);
+  if (!tracking) {
     return null;
   }
 
   const status = await getCkbTransactionStatus({
-    txHash: pending.txHash,
-    network: pending.network,
+    txHash: tracking.txHash,
+    network: tracking.network,
   });
 
   if (status === "COMMITTED") {
-    localSweepRequests.delete(args.requestId);
-    return { state: "FUNDED" };
+    const funded: LocalSweepTracking = {
+      ...tracking,
+      state: "FUNDED",
+      error: undefined,
+    };
+    localSweepRequests.set(args.requestId, funded);
+    return funded;
   }
   if (status === "REJECTED") {
-    localSweepRequests.delete(args.requestId);
-    return { state: "FAILED", error: `local liquidity sweep transaction ${pending.txHash} was rejected` };
+    const failed: LocalSweepTracking = {
+      ...tracking,
+      state: "FAILED",
+      error: `local liquidity sweep transaction ${tracking.txHash} was rejected`,
+    };
+    localSweepRequests.set(args.requestId, failed);
+    return failed;
   }
-  return { state: "PENDING" };
+
+  const pending: LocalSweepTracking = {
+    ...tracking,
+    state: "PENDING",
+    error: undefined,
+  };
+  localSweepRequests.set(args.requestId, pending);
+  return pending;
+}
+
+async function getLocalChainLiquidityStatus(args: GetRebalanceStatusArgs): Promise<GetRebalanceStatusResult | null> {
+  const tracking = await getOrRefreshLocalSweepTracking(args);
+  if (!tracking) {
+    return null;
+  }
+  return toStatusResult(tracking);
 }
 
 export async function ensureChainLiquidity(
   endpoint: string,
   args: EnsureChainLiquidityArgs,
 ) {
+  const tracked = await getOrRefreshLocalSweepTracking({ requestId: args.requestId });
+  if (tracked) {
+    return toEnsureResult(tracked, false);
+  }
+
   try {
     const result = (await rpcCall(endpoint, "rebalance_to_ckb_chain", {
       request_id: args.requestId,
@@ -141,7 +220,7 @@ export async function ensureChainLiquidity(
     if (!hasLocalChainLiquiditySweepSupport() || args.asset !== "CKB") {
       throw error;
     }
-    if (isUnsupportedRebalanceRpcError(error) || /invalid amount:/i.test(String(error))) {
+    if (isUnsupportedRebalanceRpcError(error)) {
       return ensureLocalChainLiquidity(args);
     }
     throw error;

@@ -426,6 +426,75 @@ describe("runLiquidityBatch", () => {
     expect(ensureChainLiquidity).not.toHaveBeenCalled();
   });
 
+  it("does not stamp local sweep metadata onto native direct rebalance requests", async () => {
+    const repo = createInMemoryWithdrawalRepo();
+    const liquidityRequestRepo = createInMemoryLiquidityRequestRepo();
+    const liquidityRequest = await liquidityRequestRepo.create({
+      appId: "app1",
+      asset: "CKB",
+      network: "AGGRON4",
+      sourceKind: "FIBER_TO_CKB_CHAIN",
+      requiredAmount: "100",
+      metadata: {
+        existing: "keep",
+      },
+    });
+    await repo.createLiquidityPending({
+      appId: "app1",
+      userId: "u1",
+      asset: "CKB",
+      amount: "61",
+      toAddress: "ckt1qdirectrebalance",
+      liquidityRequestId: liquidityRequest.id,
+      liquidityPendingReason: "hot wallet underfunded",
+    });
+
+    const ensureChainLiquidity = vi.fn(async () => ({
+      state: "PENDING" as const,
+      started: true,
+    }));
+    const getRebalanceStatus = vi.fn(async () => ({
+      state: "IDLE" as const,
+    }));
+
+    await runLiquidityBatch({
+      now: new Date("2026-03-07T00:06:00.000Z"),
+      repo,
+      liquidityRequestRepo,
+      liquidityProvider: {
+        getLiquidityCapabilities: async () => ({
+          directRebalance: true,
+          channelLifecycle: true,
+          localCkbSweep: false,
+        }),
+        listChannels: async () => ({ channels: [] }),
+        openChannel: async () => ({ temporaryChannelId: "0xunused" }),
+        acceptChannel: async () => ({}),
+        getCkbChannelAcceptancePolicy: async () => ({
+          openChannelAutoAcceptMinFundingAmount: "0",
+          acceptChannelFundingAmount: "0",
+        }),
+        shutdownChannel: async () => ({}),
+        ensureChainLiquidity,
+        getRebalanceStatus,
+      },
+      inventoryProvider: async () => ({
+        asset: "CKB" as const,
+        network: "AGGRON4" as const,
+        availableAmount: "0",
+      }),
+    });
+
+    const updated = await liquidityRequestRepo.findByIdOrThrow(liquidityRequest.id);
+    expect(updated.state).toBe("REBALANCING");
+    expect(updated.metadata).toMatchObject({
+      existing: "keep",
+    });
+    expect(updated.metadata?.recoveryStrategy).toBeUndefined();
+    expect(updated.metadata?.localLiquidityTxHash).toBeUndefined();
+    expect(updated.metadata?.localLiquidityNetwork).toBeUndefined();
+  });
+
   it("uses channel rotation when direct rebalance is unsupported and fallback mode is enabled", async () => {
     process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY =
       "0x1111111111111111111111111111111111111111111111111111111111111111";

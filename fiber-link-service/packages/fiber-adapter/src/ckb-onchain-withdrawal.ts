@@ -289,7 +289,6 @@ export function getDefaultCkbChangeCellCapacityShannons(network: CkbNetwork): bi
 
 export function resolveAddressFromPrivateKey(privateKey: string, network: CkbNetwork): string {
   const cfg = network === "AGGRON4" ? config.predefined.AGGRON4 : config.predefined.LINA;
-  config.initializeConfig(cfg);
   return helpers.encodeToConfigAddress(
     hd.key.privateKeyToBlake160(privateKey),
     "SECP256K1_BLAKE160",
