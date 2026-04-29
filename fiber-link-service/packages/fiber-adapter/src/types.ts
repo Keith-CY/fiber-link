@@ -34,6 +34,7 @@ export type EnsureChainLiquidityArgs = {
 export type LiquidityCapabilities = {
   directRebalance: boolean;
   channelLifecycle: boolean;
+  localCkbSweep: boolean;
 };
 
 export type ListChannelsArgs = {
@@ -94,14 +95,28 @@ export type ShutdownChannelResult = {
 
 export type RebalanceStatusState = "IDLE" | "PENDING" | "FUNDED" | "FAILED";
 
-export type EnsureChainLiquidityResult = {
+type EnsureChainLiquidityBaseResult = {
   state: Exclude<RebalanceStatusState, "IDLE">;
   started: boolean;
   error?: string;
 };
 
+export type EnsureChainLiquidityResult =
+  | (EnsureChainLiquidityBaseResult & {
+      recoveryStrategy?: undefined;
+      txHash?: undefined;
+      trackingNetwork?: undefined;
+    })
+  | (EnsureChainLiquidityBaseResult & {
+      recoveryStrategy: "LOCAL_CKB_SWEEP";
+      txHash: string;
+      trackingNetwork: CkbNetwork;
+    });
+
 export type GetRebalanceStatusArgs = {
   requestId: string;
+  txHash?: string;
+  network?: CkbNetwork;
 };
 
 export type GetRebalanceStatusResult = {

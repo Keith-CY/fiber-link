@@ -150,12 +150,19 @@ export async function runLiquidityBatch(options: RunLiquidityBatchOptions) {
     });
 
     if (compareDecimalStrings(inventory.availableAmount, targetAvailableAmount) < 0) {
-      if (capabilities.directRebalance) {
+      const canUseDirectLiquidityPath = capabilities.directRebalance || (request.asset === "CKB" && capabilities.localCkbSweep);
+      if (canUseDirectLiquidityPath) {
         const status = await options.liquidityProvider.getRebalanceStatus({
           requestId: request.id,
+          txHash:
+            typeof request.metadata?.localLiquidityTxHash === "string" ? request.metadata.localLiquidityTxHash : undefined,
+          network:
+            request.metadata?.localLiquidityNetwork === "AGGRON4" || request.metadata?.localLiquidityNetwork === "LINA"
+              ? (request.metadata.localLiquidityNetwork as CkbNetwork)
+              : undefined,
         });
         const remainingRequiredAmount = subtractDecimalStrings(targetAvailableAmount, inventory.availableAmount);
-        if (status.state === "IDLE") {
+        if (status.state === "IDLE" && request.state !== "REBALANCING") {
           const ensureResult = await options.liquidityProvider.ensureChainLiquidity({
             requestId: request.id,
             asset: request.asset,
@@ -165,6 +172,20 @@ export async function runLiquidityBatch(options: RunLiquidityBatchOptions) {
           });
           if (ensureResult.started) {
             rebalanceStarted += 1;
+            const sweepMetadata = ensureResult.recoveryStrategy === "LOCAL_CKB_SWEEP"
+              ? {
+                  recoveryStrategy: ensureResult.recoveryStrategy,
+                  localLiquidityTxHash: ensureResult.txHash,
+                  localLiquidityNetwork: ensureResult.trackingNetwork,
+                }
+              : {};
+            await liquidityRequestRepo.markRebalancing(request.id, {
+              now,
+              metadata: {
+                ...(request.metadata ?? {}),
+                ...sweepMetadata,
+              },
+            });
           }
         }
       } else if (

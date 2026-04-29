@@ -92,6 +92,7 @@ export function createSimulationAdapter(args: CreateSimulationAdapterArgs = {}):
   const liquidityCapabilities: LiquidityCapabilities = {
     directRebalance: args.liquidityCapabilities?.directRebalance ?? true,
     channelLifecycle: args.liquidityCapabilities?.channelLifecycle ?? true,
+    localCkbSweep: args.liquidityCapabilities?.localCkbSweep ?? false,
   };
 
   let invoiceIndex = 0;

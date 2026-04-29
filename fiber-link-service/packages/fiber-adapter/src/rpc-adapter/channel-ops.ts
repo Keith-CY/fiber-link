@@ -1,4 +1,5 @@
 import { FiberRpcError, rpcCall } from "../fiber-client";
+import { hasLocalChainLiquiditySweepSupport } from "./rebalance-ops";
 import { normalizeRpcAmount, normalizeRpcInteger, pickRequiredAmount, pickStringCandidate, pickTxEvidence, toHexQuantity } from "./normalize";
 import { rpcCallWithoutParams, toRpcUdtTypeScript } from "./invoice-ops";
 import type {
@@ -196,5 +197,9 @@ export async function getLiquidityCapabilities(endpoint: string): Promise<Liquid
     probeDirectRebalanceSupport(endpoint),
     probeChannelLifecycleSupport(endpoint),
   ]);
-  return { directRebalance, channelLifecycle };
+  return {
+    directRebalance,
+    channelLifecycle,
+    localCkbSweep: hasLocalChainLiquiditySweepSupport(),
+  };
 }

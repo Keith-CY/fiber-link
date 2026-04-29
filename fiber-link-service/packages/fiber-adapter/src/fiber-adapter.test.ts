@@ -26,6 +26,8 @@ describe("fiber adapter", () => {
     delete process.env.FIBER_SETTLEMENT_SUBSCRIPTION_URL;
     delete process.env.FIBER_SETTLEMENT_SUBSCRIPTION_RECONNECT_DELAY_MS;
     delete process.env.FIBER_SETTLEMENT_SUBSCRIPTION_AUTH_TOKEN;
+    delete process.env.FIBER_LIQUIDITY_CKB_SOURCE_PRIVATE_KEY;
+    delete process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY;
   });
 
   it("createInvoice calls node rpc and returns invoice string", async () => {
@@ -522,6 +524,41 @@ describe("fiber adapter", () => {
 
     expect(result.directRebalance).toBe(false);
     expect(result.channelLifecycle).toBe(true);
+    expect(result.localCkbSweep).toBe(false);
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it("reports local CKB liquidity sweep support separately when configured", async () => {
+    process.env.FIBER_LIQUIDITY_CKB_SOURCE_PRIVATE_KEY =
+      "0x2222222222222222222222222222222222222222222222222222222222222222";
+    process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY =
+      "0x1111111111111111111111111111111111111111111111111111111111111111";
+
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          jsonrpc: "2.0",
+          id: 1,
+          error: { code: -32601, message: "Method not found" },
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          jsonrpc: "2.0",
+          id: 1,
+          result: { channels: [] },
+        }),
+      } as Response);
+
+    const adapter = createAdapter({ endpoint: "http://localhost:8119" });
+    const result = await adapter.getLiquidityCapabilities();
+
+    expect(result.directRebalance).toBe(false);
+    expect(result.channelLifecycle).toBe(true);
+    expect(result.localCkbSweep).toBe(true);
     expect(fetchSpy).toHaveBeenCalledTimes(2);
   });
 
