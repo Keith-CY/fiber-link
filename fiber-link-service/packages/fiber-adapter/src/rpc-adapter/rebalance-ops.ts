@@ -22,9 +22,11 @@ type LocalSweepTracking = {
   network: CkbNetwork;
   state: LocalSweepState;
   error?: string;
+  unknownStatusChecks: number;
 };
 
 const localSweepRequests = new Map<string, LocalSweepTracking>();
+const MAX_UNKNOWN_STATUS_CHECKS = 3;
 
 export function hasLocalChainLiquiditySweepSupport(): boolean {
   return Boolean(
@@ -59,6 +61,7 @@ function isUnsupportedRebalanceRpcError(error: unknown): boolean {
       ? (error as { message: string }).message
       : String(error);
   const normalized = message.trim().toLowerCase();
+  // Fiber nodes have been observed to use these message variants when the rebalance RPC is absent.
   return normalized.includes("method not found") || normalized.includes("unknown method");
 }
 
@@ -106,6 +109,7 @@ function toEnsureResult(tracking: LocalSweepTracking, started: boolean): EnsureC
     state: tracking.state,
     started,
     error: tracking.error,
+    recoveryStrategy: "LOCAL_CKB_SWEEP",
     txHash: tracking.txHash,
     trackingNetwork: tracking.network,
   };
@@ -134,6 +138,7 @@ async function ensureLocalChainLiquidity({ requestId, network, requiredAmount }:
     txHash: result.txHash,
     network,
     state: "PENDING",
+    unknownStatusChecks: 0,
   };
   localSweepRequests.set(requestId, tracking);
   return toEnsureResult(tracking, true);
@@ -151,6 +156,7 @@ async function getOrRefreshLocalSweepTracking(args: GetRebalanceStatusArgs): Pro
           txHash: args.txHash,
           network: args.network,
           state: "PENDING" as const,
+          unknownStatusChecks: 0,
         }
       : null);
   if (!tracking) {
@@ -167,6 +173,7 @@ async function getOrRefreshLocalSweepTracking(args: GetRebalanceStatusArgs): Pro
       ...tracking,
       state: "FUNDED",
       error: undefined,
+      unknownStatusChecks: 0,
     };
     localSweepRequests.set(args.requestId, funded);
     return funded;
@@ -176,15 +183,36 @@ async function getOrRefreshLocalSweepTracking(args: GetRebalanceStatusArgs): Pro
       ...tracking,
       state: "FAILED",
       error: `local liquidity sweep transaction ${tracking.txHash} was rejected`,
+      unknownStatusChecks: 0,
     };
     localSweepRequests.set(args.requestId, failed);
     return failed;
+  }
+
+  if (status === "UNKNOWN") {
+    const unknownStatusChecks = tracking.unknownStatusChecks + 1;
+    const next: LocalSweepTracking = unknownStatusChecks >= MAX_UNKNOWN_STATUS_CHECKS
+      ? {
+          ...tracking,
+          state: "FAILED",
+          error: `local liquidity sweep transaction ${tracking.txHash} stayed unknown for ${unknownStatusChecks} consecutive status checks`,
+          unknownStatusChecks,
+        }
+      : {
+          ...tracking,
+          state: "PENDING",
+          error: undefined,
+          unknownStatusChecks,
+        };
+    localSweepRequests.set(args.requestId, next);
+    return next;
   }
 
   const pending: LocalSweepTracking = {
     ...tracking,
     state: "PENDING",
     error: undefined,
+    unknownStatusChecks: 0,
   };
   localSweepRequests.set(args.requestId, pending);
   return pending;

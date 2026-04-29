@@ -400,7 +400,7 @@ export async function executeCkbOnchainTransfer(
   try {
     return await submitCkbTransfer({
       ...args,
-      privateKey: normalizeCkbPrivateKey(args.privateKey, "privateKey"),
+      privateKey: normalizeCkbPrivateKey(args.privateKey, "source private key"),
     });
   } catch (error) {
     if (error instanceof WithdrawalExecutionError) {

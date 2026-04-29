@@ -172,11 +172,11 @@ export async function runLiquidityBatch(options: RunLiquidityBatchOptions) {
           });
           if (ensureResult.started) {
             rebalanceStarted += 1;
-            const sweepMetadata = ensureResult.txHash
+            const sweepMetadata = ensureResult.recoveryStrategy === "LOCAL_CKB_SWEEP"
               ? {
-                  recoveryStrategy: "LOCAL_CKB_SWEEP" as const,
+                  recoveryStrategy: ensureResult.recoveryStrategy,
                   localLiquidityTxHash: ensureResult.txHash,
-                  localLiquidityNetwork: ensureResult.trackingNetwork ?? request.network,
+                  localLiquidityNetwork: ensureResult.trackingNetwork,
                 }
               : {};
             await liquidityRequestRepo.markRebalancing(request.id, {

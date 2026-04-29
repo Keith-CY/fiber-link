@@ -87,6 +87,7 @@ describe("rebalance-ops local CKB liquidity fallback", () => {
     expect(result).toEqual({
       state: "PENDING",
       started: true,
+      recoveryStrategy: "LOCAL_CKB_SWEEP",
       txHash: "0xsweep",
       trackingNetwork: "AGGRON4",
     });
@@ -159,6 +160,7 @@ describe("rebalance-ops local CKB liquidity fallback", () => {
     ).resolves.toEqual({
       state: "PENDING",
       started: true,
+      recoveryStrategy: "LOCAL_CKB_SWEEP",
       txHash: "0xsweep",
       trackingNetwork: "AGGRON4",
     });
@@ -174,6 +176,7 @@ describe("rebalance-ops local CKB liquidity fallback", () => {
     ).resolves.toEqual({
       state: "PENDING",
       started: false,
+      recoveryStrategy: "LOCAL_CKB_SWEEP",
       txHash: "0xsweep",
       trackingNetwork: "AGGRON4",
     });
@@ -229,6 +232,42 @@ describe("rebalance-ops local CKB liquidity fallback", () => {
     expect(getTransactionStatusMock).toHaveBeenCalledWith({
       txHash: "0xpersisted",
       network: "AGGRON4",
+    });
+  });
+
+  it("fails a local sweep after repeated unknown transaction status checks", async () => {
+    process.env.FIBER_LIQUIDITY_CKB_SOURCE_PRIVATE_KEY =
+      "0x2222222222222222222222222222222222222222222222222222222222222222";
+    process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY =
+      "0x1111111111111111111111111111111111111111111111111111111111111111";
+
+    rpcCallMock.mockRejectedValueOnce({ code: -32601, message: "Method not found" });
+    resolveHotWalletAddressMock.mockReturnValue("ckt1qhotwallet");
+    executeTransferMock.mockResolvedValue({ txHash: "0xsweep" });
+    getTransactionStatusMock
+      .mockResolvedValueOnce("UNKNOWN")
+      .mockResolvedValueOnce("UNKNOWN")
+      .mockResolvedValueOnce("UNKNOWN");
+
+    const { ensureChainLiquidity, getRebalanceStatus } = await import("./rebalance-ops");
+
+    await ensureChainLiquidity("http://fnn:8227", {
+      requestId: "liq-unknown",
+      asset: "CKB",
+      network: "AGGRON4",
+      requiredAmount: "62",
+      sourceKind: "FIBER_TO_CKB_CHAIN",
+    });
+
+    await expect(getRebalanceStatus("http://fnn:8227", { requestId: "liq-unknown" })).resolves.toEqual({
+      state: "PENDING",
+    });
+    await expect(getRebalanceStatus("http://fnn:8227", { requestId: "liq-unknown" })).resolves.toEqual({
+      state: "PENDING",
+    });
+    await expect(getRebalanceStatus("http://fnn:8227", { requestId: "liq-unknown" })).resolves.toEqual({
+      state: "FAILED",
+      error: "local liquidity sweep transaction 0xsweep stayed unknown for 3 consecutive status checks",
     });
   });
 

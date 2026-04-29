@@ -346,9 +346,9 @@ describe("runLiquidityBatch", () => {
     });
 
     const getLiquidityCapabilities = vi.fn(async () => ({
-      directRebalance: true,
+      directRebalance: false,
       channelLifecycle: true,
-      localCkbSweep: false,
+      localCkbSweep: true,
     }));
     const inventoryProvider = vi.fn(async () => ({
       asset: "CKB" as const,
@@ -358,6 +358,7 @@ describe("runLiquidityBatch", () => {
     const ensureChainLiquidity = vi.fn(async () => ({
       state: "PENDING" as const,
       started: true,
+      recoveryStrategy: "LOCAL_CKB_SWEEP" as const,
       txHash: "0xsweep",
       trackingNetwork: "AGGRON4" as const,
     }));
