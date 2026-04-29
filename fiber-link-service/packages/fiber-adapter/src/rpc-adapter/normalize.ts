@@ -43,6 +43,30 @@ export function toHexQuantity(value: string): string {
   return `0x${BigInt(value).toString(16)}`;
 }
 
+const SHANNONS_PER_CKB = 100_000_000n;
+
+export function ckbDecimalToHexQuantity(value: string): string {
+  const trimmed = value.trim();
+  if (!/^\d+(?:\.\d+)?$/.test(trimmed)) {
+    throw new Error(`invalid CKB amount: ${value}`);
+  }
+
+  const [integerPartRaw, fractionPartRaw = ""] = trimmed.split(".");
+  if (fractionPartRaw.length > 8) {
+    throw new Error(`CKB amount supports at most 8 decimal places, received: ${value}`);
+  }
+
+  const integerPart = BigInt(integerPartRaw);
+  const fractionPart = fractionPartRaw.padEnd(8, "0");
+  const fractionValue = fractionPart ? BigInt(fractionPart) : 0n;
+  const shannons = integerPart * SHANNONS_PER_CKB + fractionValue;
+  if (shannons <= 0n) {
+    throw new Error(`CKB amount must be greater than 0, received: ${value}`);
+  }
+
+  return `0x${shannons.toString(16)}`;
+}
+
 export function pickStringCandidate(value: unknown): string | null {
   if (typeof value === "string" && value.trim()) {
     return value.trim();

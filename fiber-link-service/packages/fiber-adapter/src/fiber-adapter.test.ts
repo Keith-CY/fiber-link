@@ -343,7 +343,7 @@ describe("fiber adapter", () => {
     expect(executeCkbOnchainWithdrawal).not.toHaveBeenCalled();
   });
 
-  it("ensureChainLiquidity starts a rebalance request and returns pending status", async () => {
+  it("ensureChainLiquidity encodes fractional CKB rebalance amounts as shannons hex", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce({
       ok: true,
       json: async () => ({
@@ -358,7 +358,7 @@ describe("fiber adapter", () => {
       requestId: "liq-1",
       asset: "CKB",
       network: "AGGRON4",
-      requiredAmount: "100",
+      requiredAmount: "85.00016356",
       sourceKind: "FIBER_TO_CKB_CHAIN",
     });
 
@@ -373,7 +373,7 @@ describe("fiber adapter", () => {
     );
     expect(fetchSpy.mock.calls[0]?.[1]).toEqual(
       expect.objectContaining({
-        body: expect.stringContaining("\"request_id\":\"liq-1\""),
+        body: expect.stringContaining("\"required_amount\":\"0x1faa3f4e4\""),
       }),
     );
   });

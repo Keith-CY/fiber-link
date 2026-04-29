@@ -65,6 +65,32 @@ describe("rebalance-ops local CKB liquidity fallback", () => {
     expect(mod.hasLocalChainLiquiditySweepSupport()).toBe(true);
   });
 
+  it("encodes fractional CKB rebalance amounts as shannons hex before calling Fiber RPC", async () => {
+    rpcCallMock.mockResolvedValueOnce({ status: "pending", started: true });
+
+    const { ensureChainLiquidity } = await import("./rebalance-ops");
+    const result = await ensureChainLiquidity("http://fnn:8227", {
+      requestId: "liq-fractional-rpc",
+      asset: "CKB",
+      network: "AGGRON4",
+      requiredAmount: "85.00016356",
+      sourceKind: "FIBER_TO_CKB_CHAIN",
+    });
+
+    expect(result).toEqual({
+      state: "PENDING",
+      started: true,
+    });
+    expect(rpcCallMock).toHaveBeenCalledWith(
+      "http://fnn:8227",
+      "rebalance_to_ckb_chain",
+      expect.objectContaining({
+        request_id: "liq-fractional-rpc",
+        required_amount: "0x1faa3f4e4",
+      }),
+    );
+  });
+
   it("falls back to a local sweep into the hot wallet when rebalance rpc is unsupported", async () => {
     process.env.FIBER_LIQUIDITY_CKB_SOURCE_PRIVATE_KEY =
       "0x2222222222222222222222222222222222222222222222222222222222222222";
@@ -80,7 +106,7 @@ describe("rebalance-ops local CKB liquidity fallback", () => {
       requestId: "liq-1",
       asset: "CKB",
       network: "AGGRON4",
-      requiredAmount: "62",
+      requiredAmount: "61.5",
       sourceKind: "FIBER_TO_CKB_CHAIN",
     });
 
@@ -93,7 +119,7 @@ describe("rebalance-ops local CKB liquidity fallback", () => {
     });
     expect(resolveHotWalletAddressMock).toHaveBeenCalledWith("AGGRON4");
     expect(executeTransferMock).toHaveBeenCalledWith({
-      amount: "62",
+      amount: "61.5",
       destination: { kind: "CKB_ADDRESS", address: "ckt1qhotwallet" },
       network: "AGGRON4",
       privateKey: "0x2222222222222222222222222222222222222222222222222222222222222222",
