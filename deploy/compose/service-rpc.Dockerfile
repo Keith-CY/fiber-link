@@ -1,4 +1,4 @@
-FROM oven/bun:1.1.8
+FROM oven/bun:1.1.8@sha256:6ffc613400a5b69c0b0f0e1d5d954b1656b928f4b254a340dc1fd03377dd7151
 
 WORKDIR /app
 

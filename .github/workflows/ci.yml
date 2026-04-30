@@ -138,7 +138,7 @@ jobs:
         working-directory: discourse-dev
         run: |
           docker exec -u root discourse_dev bash -lc \
-            'for i in {1..180}; do [ -S /var/run/postgresql/.s.PGSQL.5432 ] && exit 0; sleep 1; done; echo "postgres socket not ready after 180s"; exit 1'
+            '/src/.github/scripts/wait-for-postgres-socket.sh /var/run/postgresql/.s.PGSQL.5432'
           docker logs discourse_dev | tail -n 200 || true
 
       - name: Prepare test DB
