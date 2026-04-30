@@ -485,6 +485,10 @@ jobs:
           rm -rf discourse-dev/plugins/fiber-link
           cp -R fiber-link-discourse-plugin discourse-dev/plugins/fiber-link
 
+      - name: Copy postgres wait helper into Discourse workspace
+        run: |
+          mkdir -p discourse-dev/.github/scripts
+          cp .github/scripts/wait-for-postgres-socket.sh discourse-dev/.github/scripts/wait-for-postgres-socket.sh
       - name: Start Discourse dev container
         working-directory: discourse-dev
         run: |
