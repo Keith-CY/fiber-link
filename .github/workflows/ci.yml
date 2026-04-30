@@ -561,23 +561,7 @@ jobs:
       - name: Plugin smoke spec (requests + optional extras)
         working-directory: discourse-dev
         run: |
-          docker exec -u root discourse_dev bash -lc "
-            set -euo pipefail
-            for i in {1..240}; do
-              if su - postgres -c 'psql -h /var/run/postgresql -p 5432 -d postgres -c "SELECT 1"' >/dev/null 2>&1; then
-                exit 0
-              fi
-              if command -v pg_isready >/dev/null 2>&1 && pg_isready -q -h /var/run/postgresql -p 5432 >/dev/null 2>&1; then
-                exit 0
-              fi
-              sleep 2
-            done
-            echo "postgres was not query-ready before plugin smoke"
-            sv status postgres || true
-            ls -la /var/run/postgresql || true
-            tail -n 260 /var/log/postgres/current || true
-            exit 1
-          "
+          docker exec -u root discourse_dev bash -lc '/src/.github/scripts/wait-for-postgres-socket.sh /var/run/postgresql/.s.PGSQL.5432 240'
           docker exec -u discourse:discourse -w /src             -e HOME=/home/discourse -e RAILS_ENV=test -e LOAD_PLUGINS=1             -e PLUGIN_SMOKE_REQUEST_SPECS -e PLUGIN_SMOKE_EXTRA_SPECS             discourse_dev bash -lc '
             set -euo pipefail
 
