@@ -552,7 +552,7 @@ jobs:
           }
 
           run_prepare_db() {
-            docker exec -u discourse:discourse -w /src               -e HOME=/home/discourse -e RAILS_ENV=test -e LOAD_PLUGINS=1               discourse_dev bash -lc 'bin/rake db:create db:migrate'
+            docker exec -u discourse:discourse -w /src               -e HOME=/home/discourse -e RAILS_ENV=test -e LOAD_PLUGINS=1               discourse_dev bash -lc "bin/rake db:create db:migrate"
           }
 
           start_postgres
