@@ -5,7 +5,7 @@ import {
   normalizeCkbPrivateKey,
   resolveHotWalletAddress,
 } from "../ckb-onchain-withdrawal";
-import { toHexQuantity } from "./normalize";
+import { ckbDecimalToHexQuantity, toHexQuantity } from "./normalize";
 import type {
   CkbNetwork,
   EnsureChainLiquidityArgs,
@@ -218,6 +218,13 @@ async function getOrRefreshLocalSweepTracking(args: GetRebalanceStatusArgs): Pro
   return pending;
 }
 
+function toRebalanceRequiredAmountHex(args: EnsureChainLiquidityArgs): string {
+  if (args.asset === "CKB") {
+    return ckbDecimalToHexQuantity(args.requiredAmount);
+  }
+  return toHexQuantity(args.requiredAmount);
+}
+
 async function getLocalChainLiquidityStatus(args: GetRebalanceStatusArgs): Promise<GetRebalanceStatusResult | null> {
   const tracking = await getOrRefreshLocalSweepTracking(args);
   if (!tracking) {
@@ -240,7 +247,7 @@ export async function ensureChainLiquidity(
       request_id: args.requestId,
       asset: args.asset,
       network: args.network,
-      required_amount: toHexQuantity(args.requiredAmount),
+      required_amount: toRebalanceRequiredAmountHex(args),
       source_kind: args.sourceKind,
     })) as Record<string, unknown> | undefined;
     return parseEnsureChainLiquidityResult(result);
