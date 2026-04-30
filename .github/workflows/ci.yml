@@ -516,6 +516,7 @@ jobs:
       - name: Wait for Postgres
         working-directory: discourse-dev
         run: |
+          docker exec -u root discourse_dev bash -lc "/src/.github/scripts/wait-for-postgres-socket.sh /var/run/postgresql/.s.PGSQL.5432"
           docker exec -u root discourse_dev bash -lc "
             set -euo pipefail
 
