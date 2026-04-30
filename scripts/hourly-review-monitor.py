@@ -17,7 +17,7 @@ from typing import Dict, List, Tuple
 from datetime import datetime, timezone, timedelta
 
 REPO = "Keith-CY/fiber-link"
-STATE_FILE = "/root/.openclaw/workspace/memory/fiber-link-task1-state.json"
+STATE_FILE = "/root/.hermes/cron_state/fiber-link-task1-state.json"
 
 
 def run_gh(args: List[str]) -> str:
