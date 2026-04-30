@@ -532,23 +532,8 @@ jobs:
           }
 
           wait_for_postgres() {
-            docker exec -u root discourse_dev bash -lc "
-              set -euo pipefail
-              for i in {1..240}; do
-                if su - postgres -c 'psql -h /var/run/postgresql -p 5432 -d postgres -c "SELECT 1"' >/dev/null 2>&1; then
-                  exit 0
-                fi
-                if command -v pg_isready >/dev/null 2>&1 && pg_isready -q -h /var/run/postgresql -p 5432; then
-                  exit 0
-                fi
-                sleep 2
-              done
-              echo "postgres did not accept SQL connections after startup"
-              sv status postgres || true
-              ls -la /var/run/postgresql || true
-              tail -n 260 /var/log/postgres/current || true
-              exit 1
-            "
+            docker exec -u root discourse_dev bash -lc '/src/.github/scripts/wait-for-postgres-socket.sh /var/run/postgresql/.s.PGSQL.5432 240'
+            echo "wait_for_postgres returned $?."
           }
 
           run_prepare_db() {
