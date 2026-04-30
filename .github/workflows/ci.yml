@@ -532,10 +532,10 @@ jobs:
           }
 
           wait_for_postgres() {
-            docker exec -u root discourse_dev bash -lc '
+            docker exec -u root discourse_dev bash -lc "
               set -euo pipefail
               for i in {1..240}; do
-                if su - postgres -c "psql -h /var/run/postgresql -p 5432 -d postgres -c 'SELECT 1'" >/dev/null 2>&1; then
+                if su - postgres -c 'psql -h /var/run/postgresql -p 5432 -d postgres -c "SELECT 1"' >/dev/null 2>&1; then
                   exit 0
                 fi
                 if command -v pg_isready >/dev/null 2>&1 && pg_isready -q -h /var/run/postgresql -p 5432; then
@@ -548,7 +548,7 @@ jobs:
               ls -la /var/run/postgresql || true
               tail -n 260 /var/log/postgres/current || true
               exit 1
-            '
+            "
           }
 
           run_prepare_db() {
