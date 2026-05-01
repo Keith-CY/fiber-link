@@ -4,6 +4,7 @@ import { service } from "@ember/service";
 import DButton from "discourse/components/d-button";
 
 import FiberLinkTipModal from "./modal/fiber-link-tip-modal";
+import { buildTipPostSummary, buildTipTopicTitle } from "../lib/fiber-link-tip-context";
 
 export default class FiberLinkTipEntry extends Component {
   @service modal;
@@ -44,19 +45,11 @@ export default class FiberLinkTipEntry extends Component {
   }
 
   get topicTitle() {
-    const value = this.post?.topic?.title ?? this.post?.topic_title ?? this.post?.topicTitle;
-    if (typeof value === "string" && value.trim()) {
-      return value.trim();
-    }
-    return "Community post";
+    return buildTipTopicTitle(this.post);
   }
 
   get postSummary() {
-    const value = this.post?.excerpt ?? this.post?.cooked_excerpt ?? this.post?.blurb ?? this.post?.raw;
-    if (typeof value === "string" && value.trim()) {
-      return value.trim();
-    }
-    return "Support this contributor directly from the conversation.";
+    return buildTipPostSummary(this.post);
   }
 
   get currentUserId() {

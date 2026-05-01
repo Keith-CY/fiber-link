@@ -298,8 +298,12 @@ export default class FiberLinkTipModal extends Component {
   }
 
   @action
-  setQuickAmount(amount) {
-    this.amount = amount;
+  onQuickAmountClick(event) {
+    const value = event?.currentTarget?.dataset?.quickAmount ?? event?.target?.dataset?.quickAmount ?? "";
+    if (!value) {
+      return;
+    }
+    this.amount = value;
     this.copyFeedback = null;
     this.autoPollMessage = null;
   }
@@ -549,7 +553,8 @@ export default class FiberLinkTipModal extends Component {
                         <button
                           type="button"
                           class="fiber-link-tip-chip"
-                          {{on "click" (fn this.setQuickAmount quickAmount)}}
+                          data-quick-amount={{quickAmount}}
+                          {{on "click" this.onQuickAmountClick}}
                         >
                           {{quickAmount}}
                         </button>
