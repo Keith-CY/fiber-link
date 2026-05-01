@@ -1,7 +1,6 @@
 import { BI, Indexer, RPC, commons, config, hd, helpers } from "@ckb-lumos/lumos";
 import type { Asset, CkbNetwork, ExecuteWithdrawalArgs, WithdrawalExecutionKind } from "./types";
-
-const SHANNONS_PER_CKB = 100_000_000n;
+import { SHANNONS_PER_CKB, parseCkbDecimalToShannons } from "./rpc-adapter/normalize";
 const DEFAULT_FEE_RATE_SHANNONS_PER_KB = 1_000n;
 const DEFAULT_TESTNET_CKB_RPC_URL = "https://testnet.ckbapp.dev/";
 
@@ -27,28 +26,15 @@ export function normalizeErrorMessage(error: unknown): string {
 }
 
 function parseCkbAmountToShannons(amount: string): bigint {
-  const trimmed = amount.trim();
-  if (!/^\d+(?:\.\d+)?$/.test(trimmed)) {
-    throw new WithdrawalExecutionError(`invalid CKB amount: ${amount}`, "permanent");
-  }
-
-  const [intPartRaw, fracPartRaw = ""] = trimmed.split(".");
-  if (fracPartRaw.length > 8) {
+  try {
+    return parseCkbDecimalToShannons(amount);
+  } catch (error) {
     throw new WithdrawalExecutionError(
-      `CKB amount supports at most 8 decimal places, received: ${amount}`,
+      error instanceof Error ? error.message : String(error),
       "permanent",
+      { cause: error instanceof Error ? error : undefined },
     );
   }
-
-  const intPart = BigInt(intPartRaw);
-  const fracPart = fracPartRaw.padEnd(8, "0");
-  const fracValue = fracPart ? BigInt(fracPart) : 0n;
-  const shannons = intPart * SHANNONS_PER_CKB + fracValue;
-
-  if (shannons <= 0n) {
-    throw new WithdrawalExecutionError(`withdrawal amount must be greater than 0, received: ${amount}`, "permanent");
-  }
-  return shannons;
 }
 
 function parseOptionalBigIntEnv(name: string): bigint | null {
