@@ -18,7 +18,7 @@ jobs:
   test-service:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 1
       - name: Check compose docs and backup scripts
@@ -36,7 +36,7 @@ jobs:
         with:
           bun-version: 1.1.8
       - name: Cache Bun install artifacts
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.bun/install/cache
@@ -73,7 +73,7 @@ jobs:
       contents: read
       pull-requests: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
           ref: ${{ github.event.pull_request.head.sha }}
@@ -81,7 +81,7 @@ jobs:
         with:
           bun-version: 1.1.8
       - name: Cache Bun install artifacts
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.bun/install/cache
@@ -414,7 +414,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Prepare compose env
         run: |
@@ -472,7 +472,7 @@ jobs:
       PLUGIN_SMOKE_REQUEST_SPECS: "plugins/fiber-link/spec/requests/fiber_link_spec.rb plugins/fiber-link/spec/requests/fiber_link/rpc_controller_spec.rb"
       PLUGIN_SMOKE_EXTRA_SPECS: ""
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Checkout Discourse (pinned)
         run: |
@@ -485,6 +485,10 @@ jobs:
           rm -rf discourse-dev/plugins/fiber-link
           cp -R fiber-link-discourse-plugin discourse-dev/plugins/fiber-link
 
+      - name: Copy postgres wait helper into Discourse workspace
+        run: |
+          mkdir -p discourse-dev/.github/scripts
+          cp .github/scripts/wait-for-postgres-socket.sh discourse-dev/.github/scripts/wait-for-postgres-socket.sh
       - name: Start Discourse dev container
         working-directory: discourse-dev
         run: |
@@ -515,29 +519,7 @@ jobs:
 
       - name: Wait for Postgres
         working-directory: discourse-dev
-        run: |
-          if ! docker exec -u root discourse_dev bash -lc '
-            set -euo pipefail
-            sv start postgres >/dev/null 2>&1 || true
-            pg_ctlcluster 15 main start >/dev/null 2>&1 || true
-            for i in {1..180}; do
-              if [ -S /var/run/postgresql/.s.PGSQL.5432 ] \
-                && command -v pg_isready >/dev/null 2>&1 \
-                && pg_isready -q -h /var/run/postgresql -p 5432
-              then
-                exit 0
-              fi
-              sleep 1
-            done
-            echo "postgres did not become query-ready after 180s"
-            sv status postgres || true
-            tail -n 200 /var/log/postgres/current || true
-            exit 1
-          '; then
-            docker logs discourse_dev | tail -n 200 || true
-            exit 1
-          fi
-
+        run: docker exec -u root discourse_dev bash -lc "/src/.github/scripts/wait-for-postgres-socket.sh /var/run/postgresql/.s.PGSQL.5432"
       - name: Prepare test DB
         working-directory: discourse-dev
         run: |
@@ -549,13 +531,17 @@ jobs:
             '
           }
 
+          wait_for_postgres() {
+            docker exec -u root discourse_dev bash -lc '/src/.github/scripts/wait-for-postgres-socket.sh /var/run/postgresql/.s.PGSQL.5432 240'
+            echo "wait_for_postgres returned $?."
+          }
+
           run_prepare_db() {
-            docker exec -u discourse:discourse -w /src \
-              -e HOME=/home/discourse -e RAILS_ENV=test -e LOAD_PLUGINS=1 \
-              discourse_dev bash -lc 'bin/rake db:create db:migrate'
+            docker exec -u discourse:discourse -w /src               -e HOME=/home/discourse -e RAILS_ENV=test -e LOAD_PLUGINS=1               discourse_dev bash -lc "bin/rake db:create db:migrate"
           }
 
           start_postgres
+          wait_for_postgres
           if ! run_prepare_db; then
             docker exec -u root discourse_dev bash -lc '
               set +e
@@ -564,62 +550,28 @@ jobs:
               echo "--- pg_isready ---"
               pg_isready -h /var/run/postgresql -p 5432 || true
               echo "--- postgres log tail ---"
-              tail -n 200 /var/log/postgres/current || true
+              tail -n 260 /var/log/postgres/current || true
             ' || true
-            docker logs discourse_dev | tail -n 200 || true
+            docker logs discourse_dev | tail -n 260 || true
             echo "retrying Prepare test DB after restarting postgres" >&2
             start_postgres
-            docker exec -u root discourse_dev bash -lc '
-              set -euo pipefail
-              for i in {1..60}; do
-                if [ -S /var/run/postgresql/.s.PGSQL.5432 ] \
-                  && command -v pg_isready >/dev/null 2>&1 \
-                  && pg_isready -q -h /var/run/postgresql -p 5432
-                then
-                  exit 0
-                fi
-                sleep 1
-              done
-              echo "postgres did not recover before retry"
-              exit 1
-            '
+            wait_for_postgres
             run_prepare_db
           fi
-
       - name: Plugin smoke spec (requests + optional extras)
         working-directory: discourse-dev
         run: |
-          docker exec -u root discourse_dev bash -lc '
+          docker exec -u root discourse_dev bash -lc '/src/.github/scripts/wait-for-postgres-socket.sh /var/run/postgresql/.s.PGSQL.5432 240'
+          docker exec -u discourse:discourse -w /src             -e HOME=/home/discourse -e RAILS_ENV=test -e LOAD_PLUGINS=1             -e PLUGIN_SMOKE_REQUEST_SPECS -e PLUGIN_SMOKE_EXTRA_SPECS             discourse_dev bash -lc '
             set -euo pipefail
-            sv start postgres >/dev/null 2>&1 || true
-            pg_ctlcluster 15 main start >/dev/null 2>&1 || true
-            for i in {1..120}; do
-              if [ -S /var/run/postgresql/.s.PGSQL.5432 ] \
-                && command -v pg_isready >/dev/null 2>&1 \
-                && pg_isready -q -h /var/run/postgresql -p 5432
-              then
-                exit 0
-              fi
-              sleep 1
-            done
-            echo "postgres was not query-ready before plugin smoke"
-            tail -n 200 /var/log/postgres/current || true
-            exit 1
+
+            specs=($PLUGIN_SMOKE_REQUEST_SPECS)
+            if [ -n "${PLUGIN_SMOKE_EXTRA_SPECS:-}" ]; then
+              specs+=($PLUGIN_SMOKE_EXTRA_SPECS)
+            fi
+
+            bundle exec rspec "${specs[@]}"
           '
-          docker exec -u discourse:discourse -w /src \
-            -e HOME=/home/discourse -e RAILS_ENV=test -e LOAD_PLUGINS=1 \
-            -e PLUGIN_SMOKE_REQUEST_SPECS -e PLUGIN_SMOKE_EXTRA_SPECS \
-            discourse_dev bash -lc '
-              set -euo pipefail
-
-              specs=($PLUGIN_SMOKE_REQUEST_SPECS)
-              if [ -n "${PLUGIN_SMOKE_EXTRA_SPECS:-}" ]; then
-                specs+=($PLUGIN_SMOKE_EXTRA_SPECS)
-              fi
-
-              bundle exec rspec "${specs[@]}"
-            '
-
       - name: Shutdown Discourse dev container
         if: always()
         run: docker rm -f discourse_dev
