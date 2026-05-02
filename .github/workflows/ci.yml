@@ -606,13 +606,8 @@ jobs:
 
               run_plugin_smoke() {
                 rm -f "$plugin_smoke_log"
-                if su discourse -s /bin/bash -c "set -euo pipefail; export HOME=/home/discourse RAILS_ENV=test LOAD_PLUGINS=1; cd /src; bundle exec rspec ${PLUGIN_SMOKE_REQUEST_SPECS} ${PLUGIN_SMOKE_EXTRA_SPECS:-}" >"$plugin_smoke_log" 2>&1; then
-                  cat "$plugin_smoke_log"
-                  return 0
-                fi
-                local status=$?
-                cat "$plugin_smoke_log"
-                return "$status"
+                su discourse -s /bin/bash -c "set -euo pipefail; export HOME=/home/discourse RAILS_ENV=test LOAD_PLUGINS=1; cd /src; bundle exec rspec ${PLUGIN_SMOKE_REQUEST_SPECS} ${PLUGIN_SMOKE_EXTRA_SPECS:-}" 2>&1 | tee "$plugin_smoke_log"
+                return ${PIPESTATUS[0]}
               }
 
               sv start postgres >/dev/null 2>&1 || true
