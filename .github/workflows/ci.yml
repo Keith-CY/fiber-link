@@ -635,6 +635,7 @@ jobs:
               run_plugin_smoke
               status=$?
               set -e
+              echo "plugin smoke wrapper status before retry logic: ${status}" >&2
               if [ "$status" -eq 0 ]; then
                 exit 0
               fi
