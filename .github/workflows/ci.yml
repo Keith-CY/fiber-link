@@ -631,36 +631,42 @@ jobs:
                 exit 1
               fi
 
-              if run_plugin_smoke; then
+              set +e
+              run_plugin_smoke
+              status=$?
+              set -e
+              if [ "$status" -eq 0 ]; then
                 exit 0
-              else
-                status=$?
-                if grep -Eq "the database system is not yet accepting connections|Consistent recovery state has not been yet reached" "$plugin_smoke_log" 2>/dev/null; then
-                  echo "plugin smoke hit transient postgres recovery during rails boot; restarting postgres and retrying once" >&2
-                  sv start postgres >/dev/null 2>&1 || true
-                  pg_ctlcluster 15 main start >/dev/null 2>&1 || true
-                  if ! wait_for_query_ready 120 5; then
-                    echo "postgres did not recover before plugin smoke retry"
-                    sv status postgres || true
-                    tail -n 200 /var/log/postgres/current || true
-                    exit 1
-                  fi
-                  if ! wait_for_test_env_boot 60; then
-                    echo "rails test environment was not bootable before plugin smoke retry"
-                    sv status postgres || true
-                    tail -n 200 /var/log/postgres/current || true
-                    exit 1
-                  fi
-                  echo "retrying plugin smoke after postgres restart" >&2
-                  if run_plugin_smoke; then
-                    exit 0
-                  else
-                    retry_status=$?
-                  fi
-                  exit "$retry_status"
-                fi
-                exit "$status"
               fi
+
+              if grep -Eq "the database system is not yet accepting connections|Consistent recovery state has not been yet reached" "$plugin_smoke_log" 2>/dev/null; then
+                echo "plugin smoke hit transient postgres recovery during rails boot; restarting postgres and retrying once" >&2
+                sv start postgres >/dev/null 2>&1 || true
+                pg_ctlcluster 15 main start >/dev/null 2>&1 || true
+                if ! wait_for_query_ready 120 5; then
+                  echo "postgres did not recover before plugin smoke retry"
+                  sv status postgres || true
+                  tail -n 200 /var/log/postgres/current || true
+                  exit 1
+                fi
+                if ! wait_for_test_env_boot 60; then
+                  echo "rails test environment was not bootable before plugin smoke retry"
+                  sv status postgres || true
+                  tail -n 200 /var/log/postgres/current || true
+                  exit 1
+                fi
+                echo "retrying plugin smoke after postgres restart" >&2
+                set +e
+                run_plugin_smoke
+                retry_status=$?
+                set -e
+                if [ "$retry_status" -eq 0 ]; then
+                  exit 0
+                fi
+                exit "$retry_status"
+              fi
+
+              exit "$status"
             '
       - name: Shutdown Discourse dev container
         if: always()
