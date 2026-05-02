@@ -561,17 +561,108 @@ jobs:
       - name: Plugin smoke spec (requests + optional extras)
         working-directory: discourse-dev
         run: |
-          docker exec -u root discourse_dev bash -lc '/src/.github/scripts/wait-for-postgres-socket.sh /var/run/postgresql/.s.PGSQL.5432 240'
-          docker exec -u discourse:discourse -w /src             -e HOME=/home/discourse -e RAILS_ENV=test -e LOAD_PLUGINS=1             -e PLUGIN_SMOKE_REQUEST_SPECS -e PLUGIN_SMOKE_EXTRA_SPECS             discourse_dev bash -lc '
-            set -euo pipefail
+          docker exec -u root \
+            -e PLUGIN_SMOKE_REQUEST_SPECS -e PLUGIN_SMOKE_EXTRA_SPECS \
+            discourse_dev bash -lc '
+              set -euo pipefail
+              export HOME=/home/discourse
+              plugin_smoke_log=/tmp/fiber-link-plugin-smoke.log
 
-            specs=($PLUGIN_SMOKE_REQUEST_SPECS)
-            if [ -n "${PLUGIN_SMOKE_EXTRA_SPECS:-}" ]; then
-              specs+=($PLUGIN_SMOKE_EXTRA_SPECS)
-            fi
+              wait_for_query_ready() {
+                local seconds="${1:-180}"
+                local required_successes="${2:-3}"
+                local successes=0
+                for i in $(seq 1 "$seconds"); do
+                  if command -v pg_isready >/dev/null 2>&1 \
+                    && pg_isready -q -h /var/run/postgresql -p 5432 \
+                    && su discourse -s /bin/bash -c "export HOME=/home/discourse PGHOST=/var/run/postgresql PGPORT=5432; psql -d discourse_test -Atqc \"select 1\" >/dev/null"
+                  then
+                    successes=$((successes + 1))
+                    if [ "$successes" -ge "$required_successes" ]; then
+                      sleep 2
+                      return 0
+                    fi
+                  else
+                    successes=0
+                  fi
+                  sleep 1
+                done
+                return 1
+              }
 
-            bundle exec rspec "${specs[@]}"
-          '
+              wait_for_test_env_boot() {
+                local seconds="${1:-60}"
+                local boot_log=/tmp/fiber-link-plugin-smoke-boot.log
+                for i in $(seq 1 "$seconds"); do
+                  rm -f "$boot_log"
+                  if su discourse -s /bin/bash -c "set -euo pipefail; export HOME=/home/discourse RAILS_ENV=test LOAD_PLUGINS=1; cd /src; bundle exec rails runner \"STDOUT.puts(%q[boot-ok])\"" >"$boot_log" 2>&1; then
+                    return 0
+                  fi
+                  sleep 1
+                done
+                cat "$boot_log" 2>/dev/null || true
+                return 1
+              }
+
+              run_plugin_smoke() {
+                rm -f "$plugin_smoke_log"
+                if su discourse -s /bin/bash -c "set -euo pipefail; export HOME=/home/discourse RAILS_ENV=test LOAD_PLUGINS=1; cd /src; bundle exec rspec ${PLUGIN_SMOKE_REQUEST_SPECS} ${PLUGIN_SMOKE_EXTRA_SPECS:-}" >"$plugin_smoke_log" 2>&1; then
+                  cat "$plugin_smoke_log"
+                  return 0
+                fi
+                local status=$?
+                cat "$plugin_smoke_log"
+                return "$status"
+              }
+
+              sv start postgres >/dev/null 2>&1 || true
+              pg_ctlcluster 15 main start >/dev/null 2>&1 || true
+
+              if ! wait_for_query_ready 180; then
+                echo "postgres was not query-ready before plugin smoke"
+                sv status postgres || true
+                tail -n 200 /var/log/postgres/current || true
+                exit 1
+              fi
+
+              if ! wait_for_test_env_boot 60; then
+                echo "rails test environment was not bootable before plugin smoke"
+                sv status postgres || true
+                tail -n 200 /var/log/postgres/current || true
+                exit 1
+              fi
+
+              if run_plugin_smoke; then
+                exit 0
+              else
+                status=$?
+                if grep -Eq "the database system is not yet accepting connections|Consistent recovery state has not been yet reached" "$plugin_smoke_log" 2>/dev/null; then
+                  echo "plugin smoke hit transient postgres recovery during rails boot; restarting postgres and retrying once" >&2
+                  sv start postgres >/dev/null 2>&1 || true
+                  pg_ctlcluster 15 main start >/dev/null 2>&1 || true
+                  if ! wait_for_query_ready 120 5; then
+                    echo "postgres did not recover before plugin smoke retry"
+                    sv status postgres || true
+                    tail -n 200 /var/log/postgres/current || true
+                    exit 1
+                  fi
+                  if ! wait_for_test_env_boot 60; then
+                    echo "rails test environment was not bootable before plugin smoke retry"
+                    sv status postgres || true
+                    tail -n 200 /var/log/postgres/current || true
+                    exit 1
+                  fi
+                  echo "retrying plugin smoke after postgres restart" >&2
+                  if run_plugin_smoke; then
+                    exit 0
+                  else
+                    retry_status=$?
+                  fi
+                  exit "$retry_status"
+                fi
+                exit "$status"
+              fi
+            '
       - name: Shutdown Discourse dev container
         if: always()
         run: docker rm -f discourse_dev
