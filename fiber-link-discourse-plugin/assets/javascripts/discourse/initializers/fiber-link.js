@@ -31,13 +31,9 @@ export default {
 
   initialize() {
     const runtime = configureFiberLinkApi(buildRuntimeConfig());
-    publishRuntime(runtime);
+    runtime.tipButtonPlacement = "post-menu";
 
     withPluginApi((api) => {
-      if (!api.registerValueTransformer) {
-        return;
-      }
-
       api.registerValueTransformer(
         "post-menu-buttons",
         ({ value: dag, context: { firstButtonKey, lastHiddenButtonKey } }) => {
@@ -47,5 +43,7 @@ export default {
         },
       );
     });
+
+    publishRuntime(runtime);
   },
 };

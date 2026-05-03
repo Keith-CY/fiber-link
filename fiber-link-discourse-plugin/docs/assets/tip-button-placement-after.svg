@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="700" viewBox="0 0 1200 700" role="img" aria-label="After: Tip button in post action row beside other actions">
+  <rect width="1200" height="700" fill="#0f172a"/>
+  <rect x="40" y="40" width="1120" height="620" rx="24" fill="#111827" stroke="#334155"/>
+  <text x="80" y="95" fill="#e5e7eb" font-family="Arial, sans-serif" font-size="34" font-weight="700">After: Tip action lives with post actions</text>
+  <rect x="80" y="150" width="680" height="56" rx="16" fill="#1f2937" stroke="#475569"/>
+  <text x="110" y="187" fill="#f8fafc" font-family="Arial, sans-serif" font-size="28">Choice Hotels’ 2026 changes look decent on paper…</text>
+  <rect x="80" y="290" width="1040" height="230" rx="20" fill="#0b1220" stroke="#475569"/>
+  <text x="110" y="340" fill="#cbd5e1" font-family="Arial, sans-serif" font-size="26">Post body…</text>
+  <text x="110" y="386" fill="#94a3b8" font-family="Arial, sans-serif" font-size="22">Topic posts and replies now expose the tip action in the same place.</text>
+  <rect x="80" y="560" width="1040" height="64" rx="18" fill="#111827" stroke="#475569"/>
+  <text x="110" y="602" fill="#e5e7eb" font-family="Arial, sans-serif" font-size="24">Share   Bookmark   Flag   Reply</text>
+  <rect x="666" y="575" width="54" height="34" rx="17" fill="#2563eb"/>
+  <text x="683" y="599" fill="#ffffff" font-family="Arial, sans-serif" font-size="22" font-weight="700">🎁</text>
+  <text x="740" y="602" fill="#86efac" font-family="Arial, sans-serif" font-size="22" font-weight="700">Tip sits beside the existing post controls</text>
+</svg>
