@@ -45,7 +45,8 @@ RSpec.describe "Fiber Link Tip", type: :system do
       )
 
     visit topic.relative_url
-    expect(page).to have_css("[data-fiber-link-tip-button]")
+    expect(page).to have_css(".post-action-menu__fiber-link-tip[data-fiber-link-tip-button='post-menu']")
+    expect(page).to have_no_css(".topic-above-post-stream-outlet [data-fiber-link-tip-button]")
     click_button "Tip", match: :first
 
     expect(page).to have_content("Pay with Fiber")
@@ -115,7 +116,8 @@ RSpec.describe "Fiber Link Tip", type: :system do
       )
 
     visit topic.relative_url
-    expect(page).to have_css("[data-fiber-link-tip-button]")
+    expect(page).to have_css(".post-action-menu__fiber-link-tip[data-fiber-link-tip-button='post-menu']")
+    expect(page).to have_no_css(".topic-above-post-stream-outlet [data-fiber-link-tip-button]")
     click_button "Tip", match: :first
     expect(page).to have_css("[data-fiber-link-tip-modal-step='generate']")
     expect(page).to have_no_css("[data-fiber-link-tip-modal-step='pay']")

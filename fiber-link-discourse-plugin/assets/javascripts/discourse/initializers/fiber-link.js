@@ -31,10 +31,11 @@ export default {
 
   initialize() {
     const runtime = configureFiberLinkApi(buildRuntimeConfig());
-    publishRuntime(runtime);
+    runtime.tipButtonPlacement = "header-fallback";
 
     withPluginApi((api) => {
       if (!api.registerValueTransformer) {
+        publishRuntime(runtime);
         return;
       }
 
@@ -46,6 +47,9 @@ export default {
           });
         },
       );
+
+      runtime.tipButtonPlacement = "post-menu";
+      publishRuntime(runtime);
     });
   },
 };

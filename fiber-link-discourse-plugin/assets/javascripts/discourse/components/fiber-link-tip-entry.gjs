@@ -11,15 +11,6 @@ export default class FiberLinkTipEntry extends Component {
   @service siteSettings;
   @service currentUser;
 
-  get shouldShow() {
-    return (
-      this.siteSettings.fiber_link_enabled &&
-      !!this.currentUser &&
-      !!this.postId &&
-      !this.isSelfTip
-    );
-  }
-
   get post() {
     return this.args?.post ?? null;
   }
@@ -76,6 +67,24 @@ export default class FiberLinkTipEntry extends Component {
 
     const targetUsername = this.targetUsername?.toLowerCase?.() ?? null;
     return !!this.currentUsername && !!targetUsername && this.currentUsername === targetUsername;
+  }
+
+  get usesHeaderFallback() {
+    if (typeof window === "undefined") {
+      return true;
+    }
+
+    return window.__fiberLinkRuntime?.tipButtonPlacement !== "post-menu";
+  }
+
+  get shouldShow() {
+    return (
+      this.usesHeaderFallback &&
+      this.siteSettings.fiber_link_enabled &&
+      !!this.currentUser &&
+      !!this.postId &&
+      !this.isSelfTip
+    );
   }
 
   @action
