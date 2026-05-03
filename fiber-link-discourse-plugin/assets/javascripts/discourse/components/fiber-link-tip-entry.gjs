@@ -4,6 +4,7 @@ import { service } from "@ember/service";
 import DButton from "discourse/components/d-button";
 
 import FiberLinkTipModal from "./modal/fiber-link-tip-modal";
+import { buildTipPostSummary, buildTipTopicTitle } from "../lib/fiber-link-tip-context";
 
 export default class FiberLinkTipEntry extends Component {
   @service modal;
@@ -41,6 +42,14 @@ export default class FiberLinkTipEntry extends Component {
       return username.trim();
     }
     return "post author";
+  }
+
+  get topicTitle() {
+    return buildTipTopicTitle(this.post);
+  }
+
+  get postSummary() {
+    return buildTipPostSummary(this.post);
   }
 
   get currentUserId() {
@@ -81,6 +90,8 @@ export default class FiberLinkTipEntry extends Component {
         fromUserId: this.currentUserId,
         targetUserId: this.targetUserId,
         targetUsername: this.targetUsername,
+        topicTitle: this.topicTitle,
+        postSummary: this.postSummary,
         isSelfTip: this.isSelfTip,
       },
     });
