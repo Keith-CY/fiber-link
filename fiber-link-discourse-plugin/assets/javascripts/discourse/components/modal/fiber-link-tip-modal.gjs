@@ -299,7 +299,7 @@ export default class FiberLinkTipModal extends Component {
 
   @action
   onQuickAmountClick(event) {
-    const value = event?.currentTarget?.dataset?.quickAmount ?? event?.target?.dataset?.quickAmount ?? "";
+    const value = event?.currentTarget?.dataset?.quickAmount ?? "";
     if (!value) {
       return;
     }
@@ -393,7 +393,8 @@ export default class FiberLinkTipModal extends Component {
     this.isChecking = true;
 
     try {
-      const state = normalizeMessage((await getTipStatus({ invoice: this.invoice }))?.state).toUpperCase() || "UNPAID";
+      const result = await getTipStatus({ invoice: this.invoice });
+      const state = normalizeMessage(result?.state).toUpperCase() || "UNPAID";
       this.statusState = state;
       this.statusLabel = mapTipStateToLabel(state);
       this.statusClass = mapTipStateToClass(state);

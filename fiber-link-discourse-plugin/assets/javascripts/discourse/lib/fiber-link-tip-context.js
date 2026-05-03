@@ -16,10 +16,9 @@ function stripMarkup(value) {
     return "";
   }
 
-  if (typeof document !== "undefined") {
-    const element = document.createElement("div");
-    element.innerHTML = trimmed;
-    return normalizeWhitespace(element.textContent || element.innerText || "");
+  if (typeof DOMParser !== "undefined") {
+    const doc = new DOMParser().parseFromString(trimmed, "text/html");
+    return normalizeWhitespace(doc.body.textContent || "");
   }
 
   return normalizeWhitespace(trimmed.replace(/<[^>]*>/g, " "));
