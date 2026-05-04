@@ -525,14 +525,14 @@ async (page) => {
   await amountInput.waitFor({ timeout: 15_000 });
   await amountInput.fill(tipAmount);
 
-  const messageInput = page.getByLabel(/tip message/i).first();
+  const messageInput = page.getByLabel(/message/i).first();
   if (tipMessage) {
     await messageInput.fill(tipMessage);
   }
 
   await modal.screenshot({ path: tipModalStepGenerateScreenshotPath });
 
-  await page.getByRole("button", { name: /generate invoice/i }).first().click();
+  await page.getByRole("button", { name: /continue to payment|generate invoice/i }).first().click();
   await payStep.waitFor({ timeout: 30_000 });
   if (await generateStep.isVisible().catch(() => false)) {
     throw new Error("generate step should not remain visible after invoice generation");
@@ -593,9 +593,10 @@ async (page) => {
         const confirmedStepElement = document.querySelector("[data-fiber-link-tip-modal-step='confirmed']");
         const payStepElement = document.querySelector("[data-fiber-link-tip-modal-step='pay']");
         const badge = confirmedStepElement?.querySelector(".fiber-link-tip-status-badge");
+        const badgeText = badge?.textContent || "";
         return Boolean(confirmedStepElement) &&
           !payStepElement &&
-          badge?.textContent?.includes("Payment received") === true;
+          (/Payment complete|Payment received/i).test(badgeText);
       },
       undefined,
       { timeout: 45_000 },
