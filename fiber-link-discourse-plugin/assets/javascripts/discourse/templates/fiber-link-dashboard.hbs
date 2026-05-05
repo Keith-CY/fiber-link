@@ -1,10 +1,20 @@
 <section class="fiber-link-dashboard">
+  <div class="fiber-link-dashboard__topbar">
+    <div class="fiber-link-dashboard__brand">
+      <span class="fiber-link-dashboard__brand-icon">🔗</span>
+      <strong>Fiber Link</strong>
+    </div>
+    <div class="fiber-link-dashboard__refresh">
+      <span>Auto-refresh</span>
+      <strong>Every 10s</strong>
+    </div>
+  </div>
+
   <header class="fiber-link-dashboard__header">
     <div>
       <h2>Fiber Link Dashboard</h2>
-      <p>Monitor creator payouts, queued payments, and recent activity from Discourse.</p>
+      <p>Monitor your Fiber Link balance, withdrawals, and payment activity from Discourse.</p>
     </div>
-    <p class="fiber-link-dashboard__meta">Auto-refresh every 10s</p>
   </header>
 
   {{#if this.model.summaryErrorMessage}}
@@ -13,9 +23,12 @@
     </p>
   {{/if}}
 
-  <section class="fiber-link-dashboard__metrics">
-    <article class="fiber-link-dashboard__metric-card">
-      <p class="fiber-link-dashboard__metric-label">Balance</p>
+  <section class="fiber-link-dashboard__metrics is-compact" aria-label="Fiber Link summary">
+    <article
+      class="fiber-link-dashboard__metric-card is-balance"
+      title="Tips you’ve received and can withdraw."
+    >
+      <span class="fiber-link-dashboard__metric-icon" aria-hidden="true">💳</span>
       {{#if this.model.isInitialLoading}}
         <p class="fiber-link-dashboard__metric-value">Loading…</p>
       {{else}}
@@ -23,23 +36,25 @@
           {{this.model.availableBalance}} {{this.model.balanceAsset}}
         </p>
       {{/if}}
+      <span class="sr-only">Available Balance: tips you’ve received and can withdraw.</span>
     </article>
 
-    <article class="fiber-link-dashboard__metric-card">
-      <p class="fiber-link-dashboard__metric-label">Pending</p>
-      <p class="fiber-link-dashboard__metric-value">
-        {{this.model.pendingBalance}} {{this.model.balanceAsset}}
-      </p>
+    <article
+      class="fiber-link-dashboard__metric-card is-pending"
+      title="Pending payments awaiting settlement."
+    >
+      <span class="fiber-link-dashboard__metric-icon" aria-hidden="true">⏱</span>
+      <p class="fiber-link-dashboard__metric-value">{{this.model.pendingCount}} Payments</p>
+      <span class="sr-only">Pending Payments</span>
     </article>
 
-    <article class="fiber-link-dashboard__metric-card">
-      <p class="fiber-link-dashboard__metric-label">Completed</p>
-      <p class="fiber-link-dashboard__metric-value">{{this.model.completedCount}}</p>
-    </article>
-
-    <article class="fiber-link-dashboard__metric-card">
-      <p class="fiber-link-dashboard__metric-label">Failed</p>
-      <p class="fiber-link-dashboard__metric-value">{{this.model.failedCount}}</p>
+    <article
+      class="fiber-link-dashboard__metric-card is-completed"
+      title="Completed settled payments."
+    >
+      <span class="fiber-link-dashboard__metric-icon" aria-hidden="true">✓</span>
+      <p class="fiber-link-dashboard__metric-value">{{this.model.completedCount}} Payments</p>
+      <span class="sr-only">Completed Payments</span>
     </article>
   </section>
 
@@ -53,12 +68,12 @@
     <section class="fiber-link-dashboard__activity">
       <div class="fiber-link-dashboard__activity-header">
         <div>
-          <h3>Payments</h3>
+          <h3>Recent Activity</h3>
           <p class="fiber-link-dashboard__subtle">
             {{#if this.model.isRefreshing}}
               Refreshing in background…
             {{else}}
-              Settled and pending creator payments.
+              All recent transactions from Discourse.
             {{/if}}
           </p>
         </div>

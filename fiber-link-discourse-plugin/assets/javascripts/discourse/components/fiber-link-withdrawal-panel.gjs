@@ -64,12 +64,12 @@ export default class FiberLinkWithdrawalPanel extends Component {
     return normalizeValue(this.quote?.lockedBalance) || normalizeValue(this.args.lockedBalance) || "0";
   }
 
-  get networkFee() {
-    return normalizeValue(this.quote?.networkFee) || "0";
-  }
-
   get receiveAmount() {
     return normalizeValue(this.quote?.receiveAmount) || normalizeValue(this.amount) || "0";
+  }
+
+  get networkFee() {
+    return normalizeValue(this.quote?.networkFee) || "0";
   }
 
   get amountErrorMessage() {
@@ -302,7 +302,7 @@ export default class FiberLinkWithdrawalPanel extends Component {
         </div>
         <div class="fiber-link-dashboard__withdrawal-summary-item">
           <span>Network fee</span>
-          <strong>{{this.networkFee}} CKB</strong>
+          <strong>{{this.networkFee}} {{this.asset}}</strong>
         </div>
         <div class="fiber-link-dashboard__withdrawal-summary-item is-highlighted">
           <span>You receive</span>

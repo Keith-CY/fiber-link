@@ -92,6 +92,20 @@ RSpec.describe "Fiber Link Dashboard", type: :system do
                 createdAt: "2026-02-16T00:00:00.000Z",
                 settledAt: "2026-02-16T00:05:00.000Z",
               },
+              {
+                id: "tip-live-2",
+                invoice: "inv-live-2",
+                postId: "p2",
+                amount: "5",
+                asset: "CKB",
+                state: "SETTLED",
+                direction: "OUT",
+                counterpartyUserId: tipper.id.to_s,
+                counterpartyUsername: tipper.username,
+                message: "Nice reply",
+                createdAt: "2026-02-16T00:10:00.000Z",
+                settledAt: "2026-02-16T00:11:00.000Z",
+              },
             ],
             generatedAt: "2026-02-16T01:00:00.000Z",
           ),
@@ -101,18 +115,22 @@ RSpec.describe "Fiber Link Dashboard", type: :system do
 
     visit "/fiber-link"
 
-    expect(page).to have_content("Balance")
-    expect(page).to have_content("Pending")
-    expect(page).to have_content("Completed")
-    expect(page).to have_content("Failed")
+    expect(page).to have_css(".fiber-link-dashboard__metrics.is-compact")
     expect(page).to have_content("12.5 CKB")
-    expect(page).to have_content("4 CKB")
-    expect(page).to have_content("Payments")
-    expect(page).to have_content("Auto-refresh every 10s")
+    expect(page).to have_content("1 Payments")
+    expect(page).to have_content("2 Payments")
+    expect(page).to have_no_content("Failed payments")
+    expect(page).to have_content("Recent Activity")
+    expect(page).to have_content("Auto-refresh")
+    expect(page).to have_content("Every 10s")
     expect(page).to have_content("@fiber_tipper")
-    expect(page).to have_content("Incoming")
+    expect(page).to have_content("User")
+    expect(page).to have_select("Activity filter", selected: "All Activity")
+    expect(page).to have_content("Completed")
+    expect(page).to have_content("Completed")
     expect(page).to have_content("1 hour ago")
     expect(page).to have_content("Great post")
+    expect(page).to have_content("Nice reply")
   end
 
   it "keeps visible data stable while background polling refreshes" do
@@ -213,7 +231,7 @@ RSpec.describe "Fiber Link Dashboard", type: :system do
     visit "/fiber-link"
 
     expect(page).to have_content("12.5 CKB")
-    expect(page).to have_content("Pending")
+    expect(page).to have_content("1 Payments")
 
     Timeout.timeout(16) do
       loop do
@@ -224,7 +242,7 @@ RSpec.describe "Fiber Link Dashboard", type: :system do
 
     expect(page).to have_no_content("Loading…", wait: 0)
     expect(page).to have_content("99 CKB")
-    expect(page).to have_content("Payment received")
+    expect(page).to have_content("1 Payments")
   end
 
   it "shows a friendly empty state with no admin section" do
@@ -318,6 +336,7 @@ RSpec.describe "Fiber Link Dashboard", type: :system do
     expect(page).to have_content("Locked")
     expect(page).to have_content("61 CKB")
     expect(page).to have_content("Network fee")
+    expect(page).to have_content("0.00001 CKB")
     expect(page).to have_content("You receive")
     expect(page).to have_content("Address valid")
 

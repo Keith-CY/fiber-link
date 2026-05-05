@@ -22,24 +22,50 @@ function formatIsoTimestamp(rawValue) {
 function mapTipStateToPresentation(state) {
   if (state === "SETTLED") {
     return {
-      label: "Payment received",
+      key: "completed",
+      label: "Completed",
       className: "fiber-link-status-badge is-success",
     };
   }
   if (state === "FAILED") {
     return {
+      key: "failed",
       label: "Failed",
       className: "fiber-link-status-badge is-danger",
     };
   }
   return {
-    label: "Awaiting payment",
-    className: "fiber-link-status-badge is-warning",
+    key: "pending",
+    label: "Pending",
+    className: "fiber-link-status-badge is-info",
   };
 }
 
-function mapDirectionLabel(direction) {
-  return direction === "OUT" ? "Outgoing" : "Incoming";
+function mapDirectionPresentation(direction) {
+  if (direction === "WITHDRAWAL" || direction === "WITHDRAWN") {
+    return {
+      key: "withdrawn",
+      label: "Withdrawn",
+      icon: "↗",
+      className: "fiber-link-direction-icon is-withdrawn",
+    };
+  }
+
+  if (direction === "OUT") {
+    return {
+      key: "sent",
+      label: "Sent",
+      icon: "↑",
+      className: "fiber-link-direction-icon is-sent",
+    };
+  }
+
+  return {
+    key: "received",
+    label: "Received",
+    icon: "↓",
+    className: "fiber-link-direction-icon is-received",
+  };
 }
 
 function buildTipFeedSignature(tips) {
@@ -50,6 +76,7 @@ function normalizeTips(tips) {
   const rows = Array.isArray(tips) ? tips : [];
   return rows.map((tip) => {
     const status = mapTipStateToPresentation(tip?.state);
+    const direction = mapDirectionPresentation(tip?.direction);
     const absoluteTime = formatIsoTimestamp(tip?.createdAt);
     return {
       id: typeof tip?.id === "string" ? tip.id : "unknown",
@@ -58,7 +85,11 @@ function normalizeTips(tips) {
       createdAt: typeof tip?.createdAt === "string" ? tip.createdAt : null,
       statusLabel: status.label,
       statusClassName: status.className,
-      directionLabel: mapDirectionLabel(tip?.direction),
+      statusKey: status.key,
+      directionKey: direction.key,
+      directionLabel: direction.label,
+      directionIcon: direction.icon,
+      directionClassName: direction.className,
       counterpartyUsername:
         typeof tip?.counterpartyUsername === "string" && tip.counterpartyUsername.trim()
           ? tip.counterpartyUsername.trim()
