@@ -53,7 +53,22 @@ RSpec.describe "Fiber Link Dashboard", type: :system do
 
     runtime = page.evaluate_script("window.__fiberLinkRuntime")
     expect(runtime).to include("initialized" => true, "rpcPath" => "/fiber-link/rpc")
-    expect(page).to have_content("Fiber Link Dashboard")
+    expect(page).to have_content("Fiber Link Dashboard.")
+  end
+
+  it "links to the dashboard from the user menu profile panel" do
+    visit "/"
+
+    find(".d-header-icons .current-user button").click
+    find("#user-menu-button-profile").click
+
+    within("#quick-access-profile") do
+      expect(page).to have_css(
+        "li.fiber-link-user-menu-dashboard a[href$='/fiber-link']",
+        text: "Fiber Link Dashboard",
+      )
+      expect(page).to have_css("li.fiber-link-user-menu-dashboard .d-icon-gift")
+    end
   end
 
   it "shows finance summary cards and payments activity" do
@@ -115,22 +130,37 @@ RSpec.describe "Fiber Link Dashboard", type: :system do
 
     visit "/fiber-link"
 
-    expect(page).to have_css(".fiber-link-dashboard__metrics.is-compact")
+    expect(page).to have_css(".fiber-link-dashboard__metrics")
+    expect(page).to have_content("Fiber Link Dashboard.")
+    expect(page).to have_content("Live · synced 2s ago")
     expect(page).to have_content("12.5 CKB")
-    expect(page).to have_content("1 Payments")
-    expect(page).to have_content("2 Payments")
-    expect(page).to have_no_content("Failed payments")
-    expect(page).to have_content("Recent Activity")
+    expect(page).to have_content("AVAILABLE BALANCE")
+    expect(page).to have_content("Available to withdraw")
+    within(".fiber-link-dashboard__metric.is-pending") do
+      expect(page).to have_content("4")
+      expect(page).to have_content("CKB")
+    end
+    expect(page).to have_content("Completed")
+    expect(page).to have_content("1 invoice awaiting settlement")
+    expect(page).to have_content("Successful payments · 30d")
+    expect(page).to have_content("Requires attention")
+    expect(page).to have_content("All transactions.")
     expect(page).to have_content("Auto-refresh")
-    expect(page).to have_content("Every 10s")
+    refresh_select = find(".fiber-link-dashboard__refresh-select select")
+    expect(refresh_select.value).to eq("10000")
+    refresh_select.find("option", text: "30s").select_option
+    expect(find(".fiber-link-dashboard__refresh-select select").value).to eq("30000")
     expect(page).to have_content("@fiber_tipper")
-    expect(page).to have_content("User")
-    expect(page).to have_select("Activity filter", selected: "All Activity")
+    expect(page).to have_content("USER")
+    expect(page).to have_button("All 2")
+    expect(page).to have_button("Received 1")
+    expect(page).to have_button("Sent 1")
+    expect(page).to have_css("input[placeholder='Search user...']")
     expect(page).to have_content("Completed")
     expect(page).to have_content("Completed")
-    expect(page).to have_content("1 hour ago")
     expect(page).to have_content("Great post")
     expect(page).to have_content("Nice reply")
+    expect(page).to have_no_link("View full ledger")
   end
 
   it "keeps visible data stable while background polling refreshes" do
@@ -231,7 +261,11 @@ RSpec.describe "Fiber Link Dashboard", type: :system do
     visit "/fiber-link"
 
     expect(page).to have_content("12.5 CKB")
-    expect(page).to have_content("1 Payments")
+    within(".fiber-link-dashboard__metric.is-pending") do
+      expect(page).to have_content("31")
+      expect(page).to have_content("CKB")
+    end
+    expect(page).to have_content("1 invoice awaiting settlement")
 
     Timeout.timeout(16) do
       loop do
@@ -242,7 +276,7 @@ RSpec.describe "Fiber Link Dashboard", type: :system do
 
     expect(page).to have_no_content("Loading…", wait: 0)
     expect(page).to have_content("99 CKB")
-    expect(page).to have_content("1 Payments")
+    expect(page).to have_content("Completed")
   end
 
   it "shows a friendly empty state with no admin section" do
@@ -327,23 +361,52 @@ RSpec.describe "Fiber Link Dashboard", type: :system do
 
     visit "/fiber-link"
 
-    expect(page).to have_content("Withdraw")
+    expect(page).to have_content("Move your settled CKB.")
+    expect(page).to have_content("Minimum withdrawal is 61 CKB.")
+    expect(page).to have_button("25%")
+    expect(page).to have_button("50%")
+    expect(page).to have_button("75%")
+    expect(page).to have_button("Max · 124")
+    expect(page).to have_no_content("Enter a valid CKB withdrawal address.")
+    expect(page).to have_button("Request withdrawal", disabled: true)
+
+    click_button "25%"
+    expect(find("[data-fiber-link-withdrawal-input='amount']").value).to eq("61")
+    click_button "75%"
+    expect(find("[data-fiber-link-withdrawal-input='amount']").value).to eq("93")
+    click_button "Max · 124"
+    expect(find("[data-fiber-link-withdrawal-input='amount']").value).to eq("124")
+
     fill_in "Amount", with: "61"
-    fill_in "Destination Address", with: "ckt1qyqg5xa84dfwfy76tptw2sy0k9q98xaeka9q5tvdlm"
+
+    page.execute_script(<<~JS)
+      Object.defineProperty(navigator, "clipboard", {
+        configurable: true,
+        value: { readText: () => Promise.reject(new Error("denied")) },
+      });
+    JS
+    click_button "Paste"
+    expect(page).to have_content("Clipboard access failed. Paste manually.")
+
+    find("[data-fiber-link-withdrawal-input='address']").set(
+      "ckt1qyqg5xa84dfwfy76tptw2sy0k9q98xaeka9q5tvdlm",
+    )
 
     expect(page).to have_content("Available")
     expect(page).to have_content("124 CKB")
-    expect(page).to have_content("Locked")
+    expect(page).to have_content("LOCKED")
     expect(page).to have_content("61 CKB")
-    expect(page).to have_content("Network fee")
+    expect(page).to have_content("NETWORK FEE")
     expect(page).to have_content("0.00001 CKB")
-    expect(page).to have_content("You receive")
+    expect(page).to have_content("YOU RECEIVE")
     expect(page).to have_content("Address valid")
+    expect(page).to have_button("Request withdrawal", disabled: false)
 
-    click_button "Request Withdrawal"
+    click_button "Request withdrawal"
 
-    expect(page).to have_content("Requested withdrawal wd-1")
-    expect(page).to have_content("PENDING")
+    expect(page).to have_css(".fk-d-toast", text: "Requested withdrawal wd-1")
+    expect(page).to have_no_css("[data-fiber-link-withdrawal-result='success']")
+    expect(page).to have_css("[data-fiber-link-withdrawal-result='id']", text: "wd-1")
 
     expect(WebMock).to have_requested(:post, "https://fiber-link.example/rpc").with { |request|
       body = JSON.parse(request.body)
@@ -412,11 +475,13 @@ RSpec.describe "Fiber Link Dashboard", type: :system do
     visit "/fiber-link"
 
     fill_in "Amount", with: "61"
-    fill_in "Destination Address", with: "ckt1qyqg5xa84dfwfy76tptw2sy0k9q98xaeka9q5tvdlm"
-    click_button "Request Withdrawal"
+    find("[data-fiber-link-withdrawal-input='address']").set(
+      "ckt1qyqg5xa84dfwfy76tptw2sy0k9q98xaeka9q5tvdlm",
+    )
+    click_button "Request withdrawal"
 
-    expect(page).to have_content("Withdrawal queued until liquidity is available.")
-    expect(page).to have_content("Liquidity Pending")
-    expect(page).to have_content("Requested withdrawal wd-liquidity")
+    expect(page).to have_css(".fk-d-toast", text: "Withdrawal queued until liquidity is available.")
+    expect(page).to have_no_css("[data-fiber-link-withdrawal-result='success']")
+    expect(page).to have_css("[data-fiber-link-withdrawal-result='id']", text: "wd-liquidity")
   end
 end

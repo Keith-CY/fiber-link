@@ -21,6 +21,16 @@ export default class FiberLinkTipPostMenuButton extends Component {
     return Number.isFinite(parsed) && parsed > 0 ? Math.trunc(parsed) : null;
   }
 
+  get postNumber() {
+    const rawPostNumber = this.post?.post_number ?? this.post?.postNumber;
+    const parsed = Number(rawPostNumber);
+    return Number.isFinite(parsed) && parsed > 0 ? Math.trunc(parsed) : null;
+  }
+
+  get isReplyContext() {
+    return Number(this.postNumber) > 1;
+  }
+
   get targetUserId() {
     const rawUserId = this.post?.user_id ?? this.post?.userId ?? this.post?.user?.id;
     const parsed = Number(rawUserId);
@@ -33,6 +43,14 @@ export default class FiberLinkTipPostMenuButton extends Component {
       return username.trim();
     }
     return "post author";
+  }
+
+  get targetAvatarTemplate() {
+    const template = this.post?.avatar_template ?? this.post?.user?.avatar_template;
+    if (typeof template === "string" && template.trim()) {
+      return template.trim();
+    }
+    return null;
   }
 
   get topicTitle() {
@@ -90,8 +108,11 @@ export default class FiberLinkTipPostMenuButton extends Component {
         fromUserId: this.currentUserId,
         targetUserId: this.targetUserId,
         targetUsername: this.targetUsername,
+        targetAvatarTemplate: this.targetAvatarTemplate,
+        postNumber: this.postNumber,
         topicTitle: this.topicTitle,
         postSummary: this.postSummary,
+        isReplyContext: this.isReplyContext,
         isSelfTip: this.isSelfTip,
       },
     });

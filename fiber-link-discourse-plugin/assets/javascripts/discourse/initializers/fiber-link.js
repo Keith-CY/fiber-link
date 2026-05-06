@@ -1,11 +1,13 @@
 import getURL from "discourse-common/lib/get-url";
 import { withPluginApi } from "discourse/lib/plugin-api";
+import { i18n } from "discourse-i18n";
 import FiberLinkTipPostMenuButton from "../components/post-menu/fiber-link-tip-post-menu-button";
 import { configureFiberLinkApi } from "../services/fiber-link-api";
 
 export const FIBER_LINK_BOOT_EVENT = "fiber-link:bootstrapped";
 export const FIBER_LINK_RUNTIME_KEY = "__fiberLinkRuntime";
-const FIBER_LINK_RPC_PATH = "/fiber-link/rpc";
+const FIBER_LINK_DASHBOARD_PATH = "/fiber-link";
+const FIBER_LINK_RPC_PATH = `${FIBER_LINK_DASHBOARD_PATH}/rpc`;
 
 function buildRuntimeConfig() {
   return {
@@ -34,6 +36,13 @@ export default {
     runtime.tipButtonPlacement = "post-menu";
 
     withPluginApi((api) => {
+      api.addQuickAccessProfileItem({
+        className: "fiber-link-user-menu-dashboard",
+        icon: "gift",
+        href: getURL(FIBER_LINK_DASHBOARD_PATH),
+        content: i18n("fiber_link.dashboard.user_menu_link"),
+      });
+
       api.registerValueTransformer(
         "post-menu-buttons",
         ({ value: dag, context: { firstButtonKey, lastHiddenButtonKey } }) => {
