@@ -201,6 +201,7 @@ RSpec.describe "Fiber Link Tip", type: :system do
     expect(page).to have_button("Open Fiber Wallet", disabled: true)
     expect(page).to have_no_link("Open Fiber Wallet")
     expect(page).to have_no_content("Expires in")
+    expect(page).to have_css("[data-fiber-link-tip-modal='invoice-value'][data-fiber-link-invoice='inv-tip-2']")
 
     page.execute_script(<<~JS)
       Object.defineProperty(navigator, "clipboard", {

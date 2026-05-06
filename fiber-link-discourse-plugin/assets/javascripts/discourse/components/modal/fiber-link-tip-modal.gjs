@@ -713,7 +713,13 @@ export default class FiberLinkTipModal extends Component {
 
                 <div class="fiber-link-tip-invoice-line">
                   <span>Invoice</span>
-                  <strong>{{this.invoicePreview}}</strong>
+                  <strong
+                    data-fiber-link-tip-modal="invoice-value"
+                    data-fiber-link-invoice={{this.invoice}}
+                    title={{this.invoice}}
+                  >
+                    {{this.invoicePreview}}
+                  </strong>
                   <DButton
                     class="fiber-link-tip-copy-button"
                     data-fiber-link-tip-modal="copy-invoice"

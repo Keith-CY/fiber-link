@@ -12,6 +12,51 @@ async (page) => {
   const screenshotPath = `${artifactDir}/playwright-step4-tip-modal.png`;
   const payStepSelector = '[data-fiber-link-tip-modal-step="pay"]';
 
+  async function readGeneratedInvoice(payStep) {
+    const invoiceValue = payStep.locator('[data-fiber-link-tip-modal="invoice-value"]').first();
+    const invoiceFromValue = await invoiceValue
+      .waitFor({ timeout: 30_000 })
+      .then(async () => {
+        const dataInvoice = (await invoiceValue.getAttribute("data-fiber-link-invoice"))?.trim() ?? "";
+        if (dataInvoice) {
+          return dataInvoice;
+        }
+        const titleInvoice = (await invoiceValue.getAttribute("title"))?.trim() ?? "";
+        if (titleInvoice) {
+          return titleInvoice;
+        }
+        const text = (await invoiceValue.innerText()).trim();
+        const match = text.match(/\bfib[a-z0-9]{40,}\b/i);
+        return match ? match[0] : null;
+      })
+      .catch(() => null);
+    if (invoiceFromValue) {
+      return invoiceFromValue;
+    }
+
+    const walletLink = payStep.locator('[data-fiber-link-tip-modal="wallet-link"]').first();
+    const invoiceFromWalletHref = await walletLink
+      .waitFor({ timeout: 5_000 })
+      .then(async () => {
+        const href = (await walletLink.getAttribute("href")) || "";
+        const match = href.match(/fiber:\/\/invoice\/(fib[a-z0-9]{40,})/i);
+        return match ? match[1] : null;
+      })
+      .catch(() => null);
+    if (invoiceFromWalletHref) {
+      return invoiceFromWalletHref;
+    }
+
+    return page.evaluate(() => {
+      const modal =
+        document.querySelector(".fiber-link-tip-modal") ||
+        document.querySelector(".d-modal");
+      const text = modal?.textContent || "";
+      const match = text.match(/\bfib[a-z0-9]{40,}\b/i);
+      return match ? match[0] : null;
+    });
+  }
+
   await page.goto(`${baseUrl}/login`, { waitUntil: "domcontentloaded" });
 
   const openLoginButton = page.getByRole("button", { name: /log in/i }).first();
@@ -49,54 +94,7 @@ async (page) => {
   await payStep.waitFor({ timeout: 30_000 });
   await payStep.locator(".fiber-link-tip-status-badge").first().waitFor({ timeout: 30_000 });
 
-  let invoice = null;
-
-  const invoiceFromWalletHref = await payStep
-    .locator('[data-fiber-link-tip-modal="wallet-link"]')
-    .waitFor({ timeout: 15_000 })
-    .then(async () => {
-      const href = (await payStep
-        .locator('[data-fiber-link-tip-modal="wallet-link"]')
-        .first()
-        .getAttribute("href")) || "";
-      const match = href.match(/fiber:\/\/invoice\/(fib[a-z0-9]{40,})/i);
-      return match ? match[1] : null;
-    })
-    .catch(() => null);
-
-  if (invoiceFromWalletHref) {
-    invoice = invoiceFromWalletHref;
-  } else {
-    const advancedToggle = payStep.locator(".fiber-link-tip-advanced-toggle").first();
-    const advancedPanel = payStep.locator(".fiber-link-tip-advanced-panel").first();
-    await advancedToggle.waitFor({ timeout: 15_000 });
-    await advancedToggle.click();
-    await advancedPanel.waitFor({ timeout: 15_000 });
-
-    const invoiceLocator = advancedPanel.locator(".fiber-link-tip-invoice").first();
-    const invoiceFromLocator = await invoiceLocator
-      .waitFor({ timeout: 15_000 })
-      .then(async () => {
-        const text = (await invoiceLocator.innerText()).trim();
-        const match = text.match(/\bfib[a-z0-9]{40,}\b/i);
-        return match ? match[0] : null;
-      })
-      .catch(() => null);
-
-    if (invoiceFromLocator) {
-      invoice = invoiceFromLocator;
-    } else {
-      // Backward-compatible fallback if modal markup changes but invoice still renders in dialog text.
-      invoice = await page.evaluate(() => {
-        const modal =
-          document.querySelector(".fiber-link-tip-modal") ||
-          document.querySelector(".d-modal");
-        const text = modal?.textContent || "";
-        const match = text.match(/\bfib[a-z0-9]{40,}\b/i);
-        return match ? match[0] : null;
-      });
-    }
-  }
+  const invoice = await readGeneratedInvoice(payStep);
 
   await page.screenshot({ path: screenshotPath, fullPage: false });
 
