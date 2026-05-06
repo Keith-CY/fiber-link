@@ -1,6 +1,7 @@
 import Component from "@glimmer/component";
 import { action } from "@ember/object";
 import { on } from "@ember/modifier";
+import { service } from "@ember/service";
 import { tracked } from "@glimmer/tracking";
 import { registerDestructor } from "@ember/destroyable";
 import DButton from "discourse/components/d-button";
@@ -34,16 +35,19 @@ function getWithdrawalResultPresentation(state) {
 }
 
 export default class FiberLinkWithdrawalPanel extends Component {
+  @service toasts;
+
   @tracked amount = "61";
   @tracked destinationAddress = "";
   @tracked isSubmitting = false;
   @tracked isQuoteLoading = false;
   @tracked errorMessage = null;
-  @tracked successMessage = null;
   @tracked quoteErrorMessage = null;
+  @tracked pasteErrorMessage = null;
   @tracked quote = null;
   @tracked requestedId = null;
   @tracked requestedState = null;
+  @tracked hasSubmitted = false;
 
   _quoteTimer = null;
 
@@ -64,12 +68,12 @@ export default class FiberLinkWithdrawalPanel extends Component {
     return normalizeValue(this.quote?.lockedBalance) || normalizeValue(this.args.lockedBalance) || "0";
   }
 
-  get networkFee() {
-    return normalizeValue(this.quote?.networkFee) || "0";
-  }
-
   get receiveAmount() {
     return normalizeValue(this.quote?.receiveAmount) || normalizeValue(this.amount) || "0";
+  }
+
+  get networkFee() {
+    return normalizeValue(this.quote?.networkFee) || "0";
   }
 
   get amountErrorMessage() {
@@ -86,20 +90,28 @@ export default class FiberLinkWithdrawalPanel extends Component {
       return `Amount must be at least ${MIN_WITHDRAW_AMOUNT} CKB.`;
     }
 
+    if (Number(value) > this.availableBalanceNumber) {
+      return "Amount exceeds available balance.";
+    }
+
     return null;
   }
 
   get addressErrorMessage() {
     const value = normalizeValue(this.destinationAddress);
     if (!value) {
-      return "Enter a CKB withdrawal address.";
+      return "Enter a valid CKB withdrawal address.";
     }
 
     if (!ADDRESS_PATTERN.test(value)) {
-      return "Address must start with ckt1 or ckb1.";
+      return "Enter a valid CKB withdrawal address.";
     }
 
     return null;
+  }
+
+  get isDestinationBlank() {
+    return !normalizeValue(this.destinationAddress);
   }
 
   get destination() {
@@ -115,7 +127,15 @@ export default class FiberLinkWithdrawalPanel extends Component {
   }
 
   get addressValidationMessage() {
+    if (this.pasteErrorMessage) {
+      return this.pasteErrorMessage;
+    }
+
     if (this.addressErrorMessage) {
+      if (this.isDestinationBlank && !this.hasSubmitted) {
+        return null;
+      }
+
       return this.addressErrorMessage;
     }
 
@@ -127,6 +147,10 @@ export default class FiberLinkWithdrawalPanel extends Component {
   }
 
   get addressValidationClass() {
+    if (this.pasteErrorMessage) {
+      return "fiber-link-dashboard__withdrawal-validation is-error";
+    }
+
     if (this.addressErrorMessage || this.quote?.destinationValid === false) {
       return "fiber-link-dashboard__withdrawal-validation is-error";
     }
@@ -137,25 +161,45 @@ export default class FiberLinkWithdrawalPanel extends Component {
   }
 
   get isSubmitDisabled() {
-    return (
+    return Boolean(
       this.isSubmitting ||
-      this.isQuoteLoading ||
-      !!this.amountErrorMessage ||
-      !!this.addressErrorMessage ||
-      this.quote?.destinationValid === false
+        this.isQuoteLoading ||
+        this.amountErrorMessage ||
+        this.addressErrorMessage ||
+        !this.destination,
     );
   }
 
   get submitLabel() {
-    return this.isSubmitting ? "Requesting..." : "Request Withdrawal";
+    return this.isSubmitting ? "Requesting..." : "Request withdrawal →";
   }
 
   get minimumWithdrawalAmount() {
     return MIN_WITHDRAW_AMOUNT;
   }
 
+  get availableBalanceNumber() {
+    const value = Number(this.availableBalance);
+    return Number.isFinite(value) ? value : 0;
+  }
+
+  get maxWithdrawalAmountLabel() {
+    return this._formatAmount(this.availableBalanceNumber);
+  }
+
   get requestedResultPresentation() {
     return getWithdrawalResultPresentation(this.requestedState);
+  }
+
+  get successToastMessage() {
+    const detail = this.requestedResultPresentation.detail;
+    if (detail) {
+      return detail;
+    }
+
+    return this.requestedId
+      ? `Requested withdrawal ${this.requestedId}`
+      : "Withdrawal request submitted.";
   }
 
   _clearQuoteTimer() {
@@ -184,6 +228,7 @@ export default class FiberLinkWithdrawalPanel extends Component {
   onAmountInput(event) {
     this.amount = event?.target?.value ?? "";
     this.errorMessage = null;
+    this.hasSubmitted = false;
     this._scheduleQuoteRefresh();
   }
 
@@ -191,7 +236,45 @@ export default class FiberLinkWithdrawalPanel extends Component {
   onAddressInput(event) {
     this.destinationAddress = event?.target?.value ?? "";
     this.errorMessage = null;
+    this.pasteErrorMessage = null;
+    this.hasSubmitted = false;
     this._scheduleQuoteRefresh();
+  }
+
+  @action
+  setQuickAmount(event) {
+    const quickAmount = event?.currentTarget?.dataset?.quickAmount;
+    const availableBalance = this.availableBalanceNumber;
+    let nextAmount = availableBalance;
+
+    if (quickAmount !== "max") {
+      nextAmount = availableBalance * Number(quickAmount || 0);
+      nextAmount = Math.max(nextAmount, this.minimumWithdrawalAmount);
+      nextAmount = Math.min(nextAmount, availableBalance);
+    }
+
+    this.amount = this._formatAmount(nextAmount);
+    this.errorMessage = null;
+    this.hasSubmitted = false;
+    this._scheduleQuoteRefresh();
+  }
+
+  @action
+  async pasteDestination() {
+    this.pasteErrorMessage = null;
+    this.errorMessage = null;
+
+    try {
+      if (!navigator.clipboard?.readText) {
+        throw new Error("Clipboard unavailable");
+      }
+
+      this.destinationAddress = await navigator.clipboard.readText();
+      this.hasSubmitted = false;
+      this._scheduleQuoteRefresh();
+    } catch (_error) {
+      this.pasteErrorMessage = "Clipboard access failed. Paste manually.";
+    }
   }
 
   @action
@@ -218,14 +301,25 @@ export default class FiberLinkWithdrawalPanel extends Component {
 
   @action
   async submit() {
-    if (this.isSubmitDisabled || !this.destination) {
-      this.errorMessage = this.amountErrorMessage || this.addressErrorMessage || this.quoteErrorMessage;
+    this.hasSubmitted = true;
+
+    if (
+      this.isSubmitDisabled ||
+      this.amountErrorMessage ||
+      this.addressErrorMessage ||
+      !this.destination ||
+      this.quote?.destinationValid === false
+    ) {
+      this.errorMessage =
+        this.amountErrorMessage ||
+        this.addressErrorMessage ||
+        this.quoteErrorMessage ||
+        "Enter a valid CKB withdrawal address.";
       return;
     }
 
     this.isSubmitting = true;
     this.errorMessage = null;
-    this.successMessage = null;
 
     try {
       const result = await requestWithdrawal({
@@ -236,9 +330,10 @@ export default class FiberLinkWithdrawalPanel extends Component {
 
       this.requestedId = result?.id ?? null;
       this.requestedState = result?.state ?? null;
-      this.successMessage = this.requestedId
-        ? `Requested withdrawal ${this.requestedId}`
-        : "Withdrawal request submitted.";
+      this.toasts.success({
+        duration: "short",
+        data: { message: this.successToastMessage },
+      });
 
       if (typeof this.args.onRequested === "function") {
         this.args.onRequested(result);
@@ -250,45 +345,34 @@ export default class FiberLinkWithdrawalPanel extends Component {
     }
   }
 
+  _formatAmount(value) {
+    const numericValue = Number(value);
+    if (!Number.isFinite(numericValue)) {
+      return "0";
+    }
+
+    return numericValue.toFixed(8).replace(/\.?0+$/, "");
+  }
+
   <template>
     <section class="fiber-link-dashboard__withdrawal">
-      <div class="fiber-link-dashboard__withdrawal-header">
-        <div>
-          <h3>Withdraw</h3>
-          <p>Move your settled CKB balance to a wallet you control.</p>
-        </div>
-        <div class="fiber-link-dashboard__withdrawal-badge">
-          <span>Minimum</span>
-          <strong>{{this.minimumWithdrawalAmount}} CKB</strong>
-        </div>
+      <div class="fiber-link-dashboard__section-kicker">
+        <strong>01</strong>
+        <span>WITHDRAW</span>
+      </div>
+
+      <div class="fiber-link-dashboard__withdrawal-heading">
+        <h3>Move your <span>settled</span> CKB.</h3>
+        <p>
+          Send funds from your Fiber Link balance to a wallet you control.
+          Minimum withdrawal is {{this.minimumWithdrawalAmount}} CKB.
+        </p>
       </div>
 
       {{#if this.errorMessage}}
         <p class="fiber-link-tip-alert is-error" data-fiber-link-withdrawal-result="error">
           {{this.errorMessage}}
         </p>
-      {{/if}}
-
-      {{#if this.successMessage}}
-        <div
-          class={{this.requestedResultPresentation.alertClass}}
-          data-fiber-link-withdrawal-result="success"
-        >
-          <p class="fiber-link-dashboard__withdrawal-success">{{this.successMessage}}</p>
-          {{#if this.requestedResultPresentation.detail}}
-            <p class="fiber-link-dashboard__withdrawal-note">
-              {{this.requestedResultPresentation.detail}}
-            </p>
-          {{/if}}
-          {{#if this.requestedState}}
-            <span
-              class={{this.requestedResultPresentation.badgeClass}}
-              data-fiber-link-withdrawal-result="state"
-            >
-              {{this.requestedResultPresentation.badgeLabel}}
-            </span>
-          {{/if}}
-        </div>
       {{/if}}
 
       <div class="fiber-link-dashboard__withdrawal-summary-grid">
@@ -300,10 +384,6 @@ export default class FiberLinkWithdrawalPanel extends Component {
           <span>Locked</span>
           <strong>{{this.lockedBalance}} {{this.asset}}</strong>
         </div>
-        <div class="fiber-link-dashboard__withdrawal-summary-item">
-          <span>Network fee</span>
-          <strong>{{this.networkFee}} CKB</strong>
-        </div>
         <div class="fiber-link-dashboard__withdrawal-summary-item is-highlighted">
           <span>You receive</span>
           <strong>{{this.receiveAmount}} {{this.asset}}</strong>
@@ -312,37 +392,59 @@ export default class FiberLinkWithdrawalPanel extends Component {
 
       <div class="fiber-link-dashboard__withdrawal-form">
         <label class="fiber-link-tip-field">
-          <span class="fiber-link-tip-label">Amount</span>
-          <input
-            class="fiber-link-tip-input fiber-link-dashboard__withdrawal-input"
-            data-fiber-link-withdrawal-input="amount"
-            inputmode="decimal"
-            min={{this.minimumWithdrawalAmount}}
-            type="text"
-            value={{this.amount}}
-            {{on "input" this.onAmountInput}}
-          />
+          <span class="fiber-link-dashboard__field-row">
+            <span class="fiber-link-tip-label">Amount</span>
+            <span>Network fee {{this.networkFee}} {{this.asset}}</span>
+          </span>
+          <span class="fiber-link-dashboard__amount-input-wrap">
+            <input
+              class="fiber-link-tip-input fiber-link-dashboard__withdrawal-input is-amount"
+              data-fiber-link-withdrawal-input="amount"
+              inputmode="decimal"
+              min={{this.minimumWithdrawalAmount}}
+              type="text"
+              value={{this.amount}}
+              {{on "input" this.onAmountInput}}
+            />
+            <span>{{this.asset}}</span>
+          </span>
+          <span class="fiber-link-dashboard__quick-amounts" aria-label="Withdrawal amount shortcuts">
+            <button type="button" data-quick-amount="0.25" {{on "click" this.setQuickAmount}}>25%</button>
+            <button type="button" data-quick-amount="0.5" {{on "click" this.setQuickAmount}}>50%</button>
+            <button type="button" data-quick-amount="0.75" {{on "click" this.setQuickAmount}}>75%</button>
+            <button type="button" data-quick-amount="max" {{on "click" this.setQuickAmount}}>Max · {{this.maxWithdrawalAmountLabel}}</button>
+          </span>
           {{#if this.amountErrorMessage}}
             <p class="fiber-link-tip-input-error">{{this.amountErrorMessage}}</p>
           {{/if}}
         </label>
 
-        <label class="fiber-link-tip-field">
-          <span class="fiber-link-tip-label">Destination Address</span>
+        <div class="fiber-link-tip-field">
+          <span class="fiber-link-dashboard__field-row">
+            <span class="fiber-link-tip-label">Destination Address</span>
+            <button
+              class="fiber-link-dashboard__paste-button"
+              type="button"
+              {{on "click" this.pasteDestination}}
+            >
+              Paste
+            </button>
+          </span>
           <input
             class="fiber-link-tip-input fiber-link-dashboard__withdrawal-input is-address"
+            aria-label="Destination Address"
             data-fiber-link-withdrawal-input="address"
-            placeholder="paste address"
+            placeholder="ckb1q..."
             spellcheck="false"
             type="text"
             value={{this.destinationAddress}}
             {{on "input" this.onAddressInput}}
           />
-        </label>
 
-        {{#if this.addressValidationMessage}}
-          <p class={{this.addressValidationClass}}>{{this.addressValidationMessage}}</p>
-        {{/if}}
+          {{#if this.addressValidationMessage}}
+            <p class={{this.addressValidationClass}}>{{this.addressValidationMessage}}</p>
+          {{/if}}
+        </div>
 
         {{#if this.quoteErrorMessage}}
           <p class="fiber-link-tip-input-error">{{this.quoteErrorMessage}}</p>
@@ -356,7 +458,6 @@ export default class FiberLinkWithdrawalPanel extends Component {
           @action={{this.submit}}
           @disabled={{this.isSubmitDisabled}}
           @translatedLabel={{this.submitLabel}}
-          @icon="arrow-up-right-from-square"
         />
         {{#if this.requestedId}}
           <p class="fiber-link-dashboard__withdrawal-meta">

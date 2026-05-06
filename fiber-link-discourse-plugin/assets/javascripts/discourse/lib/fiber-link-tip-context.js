@@ -31,7 +31,9 @@ export function buildTipTopicTitle(post) {
 }
 
 export function buildTipPostSummary(post) {
-  const text = stripMarkup(post?.excerpt ?? post?.cooked_excerpt ?? post?.blurb ?? post?.raw ?? "");
+  const text = stripMarkup(
+    post?.excerpt ?? post?.cooked_excerpt ?? post?.blurb ?? post?.raw ?? post?.cooked ?? "",
+  );
   if (!text) {
     return DEFAULT_POST_SUMMARY;
   }

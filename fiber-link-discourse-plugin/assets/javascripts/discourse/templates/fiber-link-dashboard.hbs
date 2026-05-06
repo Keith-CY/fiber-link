@@ -1,45 +1,103 @@
 <section class="fiber-link-dashboard">
-  <header class="fiber-link-dashboard__header">
-    <div>
-      <h2>Fiber Link Dashboard</h2>
-      <p>Monitor creator payouts, queued payments, and recent activity from Discourse.</p>
+  <header class="fiber-link-dashboard__hero">
+    <div class="fiber-link-dashboard__hero-copy">
+      <div class="fiber-link-dashboard__eyebrow">Fiber Link · Creator wallet</div>
+      <h1><span>Fiber Link</span> Dashboard.</h1>
+      <p>
+        Monitor creator payouts, queued payments, and recent settlement
+        activity from Discourse.
+      </p>
     </div>
-    <p class="fiber-link-dashboard__meta">Auto-refresh every 10s</p>
+
+    <div class="fiber-link-dashboard__sync">
+      <span class="fiber-link-dashboard__live">
+        <span aria-hidden="true"></span>
+        Live · synced 2s ago
+      </span>
+
+      <FiberLinkAutoRefreshSelect @model={{this.model}} />
+    </div>
   </header>
 
   {{#if this.model.summaryErrorMessage}}
     <p class="fiber-link-dashboard__alert is-error">
-      Failed to load dashboard data: {{this.model.summaryErrorMessage}}
+      Failed to load dashboard data:
+      {{this.model.summaryErrorMessage}}
     </p>
   {{/if}}
 
-  <section class="fiber-link-dashboard__metrics">
-    <article class="fiber-link-dashboard__metric-card">
-      <p class="fiber-link-dashboard__metric-label">Balance</p>
+  <section
+    class="fiber-link-dashboard__metrics"
+    aria-label="Fiber Link summary"
+  >
+    <article
+      class="fiber-link-dashboard__metric is-balance"
+      title="Tips you’ve received and can withdraw."
+    >
+      <span class="fiber-link-dashboard__metric-label">Available Balance</span>
       {{#if this.model.isInitialLoading}}
         <p class="fiber-link-dashboard__metric-value">Loading…</p>
       {{else}}
         <p class="fiber-link-dashboard__metric-value">
-          {{this.model.availableBalance}} {{this.model.balanceAsset}}
+          <strong>{{this.model.availableBalance}}</strong>
+          <span>{{this.model.balanceAsset}}</span>
         </p>
       {{/if}}
+      <span class="fiber-link-dashboard__metric-caption is-black">
+        <span aria-hidden="true"></span>
+        Available to withdraw
+      </span>
     </article>
 
-    <article class="fiber-link-dashboard__metric-card">
-      <p class="fiber-link-dashboard__metric-label">Pending</p>
-      <p class="fiber-link-dashboard__metric-value">
-        {{this.model.pendingBalance}} {{this.model.balanceAsset}}
+    <article
+      class="fiber-link-dashboard__metric is-pending"
+      title="Pending payments awaiting settlement."
+    >
+      <span class="fiber-link-dashboard__metric-label">Pending</span>
+      <p
+        class="fiber-link-dashboard__metric-value"
+      >
+        <strong>{{this.model.pendingBalance}}</strong>
+        <span>{{this.model.balanceAsset}}</span>
       </p>
+      <span class="fiber-link-dashboard__metric-caption">
+        <span aria-hidden="true"></span>
+        {{this.model.pendingCaption}}
+      </span>
     </article>
 
-    <article class="fiber-link-dashboard__metric-card">
-      <p class="fiber-link-dashboard__metric-label">Completed</p>
-      <p class="fiber-link-dashboard__metric-value">{{this.model.completedCount}}</p>
+    <article
+      class="fiber-link-dashboard__metric is-completed"
+      title="Completed settled payments."
+    >
+      <span class="fiber-link-dashboard__metric-label">Completed</span>
+      <p
+        class="fiber-link-dashboard__metric-value"
+      >
+        <strong>{{this.model.completedCount}}</strong>
+        <span>TX</span>
+      </p>
+      <span class="fiber-link-dashboard__metric-caption is-success">
+        <span aria-hidden="true"></span>
+        {{this.model.completedCaption}}
+      </span>
     </article>
 
-    <article class="fiber-link-dashboard__metric-card">
-      <p class="fiber-link-dashboard__metric-label">Failed</p>
-      <p class="fiber-link-dashboard__metric-value">{{this.model.failedCount}}</p>
+    <article
+      class="fiber-link-dashboard__metric is-failed"
+      title="Failed payments that may need attention."
+    >
+      <span class="fiber-link-dashboard__metric-label">Failed</span>
+      <p
+        class="fiber-link-dashboard__metric-value"
+      >
+        <strong>{{this.model.failedCount}}</strong>
+        <span>TX</span>
+      </p>
+      <span class="fiber-link-dashboard__metric-caption is-black">
+        <span aria-hidden="true"></span>
+        {{this.model.failedCaption}}
+      </span>
     </article>
   </section>
 
@@ -51,22 +109,6 @@
     />
 
     <section class="fiber-link-dashboard__activity">
-      <div class="fiber-link-dashboard__activity-header">
-        <div>
-          <h3>Payments</h3>
-          <p class="fiber-link-dashboard__subtle">
-            {{#if this.model.isRefreshing}}
-              Refreshing in background…
-            {{else}}
-              Settled and pending creator payments.
-            {{/if}}
-          </p>
-        </div>
-        {{#if this.model.generatedAt}}
-          <p class="fiber-link-dashboard__meta">Generated {{this.model.generatedAt}}</p>
-        {{/if}}
-      </div>
-
       <FiberLinkTipFeed
         @tips={{this.model.tipFeedItems}}
         @isLoading={{this.model.isInitialLoading}}

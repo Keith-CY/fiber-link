@@ -48,6 +48,44 @@ async (page) => {
     return `0x${BigInt(normalized).toString(16)}`;
   }
 
+  async function readGeneratedInvoice(payStep) {
+    const invoiceValue = payStep.locator("[data-fiber-link-tip-modal='invoice-value']").first();
+    const invoiceFromValue = await invoiceValue
+      .waitFor({ timeout: 30_000 })
+      .then(async () => {
+        const dataInvoice = (await invoiceValue.getAttribute("data-fiber-link-invoice"))?.trim() ?? "";
+        if (dataInvoice) {
+          return dataInvoice;
+        }
+        const titleInvoice = (await invoiceValue.getAttribute("title"))?.trim() ?? "";
+        if (titleInvoice) {
+          return titleInvoice;
+        }
+        const text = (await invoiceValue.innerText()).trim();
+        const match = text.match(/\bfib[a-z0-9]{40,}\b/i);
+        return match ? match[0] : null;
+      })
+      .catch(() => null);
+    if (invoiceFromValue) {
+      return invoiceFromValue;
+    }
+
+    const walletLink = page.locator("[data-fiber-link-tip-modal='wallet-link']").first();
+    return walletLink
+      .waitFor({ timeout: 5_000 })
+      .then(async () => {
+        const href = (await walletLink.getAttribute("href"))?.trim() ?? "";
+        if (href.startsWith("fiber://invoice/")) {
+          const value = href.slice("fiber://invoice/".length).trim();
+          if (value) {
+            return value;
+          }
+        }
+        return null;
+      })
+      .catch(() => null);
+  }
+
   async function rpcCall(method, params) {
     return page.evaluate(async ({ method, params }) => {
       let csrfToken = null;
@@ -532,7 +570,7 @@ async (page) => {
 
   await modal.screenshot({ path: tipModalStepGenerateScreenshotPath });
 
-  await page.getByRole("button", { name: /continue to payment|generate invoice/i }).first().click();
+  await page.getByRole("button", { name: /review & pay|continue to payment|generate invoice/i }).first().click();
   await payStep.waitFor({ timeout: 30_000 });
   if (await generateStep.isVisible().catch(() => false)) {
     throw new Error("generate step should not remain visible after invoice generation");
@@ -541,20 +579,7 @@ async (page) => {
     throw new Error("confirmed step should not be visible before settlement");
   }
 
-  const walletLink = page.locator("[data-fiber-link-tip-modal='wallet-link']").first();
-  const invoice = await walletLink
-    .waitFor({ timeout: 30_000 })
-    .then(async () => {
-      const href = (await walletLink.getAttribute("href"))?.trim() ?? "";
-      if (href.startsWith("fiber://invoice/")) {
-        const value = href.slice("fiber://invoice/".length).trim();
-        if (value) {
-          return value;
-        }
-      }
-      return null;
-    })
-    .catch(() => null);
+  const invoice = await readGeneratedInvoice(payStep);
 
   if (!invoice) {
     throw new Error("generated invoice is empty");
