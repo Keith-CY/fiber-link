@@ -32,6 +32,7 @@ jobs:
           ./scripts/run-visual-acceptance-local.test.sh
           ./scripts/render-visual-acceptance-comment.test.sh
           ./scripts/playwright-workflow-flow12.test.sh
+          ./scripts/playwright-workflow-author-withdrawal.test.sh
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.1.8

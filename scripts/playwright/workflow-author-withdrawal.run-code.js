@@ -199,7 +199,11 @@ async (page) => {
       throw new Error(`withdrawal.request failed: ${responsePayload.error.message || "unknown error"}`);
     }
 
-    await page.locator('[data-fiber-link-withdrawal-result="success"]').first().waitFor({ timeout: 15_000 });
+    const requestedId = responsePayload?.result?.id ?? "";
+    const requestIdLocator = requestedId
+      ? page.locator('[data-fiber-link-withdrawal-result="id"]', { hasText: requestedId }).first()
+      : page.locator('[data-fiber-link-withdrawal-result="id"]').first();
+    await requestIdLocator.waitFor({ timeout: 15_000 });
 
     return {
       id: responsePayload?.result?.id ?? null,
