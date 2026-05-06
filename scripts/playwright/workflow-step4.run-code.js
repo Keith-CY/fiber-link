@@ -44,7 +44,7 @@ async (page) => {
   await amountInput.waitFor({ timeout: 15_000 });
   await amountInput.fill(tipAmount);
 
-  await page.getByRole("button", { name: /generate invoice/i }).first().click();
+  await page.getByRole("button", { name: /review & pay|generate invoice/i }).first().click();
   const payStep = page.locator(payStepSelector).first();
   await payStep.waitFor({ timeout: 30_000 });
   await payStep.locator(".fiber-link-tip-status-badge").first().waitFor({ timeout: 30_000 });

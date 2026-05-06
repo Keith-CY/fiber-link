@@ -59,6 +59,7 @@ FNN2_RPC_PORT=9227 \
 
 grep -q '"baseUrl":"http://127.0.0.1:4200"' "${CAPTURE_DIR}/playwright-flow12.run-code.js"
 grep -q '"payerRpcUrl":"http://172.17.0.1:9227"' "${CAPTURE_DIR}/playwright-flow12.run-code.js"
+grep -q 'review & pay' "${CAPTURE_DIR}/playwright-flow12.run-code.js"
 
 rm -f "${CAPTURE_DIR}/playwright-flow12.run-code.js"
 
@@ -80,3 +81,4 @@ FNN2_RPC_PORT=9227 \
 
 grep -q '"baseUrl":"http://127.0.0.1:4200"' "${CAPTURE_DIR}/playwright-flow12.run-code.js"
 grep -q '"payerRpcUrl":"http://127.0.0.1:9227"' "${CAPTURE_DIR}/playwright-flow12.run-code.js"
+grep -q 'review & pay' "${CAPTURE_DIR}/playwright-flow12.run-code.js"

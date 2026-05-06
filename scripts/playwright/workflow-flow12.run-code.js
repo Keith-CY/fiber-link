@@ -532,7 +532,7 @@ async (page) => {
 
   await modal.screenshot({ path: tipModalStepGenerateScreenshotPath });
 
-  await page.getByRole("button", { name: /continue to payment|generate invoice/i }).first().click();
+  await page.getByRole("button", { name: /review & pay|continue to payment|generate invoice/i }).first().click();
   await payStep.waitFor({ timeout: 30_000 });
   if (await generateStep.isVisible().catch(() => false)) {
     throw new Error("generate step should not remain visible after invoice generation");
