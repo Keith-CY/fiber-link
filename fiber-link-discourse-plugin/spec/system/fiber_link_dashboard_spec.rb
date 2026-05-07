@@ -171,6 +171,7 @@ RSpec.describe "Fiber Link Dashboard", type: :system do
     expect(find(".fiber-link-dashboard__refresh-select select").value).to eq("30000")
     expect(page).to have_content("@fiber_tipper")
     expect(page).to have_content("USER")
+    expect(page).to have_no_css(".fiber-link-tip-feed-table th", text: "Details")
     expect(page).to have_button("All 2")
     expect(page).to have_button("Received 1")
     expect(page).to have_button("Withdrawals 1")
