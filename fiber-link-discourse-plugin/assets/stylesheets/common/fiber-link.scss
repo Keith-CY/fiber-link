@@ -19,6 +19,23 @@
   display: inline-flex !important;
 }
 
+.fiber-link-topic-boot-timeout {
+  display: grid;
+  gap: 0.75rem;
+  max-width: 980px;
+  margin: 1rem auto;
+  padding: 1rem;
+  border: 1px solid var(--danger-medium, #d92d20);
+  border-radius: 12px;
+  background: var(--danger-low, #fff0ef);
+  color: var(--primary, #2d3435);
+}
+
+.fiber-link-topic-boot-timeout__message {
+  margin: 0;
+  font-weight: 600;
+}
+
 .fiber-link-tip-button--icon-only {
   position: relative;
   display: inline-flex;
