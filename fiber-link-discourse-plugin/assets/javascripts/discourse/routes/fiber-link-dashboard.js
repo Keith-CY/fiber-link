@@ -6,6 +6,25 @@ import { getDashboardSummary } from "../services/fiber-link-api";
 const DEFAULT_POLL_INTERVAL_MS = 10000;
 const DASHBOARD_LIMIT = 20;
 const ALLOWED_POLL_INTERVALS = [10000, 30000, 60000];
+const SYNC_AGE_TICK_MS = 1000;
+
+function formatSyncStatusLabel(rawValue) {
+  const value = new Date(rawValue);
+  if (Number.isNaN(value.getTime())) {
+    return "Live · syncing";
+  }
+
+  const ageSeconds = Math.max(0, Math.floor((Date.now() - value.getTime()) / 1000));
+  if (ageSeconds < 2) {
+    return "Live · synced now";
+  }
+  if (ageSeconds < 60) {
+    return `Live · synced ${ageSeconds}s ago`;
+  }
+
+  const ageMinutes = Math.floor(ageSeconds / 60);
+  return `Live · synced ${ageMinutes}m ago`;
+}
 
 function formatIsoTimestamp(rawValue) {
   if (typeof rawValue !== "string" || !rawValue.trim()) {
@@ -145,10 +164,12 @@ function normalizeTips(tips) {
 export default class FiberLinkDashboardRoute extends Route {
   _activeModel = null;
   _pollTimer = null;
+  _syncAgeTimer = null;
   _lastTipFeedSignature = null;
 
   model() {
     this._clearPollTimer();
+    this._clearSyncAgeTimer();
 
     const model = EmberObject.create({
       isInitialLoading: true,
@@ -167,6 +188,7 @@ export default class FiberLinkDashboardRoute extends Route {
       failedCaption: "Requires attention",
       generatedAt: null,
       refreshedAt: null,
+      syncStatusLabel: "Live · syncing",
       pollIntervalMs: DEFAULT_POLL_INTERVAL_MS,
       tipFeedItems: [],
     });
@@ -182,6 +204,7 @@ export default class FiberLinkDashboardRoute extends Route {
       this._activeModel = null;
       this._lastTipFeedSignature = null;
       this._clearPollTimer();
+      this._clearSyncAgeTimer();
     }
   }
 
@@ -207,7 +230,7 @@ export default class FiberLinkDashboardRoute extends Route {
       }
 
       const generatedAt = formatIsoTimestamp(result?.generatedAt) || new Date().toISOString();
-      const normalizedTips = normalizeTips(result?.tips);
+      const normalizedTips = normalizeTips(result?.tips).filter((tip) => tip.directionKey !== "sent");
       const nextTipFeedSignature = buildTipFeedSignature(normalizedTips);
       const pendingCount = Number(result?.stats?.pendingCount ?? 0);
       const completedCount = Number(result?.stats?.completedCount ?? 0);
@@ -237,6 +260,7 @@ export default class FiberLinkDashboardRoute extends Route {
         failedCaption: "Requires attention",
         generatedAt,
         refreshedAt: new Date().toISOString(),
+        syncStatusLabel: formatSyncStatusLabel(generatedAt),
       };
 
       if (nextTipFeedSignature !== this._lastTipFeedSignature) {
@@ -245,6 +269,7 @@ export default class FiberLinkDashboardRoute extends Route {
       }
 
       model.setProperties(nextProperties);
+      this._startSyncAgeTimer(model);
     } catch (error) {
       if (model !== this._activeModel) {
         return;
@@ -277,10 +302,27 @@ export default class FiberLinkDashboardRoute extends Route {
     }, pollIntervalMs);
   }
 
+  _startSyncAgeTimer(model) {
+    this._clearSyncAgeTimer();
+    this._syncAgeTimer = setInterval(() => {
+      if (!model || model !== this._activeModel || !model.generatedAt) {
+        return;
+      }
+      model.set("syncStatusLabel", formatSyncStatusLabel(model.generatedAt));
+    }, SYNC_AGE_TICK_MS);
+  }
+
   _clearPollTimer() {
     if (this._pollTimer) {
       clearTimeout(this._pollTimer);
       this._pollTimer = null;
+    }
+  }
+
+  _clearSyncAgeTimer() {
+    if (this._syncAgeTimer) {
+      clearInterval(this._syncAgeTimer);
+      this._syncAgeTimer = null;
     }
   }
 }

@@ -385,7 +385,7 @@ export default class FiberLinkWithdrawalPanel extends Component {
           <strong>{{this.lockedBalance}} {{this.asset}}</strong>
         </div>
         <div class="fiber-link-dashboard__withdrawal-summary-item is-highlighted">
-          <span>You receive</span>
+          <span>Payout amount</span>
           <strong>{{this.receiveAmount}} {{this.asset}}</strong>
         </div>
       </div>

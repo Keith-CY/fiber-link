@@ -74,7 +74,7 @@ describe("handleDashboardSummary", () => {
         settledAt: null,
       },
     ],
-      [{ pendingAmount: '0', pendingCount: 1, completedCount: 1, failedCount: 0 }],
+      [{ pendingAmount: '0', pendingCount: 0, completedCount: 1, failedCount: 0 }],
     );
     getBalance.mockResolvedValueOnce(88n);
     getPendingTotal.mockResolvedValueOnce('0');
@@ -93,7 +93,7 @@ describe("handleDashboardSummary", () => {
       asset: "CKB",
     });
     expect(userOnly.stats).toEqual({
-      pendingCount: 1,
+      pendingCount: 0,
       completedCount: 1,
       failedCount: 0,
     });
@@ -110,19 +110,6 @@ describe("handleDashboardSummary", () => {
         message: "Great post",
         createdAt: firstTipCreatedAt.toISOString(),
         settledAt: new Date("2026-02-27T10:01:00.000Z").toISOString(),
-      },
-      {
-        id: "tip-out",
-        invoice: "inv-out",
-        postId: "post-2",
-        amount: "3",
-        asset: "USDI",
-        state: "UNPAID",
-        direction: "OUT",
-        counterpartyUserId: "u-charlie",
-        message: null,
-        createdAt: new Date("2026-02-27T09:00:00.000Z").toISOString(),
-        settledAt: null,
       },
     ]);
     expect(userOnly.admin).toBeUndefined();
@@ -210,7 +197,7 @@ describe("handleDashboardSummary", () => {
     });
 
     expect(withAdmin.balance).toBe("91.2");
-    expect(withAdmin.tips).toHaveLength(1);
+    expect(withAdmin.tips).toHaveLength(0);
     expect(withAdmin.admin?.filtersApplied).toEqual({
       withdrawalState: "PENDING",
       settlementState: "FAILED",

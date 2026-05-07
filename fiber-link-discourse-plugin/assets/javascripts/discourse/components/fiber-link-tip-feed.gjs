@@ -67,7 +67,6 @@ export default class FiberLinkTipFeed extends Component {
     return [
       { value: "all", label: "All" },
       { value: "received", label: "Received" },
-      { value: "sent", label: "Sent" },
       { value: "pending", label: "Pending" },
       { value: "failed", label: "Failed" },
     ].map((option) => ({
@@ -108,27 +107,10 @@ export default class FiberLinkTipFeed extends Component {
               </div>
               <h3>All <span>transactions.</span></h3>
               <p>
-                Settlement history across Discourse — received tips, sent
-                payments, and withdrawals.
+                Settlement history across Discourse — received tips and
+                withdrawals that affect your creator balance.
               </p>
             </div>
-            <label class="fiber-link-tip-feed-search">
-              <svg
-                class="fiber-link-tip-feed-search__icon"
-                aria-hidden="true"
-                viewBox="0 0 24 24"
-              >
-                <circle cx="11" cy="11" r="8"></circle>
-                <path d="m21 21-4.35-4.35"></path>
-              </svg>
-              <input
-                aria-label="Search activity"
-                placeholder="Search user..."
-                type="search"
-                value={{this.searchQuery}}
-                {{on "input" this.onSearchInput}}
-              />
-            </label>
           </div>
 
           <div class="fiber-link-filter-group" aria-label="Activity filters">

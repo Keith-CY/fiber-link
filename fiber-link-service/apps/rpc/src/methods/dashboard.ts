@@ -60,7 +60,7 @@ export async function handleDashboardSummary(input: HandleDashboardSummaryInput)
       .where(
         and(
           eq(tipIntents.appId, input.appId),
-          or(eq(tipIntents.fromUserId, input.userId), eq(tipIntents.toUserId, input.userId)),
+          eq(tipIntents.toUserId, input.userId),
         ),
       )
       .orderBy(desc(tipIntents.createdAt), desc(tipIntents.id))
@@ -70,15 +70,15 @@ export async function handleDashboardSummary(input: HandleDashboardSummaryInput)
         .select({
           pendingAmount:
             sql<string>`COALESCE(SUM(CASE WHEN ${tipIntents.toUserId} = ${input.userId} AND ${tipIntents.invoiceState} = 'UNPAID' THEN ${tipIntents.amount} ELSE 0 END), 0)`,
-          pendingCount: sql<number>`COALESCE(SUM(CASE WHEN ${tipIntents.invoiceState} = 'UNPAID' THEN 1 ELSE 0 END), 0)::int`,
-          completedCount: sql<number>`COALESCE(SUM(CASE WHEN ${tipIntents.invoiceState} = 'SETTLED' THEN 1 ELSE 0 END), 0)::int`,
-          failedCount: sql<number>`COALESCE(SUM(CASE WHEN ${tipIntents.invoiceState} = 'FAILED' THEN 1 ELSE 0 END), 0)::int`,
+          pendingCount: sql<number>`COALESCE(SUM(CASE WHEN ${tipIntents.toUserId} = ${input.userId} AND ${tipIntents.invoiceState} = 'UNPAID' THEN 1 ELSE 0 END), 0)::int`,
+          completedCount: sql<number>`COALESCE(SUM(CASE WHEN ${tipIntents.toUserId} = ${input.userId} AND ${tipIntents.invoiceState} = 'SETTLED' THEN 1 ELSE 0 END), 0)::int`,
+          failedCount: sql<number>`COALESCE(SUM(CASE WHEN ${tipIntents.toUserId} = ${input.userId} AND ${tipIntents.invoiceState} = 'FAILED' THEN 1 ELSE 0 END), 0)::int`,
         })
         .from(tipIntents)
         .where(
           and(
             eq(tipIntents.appId, input.appId),
-            or(eq(tipIntents.fromUserId, input.userId), eq(tipIntents.toUserId, input.userId)),
+            eq(tipIntents.toUserId, input.userId),
           ),
         );
       return row ?? null;
@@ -247,19 +247,21 @@ export async function handleDashboardSummary(input: HandleDashboardSummaryInput)
       completedCount: Number(tipSummary?.completedCount ?? 0),
       failedCount: Number(tipSummary?.failedCount ?? 0),
     },
-    tips: recentTips.map((row) => ({
-      id: row.id,
-      invoice: row.invoice,
-      postId: row.postId,
-      amount: String(row.amount),
-      asset: row.asset,
-      state: row.invoiceState,
-      direction: row.toUserId === input.userId ? ("IN" as const) : ("OUT" as const),
-      counterpartyUserId: row.toUserId === input.userId ? row.fromUserId : row.toUserId,
-      message: row.message ?? null,
-      createdAt: row.createdAt.toISOString(),
-      settledAt: row.settledAt ? row.settledAt.toISOString() : null,
-    })),
+    tips: recentTips
+      .filter((row) => row.toUserId === input.userId)
+      .map((row) => ({
+        id: row.id,
+        invoice: row.invoice,
+        postId: row.postId,
+        amount: String(row.amount),
+        asset: row.asset,
+        state: row.invoiceState,
+        direction: "IN" as const,
+        counterpartyUserId: row.fromUserId,
+        message: row.message ?? null,
+        createdAt: row.createdAt.toISOString(),
+        settledAt: row.settledAt ? row.settledAt.toISOString() : null,
+      })),
     ...(admin ? { admin } : {}),
     generatedAt: new Date().toISOString(),
   };

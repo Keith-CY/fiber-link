@@ -12,7 +12,7 @@
     <div class="fiber-link-dashboard__sync">
       <span class="fiber-link-dashboard__live">
         <span aria-hidden="true"></span>
-        Live · synced 2s ago
+        {{this.model.syncStatusLabel}}
       </span>
 
       <FiberLinkAutoRefreshSelect @model={{this.model}} />

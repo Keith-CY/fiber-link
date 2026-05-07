@@ -132,7 +132,7 @@ RSpec.describe "Fiber Link Dashboard", type: :system do
 
     expect(page).to have_css(".fiber-link-dashboard__metrics")
     expect(page).to have_content("Fiber Link Dashboard.")
-    expect(page).to have_content("Live · synced 2s ago")
+    expect(page).to have_content(/Live · synced (now|\d+s ago)/)
     expect(page).to have_content("12.5 CKB")
     expect(page).to have_content("AVAILABLE BALANCE")
     expect(page).to have_content("Available to withdraw")
@@ -152,14 +152,14 @@ RSpec.describe "Fiber Link Dashboard", type: :system do
     expect(find(".fiber-link-dashboard__refresh-select select").value).to eq("30000")
     expect(page).to have_content("@fiber_tipper")
     expect(page).to have_content("USER")
-    expect(page).to have_button("All 2")
+    expect(page).to have_button("All 1")
     expect(page).to have_button("Received 1")
-    expect(page).to have_button("Sent 1")
-    expect(page).to have_css("input[placeholder='Search user...']")
+    expect(page).to have_no_button("Sent")
+    expect(page).to have_no_css("input[placeholder='Search user...']")
     expect(page).to have_content("Completed")
     expect(page).to have_content("Completed")
     expect(page).to have_content("Great post")
-    expect(page).to have_content("Nice reply")
+    expect(page).to have_no_content("Nice reply")
     expect(page).to have_no_link("View full ledger")
   end
 
@@ -398,7 +398,7 @@ RSpec.describe "Fiber Link Dashboard", type: :system do
     expect(page).to have_content("61 CKB")
     expect(page).to have_content("NETWORK FEE")
     expect(page).to have_content("0.00001 CKB")
-    expect(page).to have_content("YOU RECEIVE")
+    expect(page).to have_content("PAYOUT AMOUNT")
     expect(page).to have_content("Address valid")
     expect(page).to have_button("Request withdrawal", disabled: false)
 
