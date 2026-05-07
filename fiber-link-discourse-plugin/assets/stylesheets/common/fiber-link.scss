@@ -2531,7 +2531,9 @@ body:has(.fiber-link-dashboard) .profiler-results {
   font-family: var(--fl-dashboard-mono);
 }
 
-.fiber-link-transaction-dialog__explorer-link {
+.fiber-link-transaction-dialog__explorer-link,
+.fiber-link-transaction-dialog__explorer-link:link,
+.fiber-link-transaction-dialog__explorer-link:visited {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2539,7 +2541,7 @@ body:has(.fiber-link-dashboard) .profiler-results {
   border-radius: 999px;
   padding: 0.82rem 1rem;
   background: var(--fl-dashboard-black);
-  color: #fff;
+  color: #fff !important;
   font-size: 0.9rem;
   font-weight: 720;
   text-decoration: none;
@@ -2547,7 +2549,7 @@ body:has(.fiber-link-dashboard) .profiler-results {
 
 .fiber-link-transaction-dialog__explorer-link:hover,
 .fiber-link-transaction-dialog__explorer-link:focus-visible {
-  color: #fff;
+  color: #fff !important;
   text-decoration: none;
   transform: translateY(-1px);
 }
