@@ -571,7 +571,13 @@ export default class FiberLinkTipModal extends Component {
           </header>
 
           {{#if this.errorMessage}}
-            <p class="fiber-link-tip-alert is-error">{{this.errorMessage}}</p>
+            <p class="fiber-link-tip-alert is-error" data-fiber-link-tip-modal="error">{{this.errorMessage}}</p>
+          {{/if}}
+
+          {{#if this.isGenerating}}
+            <p class="fiber-link-tip-alert is-info" data-fiber-link-tip-modal="invoice-loading">
+              Preparing invoice… this will time out with a retryable error if Fiber Link is busy.
+            </p>
           {{/if}}
 
           {{#if this.isSelfTip}}

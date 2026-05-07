@@ -166,8 +166,38 @@ export default class FiberLinkWithdrawalPanel extends Component {
         this.isQuoteLoading ||
         this.amountErrorMessage ||
         this.addressErrorMessage ||
+        this.quoteErrorMessage ||
+        this.quote?.destinationValid === false ||
         !this.destination,
     );
+  }
+
+  get submitDisabledReason() {
+    if (!this.isSubmitDisabled) {
+      return null;
+    }
+    if (this.isSubmitting) {
+      return "Withdrawal request is being submitted.";
+    }
+    if (this.isQuoteLoading) {
+      return "Calculating withdrawal quote and network fee.";
+    }
+    if (this.amountErrorMessage) {
+      return this.amountErrorMessage;
+    }
+    if (!this.destination) {
+      return "Enter a destination address to enable withdrawal.";
+    }
+    if (this.addressErrorMessage) {
+      return this.addressErrorMessage;
+    }
+    if (this.quote?.destinationValid === false) {
+      return normalizeValue(this.quote?.validationMessage) || "Destination address is not valid for withdrawal.";
+    }
+    if (this.quoteErrorMessage) {
+      return this.quoteErrorMessage;
+    }
+    return "Withdrawal is temporarily unavailable. Retry after the dashboard refreshes.";
   }
 
   get submitLabel() {
@@ -293,7 +323,7 @@ export default class FiberLinkWithdrawalPanel extends Component {
         destination: this.destination,
       });
     } catch (error) {
-      this.quoteErrorMessage = error?.message ?? "Failed to calculate withdrawal quote.";
+      this.quoteErrorMessage = error?.message ?? "Failed to calculate withdrawal quote. Please retry.";
     } finally {
       this.isQuoteLoading = false;
     }
@@ -313,6 +343,7 @@ export default class FiberLinkWithdrawalPanel extends Component {
       this.errorMessage =
         this.amountErrorMessage ||
         this.addressErrorMessage ||
+        this.submitDisabledReason ||
         this.quoteErrorMessage ||
         "Enter a valid CKB withdrawal address.";
       return;
@@ -459,6 +490,14 @@ export default class FiberLinkWithdrawalPanel extends Component {
           @disabled={{this.isSubmitDisabled}}
           @translatedLabel={{this.submitLabel}}
         />
+        {{#if this.submitDisabledReason}}
+          <p
+            class="fiber-link-dashboard__withdrawal-disabled-reason"
+            data-fiber-link-withdrawal-disabled-reason
+          >
+            {{this.submitDisabledReason}}
+          </p>
+        {{/if}}
         {{#if this.requestedId}}
           <p class="fiber-link-dashboard__withdrawal-meta">
             Latest request:

@@ -8,13 +8,28 @@ const DASHBOARD_LIMIT = 20;
 const ALLOWED_POLL_INTERVALS = [10000, 30000, 60000];
 const SYNC_AGE_TICK_MS = 1000;
 
+function mapDashboardErrorToMessage(error) {
+  const message =
+    typeof error?.message === "string" ? error.message.trim() : "";
+  if (!message) {
+    return "Failed to load dashboard.summary. Please retry.";
+  }
+  if (message.toLowerCase().includes("timed out")) {
+    return "Dashboard data timed out. The service may be busy; retry when traffic settles.";
+  }
+  return message;
+}
+
 function formatSyncStatusLabel(rawValue) {
   const value = new Date(rawValue);
   if (Number.isNaN(value.getTime())) {
     return "Live · syncing";
   }
 
-  const ageSeconds = Math.max(0, Math.floor((Date.now() - value.getTime()) / 1000));
+  const ageSeconds = Math.max(
+    0,
+    Math.floor((Date.now() - value.getTime()) / 1000),
+  );
   if (ageSeconds < 2) {
     return "Live · synced now";
   }
@@ -110,13 +125,15 @@ function buildAvatarInitials(username) {
     return "U";
   }
 
-  return value
-    .replace(/^@/, "")
-    .split(/[_\s-]+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase())
-    .join("") || value.slice(0, 2).toUpperCase();
+  return (
+    value
+      .replace(/^@/, "")
+      .split(/[_\s-]+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0]?.toUpperCase())
+      .join("") || value.slice(0, 2).toUpperCase()
+  );
 }
 
 function formatCountCaption(count, singular, plural = `${singular}s`) {
@@ -146,7 +163,10 @@ function formatCompactRelativeTime(rawValue) {
     return null;
   }
 
-  const ageSeconds = Math.max(0, Math.floor((Date.now() - value.getTime()) / 1000));
+  const ageSeconds = Math.max(
+    0,
+    Math.floor((Date.now() - value.getTime()) / 1000),
+  );
   if (ageSeconds < 2) {
     return "now";
   }
@@ -203,7 +223,9 @@ function normalizePostUrl(value) {
     return null;
   }
 
-  return trimmed.startsWith("/") || /^https?:\/\//.test(trimmed) ? trimmed : null;
+  return trimmed.startsWith("/") || /^https?:\/\//.test(trimmed)
+    ? trimmed
+    : null;
 }
 
 function normalizePostContextLabel(value) {
@@ -217,16 +239,22 @@ function normalizeTips(tips) {
     const direction = mapDirectionPresentation(tip?.direction);
     const absoluteTime = formatIsoTimestamp(tip?.createdAt);
     const counterpartyUsername =
-      typeof tip?.counterpartyUsername === "string" && tip.counterpartyUsername.trim()
+      typeof tip?.counterpartyUsername === "string" &&
+      tip.counterpartyUsername.trim()
         ? tip.counterpartyUsername.trim()
         : typeof tip?.counterpartyUserId === "string"
           ? tip.counterpartyUserId
           : "unknown";
 
-    const activityType = tip?.activityType === "WITHDRAWAL" ? "WITHDRAWAL" : "TIP";
-    const postUrl = activityType === "TIP" ? normalizePostUrl(tip?.postUrl) : null;
+    const activityType =
+      tip?.activityType === "WITHDRAWAL" ? "WITHDRAWAL" : "TIP";
+    const postUrl =
+      activityType === "TIP" ? normalizePostUrl(tip?.postUrl) : null;
     const postContextLabel = normalizePostContextLabel(tip?.postContextLabel);
-    const explorerUrl = typeof tip?.explorerUrl === "string" && tip.explorerUrl.trim() ? tip.explorerUrl.trim() : null;
+    const explorerUrl =
+      typeof tip?.explorerUrl === "string" && tip.explorerUrl.trim()
+        ? tip.explorerUrl.trim()
+        : null;
 
     return {
       id: typeof tip?.id === "string" ? tip.id : "unknown",
@@ -249,28 +277,47 @@ function normalizeTips(tips) {
       absoluteTimeLabel: absoluteTime,
       shortTimeLabel: formatShortTimestamp(tip?.createdAt),
       relativeTimeLabel: formatCompactRelativeTime(tip?.createdAt),
-      message: typeof tip?.message === "string" && tip.message.trim() ? tip.message.trim() : null,
+      message:
+        typeof tip?.message === "string" && tip.message.trim()
+          ? tip.message.trim()
+          : null,
       activityType,
       postUrl,
       postContextLabel,
-      detailTitle: activityType === "TIP" ? "Payment details" : "Transaction details",
+      detailTitle:
+        activityType === "TIP" ? "Payment details" : "Transaction details",
       detailActionUrl: activityType === "TIP" ? postUrl : explorerUrl,
-      detailActionLabel: activityType === "TIP" ? postContextLabel : "Open in CKB Explorer",
-      detailActionUnavailableLabel: activityType === "TIP" ? "Post unavailable" : "Open in CKB Explorer",
-      txHash: typeof tip?.txHash === "string" && tip.txHash.trim() ? tip.txHash.trim() : null,
+      detailActionLabel:
+        activityType === "TIP" ? postContextLabel : "Open in CKB Explorer",
+      detailActionUnavailableLabel:
+        activityType === "TIP" ? "Post unavailable" : "Open in CKB Explorer",
+      txHash:
+        typeof tip?.txHash === "string" && tip.txHash.trim()
+          ? tip.txHash.trim()
+          : null,
       explorerUrl,
-      destinationKind: typeof tip?.destinationKind === "string" && tip.destinationKind.trim() ? tip.destinationKind.trim() : null,
-      destination: typeof tip?.destination === "string" && tip.destination.trim() ? tip.destination.trim() : null,
+      destinationKind:
+        typeof tip?.destinationKind === "string" && tip.destinationKind.trim()
+          ? tip.destinationKind.trim()
+          : null,
+      destination:
+        typeof tip?.destination === "string" && tip.destination.trim()
+          ? tip.destination.trim()
+          : null,
       transactionTagClassName: [
         "fiber-link-transaction-dialog__tag",
         direction.key === "received" ? "is-received" : "",
         status.key === "failed" ? "is-failed" : "",
-      ].filter(Boolean).join(" "),
+      ]
+        .filter(Boolean)
+        .join(" "),
       transactionSummaryStatusClassName: [
         "fiber-link-transaction-dialog__summary-status",
         status.key === "completed" ? "is-completed" : "",
         status.key === "failed" ? "is-failed" : "",
-      ].filter(Boolean).join(" "),
+      ]
+        .filter(Boolean)
+        .join(" "),
       transactionAmountClassName: [
         "fiber-link-transaction-dialog__summary-amount",
         direction.amountPrefix === "+" ? "is-positive" : "is-negative",
@@ -280,12 +327,16 @@ function normalizeTips(tips) {
         "fiber-link-transaction-dialog__activity",
         status.key === "completed" ? "is-completed" : "",
         status.key === "failed" ? "is-failed" : "",
-      ].filter(Boolean).join(" "),
+      ]
+        .filter(Boolean)
+        .join(" "),
       transactionConfirmationClassName: [
         "fiber-link-transaction-dialog__meta",
         status.key === "failed" ? "is-failed" : "",
         status.key === "pending" ? "is-pending" : "",
-      ].filter(Boolean).join(" "),
+      ]
+        .filter(Boolean)
+        .join(" "),
       confirmationLabel: buildConfirmationLabel(tip, status),
     };
   });
@@ -306,6 +357,7 @@ export default class FiberLinkDashboardRoute extends Route {
       isRefreshing: false,
       summaryErrorMessage: null,
       feedErrorMessage: null,
+      lastErrorAt: null,
       availableBalance: "0",
       pendingBalance: "0",
       lockedBalance: "0",
@@ -321,6 +373,12 @@ export default class FiberLinkDashboardRoute extends Route {
       syncStatusLabel: "Live · syncing",
       pollIntervalMs: DEFAULT_POLL_INTERVAL_MS,
       tipFeedItems: [],
+      retryDashboardSummary: () => {
+        if (!model.isRefreshing) {
+          model.set("isRefreshing", true);
+          void this._refreshSummary(model);
+        }
+      },
     });
 
     this._activeModel = model;
@@ -359,8 +417,11 @@ export default class FiberLinkDashboardRoute extends Route {
         return;
       }
 
-      const generatedAt = formatIsoTimestamp(result?.generatedAt) || new Date().toISOString();
-      const normalizedTips = normalizeTips(result?.tips).filter((tip) => tip.directionKey !== "sent");
+      const generatedAt =
+        formatIsoTimestamp(result?.generatedAt) || new Date().toISOString();
+      const normalizedTips = normalizeTips(result?.tips).filter(
+        (tip) => tip.directionKey !== "sent",
+      );
       const nextTipFeedSignature = buildTipFeedSignature(normalizedTips);
       const pendingCount = Number(result?.stats?.pendingCount ?? 0);
       const completedCount = Number(result?.stats?.completedCount ?? 0);
@@ -371,6 +432,7 @@ export default class FiberLinkDashboardRoute extends Route {
         isRefreshing: false,
         summaryErrorMessage: null,
         feedErrorMessage: null,
+        lastErrorAt: null,
         availableBalance:
           typeof result?.balances?.available === "string"
             ? result.balances.available
@@ -378,9 +440,13 @@ export default class FiberLinkDashboardRoute extends Route {
               ? result.balance
               : "0",
         pendingBalance:
-          typeof result?.balances?.pending === "string" ? result.balances.pending : "0",
+          typeof result?.balances?.pending === "string"
+            ? result.balances.pending
+            : "0",
         lockedBalance:
-          typeof result?.balances?.locked === "string" ? result.balances.locked : "0",
+          typeof result?.balances?.locked === "string"
+            ? result.balances.locked
+            : "0",
         balanceAsset: result?.balances?.asset === "USDI" ? "USDI" : "CKB",
         pendingCount,
         completedCount,
@@ -405,12 +471,13 @@ export default class FiberLinkDashboardRoute extends Route {
         return;
       }
 
-      const message = error?.message ?? "Failed to load dashboard.summary";
+      const message = mapDashboardErrorToMessage(error);
       model.setProperties({
         isInitialLoading: false,
         isRefreshing: false,
         summaryErrorMessage: message,
         feedErrorMessage: message,
+        lastErrorAt: new Date().toISOString(),
       });
     } finally {
       if (model === this._activeModel) {

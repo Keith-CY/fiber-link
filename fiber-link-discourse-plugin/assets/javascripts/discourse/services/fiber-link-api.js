@@ -1,6 +1,7 @@
 import { ajax } from "discourse/lib/ajax";
 
 const DEFAULT_RPC_PATH = "/fiber-link/rpc";
+const DEFAULT_RPC_TIMEOUT_MS = 15000;
 
 const runtimeConfig = {
   initialized: false,
@@ -37,24 +38,64 @@ function buildRequestId() {
 
 async function rpcCall(method, params = {}) {
   assertInitialized();
-  const data = await ajax(runtimeConfig.rpcPath, {
-    type: "POST",
-    contentType: "application/json",
-    dataType: "json",
-    data: JSON.stringify({
-      jsonrpc: "2.0",
-      id: buildRequestId(),
-      method,
-      params,
-    }),
-  });
+  let data;
+
+  try {
+    data = await ajax(runtimeConfig.rpcPath, {
+      type: "POST",
+      contentType: "application/json",
+      dataType: "json",
+      timeout: DEFAULT_RPC_TIMEOUT_MS,
+      data: JSON.stringify({
+        jsonrpc: "2.0",
+        id: buildRequestId(),
+        method,
+        params,
+      }),
+    });
+  } catch (error) {
+    const statusText =
+      typeof error?.statusText === "string" ? error.statusText : "";
+    const responseText =
+      typeof error?.responseText === "string" ? error.responseText : "";
+    const status = Number(error?.status);
+
+    if (statusText.toLowerCase() === "timeout") {
+      throw new Error(
+        `Fiber Link request timed out after ${DEFAULT_RPC_TIMEOUT_MS / 1000}s. Please retry.`,
+      );
+    }
+    if (status === 429) {
+      throw new Error(
+        "Fiber Link is rate limiting requests. Please wait a moment and retry.",
+      );
+    }
+    if (status >= 500) {
+      throw new Error(
+        "Fiber Link service is temporarily unavailable. Please retry in a moment.",
+      );
+    }
+
+    throw new Error(
+      responseText ||
+        error?.message ||
+        "Fiber Link request failed. Please retry.",
+    );
+  }
   if (data?.error) {
     throw data.error;
   }
   return data?.result;
 }
 
-export async function createTip({ amount, asset, postId, fromUserId, toUserId, message }) {
+export async function createTip({
+  amount,
+  asset,
+  postId,
+  fromUserId,
+  toUserId,
+  message,
+}) {
   return rpcCall("tip.create", {
     amount,
     asset,
@@ -69,7 +110,11 @@ export async function getTipStatus({ invoice }) {
   return rpcCall("tip.status", { invoice });
 }
 
-export async function getDashboardSummary({ limit = 20, includeAdmin = false, filters = {} } = {}) {
+export async function getDashboardSummary({
+  limit = 20,
+  includeAdmin = false,
+  filters = {},
+} = {}) {
   return rpcCall("dashboard.summary", { limit, includeAdmin, filters });
 }
 
@@ -81,7 +126,11 @@ export async function quoteWithdrawal({ amount, asset = "CKB", destination }) {
   });
 }
 
-export async function requestWithdrawal({ amount, asset = "CKB", destination }) {
+export async function requestWithdrawal({
+  amount,
+  asset = "CKB",
+  destination,
+}) {
   return rpcCall("withdrawal.request", {
     amount,
     asset,
