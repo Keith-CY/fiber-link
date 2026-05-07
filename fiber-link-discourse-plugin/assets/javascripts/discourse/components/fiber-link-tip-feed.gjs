@@ -7,7 +7,7 @@ import formatDate from "discourse/helpers/format-date";
 export default class FiberLinkTipFeed extends Component {
   @tracked activeFilter = "all";
   @tracked searchQuery = "";
-  @tracked expandedTipId = null;
+  @tracked selectedTipId = null;
 
   get isLoading() {
     return Boolean(this.args.isLoading);
@@ -89,26 +89,35 @@ export default class FiberLinkTipFeed extends Component {
     this.searchQuery = event?.target?.value ?? "";
   }
 
+  get selectedTip() {
+    if (!this.selectedTipId) {
+      return null;
+    }
+
+    return this.tips.find((tip) => tip.id === this.selectedTipId) ?? null;
+  }
+
   @action
-  toggleDetails(event) {
+  openDetails(event) {
     const tipId = event?.currentTarget?.dataset?.tipId;
     if (!tipId) {
       return;
     }
-    this.expandedTipId = this.expandedTipId === tipId ? null : tipId;
+    this.selectedTipId = tipId;
   }
 
   @action
-  toggleDetailsFromKeyboard(event) {
+  openDetailsFromKeyboard(event) {
     if (event?.key !== "Enter" && event?.key !== " ") {
       return;
     }
     event.preventDefault();
-    this.toggleDetails(event);
+    this.openDetails(event);
   }
 
-  isExpanded(tip) {
-    return Boolean(tip?.id) && this.expandedTipId === tip.id;
+  @action
+  closeDetails() {
+    this.selectedTipId = null;
   }
 
   <template>
@@ -159,12 +168,19 @@ export default class FiberLinkTipFeed extends Component {
                 <th>Status</th>
                 <th>User</th>
                 <th>Time</th>
-                <th>Details</th>
               </tr>
             </thead>
             <tbody>
               {{#each this.filteredTips key="id" as |tip|}}
-                <tr class="fiber-link-tip-feed-row" data-tip-id={{tip.id}}>
+                <tr
+                  class="fiber-link-tip-feed-row"
+                  data-tip-id={{tip.id}}
+                  role="button"
+                  tabindex="0"
+                  aria-label="Open transaction details"
+                  {{on "click" this.openDetails}}
+                  {{on "keydown" this.openDetailsFromKeyboard}}
+                >
                   <td>
                     <p class={{tip.amountClassName}}>
                       <strong>{{tip.amountPrefix}} {{tip.amount}}</strong>
@@ -197,47 +213,79 @@ export default class FiberLinkTipFeed extends Component {
                     </span>
                   </td>
                   <td title={{tip.absoluteTimeLabel}}>{{formatDate tip.createdAt}}</td>
-                  <td>
-                    <details class="fiber-link-tip-feed-details">
-                      <summary>View</summary>
-                      <div class="fiber-link-tip-feed-detail-card">
-                        <div>
-                          <span>Record ID</span>
-                          <strong>{{tip.id}}</strong>
-                        </div>
-                        <div>
-                          <span>Activity</span>
-                          <strong>{{tip.directionLabel}} · {{tip.statusLabel}}</strong>
-                        </div>
-                        {{#if tip.destination}}
-                          <div>
-                            <span>Destination</span>
-                            <strong class="fiber-link-tip-feed-monospace">{{tip.destination}}</strong>
-                          </div>
-                        {{/if}}
-                        {{#if tip.txHash}}
-                          <div>
-                            <span>CKB tx</span>
-                            <strong class="fiber-link-tip-feed-monospace">{{tip.txHash}}</strong>
-                          </div>
-                        {{/if}}
-                        {{#if tip.explorerUrl}}
-                          <a
-                            class="fiber-link-tip-feed-explorer-link"
-                            href={{tip.explorerUrl}}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                          >
-                            Open in CKB explorer ↗
-                          </a>
-                        {{/if}}
-                      </div>
-                    </details>
-                  </td>
                 </tr>
               {{/each}}
             </tbody>
           </table>
+
+          {{#if this.selectedTip}}
+            <div
+              class="fiber-link-transaction-dialog-backdrop"
+              role="presentation"
+              {{on "click" this.closeDetails}}
+            ></div>
+            <section
+              class="fiber-link-transaction-dialog"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="fiber-link-transaction-dialog-title"
+            >
+              <button
+                type="button"
+                class="fiber-link-transaction-dialog__close"
+                aria-label="Close transaction details"
+                {{on "click" this.closeDetails}}
+              >
+                ×
+              </button>
+              <div class="fiber-link-transaction-dialog__header">
+                <span>{{this.selectedTip.directionLabel}}</span>
+                <h4 id="fiber-link-transaction-dialog-title">Transaction details</h4>
+                <p>{{this.selectedTip.statusLabel}} · {{this.selectedTip.amountPrefix}} {{this.selectedTip.amount}} {{this.selectedTip.asset}}</p>
+              </div>
+              <div class="fiber-link-transaction-dialog__grid">
+                <div>
+                  <span>Record ID</span>
+                  <strong>{{this.selectedTip.id}}</strong>
+                </div>
+                <div>
+                  <span>Activity</span>
+                  <strong>{{this.selectedTip.directionLabel}} · {{this.selectedTip.statusLabel}}</strong>
+                </div>
+                <div>
+                  <span>User</span>
+                  <strong>@{{this.selectedTip.counterpartyUsername}}</strong>
+                </div>
+                <div>
+                  <span>Time</span>
+                  <strong>{{formatDate this.selectedTip.createdAt}}</strong>
+                </div>
+                {{#if this.selectedTip.destination}}
+                  <div class="is-wide">
+                    <span>Destination</span>
+                    <strong class="fiber-link-transaction-dialog__mono">{{this.selectedTip.destination}}</strong>
+                  </div>
+                {{/if}}
+                {{#if this.selectedTip.txHash}}
+                  <div class="is-wide">
+                    <span>CKB tx</span>
+                    <strong class="fiber-link-transaction-dialog__mono">{{this.selectedTip.txHash}}</strong>
+                  </div>
+                {{/if}}
+              </div>
+              {{#if this.selectedTip.explorerUrl}}
+                <a
+                  class="fiber-link-transaction-dialog__explorer-link"
+                  href={{this.selectedTip.explorerUrl}}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Open in CKB explorer ↗
+                </a>
+              {{/if}}
+            </section>
+          {{/if}}
+
           <p class="fiber-link-tip-feed-summary">{{this.resultSummary}}</p>
         {{/if}}
       {{/if}}
