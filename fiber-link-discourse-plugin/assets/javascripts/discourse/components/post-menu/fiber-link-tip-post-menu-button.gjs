@@ -1,15 +1,32 @@
 import Component from "@glimmer/component";
+import { tracked } from "@glimmer/tracking";
 import { action } from "@ember/object";
+import { scheduleOnce } from "@ember/runloop";
 import { service } from "@ember/service";
 import DButton from "discourse/components/d-button";
 
 import FiberLinkTipModal from "../modal/fiber-link-tip-modal";
-import { buildTipPostSummary, buildTipTopicTitle } from "../../lib/fiber-link-tip-context";
+import {
+  buildTipPostSummary,
+  buildTipTopicTitle,
+} from "../../lib/fiber-link-tip-context";
 
 export default class FiberLinkTipPostMenuButton extends Component {
   @service modal;
   @service siteSettings;
   @service currentUser;
+
+  @tracked clientReady = false;
+
+  constructor() {
+    super(...arguments);
+    scheduleOnce("afterRender", this, this.markClientReady);
+  }
+
+  @action
+  markClientReady() {
+    this.clientReady = true;
+  }
 
   get post() {
     return this.args?.post ?? null;
@@ -89,6 +106,7 @@ export default class FiberLinkTipPostMenuButton extends Component {
 
   get shouldShow() {
     return (
+      this.clientReady &&
       this.siteSettings.fiber_link_enabled &&
       !!this.currentUser &&
       !!this.postId &&
@@ -98,7 +116,7 @@ export default class FiberLinkTipPostMenuButton extends Component {
 
   @action
   openTipModal() {
-    if (!this.postId) {
+    if (!this.postId || !this.clientReady) {
       return;
     }
 
