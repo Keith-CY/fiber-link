@@ -9,6 +9,7 @@ export const FIBER_LINK_RUNTIME_KEY = "__fiberLinkRuntime";
 const FIBER_LINK_DASHBOARD_PATH = "/fiber-link";
 const FIBER_LINK_RPC_PATH = "/fiber-link/rpc";
 const DASHBOARD_BOOT_TIMEOUT_MS = 15000;
+const INTERSECTION_OBSERVER_GUARD_KEY = "__fiberLinkIntersectionObserverGuard";
 
 function buildRuntimeConfig() {
   return {
@@ -91,10 +92,64 @@ function scheduleDashboardBootFallback() {
   window.setTimeout(injectDashboardBootFallback, DASHBOARD_BOOT_TIMEOUT_MS);
 }
 
+function normalizeIntersectionObserverRootMargin(rootMargin) {
+  if (typeof rootMargin !== "string") {
+    return rootMargin;
+  }
+
+  const trimmed = rootMargin.trim();
+  const tokens = trimmed.split(/\s+/).filter(Boolean);
+  const valid =
+    tokens.length >= 1 &&
+    tokens.length <= 4 &&
+    tokens.every((token) => /^-?(?:\d+|\d*\.\d+)(?:px|%)$/.test(token));
+
+  return valid ? trimmed : "0px 0px 0px 0px";
+}
+
+function installIntersectionObserverRootMarginGuard() {
+  if (
+    typeof window === "undefined" ||
+    window[INTERSECTION_OBSERVER_GUARD_KEY]
+  ) {
+    return;
+  }
+
+  const NativeIntersectionObserver = window.IntersectionObserver;
+  if (typeof NativeIntersectionObserver !== "function") {
+    return;
+  }
+
+  function GuardedIntersectionObserver(callback, options = {}) {
+    const guardedOptions = {
+      ...options,
+      rootMargin: normalizeIntersectionObserverRootMargin(options.rootMargin),
+    };
+
+    try {
+      return new NativeIntersectionObserver(callback, guardedOptions);
+    } catch (error) {
+      if (/rootMargin/i.test(String(error?.message || error))) {
+        return new NativeIntersectionObserver(callback, {
+          ...guardedOptions,
+          rootMargin: "0px 0px 0px 0px",
+        });
+      }
+      throw error;
+    }
+  }
+
+  GuardedIntersectionObserver.prototype = NativeIntersectionObserver.prototype;
+  window.IntersectionObserver = GuardedIntersectionObserver;
+  window[INTERSECTION_OBSERVER_GUARD_KEY] = true;
+}
+
 export default {
   name: "fiber-link",
 
   initialize() {
+    installIntersectionObserverRootMarginGuard();
+
     const runtime = configureFiberLinkApi(buildRuntimeConfig());
     runtime.tipButtonPlacement = "post-menu";
 
