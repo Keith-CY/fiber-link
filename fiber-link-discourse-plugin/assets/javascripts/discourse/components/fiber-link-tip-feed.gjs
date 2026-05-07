@@ -164,15 +164,7 @@ export default class FiberLinkTipFeed extends Component {
             </thead>
             <tbody>
               {{#each this.filteredTips key="id" as |tip|}}
-                <tr
-                  class="fiber-link-tip-feed-row"
-                  data-tip-id={{tip.id}}
-                  role="button"
-                  tabindex="0"
-                  aria-expanded={{if (this.isExpanded tip) "true" "false"}}
-                  {{on "click" this.toggleDetails}}
-                  {{on "keydown" this.toggleDetailsFromKeyboard}}
-                >
+                <tr class="fiber-link-tip-feed-row" data-tip-id={{tip.id}}>
                   <td>
                     <p class={{tip.amountClassName}}>
                       <strong>{{tip.amountPrefix}} {{tip.amount}}</strong>
@@ -206,12 +198,8 @@ export default class FiberLinkTipFeed extends Component {
                   </td>
                   <td title={{tip.absoluteTimeLabel}}>{{formatDate tip.createdAt}}</td>
                   <td>
-                    <span class="fiber-link-tip-feed-details-cue">{{if (this.isExpanded tip) "Hide" "View"}}</span>
-                  </td>
-                </tr>
-                {{#if (this.isExpanded tip)}}
-                  <tr class="fiber-link-tip-feed-detail-row">
-                    <td colspan="6">
+                    <details class="fiber-link-tip-feed-details">
+                      <summary>View</summary>
                       <div class="fiber-link-tip-feed-detail-card">
                         <div>
                           <span>Record ID</span>
@@ -244,9 +232,9 @@ export default class FiberLinkTipFeed extends Component {
                           </a>
                         {{/if}}
                       </div>
-                    </td>
-                  </tr>
-                {{/if}}
+                    </details>
+                  </td>
+                </tr>
               {{/each}}
             </tbody>
           </table>
