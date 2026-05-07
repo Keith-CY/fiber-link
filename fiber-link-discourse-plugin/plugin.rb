@@ -7,38 +7,41 @@ require_relative "lib/fiber_link/engine"
 enabled_site_setting :fiber_link_enabled
 register_asset "stylesheets/common/fiber-link.scss"
 
-FIBER_LINK_TOPIC_BOOT_FALLBACK_SCRIPT = <<~HTML
-  <script data-fiber-link-topic-boot-fallback>
-    (function() {
-      if (!/^\/t\//.test(window.location.pathname || "")) {
+FIBER_LINK_TOPIC_BOOT_FALLBACK_BODY = <<~JS
+  (function() {
+    if (!/^\/t\//.test(window.location.pathname || "")) {
+      return;
+    }
+
+    window.setTimeout(function() {
+      if (document.querySelector('[data-fiber-link-tip-button="post-menu"].fiber-link-client-ready-button')) {
         return;
       }
 
-      window.setTimeout(function() {
-        if (document.querySelector('[data-fiber-link-tip-button="post-menu"].fiber-link-client-ready-button')) {
-          return;
-        }
+      if (document.querySelector('[data-fiber-link-topic-state="boot-timeout"]')) {
+        return;
+      }
 
-        if (document.querySelector('[data-fiber-link-topic-state="boot-timeout"]')) {
-          return;
-        }
+      var fallback = document.createElement("aside");
+      fallback.className = "fiber-link-topic-boot-timeout";
+      fallback.setAttribute("data-fiber-link-topic-state", "boot-timeout");
+      fallback.innerHTML = '<p class="fiber-link-topic-boot-timeout__message">Fiber Link tip actions are still loading. Reload the topic or retry when traffic settles.</p><button class="btn btn-primary" type="button" data-fiber-link-topic-retry>Reload topic</button>';
+      fallback.querySelector("[data-fiber-link-topic-retry]")?.addEventListener("click", function() {
+        window.location.reload();
+      });
 
-        var fallback = document.createElement("aside");
-        fallback.className = "fiber-link-topic-boot-timeout";
-        fallback.setAttribute("data-fiber-link-topic-state", "boot-timeout");
-        fallback.innerHTML = '<p class="fiber-link-topic-boot-timeout__message">Fiber Link tip actions are still loading. Reload the topic or retry when traffic settles.</p><button class="btn btn-primary" type="button" data-fiber-link-topic-retry>Reload topic</button>';
-        fallback.querySelector("[data-fiber-link-topic-retry]")?.addEventListener("click", function() {
-          window.location.reload();
-        });
+      (document.querySelector("#main-outlet, main, body") || document.body)?.prepend(fallback);
+    }, 15000);
+  })();
+JS
 
-        (document.querySelector("#main-outlet, main, body") || document.body)?.prepend(fallback);
-      }, 15000);
-    })();
-  </script>
-HTML
-
-register_html_builder("server:before-body-close") do
-  FIBER_LINK_TOPIC_BOOT_FALLBACK_SCRIPT
+register_html_builder("server:before-body-close") do |controller|
+  nonce = ContentSecurityPolicy.nonce_placeholder(controller.response.headers)
+  <<~HTML
+    <script nonce="#{nonce}" data-fiber-link-topic-boot-fallback>
+      #{FIBER_LINK_TOPIC_BOOT_FALLBACK_BODY}
+    </script>
+  HTML
 end
 
 after_initialize do
