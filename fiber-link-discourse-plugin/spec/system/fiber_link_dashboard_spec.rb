@@ -7,6 +7,8 @@ require "timeout"
 RSpec.describe "Fiber Link Dashboard", type: :system do
   fab!(:user)
   fab!(:tipper) { Fabricate(:user, username: "fiber_tipper") }
+  fab!(:tipped_topic) { Fabricate(:topic, user: user) }
+  fab!(:tipped_reply) { Fabricate(:post, topic: tipped_topic, user: user, post_number: 2) }
 
   before do
     SiteSetting.fiber_link_enabled = true
@@ -96,7 +98,7 @@ RSpec.describe "Fiber Link Dashboard", type: :system do
               {
                 id: "tip-live-1",
                 invoice: "inv-live-1",
-                postId: "p1",
+                postId: tipped_reply.id.to_s,
                 amount: "31",
                 asset: "CKB",
                 state: "SETTLED",
@@ -183,7 +185,14 @@ RSpec.describe "Fiber Link Dashboard", type: :system do
     expect(page).to have_content("On-chain withdrawal completed")
     expect(page).to have_no_content("Nice reply")
 
+    find("tr[data-tip-id='tip-live-1']").click
+    expect(page).to have_content("Payment details")
+    expect(page).to have_content("Confirmed · Discourse post")
+    expect(page).to have_link("View the Reply ↗", href: tipped_reply.url)
+    find("button[aria-label='Close payment details']").click
+
     find("tr[data-tip-id='wd-live-1']").click
+    expect(page).to have_content("Transaction details")
     expect(page).to have_content("Record ID")
     expect(page).to have_content("0xabc123")
     expect(page).to have_link("Open in CKB Explorer ↗", href: "https://pudge.explorer.nervos.org/transaction/0xabc123")

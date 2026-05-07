@@ -182,11 +182,32 @@ function buildConfirmationLabel(tip, status) {
     return "Pending · awaiting confirmation";
   }
 
+  if (tip?.activityType === "TIP" || tip?.direction === "IN") {
+    return "Confirmed · Discourse post";
+  }
+
   if (tip?.txHash) {
     return "Confirmed · CKB explorer";
   }
 
   return "Confirmed · recorded";
+}
+
+function normalizePostUrl(value) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  return trimmed.startsWith("/") || /^https?:\/\//.test(trimmed) ? trimmed : null;
+}
+
+function normalizePostContextLabel(value) {
+  return value === "View the Reply" ? "View the Reply" : "View the Post";
 }
 
 function normalizeTips(tips) {
@@ -201,6 +222,11 @@ function normalizeTips(tips) {
         : typeof tip?.counterpartyUserId === "string"
           ? tip.counterpartyUserId
           : "unknown";
+
+    const activityType = tip?.activityType === "WITHDRAWAL" ? "WITHDRAWAL" : "TIP";
+    const postUrl = activityType === "TIP" ? normalizePostUrl(tip?.postUrl) : null;
+    const postContextLabel = normalizePostContextLabel(tip?.postContextLabel);
+    const explorerUrl = typeof tip?.explorerUrl === "string" && tip.explorerUrl.trim() ? tip.explorerUrl.trim() : null;
 
     return {
       id: typeof tip?.id === "string" ? tip.id : "unknown",
@@ -224,9 +250,15 @@ function normalizeTips(tips) {
       shortTimeLabel: formatShortTimestamp(tip?.createdAt),
       relativeTimeLabel: formatCompactRelativeTime(tip?.createdAt),
       message: typeof tip?.message === "string" && tip.message.trim() ? tip.message.trim() : null,
-      activityType: tip?.activityType === "WITHDRAWAL" ? "WITHDRAWAL" : "TIP",
+      activityType,
+      postUrl,
+      postContextLabel,
+      detailTitle: activityType === "TIP" ? "Payment details" : "Transaction details",
+      detailActionUrl: activityType === "TIP" ? postUrl : explorerUrl,
+      detailActionLabel: activityType === "TIP" ? postContextLabel : "Open in CKB Explorer",
+      detailActionUnavailableLabel: activityType === "TIP" ? "Post unavailable" : "Open in CKB Explorer",
       txHash: typeof tip?.txHash === "string" && tip.txHash.trim() ? tip.txHash.trim() : null,
-      explorerUrl: typeof tip?.explorerUrl === "string" && tip.explorerUrl.trim() ? tip.explorerUrl.trim() : null,
+      explorerUrl,
       destinationKind: typeof tip?.destinationKind === "string" && tip.destinationKind.trim() ? tip.destinationKind.trim() : null,
       destination: typeof tip?.destination === "string" && tip.destination.trim() ? tip.destination.trim() : null,
       transactionTagClassName: [
