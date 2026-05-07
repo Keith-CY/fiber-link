@@ -25,6 +25,7 @@ export default class FiberLinkTipPostMenuButton extends Component {
 
   @action
   markClientReady() {
+    document?.body?.classList?.add("fiber-link-client-ready");
     this.clientReady = true;
   }
 
