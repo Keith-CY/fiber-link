@@ -2425,9 +2425,7 @@ body:has(.fiber-link-dashboard) .profiler-results {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.85rem 1rem;
-  position: absolute;
-  right: 0;
-  z-index: 20;
+  position: static;
   width: min(680px, 76vw);
   margin: 0.75rem 0 0;
   border: 1px solid var(--fl-dashboard-line);
