@@ -7,6 +7,7 @@ import formatDate from "discourse/helpers/format-date";
 export default class FiberLinkTipFeed extends Component {
   @tracked activeFilter = "all";
   @tracked searchQuery = "";
+  @tracked expandedTipId = null;
 
   get isLoading() {
     return Boolean(this.args.isLoading);
@@ -67,6 +68,7 @@ export default class FiberLinkTipFeed extends Component {
     return [
       { value: "all", label: "All" },
       { value: "received", label: "Received" },
+      { value: "withdrawn", label: "Withdrawals" },
       { value: "pending", label: "Pending" },
       { value: "failed", label: "Failed" },
     ].map((option) => ({
@@ -85,6 +87,28 @@ export default class FiberLinkTipFeed extends Component {
   @action
   onSearchInput(event) {
     this.searchQuery = event?.target?.value ?? "";
+  }
+
+  @action
+  toggleDetails(event) {
+    const tipId = event?.currentTarget?.dataset?.tipId;
+    if (!tipId) {
+      return;
+    }
+    this.expandedTipId = this.expandedTipId === tipId ? null : tipId;
+  }
+
+  @action
+  toggleDetailsFromKeyboard(event) {
+    if (event?.key !== "Enter" && event?.key !== " ") {
+      return;
+    }
+    event.preventDefault();
+    this.toggleDetails(event);
+  }
+
+  isExpanded(tip) {
+    return Boolean(tip?.id) && this.expandedTipId === tip.id;
   }
 
   <template>
@@ -135,11 +159,20 @@ export default class FiberLinkTipFeed extends Component {
                 <th>Status</th>
                 <th>User</th>
                 <th>Time</th>
+                <th>Details</th>
               </tr>
             </thead>
             <tbody>
               {{#each this.filteredTips key="id" as |tip|}}
-                <tr data-tip-id={{tip.id}}>
+                <tr
+                  class="fiber-link-tip-feed-row"
+                  data-tip-id={{tip.id}}
+                  role="button"
+                  tabindex="0"
+                  aria-expanded={{if (this.isExpanded tip) "true" "false"}}
+                  {{on "click" this.toggleDetails}}
+                  {{on "keydown" this.toggleDetailsFromKeyboard}}
+                >
                   <td>
                     <p class={{tip.amountClassName}}>
                       <strong>{{tip.amountPrefix}} {{tip.amount}}</strong>
@@ -172,7 +205,48 @@ export default class FiberLinkTipFeed extends Component {
                     </span>
                   </td>
                   <td title={{tip.absoluteTimeLabel}}>{{formatDate tip.createdAt}}</td>
+                  <td>
+                    <span class="fiber-link-tip-feed-details-cue">{{if (this.isExpanded tip) "Hide" "View"}}</span>
+                  </td>
                 </tr>
+                {{#if (this.isExpanded tip)}}
+                  <tr class="fiber-link-tip-feed-detail-row">
+                    <td colspan="6">
+                      <div class="fiber-link-tip-feed-detail-card">
+                        <div>
+                          <span>Record ID</span>
+                          <strong>{{tip.id}}</strong>
+                        </div>
+                        <div>
+                          <span>Activity</span>
+                          <strong>{{tip.directionLabel}} · {{tip.statusLabel}}</strong>
+                        </div>
+                        {{#if tip.destination}}
+                          <div>
+                            <span>Destination</span>
+                            <strong class="fiber-link-tip-feed-monospace">{{tip.destination}}</strong>
+                          </div>
+                        {{/if}}
+                        {{#if tip.txHash}}
+                          <div>
+                            <span>CKB tx</span>
+                            <strong class="fiber-link-tip-feed-monospace">{{tip.txHash}}</strong>
+                          </div>
+                        {{/if}}
+                        {{#if tip.explorerUrl}}
+                          <a
+                            class="fiber-link-tip-feed-explorer-link"
+                            href={{tip.explorerUrl}}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            Open in CKB explorer ↗
+                          </a>
+                        {{/if}}
+                      </div>
+                    </td>
+                  </tr>
+                {{/if}}
               {{/each}}
             </tbody>
           </table>

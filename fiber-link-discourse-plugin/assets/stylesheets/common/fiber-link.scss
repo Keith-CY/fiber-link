@@ -2388,6 +2388,90 @@ body:has(.fiber-link-dashboard) .profiler-results {
   line-height: 1.25;
 }
 
+
+.fiber-link-tip-feed-row {
+  cursor: pointer;
+  transition: background 0.16s ease;
+}
+
+.fiber-link-tip-feed-row:hover,
+.fiber-link-tip-feed-row:focus-visible {
+  background: rgba(16, 24, 40, 0.035);
+  outline: none;
+}
+
+.fiber-link-tip-feed-details-cue {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 3.9rem;
+  border: 1px solid var(--fl-dashboard-line);
+  border-radius: 999px;
+  padding: 0.4rem 0.65rem;
+  color: var(--fl-dashboard-ink);
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+
+.fiber-link-tip-feed-detail-row td {
+  padding-top: 0;
+}
+
+.fiber-link-tip-feed-detail-card {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem 1rem;
+  margin: 0 0 1rem;
+  border: 1px solid var(--fl-dashboard-line);
+  border-radius: 18px;
+  padding: 1rem;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.fiber-link-tip-feed-detail-card > div {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.fiber-link-tip-feed-detail-card span {
+  color: var(--fl-dashboard-muted);
+  font-size: 0.72rem;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.fiber-link-tip-feed-detail-card strong {
+  overflow-wrap: anywhere;
+  color: var(--fl-dashboard-black);
+  font-size: 0.9rem;
+  font-weight: 620;
+}
+
+.fiber-link-tip-feed-monospace {
+  font-family: var(--fl-dashboard-mono);
+}
+
+.fiber-link-tip-feed-explorer-link {
+  align-self: end;
+  justify-self: end;
+  border-radius: 999px;
+  padding: 0.65rem 0.85rem;
+  background: var(--fl-dashboard-black);
+  color: #fff;
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.fiber-link-tip-feed-explorer-link:hover,
+.fiber-link-tip-feed-explorer-link:focus-visible {
+  color: #fff;
+  text-decoration: none;
+  transform: translateY(-1px);
+}
+
 .fiber-link-tip-feed-summary {
   margin: -1rem 0 0;
   color: var(--fl-dashboard-faint);

@@ -40,7 +40,7 @@ function formatIsoTimestamp(rawValue) {
 }
 
 function mapTipStateToPresentation(state) {
-  if (state === "SETTLED") {
+  if (state === "SETTLED" || state === "COMPLETED") {
     return {
       key: "completed",
       label: "Completed",
@@ -157,6 +157,11 @@ function normalizeTips(tips) {
       avatarInitials: buildAvatarInitials(counterpartyUsername),
       absoluteTimeLabel: absoluteTime,
       message: typeof tip?.message === "string" && tip.message.trim() ? tip.message.trim() : null,
+      activityType: tip?.activityType === "WITHDRAWAL" ? "WITHDRAWAL" : "TIP",
+      txHash: typeof tip?.txHash === "string" && tip.txHash.trim() ? tip.txHash.trim() : null,
+      explorerUrl: typeof tip?.explorerUrl === "string" && tip.explorerUrl.trim() ? tip.explorerUrl.trim() : null,
+      destinationKind: typeof tip?.destinationKind === "string" && tip.destinationKind.trim() ? tip.destinationKind.trim() : null,
+      destination: typeof tip?.destination === "string" && tip.destination.trim() ? tip.destination.trim() : null,
     };
   });
 }

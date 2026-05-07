@@ -74,6 +74,20 @@ describe("handleDashboardSummary", () => {
         settledAt: null,
       },
     ],
+      [
+        {
+          id: "wd-completed",
+          amount: "7",
+          asset: "CKB",
+          state: "COMPLETED",
+          destinationKind: "CKB_ADDRESS",
+          toAddress: "ckt1withdrawal",
+          txHash: "0xwithdrawal",
+          createdAt: new Date("2026-02-27T10:30:00.000Z"),
+          updatedAt: new Date("2026-02-27T10:35:00.000Z"),
+          completedAt: new Date("2026-02-27T10:36:00.000Z"),
+        },
+      ],
       [{ pendingAmount: '0', pendingCount: 0, completedCount: 1, failedCount: 0 }],
     );
     getBalance.mockResolvedValueOnce(88n);
@@ -99,6 +113,24 @@ describe("handleDashboardSummary", () => {
     });
     expect(userOnly.tips).toEqual([
       {
+        id: "wd-completed",
+        invoice: "withdrawal:wd-completed",
+        postId: "withdrawal",
+        amount: "7",
+        asset: "CKB",
+        state: "COMPLETED",
+        direction: "WITHDRAWAL",
+        counterpartyUserId: "u-bob",
+        message: "On-chain withdrawal completed",
+        createdAt: new Date("2026-02-27T10:35:00.000Z").toISOString(),
+        settledAt: new Date("2026-02-27T10:36:00.000Z").toISOString(),
+        activityType: "WITHDRAWAL",
+        txHash: "0xwithdrawal",
+        explorerUrl: "https://pudge.explorer.nervos.org/transaction/0xwithdrawal",
+        destinationKind: "CKB_ADDRESS",
+        destination: "ckt1withdrawal",
+      },
+      {
         id: "tip-in",
         invoice: "inv-in",
         postId: "post-1",
@@ -110,6 +142,11 @@ describe("handleDashboardSummary", () => {
         message: "Great post",
         createdAt: firstTipCreatedAt.toISOString(),
         settledAt: new Date("2026-02-27T10:01:00.000Z").toISOString(),
+        activityType: "TIP",
+        txHash: null,
+        explorerUrl: null,
+        destinationKind: null,
+        destination: null,
       },
     ]);
     expect(userOnly.admin).toBeUndefined();
@@ -132,6 +169,7 @@ describe("handleDashboardSummary", () => {
           settledAt: null,
         },
       ],
+      [],
       [{ pendingAmount: '0', pendingCount: 0, completedCount: 0, failedCount: 1 }],
       [{ appId: "app-1", createdAt: new Date("2026-01-01T00:00:00.000Z") }],
       [
