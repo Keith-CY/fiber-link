@@ -7,7 +7,8 @@ import { configureFiberLinkApi } from "../services/fiber-link-api";
 export const FIBER_LINK_BOOT_EVENT = "fiber-link:bootstrapped";
 export const FIBER_LINK_RUNTIME_KEY = "__fiberLinkRuntime";
 const FIBER_LINK_DASHBOARD_PATH = "/fiber-link";
-const FIBER_LINK_RPC_PATH = `${FIBER_LINK_DASHBOARD_PATH}/rpc`;
+const FIBER_LINK_RPC_PATH = "/fiber-link/rpc";
+const DASHBOARD_BOOT_TIMEOUT_MS = 15000;
 
 function buildRuntimeConfig() {
   return {
@@ -26,6 +27,68 @@ function publishRuntime(runtime) {
       detail: runtime,
     }),
   );
+}
+
+function isDashboardPath() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  const path = window.location?.pathname || "";
+  return (
+    path === FIBER_LINK_DASHBOARD_PATH ||
+    path.startsWith(`${FIBER_LINK_DASHBOARD_PATH}/`)
+  );
+}
+
+function dashboardHasRendered() {
+  return Boolean(
+    document.querySelector(
+      '.fiber-link-dashboard, [data-fiber-link-dashboard-state="error"], [data-fiber-link-withdrawal-input="amount"]',
+    ),
+  );
+}
+
+function injectDashboardBootFallback() {
+  if (!isDashboardPath() || dashboardHasRendered()) {
+    return;
+  }
+
+  const existing = document.querySelector(
+    '[data-fiber-link-dashboard-state="boot-timeout"]',
+  );
+  if (existing) {
+    return;
+  }
+
+  const fallback = document.createElement("main");
+  fallback.className =
+    "fiber-link-dashboard fiber-link-dashboard__boot-timeout";
+  fallback.setAttribute("data-fiber-link-dashboard-state", "boot-timeout");
+  fallback.innerHTML = `
+    <section class="fiber-link-dashboard__boot-timeout-card">
+      <p class="fiber-link-dashboard__alert is-error">
+        Fiber Link dashboard is still loading. The service may be busy; retry when traffic settles.
+      </p>
+      <button class="btn btn-primary" type="button" data-fiber-link-dashboard-retry>
+        Retry dashboard
+      </button>
+    </section>
+  `;
+
+  fallback
+    .querySelector("[data-fiber-link-dashboard-retry]")
+    ?.addEventListener("click", () => window.location.reload());
+
+  document.body?.appendChild(fallback);
+}
+
+function scheduleDashboardBootFallback() {
+  if (typeof window === "undefined" || typeof document === "undefined") {
+    return;
+  }
+
+  window.setTimeout(injectDashboardBootFallback, DASHBOARD_BOOT_TIMEOUT_MS);
 }
 
 export default {
@@ -54,5 +117,6 @@ export default {
     });
 
     publishRuntime(runtime);
+    scheduleDashboardBootFallback();
   },
 };
