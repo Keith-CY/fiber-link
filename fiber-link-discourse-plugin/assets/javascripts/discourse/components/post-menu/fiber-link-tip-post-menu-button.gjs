@@ -25,7 +25,6 @@ export default class FiberLinkTipPostMenuButton extends Component {
 
   @action
   markClientReady() {
-    document?.body?.classList?.add("fiber-link-client-ready");
     this.clientReady = true;
   }
 
@@ -140,7 +139,7 @@ export default class FiberLinkTipPostMenuButton extends Component {
   <template>
     {{#if this.shouldShow}}
       <DButton
-        @class="post-action-menu__fiber-link-tip fiber-link-tip-button--icon-only"
+        @class="post-action-menu__fiber-link-tip fiber-link-tip-button--icon-only fiber-link-client-ready-button"
         @translatedTitle="Tip"
         @translatedAriaLabel="Tip"
         @icon="gift"

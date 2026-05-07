@@ -11,8 +11,12 @@
   font-weight: 650;
 }
 
-body:not(.fiber-link-client-ready) [data-fiber-link-tip-button="post-menu"] {
+[data-fiber-link-tip-button="post-menu"] {
   display: none !important;
+}
+
+[data-fiber-link-tip-button="post-menu"].fiber-link-client-ready-button {
+  display: inline-flex !important;
 }
 
 .fiber-link-tip-button--icon-only {
