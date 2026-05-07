@@ -9,17 +9,21 @@ register_asset "stylesheets/common/fiber-link.scss"
 
 FIBER_LINK_TOPIC_BOOT_FALLBACK_BODY = <<~JS
   (function() {
-    if (!/^\/t\//.test(window.location.pathname || "")) {
+    if ((window.location.pathname || "").indexOf("/t/") !== 0) {
       return;
     }
 
-    window.setTimeout(function() {
+    function prependFallback() {
       if (document.querySelector('[data-fiber-link-tip-button="post-menu"].fiber-link-client-ready-button')) {
-        return;
+        return true;
       }
 
       if (document.querySelector('[data-fiber-link-topic-state="boot-timeout"]')) {
-        return;
+        return true;
+      }
+
+      if (!document.body) {
+        return false;
       }
 
       var fallback = document.createElement("aside");
@@ -31,9 +35,33 @@ FIBER_LINK_TOPIC_BOOT_FALLBACK_BODY = <<~JS
       });
 
       (document.querySelector("#main-outlet, main, body") || document.body)?.prepend(fallback);
+      return true;
+    }
+
+    window.setTimeout(function() {
+      if (prependFallback()) {
+        return;
+      }
+
+      var attempts = 0;
+      var interval = window.setInterval(function() {
+        attempts += 1;
+        if (prependFallback() || attempts >= 20) {
+          window.clearInterval(interval);
+        }
+      }, 250);
     }, 15000);
   })();
 JS
+
+register_html_builder("server:before-head-close") do |controller|
+  nonce = ContentSecurityPolicy.nonce_placeholder(controller.response.headers)
+  <<~HTML
+    <script nonce="#{nonce}" data-fiber-link-topic-head-boot-fallback>
+      #{FIBER_LINK_TOPIC_BOOT_FALLBACK_BODY}
+    </script>
+  HTML
+end
 
 register_html_builder("server:before-body-close") do |controller|
   nonce = ContentSecurityPolicy.nonce_placeholder(controller.response.headers)
