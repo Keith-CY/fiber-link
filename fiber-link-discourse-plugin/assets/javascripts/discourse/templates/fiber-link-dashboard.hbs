@@ -20,9 +20,27 @@
   </header>
 
   {{#if this.model.summaryErrorMessage}}
-    <p class="fiber-link-dashboard__alert is-error">
-      Failed to load dashboard data:
-      {{this.model.summaryErrorMessage}}
+    <div
+      class="fiber-link-dashboard__alert is-error fiber-link-dashboard__load-error"
+      data-fiber-link-dashboard-state="error"
+    >
+      <p>
+        <strong>Dashboard data unavailable.</strong>
+        {{this.model.summaryErrorMessage}}
+      </p>
+      <DButton
+        class="btn-primary fiber-link-dashboard__retry"
+        data-fiber-link-dashboard-action="retry-summary"
+        @action={{this.retryDashboardSummary}}
+        @disabled={{this.model.isRefreshing}}
+        @translatedLabel="Retry dashboard"
+      />
+    </div>
+  {{/if}}
+
+  {{#if this.model.isInitialLoading}}
+    <p class="fiber-link-dashboard__alert is-info" data-fiber-link-dashboard-state="loading">
+      Loading dashboard data… If the service is busy, this will time out with a retry button instead of spinning indefinitely.
     </p>
   {{/if}}
 

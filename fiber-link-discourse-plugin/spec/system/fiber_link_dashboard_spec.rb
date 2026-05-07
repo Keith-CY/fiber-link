@@ -58,6 +58,48 @@ RSpec.describe "Fiber Link Dashboard", type: :system do
     expect(page).to have_content("Fiber Link Dashboard.")
   end
 
+  it "turns dashboard.summary failures into a visible retry state" do
+    request_count = 0
+    request_count_mutex = Mutex.new
+
+    stub_request(:post, "https://fiber-link.example/rpc")
+      .with { |request| JSON.parse(request.body).fetch("method") == "dashboard.summary" }
+      .to_return do
+        current_request = request_count_mutex.synchronize do
+          request_count += 1
+        end
+
+        if current_request == 1
+          {
+            status: 503,
+            body: "upstream overloaded",
+            headers: { "Content-Type" => "text/plain" },
+          }
+        else
+          {
+            status: 200,
+            body: {
+              jsonrpc: "2.0",
+              id: "dash-retry",
+              result: summary_result(balances: { available: "42", pending: "0", locked: "0", asset: "CKB" }),
+            }.to_json,
+            headers: { "Content-Type" => "application/json" },
+          }
+        end
+      end
+
+    visit "/fiber-link"
+
+    expect(page).to have_css("[data-fiber-link-dashboard-state='error']")
+    expect(page).to have_content("Dashboard data unavailable.")
+    expect(page).to have_button("Retry dashboard")
+
+    click_button "Retry dashboard"
+
+    expect(page).to have_no_css("[data-fiber-link-dashboard-state='error']")
+    expect(page).to have_content("42 CKB")
+  end
+
   it "links to the dashboard from the user menu profile panel" do
     visit "/"
 
@@ -405,6 +447,10 @@ RSpec.describe "Fiber Link Dashboard", type: :system do
     expect(page).to have_button("Max · 124")
     expect(page).to have_no_content("Enter a valid CKB withdrawal address.")
     expect(page).to have_button("Request withdrawal", disabled: true)
+    expect(page).to have_css(
+      "[data-fiber-link-withdrawal-disabled-reason]",
+      text: "Enter a destination address to enable withdrawal.",
+    )
 
     click_button "25%"
     expect(find("[data-fiber-link-withdrawal-input='amount']").value).to eq("61")

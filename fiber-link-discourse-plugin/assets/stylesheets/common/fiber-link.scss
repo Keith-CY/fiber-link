@@ -240,6 +240,23 @@
   color: var(--fl-amber);
 }
 
+.fiber-link-tip-alert.is-info,
+.fiber-link-dashboard__alert.is-info {
+  background: var(--fl-primary-weak);
+  color: var(--fl-primary);
+}
+
+.fiber-link-dashboard__load-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.fiber-link-dashboard__load-error p {
+  margin: 0;
+}
+
 .fiber-link-tip-alert.is-success {
   background: var(--fl-green-weak);
   color: var(--fl-green);
@@ -660,9 +677,14 @@
 }
 
 .fiber-link-tip-input-error,
-.fiber-link-dashboard__withdrawal-validation {
+.fiber-link-dashboard__withdrawal-validation,
+.fiber-link-dashboard__withdrawal-disabled-reason {
   margin: 0;
   font-size: 0.86rem;
+}
+
+.fiber-link-dashboard__withdrawal-disabled-reason {
+  color: var(--fl-text-muted);
 }
 
 .fiber-link-tip-input-error,
@@ -1577,7 +1599,8 @@ body:has(.fiber-link-dashboard) .profiler-results {
   --fl-dashboard-green: #1f6f4a;
   --fl-dashboard-red: #8a1f1f;
   --fl-dashboard-bg: transparent;
-  --fl-dashboard-sans: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --fl-dashboard-sans:
+    "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
   --fl-dashboard-mono: "JetBrains Mono", ui-monospace, Menlo, Monaco, monospace;
   box-sizing: border-box;
   display: block;
@@ -1911,7 +1934,8 @@ body:has(.fiber-link-dashboard) .profiler-results {
   background: transparent;
 }
 
-.fiber-link-dashboard__withdrawal-summary-item + .fiber-link-dashboard__withdrawal-summary-item {
+.fiber-link-dashboard__withdrawal-summary-item
+  + .fiber-link-dashboard__withdrawal-summary-item {
   border-left: 1px solid var(--fl-dashboard-line);
   padding-left: 1.25rem;
 }
@@ -2388,8 +2412,6 @@ body:has(.fiber-link-dashboard) .profiler-results {
   line-height: 1.25;
 }
 
-
-
 .fiber-link-tip-feed-row {
   cursor: pointer;
   transition:
@@ -2461,11 +2483,13 @@ body:has(.fiber-link-dashboard) .profiler-results {
   background: var(--fl-dashboard-black);
 }
 
-.fiber-link-transaction-dialog__tag.is-received .fiber-link-transaction-dialog__tag-dot {
+.fiber-link-transaction-dialog__tag.is-received
+  .fiber-link-transaction-dialog__tag-dot {
   background: var(--fl-dashboard-green);
 }
 
-.fiber-link-transaction-dialog__tag.is-failed .fiber-link-transaction-dialog__tag-dot {
+.fiber-link-transaction-dialog__tag.is-failed
+  .fiber-link-transaction-dialog__tag-dot {
   background: var(--fl-dashboard-red);
 }
 
@@ -2661,11 +2685,13 @@ body:has(.fiber-link-dashboard) .profiler-results {
   background: var(--fl-dashboard-black);
 }
 
-.fiber-link-transaction-dialog__activity.is-completed .fiber-link-transaction-dialog__activity-dot {
+.fiber-link-transaction-dialog__activity.is-completed
+  .fiber-link-transaction-dialog__activity-dot {
   background: var(--fl-dashboard-green);
 }
 
-.fiber-link-transaction-dialog__activity.is-failed .fiber-link-transaction-dialog__activity-dot {
+.fiber-link-transaction-dialog__activity.is-failed
+  .fiber-link-transaction-dialog__activity-dot {
   background: var(--fl-dashboard-red);
 }
 
@@ -2740,11 +2766,13 @@ body:has(.fiber-link-dashboard) .profiler-results {
   background: var(--fl-dashboard-green);
 }
 
-.fiber-link-transaction-dialog__meta.is-failed .fiber-link-transaction-dialog__meta-mark {
+.fiber-link-transaction-dialog__meta.is-failed
+  .fiber-link-transaction-dialog__meta-mark {
   background: var(--fl-dashboard-red);
 }
 
-.fiber-link-transaction-dialog__meta.is-pending .fiber-link-transaction-dialog__meta-mark {
+.fiber-link-transaction-dialog__meta.is-pending
+  .fiber-link-transaction-dialog__meta-mark {
   background: var(--fl-dashboard-muted);
 }
 
@@ -2769,7 +2797,8 @@ body:has(.fiber-link-dashboard) .profiler-results {
 }
 
 .fiber-link-dashboard .fiber-link-transaction-dialog__explorer-link:hover,
-.fiber-link-dashboard .fiber-link-transaction-dialog__explorer-link:focus-visible {
+.fiber-link-dashboard
+  .fiber-link-transaction-dialog__explorer-link:focus-visible {
   background: var(--fl-dashboard-black);
   color: #fdfcfc !important;
   text-decoration: none;
@@ -2784,7 +2813,8 @@ body:has(.fiber-link-dashboard) .profiler-results {
   transition: transform 0.2s;
 }
 
-.fiber-link-transaction-dialog__explorer-link:hover .fiber-link-transaction-dialog__arrow {
+.fiber-link-transaction-dialog__explorer-link:hover
+  .fiber-link-transaction-dialog__arrow {
   transform: translate(2px, -2px);
 }
 
@@ -3051,7 +3081,8 @@ body:has(.fiber-link-dashboard) .profiler-results {
   padding: 18px 16px 18px 0;
 }
 
-.fiber-link-dashboard__withdrawal-summary-item + .fiber-link-dashboard__withdrawal-summary-item {
+.fiber-link-dashboard__withdrawal-summary-item
+  + .fiber-link-dashboard__withdrawal-summary-item {
   border-left-color: var(--fl-dashboard-line);
   padding-left: 16px;
 }
@@ -3469,7 +3500,8 @@ body:has(.fiber-link-dashboard) .profiler-results {
   }
 
   .fiber-link-dashboard__metric + .fiber-link-dashboard__metric,
-  .fiber-link-dashboard__withdrawal-summary-item + .fiber-link-dashboard__withdrawal-summary-item {
+  .fiber-link-dashboard__withdrawal-summary-item
+    + .fiber-link-dashboard__withdrawal-summary-item {
     border-left: 0;
     border-top: 1px solid var(--fl-dashboard-line);
     padding-left: 0;
