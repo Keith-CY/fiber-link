@@ -1,6 +1,6 @@
 # Fiber Link Stack Deployment Runbook
 
-Last updated: 2026-04-16
+Last updated: 2026-05-06
 Owner: Fiber Link ops (`@Keith-CY`)
 
 This runbook explains how to deploy the Fiber Link stack itself, including:
@@ -135,6 +135,12 @@ For production-style deployments, also explicitly set:
 - `FIBER_WITHDRAWAL_POLICY_COOLDOWN_SECONDS`
 - `FIBER_WITHDRAWAL_CKB_PRIVATE_KEY`
 
+For deployments that must recover underfunded withdrawal hot wallets from an operator-controlled CKB funding/source wallet, also set:
+
+- `FIBER_LIQUIDITY_CKB_SOURCE_PRIVATE_KEY`
+
+This key is distinct from `FIBER_WITHDRAWAL_CKB_PRIVATE_KEY`: the source key funds/sweeps CKB into the hot wallet, while the withdrawal key signs user withdrawals from the hot wallet. Do not mark the local-sweep path ready until both keys are present inside the running `worker` container.
+
 If you intend to enable worker-side channel rotation fallback for underfunded CKB withdrawals, also set:
 
 - `FIBER_LIQUIDITY_FALLBACK_MODE=channel_rotation`
@@ -214,14 +220,15 @@ Minimum acceptance for this stage:
 Before treating this stage as complete, verify runtime env propagation for the values that materially affect withdrawal behavior:
 
 ```bash
-docker compose exec rpc env | grep -E 'FIBER_WITHDRAWAL_CKB_PRIVATE_KEY|FIBER_LIQUIDITY_FALLBACK_MODE|FIBER_CHANNEL_ACCEPT_RPC_URL'
-docker compose exec worker env | grep -E 'FIBER_WITHDRAWAL_CKB_PRIVATE_KEY|FIBER_LIQUIDITY_FALLBACK_MODE|FIBER_CHANNEL_ACCEPT_RPC_URL'
+docker compose exec rpc env | grep -E 'FIBER_WITHDRAWAL_CKB_PRIVATE_KEY|FIBER_LIQUIDITY_CKB_SOURCE_PRIVATE_KEY|FIBER_LIQUIDITY_FALLBACK_MODE|FIBER_CHANNEL_ACCEPT_RPC_URL'
+docker compose exec worker env | grep -E 'FIBER_WITHDRAWAL_CKB_PRIVATE_KEY|FIBER_LIQUIDITY_CKB_SOURCE_PRIVATE_KEY|FIBER_LIQUIDITY_FALLBACK_MODE|FIBER_CHANNEL_ACCEPT_RPC_URL'
 ```
 
 Why this matters:
 
 - having a value in `.env` is not enough if the running containers were not recreated with it
 - on-chain withdrawals require `FIBER_WITHDRAWAL_CKB_PRIVATE_KEY` to be present in the live `rpc`/`worker` runtime, not just in source control or operator notes
+- local CKB sweep requires `FIBER_LIQUIDITY_CKB_SOURCE_PRIVATE_KEY` to be present in the live `worker` runtime, not just in `.env`
 - channel rotation fallback requires the live worker to see `FIBER_LIQUIDITY_FALLBACK_MODE=channel_rotation` and a reachable `FIBER_CHANNEL_ACCEPT_RPC_URL`
 
 ## 8. Stage 3 — Service health verification
@@ -333,7 +340,40 @@ docker exec -i fiber-link-postgres psql \
   -c "select app_id, allowed_assets, max_per_request, per_user_daily_max, per_app_daily_max, cooldown_seconds, updated_at from withdrawal_policies order by app_id;"
 ```
 
-## 12. Channel rotation fallback enablement
+
+## 12. Local CKB sweep fallback enablement
+
+Use this section when withdrawal requests can pass the user-balance gate but the withdrawal hot wallet is underfunded while an operator-controlled funding/source wallet still holds enough CKB. In that case, the preferred recovery path is a local CKB sweep into the withdrawal hot wallet before the withdrawal batch completes user withdrawals.
+
+### Preconditions
+
+Before enabling or validating the local-sweep path, verify all of the following:
+
+- the deployed worker image contains the local-sweep code path and `LOCAL_CKB_SWEEP` metadata support
+- the live worker runtime has both `FIBER_WITHDRAWAL_CKB_PRIVATE_KEY` and `FIBER_LIQUIDITY_CKB_SOURCE_PRIVATE_KEY`
+- the source wallet controlled by `FIBER_LIQUIDITY_CKB_SOURCE_PRIVATE_KEY` has enough confirmed CKB to cover the requested rebalance amount plus fees
+- the hot-wallet address derived from `FIBER_WITHDRAWAL_CKB_PRIVATE_KEY` is the destination that withdrawal inventory checks use
+- the DB schema includes the liquidity request and withdrawal linkage columns listed in the schema gate below
+
+### Validation sequence
+
+1. create or reuse a real withdrawal that enters `LIQUIDITY_PENDING` because the hot wallet is underfunded
+2. run one worker liquidity batch or wait for the scheduler
+3. verify the linked `liquidity_requests` metadata records `recoveryStrategy = LOCAL_CKB_SWEEP`
+4. verify metadata contains a `localLiquidityTxHash` and `localLiquidityNetwork`
+5. wait until the liquidity request reaches `FUNDED`
+6. run/allow the withdrawal batch to advance linked withdrawals out of `LIQUIDITY_PENDING`
+7. capture the final withdrawal `tx_hash` and the local-sweep funding transaction hash as handoff evidence
+
+### Important negative path
+
+If FNN `get_rebalance_status` or `rebalance_to_ckb_chain` returns an auth error such as `Unauthorized`, do not silently treat it as "rebalance unsupported". Auth failures must remain visible in logs/metadata, and the operator should fix FNN auth or explicitly validate the local-sweep path with the worker-side source key.
+
+### Amount-format check
+
+Liquidity amounts can be decimal CKB strings such as `85.00016356`. Do not pass those values through helpers that expect integer hex quantities. The local CKB sweep path must convert decimal CKB to shannons before signing/submitting the transfer.
+
+## 13. Channel rotation fallback enablement
 
 Use this section only if you want underfunded CKB withdrawals to recover via channel rotation instead of remaining stuck in `LIQUIDITY_PENDING`.
 
@@ -378,7 +418,7 @@ The operator acceptance test for channel rotation should prove the entire state 
 
 This is the operational proof that rotation is really enabled.
 
-## 13. Common deployment pitfalls
+## 14. Common deployment pitfalls
 
 ### Pitfall 1 — container health is green but cross-service wiring is broken
 
@@ -447,9 +487,25 @@ Rule:
   - scheduled tasks / cron execution
   - settlement loops
   - withdrawal readiness
+  - local-sweep readiness if source-wallet fallback is enabled
   - channel-rotation readiness if fallback is enabled
 
-## 14. Minimum handoff checklist
+### Pitfall 6 — Coolify reports a failed deploy after new images are built
+
+Symptoms:
+
+- a forced Coolify deployment builds new `rpc`/`worker` images
+- the deployment queue still ends in failure
+- logs mention a sidecar or FNN port conflict such as `Bind for 0.0.0.0:9227 failed: port is already allocated`
+
+Rule:
+
+- inspect Coolify deployment queue logs before blaming application code
+- compare the expected `SOURCE_COMMIT` with the live application `.env`
+- inspect the newly created container image for code markers to distinguish "code not built" from "orchestration failed"
+- resolve host-port conflicts and recreate the affected services before attempting live validation
+
+## 15. Minimum handoff checklist
 
 Before handing this backend to a Discourse admin or another operator:
 
@@ -462,10 +518,12 @@ Before handing this backend to a Discourse admin or another operator:
 - [ ] app id / app secret to use from the plugin side is recorded
 - [ ] runtime env for signer / fallback-sensitive values was verified inside `rpc` and `worker`
 - [ ] latest DB migrations required by the deployed worker are applied
+- [ ] if local CKB sweep fallback is enabled, one `LIQUIDITY_PENDING -> LOCAL_CKB_SWEEP -> FUNDED -> COMPLETED` proof has been captured
 - [ ] if channel rotation fallback is enabled, one end-to-end `LIQUIDITY_PENDING -> CHANNEL_ROTATION -> COMPLETED` proof has been captured
+- [ ] Coolify/source commit and live container image markers match the intended release when using managed deployment
 - [ ] evidence/logs from first bring-up are preserved
 
-## 15. Next step
+## 16. Next step
 
 After this runbook is complete, continue with:
 

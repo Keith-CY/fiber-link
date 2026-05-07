@@ -1,6 +1,6 @@
 # Discourse Admin Runbook for Fiber Link Plugin
 
-Last updated: 2026-04-16
+Last updated: 2026-05-06
 Owner: Fiber Link ops (`@Keith-CY`)
 
 This runbook is for Discourse administrators.
@@ -118,18 +118,23 @@ After enabling the plugin, verify more than just “settings saved”.
 Minimum checks:
 
 - plugin loads in Discourse without obvious frontend errors
-- a tip button or plugin UI entry point is visible where expected
+- the post-level Tip action is visible in the post action/menu area for topic posts and replies
+- older header/inline fallback entry points do not duplicate the Tip control on supported Discourse installs
 - invoice creation works from the UI
 - backend accepts the signed request
+- the `/fiber-link` dashboard loads balances, summary counts, and Recent Activity rows from `dashboard.summary`
 
 If possible, test with a real post/reply flow:
 
 1. open a topic/post with the Fiber Link UI visible
-2. click the tip action
-3. attempt invoice generation
-4. confirm the invoice is returned successfully
+2. click the post-level tip action
+3. generate/copy the invoice or payment request
+4. pay the invoice from the configured payer flow
+5. confirm the invoice reaches `SETTLED`
+6. open `/fiber-link` as both payer and recipient
+7. confirm the Recent Activity row is present for both users (`OUT` for payer, `IN` for recipient) and the displayed status is settled/completed
 
-This is the minimum meaningful plugin verification.
+This is the minimum meaningful plugin verification after the post-menu tip and compact dashboard redesign.
 
 ## 8. What “working” actually means
 
@@ -145,7 +150,30 @@ The plugin is only operationally ready when:
 - the backend accepts it
 - invoice generation succeeds
 
-## 9. Common failure modes
+
+## 9. Post-menu tip action and dashboard verification
+
+Current Fiber Link Discourse UI expectations:
+
+- the primary Tip control is a post-level action, aligned with other Discourse post actions such as Share / Bookmark / Flag / Reply
+- topic posts and replies should both expose the same Fiber Link tip affordance
+- when `post-menu-buttons` value transformers are supported, the legacy header/inline tip button should not render a duplicate control
+- the dashboard route is `/fiber-link`
+- the dashboard should present settled balances and a compact Recent Activity surface backed by `dashboard.summary.tips`
+
+Admin smoke after any plugin upgrade:
+
+1. open a topic with at least one reply
+2. verify the Tip control appears on the topic post and reply post action rows
+3. create one tip invoice from the topic post or reply
+4. settle the invoice using the backend/payer runbook
+5. open `/fiber-link` as the recipient and verify the row appears as an incoming settled payment
+6. open `/fiber-link` as the payer and verify the same row appears as an outgoing settled payment
+7. verify the dashboard balance cards show the settled available balance and preserve any network-fee information in the withdrawal panel
+
+If the UI shows the button but no dashboard row appears after settlement, debug the backend `dashboard.summary` response first; do not assume the problem is CSS or frontend rendering.
+
+## 10. Common failure modes
 
 ### Failure mode 1 — wrong `fiber_link_service_url`
 
@@ -199,7 +227,7 @@ Action:
 - verify from the actual Discourse runtime context
 - do not assume host-local addresses work inside the app runtime
 
-## 10. Admin checklist
+## 11. Admin checklist
 
 ### Installation
 
@@ -216,11 +244,13 @@ Action:
 
 ### Verification
 
-- [ ] plugin UI is visible where expected
+- [ ] post-level Tip action is visible on topic posts and replies
 - [ ] invoice generation succeeds from the forum UI
+- [ ] `/fiber-link` dashboard loads balances and Recent Activity
+- [ ] a settled tip appears as `IN` for the recipient and `OUT` for the payer
 - [ ] no auth mismatch or connectivity error is observed in logs
 
-## 11. Escalation path
+## 12. Escalation path
 
 If the plugin still does not work after following this document, escalate in this order:
 
@@ -229,7 +259,7 @@ If the plugin still does not work after following this document, escalate in thi
 3. verify app id / secret pairing against the backend auth source
 4. only after that investigate plugin-specific frontend behavior
 
-## 12. Relationship to backend deployment
+## 13. Relationship to backend deployment
 
 This runbook depends on the backend being healthy first.
 
