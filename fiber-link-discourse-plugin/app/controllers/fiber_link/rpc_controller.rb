@@ -230,9 +230,19 @@ module ::FiberLink
 
       user_ids = tips.filter_map { |tip| tip["counterpartyUserId"].presence }.uniq
       usernames = User.where(id: user_ids).pluck(:id, :username).to_h.transform_keys(&:to_s)
+
+      post_ids = tips.filter_map { |tip| Integer(tip["postId"], exception: false) }.uniq
+      posts = Post.includes(:topic).where(id: post_ids).index_by { |post| post.id.to_s }
+
       tips.each do |tip|
         username = usernames[tip["counterpartyUserId"].to_s]
         tip["counterpartyUsername"] = username if username.present?
+
+        post = posts[tip["postId"].to_s]
+        next unless post
+
+        tip["postUrl"] = post.url
+        tip["postContextLabel"] = post.post_number.to_i > 1 ? "View the Reply" : "View the Post"
       end
       payload.to_json
     end

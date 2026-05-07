@@ -249,7 +249,7 @@ export default class FiberLinkTipFeed extends Component {
                 <button
                   type="button"
                   class="fiber-link-transaction-dialog__close"
-                  aria-label="Close transaction details"
+                  aria-label="Close payment details"
                   {{on "click" this.closeDetails}}
                 >
                   <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
@@ -259,7 +259,7 @@ export default class FiberLinkTipFeed extends Component {
               </div>
 
               <div class="fiber-link-transaction-dialog__hero">
-                <h4 id="fiber-link-transaction-dialog-title">Transaction details</h4>
+                <h4 id="fiber-link-transaction-dialog-title">{{this.selectedTip.detailTitle}}</h4>
                 <div class="fiber-link-transaction-dialog__summary">
                   <span class={{this.selectedTip.transactionSummaryStatusClassName}}>
                     {{this.selectedTip.statusLabel}}
@@ -377,14 +377,14 @@ export default class FiberLinkTipFeed extends Component {
                   <span class="fiber-link-transaction-dialog__meta-mark"></span>
                   {{this.selectedTip.confirmationLabel}}
                 </div>
-                {{#if this.selectedTip.explorerUrl}}
+                {{#if this.selectedTip.detailActionUrl}}
                   <a
                     class="fiber-link-transaction-dialog__explorer-link"
-                    href={{this.selectedTip.explorerUrl}}
+                    href={{this.selectedTip.detailActionUrl}}
                     target="_blank"
                     rel="noopener noreferrer"
                   >
-                    Open in CKB Explorer <span class="fiber-link-transaction-dialog__arrow">↗</span>
+                    {{this.selectedTip.detailActionLabel}} <span class="fiber-link-transaction-dialog__arrow">↗</span>
                   </a>
                 {{else}}
                   <button
@@ -392,7 +392,7 @@ export default class FiberLinkTipFeed extends Component {
                     class="fiber-link-transaction-dialog__explorer-link is-disabled"
                     disabled
                   >
-                    Open in CKB Explorer <span class="fiber-link-transaction-dialog__arrow">↗</span>
+                    {{this.selectedTip.detailActionUnavailableLabel}} <span class="fiber-link-transaction-dialog__arrow">↗</span>
                   </button>
                 {{/if}}
               </div>
