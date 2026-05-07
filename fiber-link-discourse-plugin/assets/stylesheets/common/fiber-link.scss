@@ -46,8 +46,25 @@
   color: var(--primary);
 }
 
+.fiber-link-dashboard__boot-timeout {
+  max-width: 980px;
+  margin: 2rem auto;
+  padding: 1rem;
+}
+
+.fiber-link-dashboard__boot-timeout-card {
+  display: grid;
+  gap: 1rem;
+  padding: 1.25rem;
+  border: 1px solid var(--fl-border);
+  border-radius: 14px;
+  background: var(--fl-surface-lowest);
+  box-shadow: var(--fl-shadow-soft);
+}
+
 .fiber-link-tip-modal,
-.fiber-link-dashboard {
+.fiber-link-dashboard,
+.fiber-link-dashboard__boot-timeout {
   --fl-primary: hsl(211, 100%, 45%);
   --fl-primary-hover: hsl(211, 100%, 35%);
   --fl-primary-active: hsl(211, 100%, 25%);
