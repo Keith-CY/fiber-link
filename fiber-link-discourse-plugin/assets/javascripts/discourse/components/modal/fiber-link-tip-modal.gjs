@@ -14,6 +14,9 @@ import { createTip, getTipStatus } from "../../services/fiber-link-api";
 const AMOUNT_PATTERN = /^(?:\d+)(?:\.\d{1,8})?$/;
 const COPY_FEEDBACK_TIMEOUT_MS = 3000;
 const TIP_STATUS_AUTO_POLL_INTERVAL_MS = 1000;
+const TIP_GENERATION_WATCHDOG_MS = 15000;
+const TIP_GENERATION_WATCHDOG_MESSAGE =
+  "Fiber Link is busy while preparing invoice. Please retry.";
 const FIBER_LINK_HOMEPAGE_URL = "https://www.fiberlink.me";
 const FIBER_LINK_LOGO_URL = "https://fiberlink.me/brand/fiber-link-logo.png";
 const MAX_MESSAGE_LENGTH = 120;
@@ -34,6 +37,19 @@ function isTransientNetworkError(message) {
     value.includes("failed to fetch") ||
     value.includes("service unavailable")
   );
+}
+
+function withTipGenerationWatchdog(promise) {
+  let timeoutId;
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error(TIP_GENERATION_WATCHDOG_MESSAGE));
+    }, TIP_GENERATION_WATCHDOG_MS);
+  });
+
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    clearTimeout(timeoutId);
+  });
 }
 
 function mapTipStateToLabel(state) {
@@ -422,14 +438,16 @@ export default class FiberLinkTipModal extends Component {
     this.isGenerating = true;
 
     try {
-      const result = await createTip({
-        amount: this.amount.trim(),
-        asset: "CKB",
-        postId: String(this.postId),
-        fromUserId: String(this.fromUserId),
-        toUserId: String(this.targetUserId),
-        message: normalizeMessage(this.message) || null,
-      });
+      const result = await withTipGenerationWatchdog(
+        createTip({
+          amount: this.amount.trim(),
+          asset: "CKB",
+          postId: String(this.postId),
+          fromUserId: String(this.fromUserId),
+          toUserId: String(this.targetUserId),
+          message: normalizeMessage(this.message) || null,
+        }),
+      );
 
       if (!normalizeMessage(result?.invoice)) {
         throw new Error("Invoice is empty");
