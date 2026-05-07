@@ -16,6 +16,16 @@ const ADMIN_SETTLEMENTS_LIMIT = 40;
 const ADMIN_PIPELINE_INVOICE_ROWS_LIMIT = 40;
 const PIPELINE_STAGES = ["UNPAID", "SETTLED", "FAILED"] as const;
 type DashboardPipelineStage = (typeof PIPELINE_STAGES)[number];
+const CKB_EXPLORER_TX_URL_TEMPLATE =
+  process.env.FIBER_LINK_CKB_EXPLORER_TX_URL_TEMPLATE ??
+  "https://pudge.explorer.nervos.org/transaction/{txHash}";
+
+function buildCkbExplorerTxUrl(txHash: string | null | undefined) {
+  if (!txHash) {
+    return null;
+  }
+  return CKB_EXPLORER_TX_URL_TEMPLATE.replace("{txHash}", encodeURIComponent(txHash));
+}
 
 type HandleDashboardSummaryInput = {
   appId: string;
@@ -43,7 +53,7 @@ export async function handleDashboardSummary(input: HandleDashboardSummaryInput)
   const withdrawalRepo = createDbWithdrawalRepo(db);
   const limit = input.limit ?? 20;
 
-  const [balance, lockedBalance, recentTips, tipSummary] = await Promise.all([
+  const [balance, lockedBalance, recentTips, recentWithdrawals, tipSummary] = await Promise.all([
     ledgerRepo.getBalance({
       appId: input.appId,
       userId: input.userId,
@@ -60,25 +70,47 @@ export async function handleDashboardSummary(input: HandleDashboardSummaryInput)
       .where(
         and(
           eq(tipIntents.appId, input.appId),
-          or(eq(tipIntents.fromUserId, input.userId), eq(tipIntents.toUserId, input.userId)),
+          eq(tipIntents.toUserId, input.userId),
         ),
       )
       .orderBy(desc(tipIntents.createdAt), desc(tipIntents.id))
+      .limit(limit),
+    db
+      .select({
+        id: withdrawals.id,
+        amount: withdrawals.amount,
+        asset: withdrawals.asset,
+        state: withdrawals.state,
+        destinationKind: withdrawals.destinationKind,
+        toAddress: withdrawals.toAddress,
+        txHash: withdrawals.txHash,
+        createdAt: withdrawals.createdAt,
+        updatedAt: withdrawals.updatedAt,
+        completedAt: withdrawals.completedAt,
+      })
+      .from(withdrawals)
+      .where(
+        and(
+          eq(withdrawals.appId, input.appId),
+          eq(withdrawals.userId, input.userId),
+        ),
+      )
+      .orderBy(desc(withdrawals.updatedAt), desc(withdrawals.id))
       .limit(limit),
     (async () => {
       const [row] = await db
         .select({
           pendingAmount:
             sql<string>`COALESCE(SUM(CASE WHEN ${tipIntents.toUserId} = ${input.userId} AND ${tipIntents.invoiceState} = 'UNPAID' THEN ${tipIntents.amount} ELSE 0 END), 0)`,
-          pendingCount: sql<number>`COALESCE(SUM(CASE WHEN ${tipIntents.invoiceState} = 'UNPAID' THEN 1 ELSE 0 END), 0)::int`,
-          completedCount: sql<number>`COALESCE(SUM(CASE WHEN ${tipIntents.invoiceState} = 'SETTLED' THEN 1 ELSE 0 END), 0)::int`,
-          failedCount: sql<number>`COALESCE(SUM(CASE WHEN ${tipIntents.invoiceState} = 'FAILED' THEN 1 ELSE 0 END), 0)::int`,
+          pendingCount: sql<number>`COALESCE(SUM(CASE WHEN ${tipIntents.toUserId} = ${input.userId} AND ${tipIntents.invoiceState} = 'UNPAID' THEN 1 ELSE 0 END), 0)::int`,
+          completedCount: sql<number>`COALESCE(SUM(CASE WHEN ${tipIntents.toUserId} = ${input.userId} AND ${tipIntents.invoiceState} = 'SETTLED' THEN 1 ELSE 0 END), 0)::int`,
+          failedCount: sql<number>`COALESCE(SUM(CASE WHEN ${tipIntents.toUserId} = ${input.userId} AND ${tipIntents.invoiceState} = 'FAILED' THEN 1 ELSE 0 END), 0)::int`,
         })
         .from(tipIntents)
         .where(
           and(
             eq(tipIntents.appId, input.appId),
-            or(eq(tipIntents.fromUserId, input.userId), eq(tipIntents.toUserId, input.userId)),
+            eq(tipIntents.toUserId, input.userId),
           ),
         );
       return row ?? null;
@@ -247,19 +279,48 @@ export async function handleDashboardSummary(input: HandleDashboardSummaryInput)
       completedCount: Number(tipSummary?.completedCount ?? 0),
       failedCount: Number(tipSummary?.failedCount ?? 0),
     },
-    tips: recentTips.map((row) => ({
-      id: row.id,
-      invoice: row.invoice,
-      postId: row.postId,
-      amount: String(row.amount),
-      asset: row.asset,
-      state: row.invoiceState,
-      direction: row.toUserId === input.userId ? ("IN" as const) : ("OUT" as const),
-      counterpartyUserId: row.toUserId === input.userId ? row.fromUserId : row.toUserId,
-      message: row.message ?? null,
-      createdAt: row.createdAt.toISOString(),
-      settledAt: row.settledAt ? row.settledAt.toISOString() : null,
-    })),
+    tips: [
+      ...recentTips
+        .filter((row) => row.toUserId === input.userId)
+        .map((row) => ({
+          id: row.id,
+          invoice: row.invoice,
+          postId: row.postId,
+          amount: String(row.amount),
+          asset: row.asset,
+          state: row.invoiceState,
+          direction: "IN" as const,
+          counterpartyUserId: row.fromUserId,
+          message: row.message ?? null,
+          createdAt: row.createdAt.toISOString(),
+          settledAt: row.settledAt ? row.settledAt.toISOString() : null,
+          activityType: "TIP" as const,
+          txHash: null,
+          explorerUrl: null,
+          destinationKind: null,
+          destination: null,
+        })),
+      ...recentWithdrawals.map((row) => ({
+        id: row.id,
+        invoice: `withdrawal:${row.id}`,
+        postId: "withdrawal",
+        amount: String(row.amount),
+        asset: row.asset,
+        state: row.state,
+        direction: "WITHDRAWAL" as const,
+        counterpartyUserId: input.userId,
+        message: row.txHash ? "On-chain withdrawal completed" : "Withdrawal request",
+        createdAt: row.updatedAt.toISOString(),
+        settledAt: row.completedAt ? row.completedAt.toISOString() : null,
+        activityType: "WITHDRAWAL" as const,
+        txHash: row.txHash,
+        explorerUrl: buildCkbExplorerTxUrl(row.txHash),
+        destinationKind: row.destinationKind,
+        destination: row.toAddress,
+      })),
+    ]
+      .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))
+      .slice(0, limit),
     ...(admin ? { admin } : {}),
     generatedAt: new Date().toISOString(),
   };

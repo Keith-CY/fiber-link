@@ -6,6 +6,25 @@ import { getDashboardSummary } from "../services/fiber-link-api";
 const DEFAULT_POLL_INTERVAL_MS = 10000;
 const DASHBOARD_LIMIT = 20;
 const ALLOWED_POLL_INTERVALS = [10000, 30000, 60000];
+const SYNC_AGE_TICK_MS = 1000;
+
+function formatSyncStatusLabel(rawValue) {
+  const value = new Date(rawValue);
+  if (Number.isNaN(value.getTime())) {
+    return "Live · syncing";
+  }
+
+  const ageSeconds = Math.max(0, Math.floor((Date.now() - value.getTime()) / 1000));
+  if (ageSeconds < 2) {
+    return "Live · synced now";
+  }
+  if (ageSeconds < 60) {
+    return `Live · synced ${ageSeconds}s ago`;
+  }
+
+  const ageMinutes = Math.floor(ageSeconds / 60);
+  return `Live · synced ${ageMinutes}m ago`;
+}
 
 function formatIsoTimestamp(rawValue) {
   if (typeof rawValue !== "string" || !rawValue.trim()) {
@@ -21,7 +40,7 @@ function formatIsoTimestamp(rawValue) {
 }
 
 function mapTipStateToPresentation(state) {
-  if (state === "SETTLED") {
+  if (state === "SETTLED" || state === "COMPLETED") {
     return {
       key: "completed",
       label: "Completed",
@@ -105,6 +124,71 @@ function formatCountCaption(count, singular, plural = `${singular}s`) {
   return `${normalizedCount} ${normalizedCount === 1 ? singular : plural}`;
 }
 
+function formatShortTimestamp(rawValue) {
+  const value = new Date(rawValue);
+  if (Number.isNaN(value.getTime())) {
+    return null;
+  }
+
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    hourCycle: "h23",
+  }).format(value);
+}
+
+function formatCompactRelativeTime(rawValue) {
+  const value = new Date(rawValue);
+  if (Number.isNaN(value.getTime())) {
+    return null;
+  }
+
+  const ageSeconds = Math.max(0, Math.floor((Date.now() - value.getTime()) / 1000));
+  if (ageSeconds < 2) {
+    return "now";
+  }
+  if (ageSeconds < 60) {
+    return `${ageSeconds}s ago`;
+  }
+
+  const ageMinutes = Math.floor(ageSeconds / 60);
+  if (ageMinutes < 60) {
+    return `${ageMinutes}m ago`;
+  }
+
+  const ageHours = Math.floor(ageMinutes / 60);
+  if (ageHours < 24) {
+    return `${ageHours}h ago`;
+  }
+
+  const ageDays = Math.floor(ageHours / 24);
+  if (ageDays < 7) {
+    return `${ageDays}d ago`;
+  }
+
+  const ageWeeks = Math.floor(ageDays / 7);
+  return `${ageWeeks}w ago`;
+}
+
+function buildConfirmationLabel(tip, status) {
+  if (status.key === "failed") {
+    return "Failed · requires attention";
+  }
+
+  if (status.key === "pending") {
+    return "Pending · awaiting confirmation";
+  }
+
+  if (tip?.txHash) {
+    return "Confirmed · CKB explorer";
+  }
+
+  return "Confirmed · recorded";
+}
+
 function normalizeTips(tips) {
   const rows = Array.isArray(tips) ? tips : [];
   return rows.map((tip) => {
@@ -137,7 +221,40 @@ function normalizeTips(tips) {
       counterpartyUsername,
       avatarInitials: buildAvatarInitials(counterpartyUsername),
       absoluteTimeLabel: absoluteTime,
+      shortTimeLabel: formatShortTimestamp(tip?.createdAt),
+      relativeTimeLabel: formatCompactRelativeTime(tip?.createdAt),
       message: typeof tip?.message === "string" && tip.message.trim() ? tip.message.trim() : null,
+      activityType: tip?.activityType === "WITHDRAWAL" ? "WITHDRAWAL" : "TIP",
+      txHash: typeof tip?.txHash === "string" && tip.txHash.trim() ? tip.txHash.trim() : null,
+      explorerUrl: typeof tip?.explorerUrl === "string" && tip.explorerUrl.trim() ? tip.explorerUrl.trim() : null,
+      destinationKind: typeof tip?.destinationKind === "string" && tip.destinationKind.trim() ? tip.destinationKind.trim() : null,
+      destination: typeof tip?.destination === "string" && tip.destination.trim() ? tip.destination.trim() : null,
+      transactionTagClassName: [
+        "fiber-link-transaction-dialog__tag",
+        direction.key === "received" ? "is-received" : "",
+        status.key === "failed" ? "is-failed" : "",
+      ].filter(Boolean).join(" "),
+      transactionSummaryStatusClassName: [
+        "fiber-link-transaction-dialog__summary-status",
+        status.key === "completed" ? "is-completed" : "",
+        status.key === "failed" ? "is-failed" : "",
+      ].filter(Boolean).join(" "),
+      transactionAmountClassName: [
+        "fiber-link-transaction-dialog__summary-amount",
+        direction.amountPrefix === "+" ? "is-positive" : "is-negative",
+      ].join(" "),
+      transactionActivityClassName: [
+        "fiber-link-transaction-dialog__value",
+        "fiber-link-transaction-dialog__activity",
+        status.key === "completed" ? "is-completed" : "",
+        status.key === "failed" ? "is-failed" : "",
+      ].filter(Boolean).join(" "),
+      transactionConfirmationClassName: [
+        "fiber-link-transaction-dialog__meta",
+        status.key === "failed" ? "is-failed" : "",
+        status.key === "pending" ? "is-pending" : "",
+      ].filter(Boolean).join(" "),
+      confirmationLabel: buildConfirmationLabel(tip, status),
     };
   });
 }
@@ -145,10 +262,12 @@ function normalizeTips(tips) {
 export default class FiberLinkDashboardRoute extends Route {
   _activeModel = null;
   _pollTimer = null;
+  _syncAgeTimer = null;
   _lastTipFeedSignature = null;
 
   model() {
     this._clearPollTimer();
+    this._clearSyncAgeTimer();
 
     const model = EmberObject.create({
       isInitialLoading: true,
@@ -167,6 +286,7 @@ export default class FiberLinkDashboardRoute extends Route {
       failedCaption: "Requires attention",
       generatedAt: null,
       refreshedAt: null,
+      syncStatusLabel: "Live · syncing",
       pollIntervalMs: DEFAULT_POLL_INTERVAL_MS,
       tipFeedItems: [],
     });
@@ -182,6 +302,7 @@ export default class FiberLinkDashboardRoute extends Route {
       this._activeModel = null;
       this._lastTipFeedSignature = null;
       this._clearPollTimer();
+      this._clearSyncAgeTimer();
     }
   }
 
@@ -207,7 +328,7 @@ export default class FiberLinkDashboardRoute extends Route {
       }
 
       const generatedAt = formatIsoTimestamp(result?.generatedAt) || new Date().toISOString();
-      const normalizedTips = normalizeTips(result?.tips);
+      const normalizedTips = normalizeTips(result?.tips).filter((tip) => tip.directionKey !== "sent");
       const nextTipFeedSignature = buildTipFeedSignature(normalizedTips);
       const pendingCount = Number(result?.stats?.pendingCount ?? 0);
       const completedCount = Number(result?.stats?.completedCount ?? 0);
@@ -237,6 +358,7 @@ export default class FiberLinkDashboardRoute extends Route {
         failedCaption: "Requires attention",
         generatedAt,
         refreshedAt: new Date().toISOString(),
+        syncStatusLabel: formatSyncStatusLabel(generatedAt),
       };
 
       if (nextTipFeedSignature !== this._lastTipFeedSignature) {
@@ -245,6 +367,7 @@ export default class FiberLinkDashboardRoute extends Route {
       }
 
       model.setProperties(nextProperties);
+      this._startSyncAgeTimer(model);
     } catch (error) {
       if (model !== this._activeModel) {
         return;
@@ -277,10 +400,27 @@ export default class FiberLinkDashboardRoute extends Route {
     }, pollIntervalMs);
   }
 
+  _startSyncAgeTimer(model) {
+    this._clearSyncAgeTimer();
+    this._syncAgeTimer = setInterval(() => {
+      if (!model || model !== this._activeModel || !model.generatedAt) {
+        return;
+      }
+      model.set("syncStatusLabel", formatSyncStatusLabel(model.generatedAt));
+    }, SYNC_AGE_TICK_MS);
+  }
+
   _clearPollTimer() {
     if (this._pollTimer) {
       clearTimeout(this._pollTimer);
       this._pollTimer = null;
+    }
+  }
+
+  _clearSyncAgeTimer() {
+    if (this._syncAgeTimer) {
+      clearInterval(this._syncAgeTimer);
+      this._syncAgeTimer = null;
     }
   }
 }

@@ -7,6 +7,7 @@ import formatDate from "discourse/helpers/format-date";
 export default class FiberLinkTipFeed extends Component {
   @tracked activeFilter = "all";
   @tracked searchQuery = "";
+  @tracked selectedTipId = null;
 
   get isLoading() {
     return Boolean(this.args.isLoading);
@@ -67,7 +68,7 @@ export default class FiberLinkTipFeed extends Component {
     return [
       { value: "all", label: "All" },
       { value: "received", label: "Received" },
-      { value: "sent", label: "Sent" },
+      { value: "withdrawn", label: "Withdrawals" },
       { value: "pending", label: "Pending" },
       { value: "failed", label: "Failed" },
     ].map((option) => ({
@@ -86,6 +87,48 @@ export default class FiberLinkTipFeed extends Component {
   @action
   onSearchInput(event) {
     this.searchQuery = event?.target?.value ?? "";
+  }
+
+  get selectedTip() {
+    if (!this.selectedTipId) {
+      return null;
+    }
+
+    return this.tips.find((tip) => tip.id === this.selectedTipId) ?? null;
+  }
+
+  @action
+  openDetails(event) {
+    const tipId = event?.currentTarget?.dataset?.tipId;
+    if (!tipId) {
+      return;
+    }
+    this.selectedTipId = tipId;
+  }
+
+  @action
+  openDetailsFromKeyboard(event) {
+    if (event?.key !== "Enter" && event?.key !== " ") {
+      return;
+    }
+    event.preventDefault();
+    this.openDetails(event);
+  }
+
+  @action
+  closeDetails() {
+    this.selectedTipId = null;
+  }
+
+  @action
+  copyValue(event) {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    const value = event?.currentTarget?.dataset?.copyValue;
+    if (typeof navigator === "undefined" || !value || !navigator.clipboard?.writeText) {
+      return;
+    }
+    void navigator.clipboard.writeText(value);
   }
 
   <template>
@@ -108,27 +151,10 @@ export default class FiberLinkTipFeed extends Component {
               </div>
               <h3>All <span>transactions.</span></h3>
               <p>
-                Settlement history across Discourse — received tips, sent
-                payments, and withdrawals.
+                Settlement history across Discourse — received tips and
+                withdrawals that affect your creator balance.
               </p>
             </div>
-            <label class="fiber-link-tip-feed-search">
-              <svg
-                class="fiber-link-tip-feed-search__icon"
-                aria-hidden="true"
-                viewBox="0 0 24 24"
-              >
-                <circle cx="11" cy="11" r="8"></circle>
-                <path d="m21 21-4.35-4.35"></path>
-              </svg>
-              <input
-                aria-label="Search activity"
-                placeholder="Search user..."
-                type="search"
-                value={{this.searchQuery}}
-                {{on "input" this.onSearchInput}}
-              />
-            </label>
           </div>
 
           <div class="fiber-link-filter-group" aria-label="Activity filters">
@@ -157,7 +183,15 @@ export default class FiberLinkTipFeed extends Component {
             </thead>
             <tbody>
               {{#each this.filteredTips key="id" as |tip|}}
-                <tr data-tip-id={{tip.id}}>
+                <tr
+                  class="fiber-link-tip-feed-row"
+                  data-tip-id={{tip.id}}
+                  role="button"
+                  tabindex="0"
+                  aria-label="Open transaction details"
+                  {{on "click" this.openDetails}}
+                  {{on "keydown" this.openDetailsFromKeyboard}}
+                >
                   <td>
                     <p class={{tip.amountClassName}}>
                       <strong>{{tip.amountPrefix}} {{tip.amount}}</strong>
@@ -194,6 +228,177 @@ export default class FiberLinkTipFeed extends Component {
               {{/each}}
             </tbody>
           </table>
+
+          {{#if this.selectedTip}}
+            <div
+              class="fiber-link-transaction-dialog-backdrop"
+              role="presentation"
+              {{on "click" this.closeDetails}}
+            ></div>
+            <section
+              class="fiber-link-transaction-dialog"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="fiber-link-transaction-dialog-title"
+            >
+              <div class="fiber-link-transaction-dialog__head">
+                <span class={{this.selectedTip.transactionTagClassName}}>
+                  <span class="fiber-link-transaction-dialog__tag-dot"></span>
+                  {{this.selectedTip.directionLabel}}
+                </span>
+                <button
+                  type="button"
+                  class="fiber-link-transaction-dialog__close"
+                  aria-label="Close transaction details"
+                  {{on "click" this.closeDetails}}
+                >
+                  <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+                    <path d="M6 6l12 12M18 6 6 18"></path>
+                  </svg>
+                </button>
+              </div>
+
+              <div class="fiber-link-transaction-dialog__hero">
+                <h4 id="fiber-link-transaction-dialog-title">Transaction details</h4>
+                <div class="fiber-link-transaction-dialog__summary">
+                  <span class={{this.selectedTip.transactionSummaryStatusClassName}}>
+                    {{this.selectedTip.statusLabel}}
+                  </span>
+                  <span class="fiber-link-transaction-dialog__summary-sep">·</span>
+                  <span class={{this.selectedTip.transactionAmountClassName}}>
+                    {{this.selectedTip.amountPrefix}} {{this.selectedTip.amount}} {{this.selectedTip.asset}}
+                  </span>
+                  <span class="fiber-link-transaction-dialog__summary-sep">·</span>
+                  <span>{{this.selectedTip.relativeTimeLabel}}</span>
+                </div>
+              </div>
+
+              <div class="fiber-link-transaction-dialog__rail">
+                <div class="fiber-link-transaction-dialog__row">
+                  <div class="fiber-link-transaction-dialog__cell">
+                    <div class="fiber-link-transaction-dialog__label">Record ID</div>
+                    <div class="fiber-link-transaction-dialog__value is-mono">
+                      <span>{{this.selectedTip.id}}</span>
+                      <button
+                        type="button"
+                        class="fiber-link-transaction-dialog__copy"
+                        aria-label="Copy record ID"
+                        data-copy-value={{this.selectedTip.id}}
+                        {{on "click" this.copyValue}}
+                      >
+                        <svg aria-hidden="true" viewBox="0 0 24 24">
+                          <rect x="9" y="9" width="11" height="11" rx="1.5"></rect>
+                          <path d="M5 15V5a1 1 0 0 1 1-1h10"></path>
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                  <div class="fiber-link-transaction-dialog__cell">
+                    <div class="fiber-link-transaction-dialog__label">Activity</div>
+                    <div class={{this.selectedTip.transactionActivityClassName}}>
+                      <span class="fiber-link-transaction-dialog__activity-dot"></span>
+                      <span>{{this.selectedTip.directionLabel}}</span>
+                      <span class="fiber-link-transaction-dialog__activity-sep">·</span>
+                      <span class="fiber-link-transaction-dialog__activity-state">{{this.selectedTip.statusLabel}}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="fiber-link-transaction-dialog__row">
+                  <div class="fiber-link-transaction-dialog__cell">
+                    <div class="fiber-link-transaction-dialog__label">User</div>
+                    <div class="fiber-link-transaction-dialog__value">
+                      <div class="fiber-link-transaction-dialog__avatar-line">
+                        <span class="fiber-link-transaction-dialog__avatar">{{this.selectedTip.avatarInitials}}</span>
+                        <span class="fiber-link-transaction-dialog__username">@{{this.selectedTip.counterpartyUsername}}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="fiber-link-transaction-dialog__cell">
+                    <div class="fiber-link-transaction-dialog__label">Time</div>
+                    <div class="fiber-link-transaction-dialog__value">
+                      <span>{{this.selectedTip.relativeTimeLabel}}</span>
+                      {{#if this.selectedTip.shortTimeLabel}}
+                        <span class="fiber-link-transaction-dialog__time-absolute">{{this.selectedTip.shortTimeLabel}}</span>
+                      {{/if}}
+                    </div>
+                  </div>
+                </div>
+
+                {{#if this.selectedTip.destination}}
+                  <div class="fiber-link-transaction-dialog__row">
+                    <div class="fiber-link-transaction-dialog__cell is-full">
+                      <div class="fiber-link-transaction-dialog__label">Destination</div>
+                      <div class="fiber-link-transaction-dialog__value is-mono">
+                        <span>{{this.selectedTip.destination}}</span>
+                        <button
+                          type="button"
+                          class="fiber-link-transaction-dialog__copy"
+                          aria-label="Copy destination"
+                          data-copy-value={{this.selectedTip.destination}}
+                          {{on "click" this.copyValue}}
+                        >
+                          <svg aria-hidden="true" viewBox="0 0 24 24">
+                            <rect x="9" y="9" width="11" height="11" rx="1.5"></rect>
+                            <path d="M5 15V5a1 1 0 0 1 1-1h10"></path>
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                {{/if}}
+
+                {{#if this.selectedTip.txHash}}
+                  <div class="fiber-link-transaction-dialog__row">
+                    <div class="fiber-link-transaction-dialog__cell is-full">
+                      <div class="fiber-link-transaction-dialog__label">CKB transaction</div>
+                      <div class="fiber-link-transaction-dialog__value is-mono">
+                        <span>{{this.selectedTip.txHash}}</span>
+                        <button
+                          type="button"
+                          class="fiber-link-transaction-dialog__copy"
+                          aria-label="Copy CKB transaction"
+                          data-copy-value={{this.selectedTip.txHash}}
+                          {{on "click" this.copyValue}}
+                        >
+                          <svg aria-hidden="true" viewBox="0 0 24 24">
+                            <rect x="9" y="9" width="11" height="11" rx="1.5"></rect>
+                            <path d="M5 15V5a1 1 0 0 1 1-1h10"></path>
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                {{/if}}
+              </div>
+
+              <div class="fiber-link-transaction-dialog__actions">
+                <div class={{this.selectedTip.transactionConfirmationClassName}}>
+                  <span class="fiber-link-transaction-dialog__meta-mark"></span>
+                  {{this.selectedTip.confirmationLabel}}
+                </div>
+                {{#if this.selectedTip.explorerUrl}}
+                  <a
+                    class="fiber-link-transaction-dialog__explorer-link"
+                    href={{this.selectedTip.explorerUrl}}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Open in CKB Explorer <span class="fiber-link-transaction-dialog__arrow">↗</span>
+                  </a>
+                {{else}}
+                  <button
+                    type="button"
+                    class="fiber-link-transaction-dialog__explorer-link is-disabled"
+                    disabled
+                  >
+                    Open in CKB Explorer <span class="fiber-link-transaction-dialog__arrow">↗</span>
+                  </button>
+                {{/if}}
+              </div>
+            </section>
+          {{/if}}
+
           <p class="fiber-link-tip-feed-summary">{{this.resultSummary}}</p>
         {{/if}}
       {{/if}}
