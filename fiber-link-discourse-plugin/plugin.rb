@@ -7,6 +7,40 @@ require_relative "lib/fiber_link/engine"
 enabled_site_setting :fiber_link_enabled
 register_asset "stylesheets/common/fiber-link.scss"
 
+FIBER_LINK_TOPIC_BOOT_FALLBACK_SCRIPT = <<~HTML
+  <script data-fiber-link-topic-boot-fallback>
+    (function() {
+      if (!/^\/t\//.test(window.location.pathname || "")) {
+        return;
+      }
+
+      window.setTimeout(function() {
+        if (document.querySelector('[data-fiber-link-tip-button="post-menu"].fiber-link-client-ready-button')) {
+          return;
+        }
+
+        if (document.querySelector('[data-fiber-link-topic-state="boot-timeout"]')) {
+          return;
+        }
+
+        var fallback = document.createElement("aside");
+        fallback.className = "fiber-link-topic-boot-timeout";
+        fallback.setAttribute("data-fiber-link-topic-state", "boot-timeout");
+        fallback.innerHTML = '<p class="fiber-link-topic-boot-timeout__message">Fiber Link tip actions are still loading. Reload the topic or retry when traffic settles.</p><button class="btn btn-primary" type="button" data-fiber-link-topic-retry>Reload topic</button>';
+        fallback.querySelector("[data-fiber-link-topic-retry]")?.addEventListener("click", function() {
+          window.location.reload();
+        });
+
+        (document.querySelector("#main-outlet, main, body") || document.body)?.prepend(fallback);
+      }, 15000);
+    })();
+  </script>
+HTML
+
+register_html_builder("server:before-body-close") do
+  FIBER_LINK_TOPIC_BOOT_FALLBACK_SCRIPT
+end
+
 after_initialize do
   require_dependency File.expand_path("lib/fiber_link/service_client.rb", __dir__)
   require_dependency File.expand_path("lib/fiber_link/tip_notification_sync.rb", __dir__)
