@@ -11,7 +11,7 @@
   font-weight: 650;
 }
 
-body.crawler [data-fiber-link-tip-button="post-menu"] {
+body:not(.fiber-link-client-ready) [data-fiber-link-tip-button="post-menu"] {
   display: none !important;
 }
 
