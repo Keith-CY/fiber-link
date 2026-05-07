@@ -124,6 +124,71 @@ function formatCountCaption(count, singular, plural = `${singular}s`) {
   return `${normalizedCount} ${normalizedCount === 1 ? singular : plural}`;
 }
 
+function formatShortTimestamp(rawValue) {
+  const value = new Date(rawValue);
+  if (Number.isNaN(value.getTime())) {
+    return null;
+  }
+
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    hourCycle: "h23",
+  }).format(value);
+}
+
+function formatCompactRelativeTime(rawValue) {
+  const value = new Date(rawValue);
+  if (Number.isNaN(value.getTime())) {
+    return null;
+  }
+
+  const ageSeconds = Math.max(0, Math.floor((Date.now() - value.getTime()) / 1000));
+  if (ageSeconds < 2) {
+    return "now";
+  }
+  if (ageSeconds < 60) {
+    return `${ageSeconds}s ago`;
+  }
+
+  const ageMinutes = Math.floor(ageSeconds / 60);
+  if (ageMinutes < 60) {
+    return `${ageMinutes}m ago`;
+  }
+
+  const ageHours = Math.floor(ageMinutes / 60);
+  if (ageHours < 24) {
+    return `${ageHours}h ago`;
+  }
+
+  const ageDays = Math.floor(ageHours / 24);
+  if (ageDays < 7) {
+    return `${ageDays}d ago`;
+  }
+
+  const ageWeeks = Math.floor(ageDays / 7);
+  return `${ageWeeks}w ago`;
+}
+
+function buildConfirmationLabel(tip, status) {
+  if (status.key === "failed") {
+    return "Failed · requires attention";
+  }
+
+  if (status.key === "pending") {
+    return "Pending · awaiting confirmation";
+  }
+
+  if (tip?.txHash) {
+    return "Confirmed · CKB explorer";
+  }
+
+  return "Confirmed · recorded";
+}
+
 function normalizeTips(tips) {
   const rows = Array.isArray(tips) ? tips : [];
   return rows.map((tip) => {
@@ -156,12 +221,40 @@ function normalizeTips(tips) {
       counterpartyUsername,
       avatarInitials: buildAvatarInitials(counterpartyUsername),
       absoluteTimeLabel: absoluteTime,
+      shortTimeLabel: formatShortTimestamp(tip?.createdAt),
+      relativeTimeLabel: formatCompactRelativeTime(tip?.createdAt),
       message: typeof tip?.message === "string" && tip.message.trim() ? tip.message.trim() : null,
       activityType: tip?.activityType === "WITHDRAWAL" ? "WITHDRAWAL" : "TIP",
       txHash: typeof tip?.txHash === "string" && tip.txHash.trim() ? tip.txHash.trim() : null,
       explorerUrl: typeof tip?.explorerUrl === "string" && tip.explorerUrl.trim() ? tip.explorerUrl.trim() : null,
       destinationKind: typeof tip?.destinationKind === "string" && tip.destinationKind.trim() ? tip.destinationKind.trim() : null,
       destination: typeof tip?.destination === "string" && tip.destination.trim() ? tip.destination.trim() : null,
+      transactionTagClassName: [
+        "fiber-link-transaction-dialog__tag",
+        direction.key === "received" ? "is-received" : "",
+        status.key === "failed" ? "is-failed" : "",
+      ].filter(Boolean).join(" "),
+      transactionSummaryStatusClassName: [
+        "fiber-link-transaction-dialog__summary-status",
+        status.key === "completed" ? "is-completed" : "",
+        status.key === "failed" ? "is-failed" : "",
+      ].filter(Boolean).join(" "),
+      transactionAmountClassName: [
+        "fiber-link-transaction-dialog__summary-amount",
+        direction.amountPrefix === "+" ? "is-positive" : "is-negative",
+      ].join(" "),
+      transactionActivityClassName: [
+        "fiber-link-transaction-dialog__value",
+        "fiber-link-transaction-dialog__activity",
+        status.key === "completed" ? "is-completed" : "",
+        status.key === "failed" ? "is-failed" : "",
+      ].filter(Boolean).join(" "),
+      transactionConfirmationClassName: [
+        "fiber-link-transaction-dialog__meta",
+        status.key === "failed" ? "is-failed" : "",
+        status.key === "pending" ? "is-pending" : "",
+      ].filter(Boolean).join(" "),
+      confirmationLabel: buildConfirmationLabel(tip, status),
     };
   });
 }

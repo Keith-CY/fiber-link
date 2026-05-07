@@ -186,7 +186,7 @@ RSpec.describe "Fiber Link Dashboard", type: :system do
     find("tr[data-tip-id='wd-live-1']").click
     expect(page).to have_content("Record ID")
     expect(page).to have_content("0xabc123")
-    expect(page).to have_link("Open in CKB explorer ↗", href: "https://pudge.explorer.nervos.org/transaction/0xabc123")
+    expect(page).to have_link("Open in CKB Explorer ↗", href: "https://pudge.explorer.nervos.org/transaction/0xabc123")
     expect(page).to have_no_link("View full ledger")
   end
 

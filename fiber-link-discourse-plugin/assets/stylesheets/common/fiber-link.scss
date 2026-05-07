@@ -2411,8 +2411,7 @@ body:has(.fiber-link-dashboard) .profiler-results {
   position: fixed;
   inset: 0;
   z-index: 9998;
-  background: rgba(17, 24, 39, 0.34);
-  backdrop-filter: blur(8px);
+  background: rgba(26, 24, 22, 0.88);
 }
 
 .fiber-link-transaction-dialog {
@@ -2420,138 +2419,394 @@ body:has(.fiber-link-dashboard) .profiler-results {
   top: 50%;
   left: 50%;
   z-index: 9999;
-  display: grid;
-  gap: 1.2rem;
-  width: min(640px, calc(100vw - 32px));
+  width: min(560px, calc(100vw - 32px));
   max-height: calc(100vh - 64px);
   overflow: auto;
-  border: 1px solid rgba(16, 24, 40, 0.12);
-  border-radius: 28px;
-  padding: 1.35rem;
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 30px 80px rgba(15, 23, 42, 0.24);
+  border-radius: 20px;
+  background: #fdfcfc;
+  box-shadow:
+    0 24px 60px rgba(0, 0, 0, 0.5),
+    0 0 0 0.5px rgba(0, 0, 0, 0.4);
+  color: var(--fl-dashboard-black);
+  font-family: var(--fl-dashboard-sans);
   transform: translate(-50%, -50%);
 }
 
-.fiber-link-transaction-dialog__close {
-  appearance: none;
-  position: absolute;
-  top: 1rem;
-  right: 1rem;
-  display: inline-grid;
-  place-items: center;
-  width: 2.15rem;
-  height: 2.15rem;
-  border: 1px solid var(--fl-dashboard-line);
-  border-radius: 999px;
-  background: #fff;
+.fiber-link-transaction-dialog__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 22px 28px 0;
+}
+
+.fiber-link-transaction-dialog__tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 24px;
+  border-radius: 9999px;
+  padding: 0 10px;
+  background: var(--fl-dashboard-powder);
   color: var(--fl-dashboard-ink);
-  font: inherit;
-  font-size: 1.2rem;
-  line-height: 1;
-  cursor: pointer;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
 }
 
-.fiber-link-transaction-dialog__close:hover,
-.fiber-link-transaction-dialog__close:focus-visible {
+.fiber-link-transaction-dialog__tag-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
   background: var(--fl-dashboard-black);
-  color: #fff;
-  outline: none;
 }
 
-.fiber-link-transaction-dialog__header {
-  display: grid;
-  gap: 0.35rem;
-  padding-right: 3rem;
+.fiber-link-transaction-dialog__tag.is-received .fiber-link-transaction-dialog__tag-dot {
+  background: var(--fl-dashboard-green);
 }
 
-.fiber-link-transaction-dialog__header > span {
-  width: fit-content;
-  border: 1px solid var(--fl-dashboard-line);
-  border-radius: 999px;
-  padding: 0.32rem 0.65rem;
-  color: var(--fl-dashboard-muted);
-  font-size: 0.72rem;
-  font-weight: 720;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+.fiber-link-transaction-dialog__tag.is-failed .fiber-link-transaction-dialog__tag-dot {
+  background: var(--fl-dashboard-red);
 }
 
-.fiber-link-transaction-dialog__header h4 {
-  margin: 0;
-  color: var(--fl-dashboard-black);
-  font-family: var(--fl-dashboard-sans);
-  font-size: 1.75rem;
-  font-weight: 650;
-  letter-spacing: -0.03em;
-}
-
-.fiber-link-transaction-dialog__header p {
-  margin: 0;
-  color: var(--fl-dashboard-muted);
-  font-size: 0.95rem;
-}
-
-.fiber-link-transaction-dialog__grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.85rem;
-}
-
-.fiber-link-transaction-dialog__grid > div {
-  display: grid;
-  gap: 0.28rem;
-  min-width: 0;
-  border: 1px solid var(--fl-dashboard-line);
-  border-radius: 18px;
-  padding: 0.9rem;
-  background: rgba(248, 247, 244, 0.78);
-}
-
-.fiber-link-transaction-dialog__grid > div.is-wide {
-  grid-column: 1 / -1;
-}
-
-.fiber-link-transaction-dialog__grid span {
-  color: var(--fl-dashboard-muted);
-  font-size: 0.7rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.fiber-link-transaction-dialog__grid strong {
-  overflow-wrap: anywhere;
-  color: var(--fl-dashboard-black);
-  font-size: 0.92rem;
-  font-weight: 620;
-}
-
-.fiber-link-transaction-dialog__mono {
-  font-family: var(--fl-dashboard-mono);
-}
-
-.fiber-link-transaction-dialog__explorer-link,
-.fiber-link-transaction-dialog__explorer-link:link,
-.fiber-link-transaction-dialog__explorer-link:visited {
+.fiber-link-dashboard .fiber-link-transaction-dialog__close {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  justify-self: start;
-  border-radius: 999px;
-  padding: 0.82rem 1rem;
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  min-height: 28px;
+  border: 1px solid var(--fl-dashboard-chalk);
+  border-radius: 9999px;
+  padding: 0;
+  background: transparent;
+  color: var(--fl-dashboard-muted);
+  cursor: pointer;
+}
+
+.fiber-link-dashboard .fiber-link-transaction-dialog__close:hover,
+.fiber-link-dashboard .fiber-link-transaction-dialog__close:focus-visible {
+  border-color: var(--fl-dashboard-black);
+  background: transparent;
+  color: var(--fl-dashboard-black);
+  outline: none;
+}
+
+.fiber-link-transaction-dialog__hero {
+  padding: 18px 28px 24px;
+}
+
+.fiber-link-transaction-dialog__hero h4 {
+  margin: 0 0 10px;
+  color: var(--fl-dashboard-black);
+  font-family: var(--fl-dashboard-sans);
+  font-size: 34px;
+  font-weight: 600;
+  line-height: 1.05;
+  letter-spacing: 0;
+}
+
+.fiber-link-transaction-dialog__summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  color: var(--fl-dashboard-muted);
+  font-size: 13px;
+}
+
+.fiber-link-transaction-dialog__summary-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--fl-dashboard-black);
+  font-weight: 500;
+}
+
+.fiber-link-transaction-dialog__summary-status::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.fiber-link-transaction-dialog__summary-status.is-completed {
+  color: var(--fl-dashboard-green);
+}
+
+.fiber-link-transaction-dialog__summary-status.is-failed {
+  color: var(--fl-dashboard-red);
+}
+
+.fiber-link-transaction-dialog__summary-sep {
+  color: var(--fl-dashboard-faint);
+}
+
+.fiber-link-transaction-dialog__summary-amount {
+  color: var(--fl-dashboard-black);
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.fiber-link-transaction-dialog__summary-amount.is-positive {
+  color: var(--fl-dashboard-green);
+}
+
+.fiber-link-transaction-dialog__summary-amount.is-negative {
+  color: var(--fl-dashboard-ink);
+}
+
+.fiber-link-transaction-dialog__rail {
+  border-top: 1px solid var(--fl-dashboard-line);
+  border-bottom: 1px solid var(--fl-dashboard-line);
+}
+
+.fiber-link-transaction-dialog__row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+.fiber-link-transaction-dialog__row + .fiber-link-transaction-dialog__row {
+  border-top: 1px solid var(--fl-dashboard-line);
+}
+
+.fiber-link-transaction-dialog__cell {
+  min-width: 0;
+  padding: 18px 28px;
+}
+
+.fiber-link-transaction-dialog__cell + .fiber-link-transaction-dialog__cell {
+  border-left: 1px solid var(--fl-dashboard-line);
+}
+
+.fiber-link-transaction-dialog__cell.is-full {
+  grid-column: 1 / -1;
+  border-left: 0;
+}
+
+.fiber-link-transaction-dialog__label {
+  margin-bottom: 8px;
+  color: var(--fl-dashboard-muted);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.fiber-link-transaction-dialog__value {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--fl-dashboard-black);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.fiber-link-transaction-dialog__value.is-mono {
+  font-family: var(--fl-dashboard-mono);
+  font-size: 12.5px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+
+.fiber-link-dashboard .fiber-link-transaction-dialog__copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 18px;
+  min-width: 18px;
+  height: 18px;
+  min-height: 18px;
+  margin-left: auto;
+  border: 0;
+  border-radius: 0;
+  padding: 2px;
+  background: transparent;
+  color: var(--fl-dashboard-muted);
+  cursor: pointer;
+}
+
+.fiber-link-dashboard .fiber-link-transaction-dialog__copy:hover,
+.fiber-link-dashboard .fiber-link-transaction-dialog__copy:focus-visible {
+  background: transparent;
+  color: var(--fl-dashboard-black);
+  outline: none;
+}
+
+.fiber-link-transaction-dialog__copy svg {
+  width: 13px;
+  height: 13px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.fiber-link-transaction-dialog__activity {
+  gap: 8px;
+}
+
+.fiber-link-transaction-dialog__activity-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
   background: var(--fl-dashboard-black);
-  color: #fff !important;
-  font-size: 0.9rem;
-  font-weight: 720;
+}
+
+.fiber-link-transaction-dialog__activity.is-completed .fiber-link-transaction-dialog__activity-dot {
+  background: var(--fl-dashboard-green);
+}
+
+.fiber-link-transaction-dialog__activity.is-failed .fiber-link-transaction-dialog__activity-dot {
+  background: var(--fl-dashboard-red);
+}
+
+.fiber-link-transaction-dialog__activity-sep {
+  margin: 0 2px;
+  color: var(--fl-dashboard-faint);
+  font-weight: 400;
+}
+
+.fiber-link-transaction-dialog__activity-state {
+  color: var(--fl-dashboard-muted);
+  font-weight: 400;
+}
+
+.fiber-link-transaction-dialog__avatar-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.fiber-link-transaction-dialog__avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--fl-dashboard-powder);
+  color: var(--fl-dashboard-ink);
+  font-family: var(--fl-dashboard-mono);
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.fiber-link-transaction-dialog__username {
+  font-family: var(--fl-dashboard-mono);
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.fiber-link-transaction-dialog__time-absolute {
+  margin-left: 6px;
+  color: var(--fl-dashboard-muted);
+  font-family: var(--fl-dashboard-mono);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.fiber-link-transaction-dialog__actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 28px;
+  background: var(--fl-dashboard-powder);
+}
+
+.fiber-link-transaction-dialog__meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--fl-dashboard-muted);
+  font-family: var(--fl-dashboard-mono);
+  font-size: 12px;
+}
+
+.fiber-link-transaction-dialog__meta-mark {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--fl-dashboard-green);
+}
+
+.fiber-link-transaction-dialog__meta.is-failed .fiber-link-transaction-dialog__meta-mark {
+  background: var(--fl-dashboard-red);
+}
+
+.fiber-link-transaction-dialog__meta.is-pending .fiber-link-transaction-dialog__meta-mark {
+  background: var(--fl-dashboard-muted);
+}
+
+.fiber-link-dashboard .fiber-link-transaction-dialog__explorer-link,
+.fiber-link-dashboard .fiber-link-transaction-dialog__explorer-link:link,
+.fiber-link-dashboard .fiber-link-transaction-dialog__explorer-link:visited {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: center;
+  min-height: 36px;
+  border: 1px solid var(--fl-dashboard-black);
+  border-radius: 9999px;
+  padding: 0 18px;
+  background: var(--fl-dashboard-black);
+  color: #fdfcfc !important;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.fiber-link-dashboard .fiber-link-transaction-dialog__explorer-link:hover,
+.fiber-link-dashboard .fiber-link-transaction-dialog__explorer-link:focus-visible {
+  background: var(--fl-dashboard-black);
+  color: #fdfcfc !important;
   text-decoration: none;
 }
 
-.fiber-link-transaction-dialog__explorer-link:hover,
-.fiber-link-transaction-dialog__explorer-link:focus-visible {
-  color: #fff !important;
-  text-decoration: none;
-  transform: translateY(-1px);
+.fiber-link-transaction-dialog__explorer-link.is-disabled {
+  opacity: 0.46;
+  cursor: not-allowed;
+}
+
+.fiber-link-transaction-dialog__arrow {
+  transition: transform 0.2s;
+}
+
+.fiber-link-transaction-dialog__explorer-link:hover .fiber-link-transaction-dialog__arrow {
+  transform: translate(2px, -2px);
+}
+
+@media (max-width: 640px) {
+  .fiber-link-transaction-dialog__row {
+    grid-template-columns: 1fr;
+  }
+
+  .fiber-link-transaction-dialog__cell + .fiber-link-transaction-dialog__cell {
+    border-top: 1px solid var(--fl-dashboard-line);
+    border-left: 0;
+  }
+
+  .fiber-link-transaction-dialog__hero h4 {
+    font-size: 30px;
+  }
+
+  .fiber-link-transaction-dialog__summary,
+  .fiber-link-transaction-dialog__actions {
+    align-items: flex-start;
+    flex-direction: column;
+  }
 }
 
 .fiber-link-tip-feed-summary {
