@@ -73,6 +73,15 @@ function mapTipStateToPresentation(state) {
       textClassName: "fiber-link-tip-feed-status-text is-failed",
     };
   }
+  if (state === "BROADCASTED") {
+    return {
+      key: "broadcasted",
+      label: "Broadcasted",
+      className: "fiber-link-status-badge is-info",
+      dotClassName: "fiber-link-tip-feed-status-dot is-pending",
+      textClassName: "fiber-link-tip-feed-status-text is-pending",
+    };
+  }
   return {
     key: "pending",
     label: "Pending",
@@ -196,6 +205,10 @@ function formatCompactRelativeTime(rawValue) {
 function buildConfirmationLabel(tip, status) {
   if (status.key === "failed") {
     return "Failed · requires attention";
+  }
+
+  if (status.key === "broadcasted") {
+    return "Broadcasted · awaiting chain confirmation";
   }
 
   if (status.key === "pending") {
@@ -333,7 +346,7 @@ function normalizeTips(tips) {
       transactionConfirmationClassName: [
         "fiber-link-transaction-dialog__meta",
         status.key === "failed" ? "is-failed" : "",
-        status.key === "pending" ? "is-pending" : "",
+        status.key === "pending" || status.key === "broadcasted" ? "is-pending" : "",
       ]
         .filter(Boolean)
         .join(" "),

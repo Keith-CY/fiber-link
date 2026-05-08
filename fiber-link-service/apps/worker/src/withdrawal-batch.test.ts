@@ -171,14 +171,14 @@ describe("runWithdrawalBatch", () => {
       userId: "u1",
       asset: "USDI",
       amount: "10",
-      toAddress: "ckt1q-first",
+      toAddress: "fiber:invoice:first",
     });
     const second = await repo.create({
       appId: "app1",
       userId: "u2",
       asset: "USDI",
       amount: "20",
-      toAddress: "ckt1q-second",
+      toAddress: "fiber:invoice:second",
     });
 
     const contentionRepo = {
@@ -609,7 +609,8 @@ describe("runWithdrawalBatch", () => {
       ledgerRepo: ledger,
     });
 
-    expect(res.completed).toBe(1);
+    expect(res.broadcasted).toBe(1);
+    expect(res.completed).toBe(0);
     expect(createAdapter).toHaveBeenCalledWith({ endpoint: "http://fiber-rpc.test" });
     expect(adapterExecuteWithdrawal).toHaveBeenCalledWith({
       amount: "10",
@@ -621,6 +622,46 @@ describe("runWithdrawalBatch", () => {
       requestId: created.id,
     });
     const saved = await localRepo.findByIdOrThrow(created.id);
-    expect(saved.state).toBe("COMPLETED");
+    expect(saved.state).toBe("BROADCASTED");
+    expect(saved.txHash).toBe("0xusdi-chain");
+  });
+
+  it("completes broadcasted CKB-address withdrawals only after chain commit", async () => {
+    const ledger = createInMemoryLedgerRepo();
+    const created = await repo.create({
+      appId: "app1",
+      userId: "u-chain-confirm",
+      asset: "CKB",
+      amount: "63",
+      toAddress: "ckt1qchainconfirm",
+    });
+
+    const first = await runWithdrawalBatch({
+      now: new Date("2026-03-07T12:50:00.000Z"),
+      executeWithdrawal: async () => ({ ok: true, txHash: "0xchainhash" }),
+      confirmWithdrawal: async () => ({ status: "PENDING" }),
+      repo,
+      ledgerRepo: ledger,
+    });
+
+    expect(first.broadcasted).toBe(1);
+    expect(first.completed).toBe(0);
+    const broadcasted = await repo.findByIdOrThrow(created.id);
+    expect(broadcasted.state).toBe("BROADCASTED");
+    expect(broadcasted.txHash).toBe("0xchainhash");
+    expect(broadcasted.completedAt).toBeNull();
+
+    const second = await runWithdrawalBatch({
+      now: new Date("2026-03-07T12:51:00.000Z"),
+      confirmWithdrawal: async () => ({ status: "COMMITTED" }),
+      repo,
+      ledgerRepo: ledger,
+    });
+
+    expect(second.processed).toBe(0);
+    expect(second.completed).toBe(1);
+    const completed = await repo.findByIdOrThrow(created.id);
+    expect(completed.state).toBe("COMPLETED");
+    expect(completed.completedAt?.toISOString()).toBe("2026-03-07T12:51:00.000Z");
   });
 });

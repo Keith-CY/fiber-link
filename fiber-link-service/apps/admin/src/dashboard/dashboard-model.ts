@@ -14,6 +14,7 @@ export const WITHDRAWAL_STATE_ORDER: DashboardWithdrawalState[] = [
   "LIQUIDITY_PENDING",
   "PENDING",
   "PROCESSING",
+  "BROADCASTED",
   "RETRY_PENDING",
   "COMPLETED",
   "FAILED",

@@ -10,7 +10,13 @@ import {
   type WithdrawalRecord,
   type WithdrawalRepo,
 } from "@fiber-link/db";
-import { FiberRpcError, WithdrawalExecutionError, createAdapter } from "@fiber-link/fiber-adapter";
+import {
+  FiberRpcError,
+  WithdrawalExecutionError,
+  createAdapter,
+  getCkbTransactionStatus,
+  type CkbNetwork,
+} from "@fiber-link/fiber-adapter";
 import {
   createDbNotificationRepo,
   createNoopNotificationDispatcher,
@@ -23,11 +29,17 @@ export type WithdrawalExecutionResult =
   | { ok: true; txHash: string }
   | { ok: false; kind: "transient" | "permanent"; reason: string };
 
+export type WithdrawalConfirmationResult =
+  | { status: "PENDING" | "UNKNOWN" }
+  | { status: "COMMITTED" }
+  | { status: "REJECTED"; reason?: string };
+
 export type RunWithdrawalBatchOptions = {
   now?: Date;
   maxRetries?: number;
   retryDelayMs?: number;
   executeWithdrawal?: (withdrawal: WithdrawalRecord) => Promise<WithdrawalExecutionResult>;
+  confirmWithdrawal?: (withdrawal: WithdrawalRecord) => Promise<WithdrawalConfirmationResult>;
   ledgerRepo?: LedgerRepo;
   repo?: WithdrawalRepo;
   notificationDispatcher?: NotificationDispatcher;
@@ -53,6 +65,29 @@ async function defaultExecuteWithdrawal(withdrawal: WithdrawalRecord): Promise<W
       })
     ).txHash,
   };
+}
+
+function resolveWithdrawalNetwork(withdrawal: WithdrawalRecord): CkbNetwork | null {
+  const normalized = withdrawal.toAddress.trim().toLowerCase();
+  if (normalized.startsWith("ckt1")) {
+    return "AGGRON4";
+  }
+  if (normalized.startsWith("ckb1")) {
+    return "LINA";
+  }
+  return null;
+}
+
+async function defaultConfirmWithdrawal(withdrawal: WithdrawalRecord): Promise<WithdrawalConfirmationResult> {
+  if (!withdrawal.txHash) {
+    return { status: "UNKNOWN" };
+  }
+  const network = resolveWithdrawalNetwork(withdrawal);
+  if (!network) {
+    return { status: "COMMITTED" };
+  }
+  const status = await getCkbTransactionStatus({ txHash: withdrawal.txHash, network });
+  return status === "REJECTED" ? { status, reason: "CKB transaction rejected" } : { status };
 }
 
 let defaultRepo: WithdrawalRepo | null = null;
@@ -193,11 +228,13 @@ export async function runWithdrawalBatch(options: RunWithdrawalBatchOptions = {}
   const maxRetries = options.maxRetries ?? 3;
   const retryDelayMs = options.retryDelayMs ?? 60_000;
   const executeWithdrawal = options.executeWithdrawal ?? defaultExecuteWithdrawal;
+  const confirmWithdrawal = options.confirmWithdrawal ?? defaultConfirmWithdrawal;
   const repo = options.repo ?? getDefaultRepo();
   const notificationDispatcher = options.notificationDispatcher ?? getDefaultNotificationDispatcher();
 
   const ready = await repo.listReadyForProcessing(now);
   let processed = 0;
+  let broadcasted = 0;
   let completed = 0;
   let retryPending = 0;
   let failed = 0;
@@ -227,18 +264,23 @@ export async function runWithdrawalBatch(options: RunWithdrawalBatchOptions = {}
     processed += 1;
     if (result.ok) {
       const ledgerRepo = options.ledgerRepo ?? getDefaultLedgerRepo();
-      const completedRecord = await repo.markCompletedWithDebit(item.id, { now, txHash: result.txHash }, { ledgerRepo });
-      completed += 1;
-      await dispatchWithdrawalEvent(notificationDispatcher, {
-        type: "WITHDRAWAL_COMPLETED",
-        occurredAt: now,
-        appId: completedRecord.appId,
-        userId: completedRecord.userId,
-        withdrawalId: completedRecord.id,
-        asset: completedRecord.asset,
-        amount: completedRecord.amount,
-        txHash: completedRecord.txHash ?? result.txHash,
-      });
+      if (current.destinationKind === "CKB_ADDRESS") {
+        await repo.markBroadcastedWithDebit(item.id, { now, txHash: result.txHash }, { ledgerRepo });
+        broadcasted += 1;
+      } else {
+        const completedRecord = await repo.markCompletedWithDebit(item.id, { now, txHash: result.txHash }, { ledgerRepo });
+        completed += 1;
+        await dispatchWithdrawalEvent(notificationDispatcher, {
+          type: "WITHDRAWAL_COMPLETED",
+          occurredAt: now,
+          appId: completedRecord.appId,
+          userId: completedRecord.userId,
+          withdrawalId: completedRecord.id,
+          asset: completedRecord.asset,
+          amount: completedRecord.amount,
+          txHash: completedRecord.txHash ?? result.txHash,
+        });
+      }
       continue;
     }
 
@@ -299,5 +341,45 @@ export async function runWithdrawalBatch(options: RunWithdrawalBatchOptions = {}
     });
   }
 
-  return { processed, completed, retryPending, failed, skipped };
+  const broadcastedForConfirmation = (await repo.listBroadcastedForConfirmation()).filter(
+    (item) => item.updatedAt.getTime() < now.getTime(),
+  );
+  for (const item of broadcastedForConfirmation) {
+    const confirmation = await confirmWithdrawal(item);
+    if (confirmation.status === "COMMITTED") {
+      const completedRecord = await repo.markCompleted(item.id, { now });
+      completed += 1;
+      await dispatchWithdrawalEvent(notificationDispatcher, {
+        type: "WITHDRAWAL_COMPLETED",
+        occurredAt: now,
+        appId: completedRecord.appId,
+        userId: completedRecord.userId,
+        withdrawalId: completedRecord.id,
+        asset: completedRecord.asset,
+        amount: completedRecord.amount,
+        txHash: completedRecord.txHash ?? item.txHash ?? "",
+      });
+      continue;
+    }
+    if (confirmation.status === "REJECTED") {
+      const failedRecord = await repo.markFailedFromBroadcasted(item.id, {
+        now,
+        error: confirmation.reason ?? "CKB transaction rejected",
+      });
+      failed += 1;
+      await dispatchWithdrawalEvent(notificationDispatcher, {
+        type: "WITHDRAWAL_FAILED",
+        occurredAt: now,
+        appId: failedRecord.appId,
+        userId: failedRecord.userId,
+        withdrawalId: failedRecord.id,
+        asset: failedRecord.asset,
+        amount: failedRecord.amount,
+        retryCount: failedRecord.retryCount,
+        error: failedRecord.lastError ?? "CKB transaction rejected",
+      });
+    }
+  }
+
+  return { processed, broadcasted, completed, retryPending, failed, skipped };
 }

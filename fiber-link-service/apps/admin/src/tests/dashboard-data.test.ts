@@ -296,6 +296,7 @@ describe("dashboard data", () => {
       { state: "LIQUIDITY_PENDING", count: 1 },
       { state: "PENDING", count: 2 },
       { state: "PROCESSING", count: 0 },
+      { state: "BROADCASTED", count: 0 },
       { state: "RETRY_PENDING", count: 0 },
       { state: "COMPLETED", count: 0 },
       { state: "FAILED", count: 1 },
