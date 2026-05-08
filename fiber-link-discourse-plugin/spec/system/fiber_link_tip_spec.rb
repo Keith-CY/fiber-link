@@ -79,7 +79,7 @@ RSpec.describe "Fiber Link Tip", type: :system do
     within("[data-fiber-link-tip-modal='recipient']") do
       expect(page).to have_css("img[data-fiber-link-tip-modal='recipient-avatar']")
       expect(page).to have_content("@#{topic.first_post.user.username}")
-      expect(page).to have_content("RECIPIENT · VERIFIED 2D AGO")
+      expect(page).to have_content("RECIPIENT · FIBER LINK PROFILE")
       expect(page).to have_content("Receives")
       expect(page).to have_content("1CKB")
     end
@@ -93,7 +93,7 @@ RSpec.describe "Fiber Link Tip", type: :system do
       expect(page).to have_content("TOPIC")
       expect(page).to have_content(topic.title)
       expect(page).to have_content("NETWORK")
-      expect(page).to have_content("Fiber Link · Mainnet")
+      expect(page).to have_content("Fiber Link · Testnet")
     end
     expect(page).to have_css("[data-fiber-link-tip-modal-step='generate']")
     expect(page).to have_no_css("[data-fiber-link-tip-modal-step='pay']")
@@ -158,6 +158,7 @@ RSpec.describe "Fiber Link Tip", type: :system do
     expect(page).to have_css("[data-fiber-link-tip-modal-step='confirmed']", wait: 8)
     expect(page).to have_no_css("[data-fiber-link-tip-modal-step='pay']")
     expect(page).to have_content("Payment complete")
+    expect(page).to have_no_link("Open Fiber Link dashboard", href: "/fiber-link")
     expect(page).to have_button("Done")
   end
 
@@ -231,7 +232,7 @@ RSpec.describe "Fiber Link Tip", type: :system do
       expect(page).to have_content("REPLY CONTEXT")
       expect(page).to have_content("Reply tip context should appear in the payment dialog.")
       expect(page).to have_content("NETWORK")
-      expect(page).to have_content("Fiber Link · Mainnet")
+      expect(page).to have_content("Fiber Link · Testnet")
       expect(page).to have_no_content("TOPIC")
     end
   end

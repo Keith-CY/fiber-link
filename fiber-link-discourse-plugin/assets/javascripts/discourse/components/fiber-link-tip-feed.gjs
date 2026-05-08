@@ -1,13 +1,66 @@
 import Component from "@glimmer/component";
 import { action } from "@ember/object";
+import { registerDestructor } from "@ember/destroyable";
 import { on } from "@ember/modifier";
 import { tracked } from "@glimmer/tracking";
 import formatDate from "discourse/helpers/format-date";
+
+const RELATIVE_TIME_TICK_MS = 1000;
+
+function formatCompactRelativeTime(rawValue) {
+  const value = new Date(rawValue);
+  if (Number.isNaN(value.getTime())) {
+    return null;
+  }
+
+  const ageSeconds = Math.max(
+    0,
+    Math.floor((Date.now() - value.getTime()) / 1000),
+  );
+  if (ageSeconds < 2) {
+    return "now";
+  }
+  if (ageSeconds < 60) {
+    return `${ageSeconds}s ago`;
+  }
+
+  const ageMinutes = Math.floor(ageSeconds / 60);
+  if (ageMinutes < 60) {
+    return `${ageMinutes}m ago`;
+  }
+
+  const ageHours = Math.floor(ageMinutes / 60);
+  if (ageHours < 24) {
+    return `${ageHours}h ago`;
+  }
+
+  const ageDays = Math.floor(ageHours / 24);
+  if (ageDays < 7) {
+    return `${ageDays}d ago`;
+  }
+
+  const ageWeeks = Math.floor(ageDays / 7);
+  return `${ageWeeks}w ago`;
+}
 
 export default class FiberLinkTipFeed extends Component {
   @tracked activeFilter = "all";
   @tracked searchQuery = "";
   @tracked selectedTipId = null;
+  @tracked relativeTimeTick = 0;
+
+  _relativeTimeTimer = null;
+
+  constructor(owner, args) {
+    super(owner, args);
+    this._relativeTimeTimer = setInterval(() => {
+      this.relativeTimeTick += 1;
+    }, RELATIVE_TIME_TICK_MS);
+    registerDestructor(this, () => {
+      clearInterval(this._relativeTimeTimer);
+      this._relativeTimeTimer = null;
+    });
+  }
 
   get isLoading() {
     return Boolean(this.args.isLoading);
@@ -22,7 +75,14 @@ export default class FiberLinkTipFeed extends Component {
   }
 
   get tips() {
-    return Array.isArray(this.args.tips) ? this.args.tips : [];
+    const ticks = this.relativeTimeTick;
+    const tips = Array.isArray(this.args.tips) ? this.args.tips : [];
+    void ticks;
+
+    return tips.map((tip) => ({
+      ...tip,
+      relativeTimeLabel: formatCompactRelativeTime(tip.createdAt),
+    }));
   }
 
   get isEmpty() {
