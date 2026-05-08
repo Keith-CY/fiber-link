@@ -1,107 +1,161 @@
-# Docs Index
+# Fiber Link Documentation
 
-## Roadmap tracking
+Welcome to the Fiber Link documentation. This index is organized for people first: start with the product story, then move into install, operation, architecture, and historical planning only when needed.
 
-- `docs/current-architecture.md` — canonical source-of-truth index for architecture, current status, and historical redirects.
-- `docs/audit-snapshot.md` — generated architecture-audit snapshot (operational metrics and deltas). This is non-canonical.
-- `docs/plans/2026-03-18-production-readiness-audit.md` — production-readiness audit of admin controls, monitoring, rate limiting, backups, and documentation polish against a strict self-hosted production bar.
-- `docs/plans/2026-03-18-production-hardening-closeout.md` — closeout snapshot showing the repo-backed operator baseline after the production-hardening gaps were implemented.
-- `docs/plans/2026-02-21-issue-32-epic-closeout.md` — latest closeout mapping for epic `#32`.
-- `docs/plans/2026-02-17-issue-32-epic-execution-status-tracker.md` — superseded historical status snapshot retained for traceability.
-- `docs/plans/2026-02-03-fiber-link-mvp-design.md` — historical early design snapshot; use canonical links at the top of the file.
-- `docs/plans/2026-02-03-fiber-link-mvp-plan.md` — historical implementation draft; use canonical links at the top of the file.
-- `docs/plans/2026-02-07-phase2-delivery-plan.md` — diverged historical delivery plan; use canonical links at the top of the file.
-- `docs/plans/2026-02-11-phase3-sprint1-settlement-v1-plan.md` — diverged historical sprint plan; use canonical links at the top of the file.
-- `docs/plans/2026-02-13-phase3-priority3-balance-debit-design.md` — diverged historical design plan; use canonical links at the top of the file.
+---
 
-## Architecture audit contract
+## Start Here
 
-- Generator entrypoint: `scripts/architecture_audit.py`
-- Workflow: `.github/workflows/architecture-audit.yml`
-- Allowed generated outputs:
-  - `docs/audit-snapshot.md`
-  - `.github/architecture-audit-state.json`
-- `docs/current-architecture.md` is canonical and must never be overwritten by automation.
+If you are new to Fiber Link, read these in order:
 
-## Placeholder marker policy
+1. **[Getting Started](getting-started.md)** — Product loop, audience paths, first verification commands, and key screens.
+2. **[Current Status](current-status.md)** — What works today, operator surfaces, evidence, and honest boundaries.
+3. **[Milestone Acceptance](acceptance/README.md)** — Checkpoint-level delivery evidence.
 
-- Do not leave unresolved placeholder markers in user-facing docs.
-- Track unresolved doc work as GitHub issues and link issue IDs in the relevant docs.
+---
 
-## Plugin testing
+## Product and User Guides
 
-- `docs/runbooks/phase2-verification.md` — end-to-end verification flow for service and plugin changes.
-- `scripts/plugin-smoke.sh` — local Discourse plugin smoke test entrypoint that runs in Docker (no local Ruby required).
+Practical, user-facing guides for understanding and operating the product:
 
-## Local workflow + Playwright demo
+| Guide | What It Covers |
+|---|---|
+| [Getting Started](getting-started.md) | First-time orientation for evaluators, operators, Discourse admins, and developers. |
+| [Current Status](current-status.md) | Shipped capabilities, operator surfaces, verified evidence, and limitations. |
+| [Overview](00-overview.md) | Short project overview, motivation, hosted-hub model, and proposal reference. |
+| [MVP Scope](01-scope-mvp.md) | MVP scope, non-goals, and product boundary. |
+| [Development Progress](06-development-progress.md) | Delivery history and completed milestone checkpoints. |
+| [Admin Installation](admin-installation.md) | Install and verify the Discourse plugin and compose deployment. |
 
-- `docs/runbooks/local-playwright-workflow-demo.md` — one-command local demo flow (Discourse + tip modal + author/admin checks).
-- `docs/runbooks/e2e-discourse-four-flows.md` — four-flow end-to-end verification (UI + backend interfaces + settlement strategy + withdrawal explorer proof).
-- `docs/runbooks/discourse-four-flows-demo-repro.md` — standalone operator playbook for full repro (full run, fast rerun, artifacts, screenshots, Downloads transfer, explorer validation).
-- `scripts/local-workflow-automation.sh` — backend workflow automation for discourse seed, tip settlement, balance check, and withdrawal request.
-- `scripts/playwright-demo-local-workflow.sh` — two-phase demo wrapper: pause at step4 for browser demo, then backend completion + post-check.
-- `scripts/playwright-workflow-step4.sh` — browser automation for login + tip modal invoice generation.
-- `scripts/playwright-workflow-postcheck.sh` — browser automation for author/admin dashboard checks.
-- `scripts/e2e-discourse-four-flows.sh` — orchestrates four required local e2e flows and emits structured artifacts.
+---
+
+## Operator Runbooks
+
+Use these when you need executable procedures rather than narrative explanation.
+
+| Runbook | What It Covers |
+|---|---|
+| [Discourse Plugin Admin](runbooks/discourse-plugin-admin.md) | Install, configure, and verify the plugin, Tip action, and creator dashboard. |
+| [Fiber Link Stack Deployment](runbooks/fiber-link-stack-deployment.md) | Deploy service, worker, database, Redis, and Fiber nodes with health checks. |
+| [Compose Reference](runbooks/compose-reference.md) | Docker Compose service reference and deterministic smoke usage. |
+| [Mainnet Deployment Checklist](runbooks/mainnet-deployment-checklist.md) | Preflight, rollback, and post-deploy verification for mainnet readiness. |
+| [Deployment Evidence](runbooks/deployment-evidence.md) | Capture deployment artifacts, logs, and retention metadata. |
+| [Compose Backup Recovery](runbooks/compose-backup-recovery.md) | Capture and restore compose backup bundles. |
+| [Compose Ops Monitoring](runbooks/compose-ops-monitoring.md) | Monitoring summary and operations posture checks. |
+| [Withdrawal Policy Operations](runbooks/withdrawal-policy-operations.md) | Review and change withdrawal limits and app policy. |
+| [Withdrawal Reconciliation](runbooks/withdrawal-reconciliation.md) | Reconcile ledger, withdrawal state, and execution evidence. |
+| [Settlement Recovery](runbooks/settlement-recovery.md) | Replay or backfill settlement discovery safely. |
+| [Tip Settlement Reconciliation](runbooks/tip-settlement-reconciliation.md) | Reconcile tips, invoices, settlement state, and ledger crediting. |
+
+---
+
+## Demo and Acceptance Evidence
+
+| Evidence Area | What It Contains |
+|---|---|
+| [Acceptance Tracker](acceptance/README.md) | Canonical milestone tracker and checkpoint links. |
+| [Acceptance Source Inventory](acceptance/source-inventory.md) | Inventory mapping docs to acceptance coverage. |
+| [Milestone 1](acceptance/milestone-1/index.md) | Milestone 1 checkpoint index. |
+| [Milestone 2](acceptance/milestone-2/index.md) | Milestone 2 checkpoint index. |
+| [Milestone 3](acceptance/milestone-3/index.md) | Withdrawals, admin controls, production hardening, and mainnet-readiness checkpoints. |
+| [Milestone 1 Evidence](runbooks/acceptance-evidence/milestone-1/index.md) | Milestone 1 proof index. |
+| [Milestone 2 Evidence](runbooks/acceptance-evidence/milestone-2/index.md) | Milestone 2 proof index. |
+| [Milestone 3 Evidence](runbooks/acceptance-evidence/milestone-3/index.md) | Milestone 3 proof index. |
+| [W5 Demo Evidence](runbooks/w5-demo-evidence.md) | Earlier demo evidence runbook. |
+| [Discourse Four Flows Demo Repro](runbooks/discourse-four-flows-demo-repro.md) | Full demo reproduction playbook. |
+| [Local Playwright Workflow Demo](runbooks/local-playwright-workflow-demo.md) | Local browser demo automation. |
+
+---
+
+## Architecture and Security
+
+These documents explain how the system works and what operators must protect.
+
+| Document | What It Defines |
+|---|---|
+| [Current Architecture](current-architecture.md) | Canonical architecture index and current component map. |
+| [Architecture](02-architecture.md) | Original component architecture and data flow. |
+| [Threat Model](05-threat-model.md) | MVP threat model and risk controls. |
+| [Security Assumptions](runbooks/security-assumptions.md) | Trust assumptions, operational limits, fallback boundaries, and contacts. |
+| [Security Controls Evidence Map](runbooks/security-controls-evidence-map.md) | Security controls mapped to evidence. |
+| [Threat Model Evidence Checklist](runbooks/threat-model-evidence-checklist.md) | Threat-control verification checklist and evidence retention rules. |
+| [Risks and Open Questions](03-risks-open-questions.md) | Known risks, assumptions, and open questions. |
+| [Research Plan](04-research-plan.md) | Research checklist and milestone framing. |
+
+---
+
+## Admin and Governance Decisions
+
+| Decision / SOP | What It Covers |
+|---|---|
+| [Admin Membership SOP](runbooks/admin-membership-sop.md) | Grant, revoke, and audit app admin access. |
+| [Admin Membership Model](decisions/2026-02-10-admin-membership-model.md) | Role model decision for `SUPER_ADMIN` and `COMMUNITY_ADMIN`. |
+| [Custody Ops Controls](decisions/2026-02-10-custody-ops-controls.md) | Hosted custody baseline controls. |
+| [Settlement Discovery Strategy](decisions/2026-02-10-settlement-discovery-strategy.md) | Settlement discovery design decision. |
+| [USD Price Feed Policy](decisions/2026-02-10-usd-price-feed-policy.md) | Price feed policy decision. |
+| [Phase 2 Decisions](decisions/2026-02-07-phase2-decisions.md) | Earlier phase decision summary. |
+
+---
+
+## Developer and Test Workflows
+
+| Workflow | What It Covers |
+|---|---|
+| [Phase 2 Verification](runbooks/phase2-verification.md) | Service and plugin verification flow. |
+| [E2E Discourse Four Flows](runbooks/e2e-discourse-four-flows.md) | UI, backend, settlement, withdrawal, and explorer proof. |
+| [E2E Invoice Payment Accounting](runbooks/e2e-invoice-payment-accounting.md) | Invoice payment and accounting verification. |
+| [Fiber Adapter E2E](runbooks/fiber-adapter-e2e.md) | Fiber adapter to FNN RPC validation in Docker. |
+| [Sandbox Simulation](runbooks/sandbox-simulation.md) | Local/sandbox simulation workflow. |
+| [Testnet Bootstrap](runbooks/testnet-bootstrap.md) | Deterministic precheck, spin-up, RPC validation, invoice smoke, and cleanup. |
+
+Useful script entry points:
+
+- `scripts/plugin-smoke.sh` — local Discourse plugin smoke test.
+- `scripts/testnet-smoke.sh` — local testnet sanity check with machine-readable PASS/FAIL output.
+- `scripts/e2e-discourse-four-flows.sh` — orchestrates the four required local e2e flows.
 - `scripts/capture-e2e-discourse-four-flows-evidence.sh` — captures and archives four-flow evidence bundles.
+- `scripts/capture-deployment-evidence.sh` — captures deployment evidence and logs.
+- `scripts/capture-compose-backup.sh` — captures a compose backup bundle.
+- `scripts/restore-compose-backup.sh` — restore flow for a compose backup bundle or archive.
 
-## W4 integration tracking
+---
 
-- `docs/runbooks/w4-integration-status-2026-02-17.md` — issue #36 W4 subtask matrix, completion snapshot, and verification/operations checks as of 2026-02-17.
-- `docs/runbooks/w4-integration-closeout-2026-02-21.md` — final W4 closeout summary showing all #36 scope items and legacy supporting tasks closed as of 2026-02-21.
+## Historical Planning Archive
 
-## Admin installation
+The planning archive is intentionally broad. It is useful engineering history, but it is not the best starting point for a new reader.
 
-- `docs/admin-installation.md` — admin installation and verification flow for Discourse + compose deployment, including the standalone plugin mirror repo used for operator installs.
+Start with these entry points before opening individual plan files:
 
-## Milestone acceptance
+| Entry Point | What It Contains |
+|---|---|
+| [Production Readiness Audit](plans/2026-03-18-production-readiness-audit.md) | Audit against production hardening, monitoring, limits, backups, and docs. |
+| [Production Hardening Closeout](plans/2026-03-18-production-hardening-closeout.md) | Closeout snapshot for production-hardening gaps. |
+| [Issue #32 Epic Closeout](plans/2026-02-21-issue-32-epic-closeout.md) | Final closeout mapping for the major epic. |
+| [Phase 2 Delivery Plan](plans/2026-02-07-phase2-delivery-plan.md) | Historical Phase 2 delivery plan. |
+| [Fiber Link MVP Design](plans/2026-02-03-fiber-link-mvp-design.md) | Historical early design snapshot. |
+| [Fiber Link MVP Plan](plans/2026-02-03-fiber-link-mvp-plan.md) | Historical implementation draft. |
 
-- `docs/acceptance/README.md` — canonical milestone acceptance tracker.
-- `docs/acceptance/source-inventory.md` — full docs inventory and acceptance mapping.
-- `docs/acceptance/milestone-1/index.md` — Milestone 1 checkpoints and acceptance gate.
-- `docs/acceptance/milestone-2/index.md` — Milestone 2 checkpoints and acceptance gate.
-- `docs/acceptance/milestone-3/index.md` — Milestone 3 checkpoints and acceptance gate.
+> **Note:** Prefer `README.md`, `getting-started.md`, `current-status.md`, active runbooks, and acceptance indexes for user-facing truth. Use `docs/plans/` for historical context and implementation archaeology.
 
-## Testnet bootstrap
+---
 
-- `docs/runbooks/testnet-bootstrap.md` — deterministic precheck -> spin-up -> RPC validation -> invoice smoke -> cleanup flow.
+## Document Precedence
 
-## Testnet smoke
+When documents appear to conflict, resolve ambiguity in this order:
 
-- `docs/runbooks/compose-reference.md` — compose reference and deterministic smoke usage.
-- `scripts/testnet-smoke.sh` — one-command local testnet sanity check with machine-readable PASS/FAIL output.
-- `docs/runbooks/fiber-adapter-e2e.md` — end-to-end validation for `fiber-adapter -> fnn rpc` in docker network.
-- `scripts/e2e-fiber-adapter-docker.sh` — runnable entrypoint for the `fiber-adapter` docker e2e probe.
+1. Repository `README.md` for product positioning and entry points.
+2. `docs/current-status.md` for shipped capability and honest boundaries.
+3. Active runbooks under `docs/runbooks/`.
+4. Acceptance indexes under `docs/acceptance/` and `docs/runbooks/acceptance-evidence/`.
+5. Architecture/security documents under `docs/`.
+6. Historical plans under `docs/plans/`.
 
-## Deployment evidence
+---
 
-- `docs/runbooks/deployment-evidence.md` — deployment evidence artifacts, checklist, and retention policy.
-- `scripts/capture-deployment-evidence.sh` — one-command evidence and log capture bundle.
-- `docs/runbooks/fiber-link-stack-deployment.md` — operator runbook for deploying FNN + Fiber Link services with Docker/Docker Compose, including local CKB sweep/channel-rotation liquidity fallback gates, Coolify drift checks, health checks, and backend admin-side handoff.
-- `docs/runbooks/discourse-plugin-admin.md` — Discourse administrator workflow for installing the Fiber Link plugin, enabling it, connecting it to a live backend, and verifying the post-menu Tip action plus `/fiber-link` Recent Activity dashboard.
-- `scripts/capture-compose-backup.sh` — one-command compose backup bundle capture with retention metadata and archive output.
-- `scripts/restore-compose-backup.sh` — restore flow for a compose backup bundle or archive with dry-run support.
-- `docs/runbooks/mainnet-deployment-checklist.md` — mainnet preflight, rollback, and post-deploy verification gate.
+## Documentation Rules
 
-## Security assumptions
-
-- `docs/runbooks/security-assumptions.md` — versioned trust assumptions, operational limits, fallback boundaries, and ownership contacts.
-- `docs/runbooks/threat-model-evidence-checklist.md` — W1 threat-control verification checklist, acceptance matrix, and evidence retention/sign-off rules.
-- `docs/runbooks/admin-membership-sop.md` — operational grant/revoke + audit SOP for `app_admins`.
-- `docs/runbooks/acceptance-evidence/milestone-1/index.md` — milestone 1 proof index.
-- `docs/runbooks/acceptance-evidence/milestone-2/index.md` — milestone 2 proof index.
-- `docs/runbooks/acceptance-evidence/milestone-3/index.md` — milestone 3 proof index.
-
-## Kanban operations
-
-- `docs/runbooks/kanban-project-id.md` — project ID resolution order, fallback ID ownership, and rotation procedure.
-
-### Request-spec coverage tracked in CI
-
-The CI `plugin-smoke` job runs:
-
-- `plugins/fiber-link/spec/requests/fiber_link_spec.rb`
-- `plugins/fiber-link/spec/requests/fiber_link/rpc_controller_spec.rb`
-
-System specs are optional and can be opted into via `PLUGIN_SMOKE_EXTRA_SPECS` when invoking
-`scripts/plugin-smoke.sh` locally or by setting the same variable in CI.
+- Keep user-facing docs plain and task-oriented.
+- Explain what a community member, creator, admin, or operator can do before exposing internal component names.
+- Do not include secrets, raw invoices, private keys, API tokens, or passwords in docs or evidence bundles.
+- Track unresolved documentation work as GitHub issues and link the issue from the relevant doc.
+- Avoid unresolved placeholder markers in user-facing docs.
