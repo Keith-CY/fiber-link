@@ -69,10 +69,18 @@ export default class FiberLinkWithdrawalPanel extends Component {
   }
 
   get receiveAmount() {
+    if (this.asset === "CKB") {
+      return normalizeValue(this.amount) || "0";
+    }
+
     return normalizeValue(this.quote?.receiveAmount) || normalizeValue(this.amount) || "0";
   }
 
   get networkFee() {
+    if (this.asset === "CKB") {
+      return "0";
+    }
+
     return normalizeValue(this.quote?.networkFee) || "0";
   }
 

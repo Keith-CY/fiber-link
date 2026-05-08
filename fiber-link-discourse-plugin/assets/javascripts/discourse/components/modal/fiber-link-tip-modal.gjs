@@ -567,7 +567,7 @@ export default class FiberLinkTipModal extends Component {
                 {{/if}}
                 <div class="fiber-link-tip-modal__recipient-copy">
                   <strong>@{{this.targetUsername}}</strong>
-                  <span>Recipient · verified 2d ago</span>
+                  <span>Recipient · Fiber Link profile</span>
                 </div>
               </div>
               <p class="fiber-link-tip-modal__receive-note">
@@ -583,7 +583,7 @@ export default class FiberLinkTipModal extends Component {
               </div>
               <div class="fiber-link-tip-modal__meta-cell">
                 <span>Network</span>
-                <strong>Fiber Link · Mainnet</strong>
+                <strong>Fiber Link · Testnet</strong>
               </div>
             </div>
           </header>
@@ -804,18 +804,9 @@ export default class FiberLinkTipModal extends Component {
 
           <div class="fiber-link-tip-footer__actions">
             <div class="fiber-link-tip-footer__secondary">
-              {{#if this.isConfirmedStep}}
-                <a
-                  href={{this.brandHomepageUrl}}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="btn"
-                >
-                  View Fiber Link
-                </a>
-              {{else}}
+              {{#unless this.isConfirmedStep}}
                 <DModalCancel @close={{@closeModal}} />
-              {{/if}}
+              {{/unless}}
             </div>
 
             <div class="fiber-link-tip-footer__primary">

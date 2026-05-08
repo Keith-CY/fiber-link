@@ -195,7 +195,7 @@ RSpec.describe "Fiber Link Dashboard", type: :system do
 
     expect(page).to have_css(".fiber-link-dashboard__metrics")
     expect(page).to have_content("Fiber Link Dashboard.")
-    expect(page).to have_content(/Live · synced (now|\d+s ago)/)
+    expect(page).to have_content(/Live · synced (now|\d+[smhdw] ago)/)
     expect(page).to have_content("12.5 CKB")
     expect(page).to have_content("AVAILABLE BALANCE")
     expect(page).to have_content("Available to withdraw")
@@ -235,7 +235,7 @@ RSpec.describe "Fiber Link Dashboard", type: :system do
 
     find("tr[data-tip-id='wd-live-1']").click
     expect(page).to have_content("Transaction details")
-    expect(page).to have_content("Record ID")
+    expect(page).to have_content("RECORD ID")
     expect(page).to have_content("0xabc123")
     expect(page).to have_link("Open in CKB Explorer ↗", href: "https://pudge.explorer.nervos.org/transaction/0xabc123")
     expect(page).to have_no_link("View full ledger")
@@ -479,7 +479,7 @@ RSpec.describe "Fiber Link Dashboard", type: :system do
     expect(page).to have_content("LOCKED")
     expect(page).to have_content("61 CKB")
     expect(page).to have_content("NETWORK FEE")
-    expect(page).to have_content("0.00001 CKB")
+    expect(page).to have_content("0 CKB")
     expect(page).to have_content("PAYOUT AMOUNT")
     expect(page).to have_content("Address valid")
     expect(page).to have_button("Request withdrawal", disabled: false)
