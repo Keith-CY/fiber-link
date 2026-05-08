@@ -48,7 +48,7 @@ function isTopicPath() {
     return false;
   }
 
-  return /^\/t\//.test(window.location?.pathname || "");
+  return (window.location?.pathname || "").indexOf("/t/") === 0;
 }
 
 function topicTipHasHydrated() {
@@ -149,6 +149,32 @@ function scheduleDashboardBootFallback() {
   window.setTimeout(injectDashboardBootFallback, DASHBOARD_BOOT_TIMEOUT_MS);
 }
 
+function monitorBootFallbacks() {
+  if (typeof window === "undefined" || typeof document === "undefined") {
+    return;
+  }
+
+  let observedPath = window.location?.pathname || "";
+  let observedAt = Date.now();
+
+  window.setInterval(() => {
+    const currentPath = window.location?.pathname || "";
+    if (currentPath !== observedPath) {
+      observedPath = currentPath;
+      observedAt = Date.now();
+    }
+
+    const elapsed = Date.now() - observedAt;
+    if (isDashboardPath() && elapsed >= DASHBOARD_BOOT_TIMEOUT_MS) {
+      injectDashboardBootFallback();
+    }
+
+    if (isTopicPath() && elapsed >= TOPIC_BOOT_TIMEOUT_MS) {
+      injectTopicBootFallback();
+    }
+  }, 1000);
+}
+
 function normalizeIntersectionObserverRootMargin(rootMargin) {
   if (typeof rootMargin !== "string") {
     return rootMargin;
@@ -231,5 +257,6 @@ export default {
     publishRuntime(runtime);
     scheduleDashboardBootFallback();
     scheduleTopicBootFallback();
+    monitorBootFallbacks();
   },
 };
