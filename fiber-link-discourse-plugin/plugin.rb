@@ -107,31 +107,31 @@ FIBER_LINK_DASHBOARD_BOOT_FALLBACK_BODY = <<~JS
   })();
 JS
 
-register_html_builder("server:before-head-close") do |controller|
-  nonce = ContentSecurityPolicy.nonce_placeholder(controller.response.headers)
-  <<~HTML
-    <script nonce="#{nonce}" data-fiber-link-topic-head-boot-fallback>
-      #{FIBER_LINK_TOPIC_BOOT_FALLBACK_BODY}
-    </script>
-    <script nonce="#{nonce}" data-fiber-link-dashboard-head-boot-fallback>
-      #{FIBER_LINK_DASHBOARD_BOOT_FALLBACK_BODY}
-    </script>
-  HTML
-end
-
-register_html_builder("server:before-body-close") do |controller|
-  nonce = ContentSecurityPolicy.nonce_placeholder(controller.response.headers)
-  <<~HTML
-    <script nonce="#{nonce}" data-fiber-link-topic-boot-fallback>
-      #{FIBER_LINK_TOPIC_BOOT_FALLBACK_BODY}
-    </script>
-    <script nonce="#{nonce}" data-fiber-link-dashboard-boot-fallback>
-      #{FIBER_LINK_DASHBOARD_BOOT_FALLBACK_BODY}
-    </script>
-  HTML
-end
-
 after_initialize do
+  register_html_builder("server:before-head-close") do |controller|
+    nonce = ContentSecurityPolicy.nonce_placeholder(controller.response.headers)
+    <<~HTML
+      <script nonce="#{nonce}" data-fiber-link-topic-head-boot-fallback>
+        #{FIBER_LINK_TOPIC_BOOT_FALLBACK_BODY}
+      </script>
+      <script nonce="#{nonce}" data-fiber-link-dashboard-head-boot-fallback>
+        #{FIBER_LINK_DASHBOARD_BOOT_FALLBACK_BODY}
+      </script>
+    HTML
+  end
+
+  register_html_builder("server:before-body-close") do |controller|
+    nonce = ContentSecurityPolicy.nonce_placeholder(controller.response.headers)
+    <<~HTML
+      <script nonce="#{nonce}" data-fiber-link-topic-boot-fallback>
+        #{FIBER_LINK_TOPIC_BOOT_FALLBACK_BODY}
+      </script>
+      <script nonce="#{nonce}" data-fiber-link-dashboard-boot-fallback>
+        #{FIBER_LINK_DASHBOARD_BOOT_FALLBACK_BODY}
+      </script>
+    HTML
+  end
+
   require_dependency File.expand_path("lib/fiber_link/service_client.rb", __dir__)
   require_dependency File.expand_path("lib/fiber_link/tip_notification_sync.rb", __dir__)
   require_dependency File.expand_path("app/controllers/fiber_link/rpc_controller.rb", __dir__)
