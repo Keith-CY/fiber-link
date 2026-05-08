@@ -40,6 +40,7 @@ export const withdrawalStateEnum = pgEnum("withdrawal_state", [
   "LIQUIDITY_PENDING",
   "PENDING",
   "PROCESSING",
+  "BROADCASTED",
   "RETRY_PENDING",
   "COMPLETED",
   "FAILED",

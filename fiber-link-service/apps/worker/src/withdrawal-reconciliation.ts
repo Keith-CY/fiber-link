@@ -120,19 +120,19 @@ export function buildWithdrawalParityReport(args: {
   for (const withdrawal of args.withdrawals) {
     const linkedDebits = debitsByWithdrawalId.get(withdrawal.id) ?? [];
 
-    if (withdrawal.state === "COMPLETED") {
+    if (withdrawal.state === "COMPLETED" || withdrawal.state === "BROADCASTED") {
       if (!withdrawal.txHash) {
         addIssue({
           kind: "COMPLETED_WITHDRAWAL_MISSING_TX_HASH",
           withdrawalId: withdrawal.id,
-          detail: "completed withdrawal is missing txHash evidence",
+          detail: `${withdrawal.state.toLowerCase()} withdrawal is missing txHash evidence`,
         });
       }
       if (linkedDebits.length === 0) {
         addIssue({
           kind: "COMPLETED_WITHDRAWAL_MISSING_DEBIT",
           withdrawalId: withdrawal.id,
-          detail: "completed withdrawal has no matching debit entry",
+          detail: `${withdrawal.state.toLowerCase()} withdrawal has no matching debit entry`,
         });
       }
     } else if (linkedDebits.length > 0) {

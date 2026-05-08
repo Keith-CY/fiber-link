@@ -101,17 +101,20 @@ export type WithdrawalRepo = {
   findByIdOrThrow(id: string): Promise<WithdrawalRecord>;
   listLiquidityPending(): Promise<WithdrawalRecord[]>;
   listReadyForProcessing(now: Date): Promise<WithdrawalRecord[]>;
+  listBroadcastedForConfirmation(): Promise<WithdrawalRecord[]>;
   markPendingFromLiquidity(id: string, now: Date): Promise<WithdrawalRecord>;
   markProcessing(id: string, now: Date): Promise<WithdrawalRecord>;
-  markCompleted(id: string, params: { now: Date; txHash: string }): Promise<WithdrawalRecord>;
+  markBroadcastedWithDebit(id: string, params: { now: Date; txHash: string }, deps: CompletionDeps): Promise<WithdrawalRecord>;
+  markCompleted(id: string, params: { now: Date; txHash?: string }): Promise<WithdrawalRecord>;
   markCompletedWithDebit(id: string, params: { now: Date; txHash: string }, deps: CompletionDeps): Promise<WithdrawalRecord>;
   markRetryPending(id: string, params: { now: Date; nextRetryAt: Date; error: string }): Promise<WithdrawalRecord>;
+  markFailedFromBroadcasted(id: string, params: { now: Date; error: string }): Promise<WithdrawalRecord>;
   markFailed(id: string, params: { now: Date; error: string; incrementRetryCount?: boolean }): Promise<WithdrawalRecord>;
   __resetForTests?: () => void;
 };
 
 type WithdrawalRow = typeof withdrawals.$inferSelect;
-const reservedWithdrawalStates: WithdrawalState[] = ["LIQUIDITY_PENDING", "PENDING", "PROCESSING", "RETRY_PENDING"];
+const reservedWithdrawalStates: WithdrawalState[] = ["LIQUIDITY_PENDING", "PENDING", "PROCESSING", "BROADCASTED", "RETRY_PENDING"];
 
 function toRecord(row: WithdrawalRow): WithdrawalRecord {
   return {
@@ -200,7 +203,7 @@ async function getActiveCkbAddressReservationTotalWithClient(
         eq(withdrawals.appId, input.appId),
         eq(withdrawals.asset, input.asset),
         eq(withdrawals.destinationKind, "CKB_ADDRESS"),
-        inArray(withdrawals.state, ["PENDING", "PROCESSING", "RETRY_PENDING"]),
+        inArray(withdrawals.state, ["PENDING", "PROCESSING", "BROADCASTED", "RETRY_PENDING"]),
         sql`${withdrawals.toAddress} ILIKE ${ckbAddressPrefixForNetwork(input.network)}`,
       ),
     );
@@ -398,6 +401,14 @@ export function createDbWithdrawalRepo(db: DbClient): WithdrawalRepo {
       return [...pendingRows, ...retryReadyRows].map(toRecord);
     },
 
+    async listBroadcastedForConfirmation() {
+      const rows = await db
+        .select()
+        .from(withdrawals)
+        .where(eq(withdrawals.state, "BROADCASTED"));
+      return rows.map(toRecord);
+    },
+
     async markPendingFromLiquidity(id, now) {
       const [row] = await db
         .update(withdrawals)
@@ -431,18 +442,59 @@ export function createDbWithdrawalRepo(db: DbClient): WithdrawalRepo {
       return toRecord(row);
     },
 
+    async markBroadcastedWithDebit(id, params, _deps) {
+      return db.transaction(async (tx) => {
+        const [row] = await tx
+          .update(withdrawals)
+          .set({
+            state: "BROADCASTED",
+            nextRetryAt: null,
+            lastError: null,
+            updatedAt: params.now,
+            txHash: params.txHash,
+          })
+          .where(and(eq(withdrawals.id, id), eq(withdrawals.state, "PROCESSING")))
+          .returning();
+
+        if (!row) {
+          await throwInvalidTransition(tx, id, "BROADCASTED");
+        }
+
+        const ledgerRepo = createDbLedgerRepo(tx);
+        await ledgerRepo.debitOnce({
+          appId: row.appId,
+          userId: row.userId,
+          asset: row.asset as WithdrawalAsset,
+          amount: typeof row.amount === "string" ? row.amount : String(row.amount),
+          refId: row.id,
+          idempotencyKey: withdrawalDebitIdempotencyKey(row.id),
+        });
+
+        return toRecord(row);
+      });
+    },
+
     async markCompleted(id, params) {
+      const setValues = params.txHash
+        ? {
+            state: "COMPLETED" as const,
+            nextRetryAt: null,
+            lastError: null,
+            updatedAt: params.now,
+            completedAt: params.now,
+            txHash: params.txHash,
+          }
+        : {
+            state: "COMPLETED" as const,
+            nextRetryAt: null,
+            lastError: null,
+            updatedAt: params.now,
+            completedAt: params.now,
+          };
       const [row] = await db
         .update(withdrawals)
-        .set({
-          state: "COMPLETED",
-          nextRetryAt: null,
-          lastError: null,
-          updatedAt: params.now,
-          completedAt: params.now,
-          txHash: params.txHash,
-        })
-        .where(and(eq(withdrawals.id, id), eq(withdrawals.state, "PROCESSING")))
+        .set(setValues)
+        .where(and(eq(withdrawals.id, id), eq(withdrawals.state, "BROADCASTED")))
         .returning();
       if (!row) {
         await throwInvalidTransition(db, id, "COMPLETED");
@@ -497,6 +549,23 @@ export function createDbWithdrawalRepo(db: DbClient): WithdrawalRepo {
         .returning();
       if (!row) {
         await throwInvalidTransition(db, id, "RETRY_PENDING");
+      }
+      return toRecord(row);
+    },
+
+    async markFailedFromBroadcasted(id, params) {
+      const [row] = await db
+        .update(withdrawals)
+        .set({
+          state: "FAILED",
+          nextRetryAt: null,
+          lastError: params.error,
+          updatedAt: params.now,
+        })
+        .where(and(eq(withdrawals.id, id), eq(withdrawals.state, "BROADCASTED")))
+        .returning();
+      if (!row) {
+        await throwInvalidTransition(db, id, "FAILED");
       }
       return toRecord(row);
     },
@@ -639,7 +708,10 @@ export function createInMemoryWithdrawalRepo(): WithdrawalRepo {
           item.asset === input.asset &&
           item.destinationKind === "CKB_ADDRESS" &&
           item.toAddress.toLowerCase().startsWith(prefix) &&
-          (item.state === "PENDING" || item.state === "PROCESSING" || item.state === "RETRY_PENDING"),
+          (item.state === "PENDING" ||
+            item.state === "PROCESSING" ||
+            item.state === "BROADCASTED" ||
+            item.state === "RETRY_PENDING"),
       );
       return sumAmounts(active.map((item) => item.amount));
     },
@@ -664,6 +736,10 @@ export function createInMemoryWithdrawalRepo(): WithdrawalRepo {
             (item.state === "RETRY_PENDING" && item.nextRetryAt !== null && item.nextRetryAt <= now),
         )
         .map(clone);
+    },
+
+    async listBroadcastedForConfirmation() {
+      return records.filter((item) => item.state === "BROADCASTED").map(clone);
     },
 
     async markPendingFromLiquidity(id, now) {
@@ -693,7 +769,50 @@ export function createInMemoryWithdrawalRepo(): WithdrawalRepo {
       return clone(record);
     },
 
+    async markBroadcastedWithDebit(id, params, deps) {
+      const record = records.find((item) => item.id === id);
+      if (!record) {
+        throw new WithdrawalNotFoundError(id);
+      }
+      if (record.state !== "PROCESSING") {
+        throw new WithdrawalTransitionConflictError("BROADCASTED", record.state, id);
+      }
+      record.state = "BROADCASTED";
+      record.nextRetryAt = null;
+      record.lastError = null;
+      record.updatedAt = params.now;
+      record.txHash = params.txHash;
+      await deps.ledgerRepo.debitOnce({
+        appId: record.appId,
+        userId: record.userId,
+        asset: record.asset,
+        amount: record.amount,
+        refId: record.id,
+        idempotencyKey: withdrawalDebitIdempotencyKey(record.id),
+      });
+      return clone(record);
+    },
+
     async markCompleted(id, params) {
+      const record = records.find((item) => item.id === id);
+      if (!record) {
+        throw new WithdrawalNotFoundError(id);
+      }
+      if (record.state !== "BROADCASTED") {
+        throw new WithdrawalTransitionConflictError("COMPLETED", record.state, id);
+      }
+      record.state = "COMPLETED";
+      record.nextRetryAt = null;
+      record.lastError = null;
+      record.updatedAt = params.now;
+      record.completedAt = params.now;
+      if (params.txHash) {
+        record.txHash = params.txHash;
+      }
+      return clone(record);
+    },
+
+    async markCompletedWithDebit(id, params, deps) {
       const record = records.find((item) => item.id === id);
       if (!record) {
         throw new WithdrawalNotFoundError(id);
@@ -707,11 +826,6 @@ export function createInMemoryWithdrawalRepo(): WithdrawalRepo {
       record.updatedAt = params.now;
       record.completedAt = params.now;
       record.txHash = params.txHash;
-      return clone(record);
-    },
-
-    async markCompletedWithDebit(id, params, deps) {
-      const record = await this.markCompleted(id, params);
       await deps.ledgerRepo.debitOnce({
         appId: record.appId,
         userId: record.userId,
@@ -720,7 +834,7 @@ export function createInMemoryWithdrawalRepo(): WithdrawalRepo {
         refId: record.id,
         idempotencyKey: withdrawalDebitIdempotencyKey(record.id),
       });
-      return record;
+      return clone(record);
     },
 
     async markRetryPending(id, params) {
@@ -736,6 +850,21 @@ export function createInMemoryWithdrawalRepo(): WithdrawalRepo {
       record.nextRetryAt = params.nextRetryAt;
       record.lastError = params.error;
       record.updatedAt = params.now;
+      return clone(record);
+    },
+
+    async markFailedFromBroadcasted(id, params) {
+      const record = records.find((item) => item.id === id);
+      if (!record) {
+        throw new WithdrawalNotFoundError(id);
+      }
+      if (record.state !== "BROADCASTED") {
+        throw new WithdrawalTransitionConflictError("FAILED", record.state, id);
+      }
+      record.state = "FAILED";
+      record.updatedAt = params.now;
+      record.nextRetryAt = null;
+      record.lastError = params.error;
       return clone(record);
     },
 
