@@ -70,6 +70,8 @@ docker compose down
 
 ## 3) Install and enable the Discourse plugin
 
+For a screenshot-backed operator walkthrough, see [Discourse Plugin Installation with Screenshots](discourse-plugin-installation.md).
+
 The plugin source of truth in this repo is `fiber-link-discourse-plugin/`.
 
 For operator installs, use the standalone plugin repository:
