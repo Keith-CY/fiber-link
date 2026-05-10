@@ -219,6 +219,38 @@ RSpec.describe "Fiber Link Tip", type: :system do
     expect(page).to have_css("[data-fiber-link-tip-modal='copy-invoice'] .d-icon-copy")
   end
 
+  it "nudges the matching post Tip button after an appreciation action" do
+    visit topic.relative_url
+
+    expect(page).to have_css(".post-action-menu__fiber-link-tip[data-fiber-link-tip-button='post-menu']")
+
+    page.execute_script(<<~JS)
+      const tipButton = document.querySelector(
+        ".post-action-menu__fiber-link-tip[data-fiber-link-tip-button='post-menu']",
+      );
+      const post = tipButton.closest("[data-post-id], article[id^='post_'], .topic-post, .boxed");
+      const action = document.createElement("button");
+      action.type = "button";
+      action.className = "toggle-like";
+      action.textContent = "Like";
+      post.appendChild(action);
+      action.click();
+    JS
+
+    expect(page).to have_css(
+      ".post-action-menu__fiber-link-tip[data-fiber-link-tip-nudge='active'][data-fiber-link-tip-nudge-text='Send a small tip']",
+      wait: 2,
+    )
+    expect(page).to have_no_css(
+      ".post-action-menu__fiber-link-tip[data-fiber-link-tip-nudge='active']",
+      wait: 3,
+    )
+    expect(page).to have_no_css(
+      ".post-action-menu__fiber-link-tip[data-fiber-link-tip-nudge-text]",
+      wait: 1,
+    )
+  end
+
   it "labels the context as a reply when opened from a reply tip button" do
     visit topic.relative_url
     expect(page).to have_css(

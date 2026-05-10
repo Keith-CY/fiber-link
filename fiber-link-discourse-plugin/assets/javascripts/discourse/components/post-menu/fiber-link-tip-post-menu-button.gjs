@@ -145,6 +145,7 @@ export default class FiberLinkTipPostMenuButton extends Component {
         @icon="gift"
         @action={{this.openTipModal}}
         data-fiber-link-tip-button="post-menu"
+        data-fiber-link-tip-post-id={{this.postId}}
         ...attributes
       />
     {{/if}}
