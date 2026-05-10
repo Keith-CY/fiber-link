@@ -13,8 +13,9 @@
 <text x="122" y="280" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="22" fill="#e5e7eb">    - exec:</text>
 <text x="122" y="310" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="22" fill="#e5e7eb">        cd: $home/plugins</text>
 <text x="122" y="340" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="22" fill="#e5e7eb">        cmd:</text>
-<text x="122" y="370" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="22" fill="#86efac">          - git clone https://github.com/Keith-CY/fiber-link-discourse-plugin.git fiber-link</text>
-<text x="122" y="400" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="22" fill="#e5e7eb"></text>
-<text x="122" y="430" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="22" fill="#94a3b8"># Save the file before rebuilding the app container.</text>
+<text x="122" y="370" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="22" fill="#86efac">          - git clone</text>
+<text x="122" y="400" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="22" fill="#86efac">            https://github.com/Keith-CY/fiber-link-discourse-plugin.git</text>
+<text x="122" y="430" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="22" fill="#86efac">            fiber-link</text>
+<text x="122" y="460" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="22" fill="#94a3b8"># Save the file before rebuilding the app container.</text>
 <text x="90" y="702" font-family="Inter, Arial, sans-serif" font-size="18" fill="#475569">Illustrative screenshot for Fiber Link operator docs. Replace placeholders with site-specific values.</text>
 </svg>
