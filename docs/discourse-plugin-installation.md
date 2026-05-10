@@ -1,8 +1,8 @@
-# Discourse Plugin Installation with Screenshots
+# Discourse Plugin Installation with Real Screenshots
 
-This guide shows the operator-facing path for installing the Fiber Link Discourse plugin on a standard self-hosted Discourse Docker install.
+This guide shows the operator-facing path for installing the Fiber Link Discourse plugin on a standard self-hosted Discourse Docker install, then verifies the real Fiber Link UI inside Discourse.
 
-> Screenshot note: the images below are documentation-safe illustrative screenshots. They intentionally use placeholders and `[REDACTED]` instead of real secrets or deployment-specific URLs.
+> Screenshot note: the screenshots below were captured from the live Fiber Link demo Discourse site. Secrets are redacted before being committed.
 
 ## Prerequisites
 
@@ -14,8 +14,6 @@ This guide shows the operator-facing path for installing the Fiber Link Discours
 ## 1. Add the plugin to `app.yml`
 
 Open `/var/discourse/containers/app.yml` and add the Fiber Link plugin clone command under `hooks.after_code`:
-
-![Add Fiber Link plugin hook](assets/discourse-install/01-app-yml-plugin-hook.svg)
 
 ```yaml
 hooks:
@@ -32,8 +30,6 @@ Keep the checkout directory as `fiber-link`; the plugin smoke tests and docs ass
 
 Rebuild the app container so Discourse clones the plugin and compiles plugin assets:
 
-![Rebuild Discourse app](assets/discourse-install/02-launcher-rebuild.svg)
-
 ```bash
 cd /var/discourse
 ./launcher rebuild app
@@ -46,12 +42,12 @@ Expected result: the rebuild finishes successfully and the `app` container resta
 After the rebuild, sign in as a Discourse admin and open:
 
 ```text
-Admin > Settings > Plugins
+Admin > All site settings
 ```
 
 Search for `fiber_link` and configure the plugin settings:
 
-![Configure Fiber Link plugin settings](assets/discourse-install/03-admin-plugin-settings.svg)
+![Real Discourse admin settings filtered for Fiber Link](assets/discourse-install/01-admin-plugin-settings-redacted.png)
 
 Required settings:
 
@@ -66,7 +62,7 @@ Never paste production secrets into screenshots, tickets, or docs. Use `[REDACTE
 
 Open a topic or reply authored by another user. The post action row should include a Fiber Link `Tip` button:
 
-![Verify Tip button on a topic](assets/discourse-install/04-tip-button-verification.svg)
+![Real Discourse topic showing Fiber Link Tip buttons](assets/discourse-install/02-topic-tip-buttons.png)
 
 Smoke check:
 
