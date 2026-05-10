@@ -11,6 +11,10 @@ Changes to this mirror are synced from the monorepo by GitHub Actions.
 
 ## Install
 
+For a screenshot-backed operator walkthrough, see the monorepo guide:
+
+- [Discourse Plugin Installation with Screenshots](https://github.com/Keith-CY/fiber-link/blob/main/docs/discourse-plugin-installation.md)
+
 For self-hosted Discourse, add this plugin repository to your Discourse container config and clone it into `plugins/fiber-link`, then rebuild the app.
 
 ```yaml

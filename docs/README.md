@@ -26,6 +26,7 @@ Practical, user-facing guides for understanding and operating the product:
 | [MVP Scope](01-scope-mvp.md) | MVP scope, non-goals, and product boundary. |
 | [Development Progress](06-development-progress.md) | Delivery history and completed milestone checkpoints. |
 | [Admin Installation](admin-installation.md) | Install and verify the Discourse plugin and compose deployment. |
+| [Discourse Plugin Installation with Screenshots](discourse-plugin-installation.md) | Screenshot-backed self-hosted Discourse plugin install, rebuild, settings, and Tip-button verification. |
 
 ---
 
