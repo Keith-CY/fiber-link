@@ -10,7 +10,20 @@ const FIBER_LINK_DASHBOARD_PATH = "/fiber-link";
 const FIBER_LINK_RPC_PATH = "/fiber-link/rpc";
 const DASHBOARD_BOOT_TIMEOUT_MS = 15000;
 const TOPIC_BOOT_TIMEOUT_MS = 15000;
+const TIP_NUDGE_DURATION_MS = 1400;
+const TIP_NUDGE_EVENT_DELAY_MS = 180;
 const INTERSECTION_OBSERVER_GUARD_KEY = "__fiberLinkIntersectionObserverGuard";
+const TIP_NUDGE_SESSION_KEY = "__fiberLinkTipNudgedPosts";
+const TIP_NUDGE_ACTION_SELECTOR = [
+  ".toggle-like",
+  ".post-action-menu__like",
+  ".post-action-menu__bookmark",
+  ".bookmark",
+  "[data-post-action='like']",
+  "[data-post-action='bookmark']",
+  "[data-action-name='like']",
+  "[data-action-name='bookmark']",
+].join(", ");
 
 function buildRuntimeConfig() {
   return {
@@ -227,6 +240,101 @@ function installIntersectionObserverRootMarginGuard() {
   window[INTERSECTION_OBSERVER_GUARD_KEY] = true;
 }
 
+function installTipNudgeListener() {
+  if (typeof window === "undefined" || typeof document === "undefined") {
+    return;
+  }
+
+  if (window.__fiberLinkTipNudgeListenerInstalled) {
+    return;
+  }
+
+  window.__fiberLinkTipNudgeListenerInstalled = true;
+  window[TIP_NUDGE_SESSION_KEY] = window[TIP_NUDGE_SESSION_KEY] || new Set();
+
+  document.addEventListener(
+    "click",
+    (event) => {
+      const action = event.target?.closest?.(TIP_NUDGE_ACTION_SELECTOR);
+      if (
+        !action ||
+        action.closest?.('[data-fiber-link-tip-button="post-menu"]')
+      ) {
+        return;
+      }
+
+      const postElement = action.closest?.(
+        "[data-post-id], article[data-post-id], article[id^='post_'], .topic-post, .boxed",
+      );
+      if (!postElement) {
+        return;
+      }
+
+      const postId =
+        postElement?.dataset?.postId || postElement?.id?.replace(/^post_/, "");
+
+      window.setTimeout(
+        () => triggerTipNudge(postId, postElement),
+        TIP_NUDGE_EVENT_DELAY_MS,
+      );
+    },
+    true,
+  );
+}
+
+function escapeCssIdentifier(value) {
+  if (typeof CSS !== "undefined" && typeof CSS.escape === "function") {
+    return CSS.escape(value);
+  }
+
+  return value.replace(/[^a-zA-Z0-9_-]/g, "\\$&");
+}
+
+function triggerTipNudge(postId, postElement) {
+  const sessionKey = postId ? String(postId) : null;
+  const nudgedPosts = window[TIP_NUDGE_SESSION_KEY];
+
+  if (sessionKey && nudgedPosts.has(sessionKey)) {
+    return;
+  }
+
+  const scopedSelector = postId
+    ? `[data-fiber-link-tip-button="post-menu"][data-fiber-link-tip-post-id="${escapeCssIdentifier(String(postId))}"]`
+    : '[data-fiber-link-tip-button="post-menu"]';
+  const tipButton = postElement?.querySelector?.(scopedSelector);
+
+  if (
+    !tipButton ||
+    tipButton.disabled ||
+    tipButton.getAttribute("aria-disabled") === "true"
+  ) {
+    return;
+  }
+
+  if (sessionKey) {
+    nudgedPosts.add(sessionKey);
+  }
+
+  tipButton.classList.remove("fiber-link-tip-nudge");
+  tipButton.removeAttribute("data-fiber-link-tip-nudge");
+  tipButton.removeAttribute("data-fiber-link-tip-nudge-text");
+
+  window.requestAnimationFrame(() => {
+    tipButton.classList.add("fiber-link-tip-nudge");
+    tipButton.setAttribute("data-fiber-link-tip-nudge", "active");
+    tipButton.setAttribute(
+      "data-fiber-link-tip-nudge-text",
+      i18n("fiber_link.tip_nudge_text"),
+    );
+
+    window.setTimeout(() => {
+      tipButton.classList.remove("fiber-link-tip-nudge");
+      tipButton.removeAttribute("data-fiber-link-tip-nudge");
+      tipButton.removeAttribute("data-fiber-link-tip-nudge-text");
+    }, TIP_NUDGE_DURATION_MS);
+  });
+}
+
 export default {
   name: "fiber-link",
 
@@ -258,5 +366,6 @@ export default {
     scheduleDashboardBootFallback();
     scheduleTopicBootFallback();
     monitorBootFallbacks();
+    installTipNudgeListener();
   },
 };
