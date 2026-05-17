@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 COMPOSE_FILE="${ROOT_DIR}/deploy/compose/docker-compose.yml"
 ENV_FILE="${ROOT_DIR}/deploy/compose/.env"
 TEST_SCRIPT="${ROOT_DIR}/deploy/compose/compose-reference.test.sh"
+VALIDATE_ENV_SCRIPT="${ROOT_DIR}/deploy/compose/validate-env.sh"
 EVIDENCE_ROOT="${ROOT_DIR}/deploy/compose/evidence"
 TIMESTAMP="$(date -u +"%Y%m%dT%H%M%SZ")"
 EVIDENCE_DIR="${EVIDENCE_ROOT}/${TIMESTAMP}"
@@ -56,6 +57,17 @@ done
 
 mkdir -p "$EVIDENCE_DIR"
 
+echo "Evidence directory: ${EVIDENCE_DIR}"
+
+validate_env_cmd="\"$VALIDATE_ENV_SCRIPT\" \"$ENV_FILE\""
+echo "[compose-readiness] env-validation: ${validate_env_cmd}" >> "${EVIDENCE_DIR}/commands.log"
+if [[ "$DRY_RUN" -eq 1 ]]; then
+  echo "[DRY-RUN] ${validate_env_cmd}" | tee -a "${EVIDENCE_DIR}/env-validation.log"
+elif ! "$VALIDATE_ENV_SCRIPT" "$ENV_FILE" >>"${EVIDENCE_DIR}/env-validation.log" 2>&1; then
+  echo "compose env validation failed; aborting before reading env or starting containers" >&2
+  exit 1
+fi
+
 if [[ -f "$ENV_FILE" ]]; then
   set -a
   source "$ENV_FILE"
@@ -64,11 +76,16 @@ fi
 
 RPC_PORT="${RPC_PORT:-3000}"
 RPC_URL="http://127.0.0.1:${RPC_PORT}"
+FIBER_CHANNEL_ACCEPT_RPC_URL="${FIBER_CHANNEL_ACCEPT_RPC_URL:-http://fnn2:8227}"
 export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-fiber-link-readiness-$(date -u +"%Y%m%d%H%M%S")-$$}"
 COMPOSE_DOWN_ARGS="--remove-orphans"
 if [[ "${DESTROY_VOLUMES}" == "1" ]]; then
   COMPOSE_DOWN_ARGS="${COMPOSE_DOWN_ARGS} --volumes"
 fi
+
+shell_quote() {
+  printf '%q' "$1"
+}
 
 echo "Evidence directory: ${EVIDENCE_DIR}"
 echo "Compose project: ${COMPOSE_PROJECT_NAME}"
@@ -85,6 +102,8 @@ declare -A CHECK_STATUS=(
   [precheck]="not_run"
   [spinup]="not_run"
   [fnn]="not_run"
+  [fnn2]="not_run"
+  [fnn2_rpc]="not_run"
   [rpc]="not_run"
   [worker]="not_run"
   [smoke]="not_run"
@@ -143,6 +162,14 @@ wait_for_health() {
   return 1
 }
 
+probe_fnn2_channel_accept_rpc() {
+  local probe_payload='{"jsonrpc":"2.0","id":"compose-readiness-fnn2","method":"node_info","params":[]}'
+  local cmd quoted_accept_url
+  quoted_accept_url="$(shell_quote "${FIBER_CHANNEL_ACCEPT_RPC_URL}")"
+  cmd="docker compose -f \"$COMPOSE_FILE\" exec -T -e FIBER_CHANNEL_ACCEPT_RPC_URL=${quoted_accept_url} rpc sh -lc 'curl -fsS \"\$FIBER_CHANNEL_ACCEPT_RPC_URL\" -H '\''content-type: application/json'\'' --data '\''${probe_payload}'\''' > \"${EVIDENCE_DIR}/fnn2-node-info.json\" && grep -q '\"result\"' \"${EVIDENCE_DIR}/fnn2-node-info.json\""
+  run_step "fnn2-channel-accept-rpc" "${EVIDENCE_DIR}/fnn2-channel-accept-rpc.log" "$cmd"
+}
+
 precheck_cmd="[ -f \"$TEST_SCRIPT\" ] && \"$TEST_SCRIPT\""
 if run_step "precheck" "${EVIDENCE_DIR}/precheck.log" "$precheck_cmd"; then
   CHECK_STATUS[precheck]="pass"
@@ -165,10 +192,24 @@ if [[ "${CHECK_STATUS[spinup]}" == "pass" ]]; then
     CHECK_STATUS[fnn]="fail"
   fi
 
+  if wait_for_health fnn2 "$WAIT_SECONDS"; then
+    CHECK_STATUS[fnn2]="pass"
+  else
+    CHECK_STATUS[fnn2]="fail"
+  fi
+
   if wait_for_health rpc "$WAIT_SECONDS"; then
     CHECK_STATUS[rpc]="pass"
   else
     CHECK_STATUS[rpc]="fail"
+  fi
+
+  if [[ "${CHECK_STATUS[fnn2]}" == "pass" && "${CHECK_STATUS[rpc]}" == "pass" ]]; then
+    if probe_fnn2_channel_accept_rpc; then
+      CHECK_STATUS[fnn2_rpc]="pass"
+    else
+      CHECK_STATUS[fnn2_rpc]="fail"
+    fi
   fi
 
   if wait_for_health worker "$WAIT_SECONDS"; then
@@ -178,7 +219,7 @@ if [[ "${CHECK_STATUS[spinup]}" == "pass" ]]; then
   fi
 fi
 
-if [[ "${CHECK_STATUS[fnn]}" == "pass" && "${CHECK_STATUS[rpc]}" == "pass" && "${CHECK_STATUS[worker]}" == "pass" ]]; then
+if [[ "${CHECK_STATUS[fnn]}" == "pass" && "${CHECK_STATUS[fnn2]}" == "pass" && "${CHECK_STATUS[fnn2_rpc]}" == "pass" && "${CHECK_STATUS[rpc]}" == "pass" && "${CHECK_STATUS[worker]}" == "pass" ]]; then
   run_step "compose-ps-ready" "${EVIDENCE_DIR}/compose-ready-ps.log" "docker compose -f \"$COMPOSE_FILE\" ps"
 fi
 
@@ -214,7 +255,7 @@ else
   CHECK_STATUS[smoke]="skipped"
 fi
 
-run_step "compose-logs" "${EVIDENCE_DIR}/compose-logs.log" "docker compose -f \"$COMPOSE_FILE\" logs --no-color --timestamps rpc worker fnn postgres redis"
+run_step "compose-logs" "${EVIDENCE_DIR}/compose-logs.log" "docker compose -f \"$COMPOSE_FILE\" logs --no-color --timestamps rpc worker fnn fnn2 postgres redis"
 
 if [[ "${CHECK_STATUS[spinup]}" == "pass" ]]; then
   if run_step "compose-down" "${EVIDENCE_DIR}/compose-down.log" "cd \"$ROOT_DIR\" && docker compose -f \"$COMPOSE_FILE\" down ${COMPOSE_DOWN_ARGS}"; then
@@ -228,6 +269,8 @@ summary_file="${EVIDENCE_DIR}/summary.json"
 if [[ "${CHECK_STATUS[precheck]}" == "pass" && \
   "${CHECK_STATUS[spinup]}" == "pass" && \
   "${CHECK_STATUS[fnn]}" == "pass" && \
+  "${CHECK_STATUS[fnn2]}" == "pass" && \
+  "${CHECK_STATUS[fnn2_rpc]}" == "pass" && \
   "${CHECK_STATUS[rpc]}" == "pass" && \
   "${CHECK_STATUS[worker]}" == "pass" && \
   ( "${CHECK_STATUS[smoke]}" == "pass" || "${CHECK_STATUS[smoke]}" == "skipped" ) ]]; then
@@ -249,6 +292,8 @@ cat > "$summary_file" <<EOF
     "precheck": "${CHECK_STATUS[precheck]}",
     "spinup": "${CHECK_STATUS[spinup]}",
     "fnn": "${CHECK_STATUS[fnn]}",
+    "fnn2": "${CHECK_STATUS[fnn2]}",
+    "fnn2Rpc": "${CHECK_STATUS[fnn2_rpc]}",
     "rpc": "${CHECK_STATUS[rpc]}",
     "worker": "${CHECK_STATUS[worker]}",
     "smoke": "${CHECK_STATUS[smoke]}",

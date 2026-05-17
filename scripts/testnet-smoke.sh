@@ -18,6 +18,7 @@ DESTROY_VOLUMES="${FIBER_LINK_DESTROY_VOLUMES:-0}"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPOSE_DIR="${ROOT_DIR}/deploy/compose"
 ENV_FILE="${COMPOSE_DIR}/.env"
+VALIDATE_ENV_SCRIPT="${COMPOSE_DIR}/validate-env.sh"
 ARTIFACT_DIR="${ROOT_DIR}/.tmp/testnet-smoke/$(date +%Y%m%d-%H%M%S)"
 
 usage() {
@@ -162,6 +163,14 @@ Env file: ${ENV_FILE}
 EOF
 fi
 
+if [[ ! -x "${VALIDATE_ENV_SCRIPT}" ]]; then
+  exit_with "${EXIT_PRECHECK}" "missing executable compose env validator: ${VALIDATE_ENV_SCRIPT}"
+fi
+
+if ! "${VALIDATE_ENV_SCRIPT}" "${ENV_FILE}" > "${ARTIFACT_DIR}/env-validation.log" 2>&1; then
+  exit_with "${EXIT_PRECHECK}" "compose env validation failed (see ${ARTIFACT_DIR}/env-validation.log)"
+fi
+
 required_keys=(
   POSTGRES_PASSWORD
   FIBER_SECRET_KEY_PASSWORD
@@ -185,7 +194,7 @@ if [[ "${DRY_RUN}" -eq 1 ]]; then
   log "compose project: ${COMPOSE_PROJECT_NAME}"
   log "would run: docker compose $(compose_down_reset_args)"
   log "would run: docker compose up -d --build"
-  log "would wait for postgres/redis health and rpc/worker/fnn running"
+  log "would wait for postgres/redis/fnn/fnn2 health and rpc/worker readiness gates"
   log "would run signed health.ping against http://127.0.0.1:${RPC_PORT}/rpc"
   if [[ "${SKIP_SMOKE}" -eq 0 ]]; then
     log "would run signed tip.create smoke request"
@@ -214,7 +223,7 @@ is_running() {
 }
 
 deadline=$(( $(date +%s) + 600 ))
-until is_healthy fiber-link-postgres && is_healthy fiber-link-redis && is_running fiber-link-rpc && is_running fiber-link-worker && is_running fiber-link-fnn; do
+until is_healthy fiber-link-postgres && is_healthy fiber-link-redis && is_healthy fiber-link-fnn && is_healthy fiber-link-fnn2 && is_running fiber-link-rpc && is_running fiber-link-worker; do
   if [[ "$(date +%s)" -ge "${deadline}" ]]; then
     compose ps > "${ARTIFACT_DIR}/compose-ps-timeout.log" 2>&1 || true
     exit_with "${EXIT_STARTUP_TIMEOUT}" "timeout waiting for compose services"

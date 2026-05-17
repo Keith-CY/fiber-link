@@ -11,6 +11,8 @@ EVIDENCE_TEMPLATE_DIR="${ROOT_DIR}/docs/runbooks/evidence-template/deployment"
 EVIDENCE_SCRIPT="${ROOT_DIR}/scripts/capture-deployment-evidence.sh"
 BACKUP_TEST_SCRIPT="${ROOT_DIR}/deploy/compose/compose-backup.test.sh"
 OPS_TEST_SCRIPT="${ROOT_DIR}/deploy/compose/compose-ops.test.sh"
+VALIDATE_ENV_SCRIPT="${ROOT_DIR}/deploy/compose/validate-env.sh"
+VALIDATE_ENV_TEST_SCRIPT="${ROOT_DIR}/deploy/compose/validate-env.test.sh"
 ENV_FILE="${ROOT_DIR}/deploy/compose/.env.example"
 SERVICE_DOCKERFILE="${ROOT_DIR}/deploy/compose/service.Dockerfile"
 RPC_HEALTHCHECK_SCRIPT="${ROOT_DIR}/fiber-link-service/apps/rpc/src/scripts/healthcheck-ready.ts"
@@ -28,6 +30,8 @@ for required in \
   "${EVIDENCE_SCRIPT}" \
   "${BACKUP_TEST_SCRIPT}" \
   "${OPS_TEST_SCRIPT}" \
+  "${VALIDATE_ENV_SCRIPT}" \
+  "${VALIDATE_ENV_TEST_SCRIPT}" \
   "${ENV_FILE}" \
   "${SERVICE_DOCKERFILE}" \
   "${RPC_HEALTHCHECK_SCRIPT}" \
@@ -67,6 +71,16 @@ if [[ ! -x "${OPS_TEST_SCRIPT}" ]]; then
   exit 1
 fi
 
+if [[ ! -x "${VALIDATE_ENV_SCRIPT}" ]]; then
+  echo "compose env validator is not executable: ${VALIDATE_ENV_SCRIPT}" >&2
+  exit 1
+fi
+
+if [[ ! -x "${VALIDATE_ENV_TEST_SCRIPT}" ]]; then
+  echo "compose env validator test script is not executable: ${VALIDATE_ENV_TEST_SCRIPT}" >&2
+  exit 1
+fi
+
 for compose_file in "${ENV_FILE}" "${COMPOSE_FILE}"; do
   if grep -nE "^(<<<<<<<|=======|>>>>>>> )" "${compose_file}" >/dev/null; then
     echo "merge-conflict marker found in ${compose_file}" >&2
@@ -86,8 +100,9 @@ fi
 
 "${BACKUP_TEST_SCRIPT}"
 "${OPS_TEST_SCRIPT}"
+"${VALIDATE_ENV_TEST_SCRIPT}"
 
-for service in rpc worker postgres redis fnn; do
+for service in rpc worker postgres redis fnn fnn2; do
   if ! grep -Eq "^[[:space:]]{2}${service}:" "${COMPOSE_FILE}"; then
     echo "docker compose missing service: ${service}" >&2
     exit 1
@@ -183,6 +198,41 @@ fi
 
 if ! grep -q "FIBER_LINK_RATE_LIMIT_REDIS_URL: \${FIBER_LINK_RATE_LIMIT_REDIS_URL:-redis://redis:6379/1}" "${COMPOSE_FILE}"; then
   echo "docker-compose missing shared Redis rate-limit configuration" >&2
+  exit 1
+fi
+
+if ! grep -q "FNN_ASSET_SHA256" "${VALIDATE_ENV_SCRIPT}" || ! grep -q "64-character" "${VALIDATE_ENV_SCRIPT}"; then
+  echo "compose env validator missing sha256 validation" >&2
+  exit 1
+fi
+
+if ! grep -q "FIBER_CHANNEL_ACCEPT_RPC_URL" "${VALIDATE_ENV_SCRIPT}"; then
+  echo "compose env validator missing channel-accept URL validation" >&2
+  exit 1
+fi
+
+if ! grep -q "validate-env.sh" "$0"; then
+  echo "compose reference checks missing env validator coverage" >&2
+  exit 1
+fi
+
+if ! grep -q "validate-env.sh" "${ROOT_DIR}/scripts/testnet-smoke.sh"; then
+  echo "testnet smoke missing compose env validator precheck" >&2
+  exit 1
+fi
+
+if ! grep -q "validate-env.sh" "${ROOT_DIR}/deploy/compose/compose-readiness.sh"; then
+  echo "compose readiness missing compose env validator precheck" >&2
+  exit 1
+fi
+
+if ! grep -A15 '^  worker:' "${COMPOSE_FILE}" | grep -q '^      fnn2:$'; then
+  echo "docker-compose worker missing fnn2 dependency gate" >&2
+  exit 1
+fi
+
+if ! grep -A10 '^  worker:' "${COMPOSE_FILE}" | grep -q "condition: service_healthy"; then
+  echo "docker-compose worker fnn2 dependency must use service_healthy" >&2
   exit 1
 fi
 
