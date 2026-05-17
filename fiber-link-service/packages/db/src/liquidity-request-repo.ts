@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import type { DbClient } from "./client";
 import { assertPositiveAmount, compareDecimalStrings, formatDecimal, parseDecimal } from "./amount";
 import {
@@ -116,6 +116,16 @@ export type LiquidityRequestRepo = {
 
 type LiquidityRequestRow = typeof liquidityRequests.$inferSelect;
 const OPEN_LIQUIDITY_REQUEST_STATES = ["REQUESTED", "REBALANCING"] as const;
+const OPEN_LIQUIDITY_REQUEST_KEY_CONFLICT_TARGET = [
+  liquidityRequests.appId,
+  liquidityRequests.asset,
+  liquidityRequests.network,
+  liquidityRequests.sourceKind,
+] as const;
+const OPEN_LIQUIDITY_REQUEST_KEY_CONFLICT_WHERE = inArray(
+  liquidityRequests.state,
+  [...OPEN_LIQUIDITY_REQUEST_STATES],
+);
 
 function normalizeMetadata(metadata: unknown): LiquidityRequestMetadata | null {
   if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
@@ -284,48 +294,41 @@ export function createDbLiquidityRequestRepo(db: DbClient): LiquidityRequestRepo
     findOpenByKey,
 
     async ensureOpen(input) {
+      const now = new Date();
       const requiredAmount = normalizeAmount(input.requiredAmount);
-      const existing = await findOpenByKey(input);
-      if (!existing) {
-        return createRequested({
-          ...input,
-          requiredAmount,
-        });
-      }
+      const conflictSet: Record<string, unknown> = {
+        requiredAmount: sql`GREATEST(${liquidityRequests.requiredAmount}, EXCLUDED.required_amount)`,
+        updatedAt: now,
+      };
 
-      const nextRequiredAmount = maxRequiredAmount(existing.requiredAmount, requiredAmount);
-      if (
-        nextRequiredAmount === existing.requiredAmount &&
-        input.metadata === undefined
-      ) {
-        return existing;
+      if (input.metadata !== undefined) {
+        conflictSet.metadata = input.metadata === null
+          ? null
+          : sql`COALESCE(${liquidityRequests.metadata}, '{}'::jsonb) || EXCLUDED.metadata`;
       }
 
       const [row] = await db
-        .update(liquidityRequests)
-        .set({
-          requiredAmount: nextRequiredAmount,
-          metadata: mergeMetadata(existing.metadata, input.metadata),
-          updatedAt: new Date(),
+        .insert(liquidityRequests)
+        .values({
+          appId: input.appId,
+          asset: input.asset,
+          network: input.network,
+          state: "REQUESTED",
+          sourceKind: input.sourceKind,
+          requiredAmount,
+          fundedAmount: "0",
+          metadata: input.metadata ?? null,
+          lastError: null,
+          createdAt: now,
+          updatedAt: now,
+          completedAt: null,
         })
-        .where(
-          and(
-            eq(liquidityRequests.id, existing.id),
-            inArray(liquidityRequests.state, [...OPEN_LIQUIDITY_REQUEST_STATES]),
-          ),
-        )
+        .onConflictDoUpdate({
+          target: [...OPEN_LIQUIDITY_REQUEST_KEY_CONFLICT_TARGET],
+          targetWhere: OPEN_LIQUIDITY_REQUEST_KEY_CONFLICT_WHERE,
+          set: conflictSet,
+        })
         .returning();
-
-      if (!row) {
-        const latest = await findById(existing.id);
-        if (!latest || !isOpenState(latest.state)) {
-          return createRequested({
-            ...input,
-            requiredAmount,
-          });
-        }
-        throw new LiquidityRequestStateTransitionError(existing.id, latest.state, latest.state);
-      }
 
       return toRecord(row);
     },

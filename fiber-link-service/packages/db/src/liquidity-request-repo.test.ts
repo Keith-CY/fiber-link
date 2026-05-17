@@ -29,7 +29,8 @@ function mockRow(overrides: Record<string, unknown> = {}) {
 
 function createDbMock() {
   const insertReturning = vi.fn();
-  const insertValues = vi.fn(() => ({ returning: insertReturning }));
+  const insertOnConflictDoUpdate = vi.fn(() => ({ returning: insertReturning }));
+  const insertValues = vi.fn(() => ({ returning: insertReturning, onConflictDoUpdate: insertOnConflictDoUpdate }));
   const insert = vi.fn(() => ({ values: insertValues }));
 
   const selectLimit = vi.fn();
@@ -49,7 +50,7 @@ function createDbMock() {
     update,
   } as unknown as DbClient;
 
-  return { db, insertValues, insertReturning, selectLimit, updateSet, updateReturning };
+  return { db, insertValues, insertOnConflictDoUpdate, insertReturning, selectLimit, updateSet, updateReturning };
 }
 
 describe("createInMemoryLiquidityRequestRepo", () => {
@@ -343,6 +344,47 @@ describe("createDbLiquidityRequestRepo", () => {
     });
 
     expect(found?.id).toBe("liq1");
+  });
+
+  it("uses a single upsert to ensure an open liquidity request by key", async () => {
+    const mock = createDbMock();
+    const repo = createDbLiquidityRequestRepo(mock.db);
+    mock.insertReturning.mockResolvedValueOnce([
+      mockRow({
+        id: "liq1",
+        requiredAmount: "125",
+        metadata: { existing: "keep", next: "merge" },
+      }),
+    ]);
+
+    const ensured = await repo.ensureOpen({
+      appId: "app1",
+      asset: "CKB",
+      network: "AGGRON4",
+      sourceKind: "FIBER_TO_CKB_CHAIN",
+      requiredAmount: "125",
+      metadata: { next: "merge" },
+    });
+
+    expect(ensured.id).toBe("liq1");
+    expect(mock.selectLimit).not.toHaveBeenCalled();
+    expect(mock.insertOnConflictDoUpdate).toHaveBeenCalledTimes(1);
+    expect(mock.insertOnConflictDoUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        target: [
+          expect.objectContaining({ name: "app_id" }),
+          expect.objectContaining({ name: "asset" }),
+          expect.objectContaining({ name: "network" }),
+          expect.objectContaining({ name: "source_kind" }),
+        ],
+        set: expect.objectContaining({
+          requiredAmount: expect.anything(),
+          metadata: expect.anything(),
+          updatedAt: expect.anything(),
+        }),
+        targetWhere: expect.anything(),
+      }),
+    );
   });
 
   it("marks a liquidity request REBALANCING and merges metadata", async () => {

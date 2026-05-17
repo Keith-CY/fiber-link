@@ -133,6 +133,25 @@ describe("schema", () => {
     expect(notificationRules.channelId.name).toBe("channel_id");
   });
 
+  it("defines a partial unique index for one open liquidity request per key", () => {
+    const config = getTableConfig(liquidityRequests);
+    const openUnique = config.indexes.find(
+      (index) => index.config.name === "liquidity_requests_open_key_unique",
+    );
+
+    expect(openUnique).toBeDefined();
+    expect(openUnique?.config.unique).toBe(true);
+    expect(openUnique?.config.columns.map((column) => column.name)).toEqual([
+      "app_id",
+      "asset",
+      "network",
+      "source_kind",
+    ]);
+    const whereTokens = collectSqlTokens(openUnique?.config.where);
+    expect(whereTokens.some((token) => token.includes("REQUESTED"))).toBe(true);
+    expect(whereTokens.some((token) => token.includes("REBALANCING"))).toBe(true);
+  });
+
   it("defines liquidity gating constraints on withdrawals", () => {
     const config = getTableConfig(withdrawals);
     const liquidityRequestFk = config.foreignKeys.find(
