@@ -158,6 +158,16 @@ const FIBER_WITHDRAWAL_ERROR_CONTRACT = {
     kind: "transient" as const,
   },
   transientHttpStatus: new Set([408, 425, 429, 500, 502, 503, 504]),
+  transientErrorCodes: new Set([
+    "ECONNRESET",
+    "ECONNREFUSED",
+    "ECONNABORTED",
+    "ETIMEDOUT",
+    "ENOTFOUND",
+    "EAI_AGAIN",
+    "EPIPE",
+  ]),
+  transientMessagePattern: /\b(?:abort(?:ed)?|fetch failed|network error|timeout|timed out)\b/i,
   defaultFiberKind: "transient" as const,
   defaultUnknownKind: "permanent" as const,
 };
@@ -200,6 +210,24 @@ function classifyFiberRpcError(error: FiberRpcError): ExecutionFailureKind {
   return FIBER_WITHDRAWAL_ERROR_CONTRACT.defaultFiberKind;
 }
 
+function getErrorCode(error: unknown): string | null {
+  const code = (error as { code?: unknown } | null | undefined)?.code;
+  return typeof code === "string" ? code : null;
+}
+
+function isTransientNetworkError(error: unknown, message: string): boolean {
+  if (error instanceof Error && error.name === "AbortError") {
+    return true;
+  }
+
+  const code = getErrorCode(error);
+  if (code && FIBER_WITHDRAWAL_ERROR_CONTRACT.transientErrorCodes.has(code)) {
+    return true;
+  }
+
+  return FIBER_WITHDRAWAL_ERROR_CONTRACT.transientMessagePattern.test(message);
+}
+
 function classifyExecutionError(error: unknown): { kind: "transient" | "permanent"; reason: string } {
   const message = toErrorMessage(error);
   if (error instanceof WithdrawalExecutionError) {
@@ -207,6 +235,9 @@ function classifyExecutionError(error: unknown): { kind: "transient" | "permanen
   }
   if (error instanceof FiberRpcError) {
     return { kind: classifyFiberRpcError(error), reason: message };
+  }
+  if (isTransientNetworkError(error, message)) {
+    return { kind: "transient", reason: message };
   }
   return { kind: FIBER_WITHDRAWAL_ERROR_CONTRACT.defaultUnknownKind, reason: message };
 }
