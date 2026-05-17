@@ -122,10 +122,10 @@ const OPEN_LIQUIDITY_REQUEST_KEY_CONFLICT_TARGET = [
   liquidityRequests.network,
   liquidityRequests.sourceKind,
 ] as const;
-const OPEN_LIQUIDITY_REQUEST_KEY_CONFLICT_WHERE = sql`${liquidityRequests.state} IN (
-  'REQUESTED',
-  'REBALANCING'
-)`;
+const OPEN_LIQUIDITY_REQUEST_KEY_CONFLICT_WHERE = inArray(
+  liquidityRequests.state,
+  [...OPEN_LIQUIDITY_REQUEST_STATES],
+);
 
 function normalizeMetadata(metadata: unknown): LiquidityRequestMetadata | null {
   if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
