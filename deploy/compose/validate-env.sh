@@ -39,18 +39,50 @@ fi
 get_env_value() {
   local key="$1"
   local line value
-  line="$(grep -E "^[[:space:]]*(export[[:space:]]+)?${key}=" "${ENV_FILE}" | tail -n1 || true)"
+  line="$({
+    while IFS= read -r line || [[ -n "${line}" ]]; do
+      line="$(strip_unquoted_comment "${line%$'\r'}")"
+      [[ "${line}" =~ ^[[:space:]]*(export[[:space:]]+)?${key}= ]] || continue
+      printf '%s\n' "${line}"
+    done <"${ENV_FILE}"
+  } | tail -n1 || true)"
   if [[ -z "${line}" ]]; then
     printf ''
     return 0
   fi
   value="${line#*=}"
-  value="${value%%#*}"
   value="${value%$'\r'}"
+  value="$(trim_env_whitespace "${value}")"
   value="${value#\"}"
   value="${value%\"}"
   value="${value#\'}"
   value="${value%\'}"
+  printf '%s' "${value}"
+}
+
+strip_unquoted_comment() {
+  local input="$1" output="" char quote="" i
+  for ((i = 0; i < ${#input}; i++)); do
+    char="${input:i:1}"
+    if [[ -z "${quote}" && "${char}" == "#" ]]; then
+      break
+    fi
+    if [[ "${char}" == "'" || "${char}" == '"' ]]; then
+      if [[ -z "${quote}" ]]; then
+        quote="${char}"
+      elif [[ "${quote}" == "${char}" ]]; then
+        quote=""
+      fi
+    fi
+    output+="${char}"
+  done
+  printf '%s' "${output}"
+}
+
+trim_env_whitespace() {
+  local value="$1"
+  value="${value#"${value%%[![:space:]]*}"}"
+  value="${value%"${value##*[![:space:]]}"}"
   printf '%s' "${value}"
 }
 

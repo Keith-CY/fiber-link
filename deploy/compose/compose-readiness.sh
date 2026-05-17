@@ -98,6 +98,10 @@ Env file: ${ENV_FILE}
 EOF
 fi
 
+shell_quote() {
+  printf '%q' "$1"
+}
+
 declare -A CHECK_STATUS=(
   [precheck]="not_run"
   [spinup]="not_run"

@@ -36,6 +36,14 @@ set_env FNN_ASSET_SHA256 '0123456789abcdef0123456789abcdef0123456789abcdef012345
 
 "${VALIDATOR}" "${VALID_ENV}" >/dev/null
 
+COMMENT_ENV="${TMP_DIR}/comment.env"
+cp "${VALID_ENV}" "${COMMENT_ENV}"
+{
+  printf '# POSTGRES_PASSWORD=change-me-commented-out\n'
+  printf 'export FIBER_LINK_HMAC_SECRET="0123456789abcdef#0123456789abcdef" # preserves quoted hash\n'
+} >>"${COMMENT_ENV}"
+"${VALIDATOR}" "${COMMENT_ENV}" >/dev/null
+
 expect_fail() {
   local label="$1" key="$2" value="$3"
   local env_file="${TMP_DIR}/${label}.env"
