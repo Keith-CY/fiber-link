@@ -401,7 +401,7 @@ export default class FiberLinkTipModal extends Component {
     const elapsedMs = Date.now() - this._statusPollStartedAt;
     return (
       elapsedMs <= TIP_STATUS_AUTO_POLL_MAX_ELAPSED_MS &&
-      this._statusPollFailureCount <= TIP_STATUS_AUTO_POLL_MAX_FAILURES
+      this._statusPollFailureCount < TIP_STATUS_AUTO_POLL_MAX_FAILURES
     );
   }
 
@@ -433,8 +433,11 @@ export default class FiberLinkTipModal extends Component {
     }
 
     if (!this._canContinueStatusPolling()) {
+      const message = this._statusPollFailureCount > 0
+        ? "Status polling paused after repeated failures. Please retry."
+        : "Status polling timed out. Please retry.";
       this.errorMessage = mapStatusErrorToMessage(
-        new Error("Status polling paused after repeated failures. Please retry."),
+        new Error(message),
       );
       return;
     }

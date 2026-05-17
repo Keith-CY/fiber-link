@@ -24,6 +24,30 @@ function mapDashboardErrorToMessage(error) {
   return message;
 }
 
+function isTransientDashboardError(message) {
+  const value = message.toLowerCase();
+  return (
+    value.includes("network") ||
+    value.includes("timeout") ||
+    value.includes("failed to fetch") ||
+    value.includes("service unavailable")
+  );
+}
+
+function isRetryableDashboardError(error) {
+  const status = Number(error?.status ?? error?.statusCode ?? error?.code);
+  const message =
+    typeof error?.message === "string" ? error.message.trim() : "";
+  return (
+    status === 429 ||
+    status === 503 ||
+    message.includes("429") ||
+    message.toLowerCase().includes("rate limit") ||
+    message.toLowerCase().includes("too many requests") ||
+    isTransientDashboardError(message)
+  );
+}
+
 function formatSyncStatusLabel(rawValue) {
   const value = new Date(rawValue);
   if (Number.isNaN(value.getTime())) {
@@ -496,8 +520,13 @@ export default class FiberLinkDashboardRoute extends Route {
         return;
       }
 
+      const retryable = isRetryableDashboardError(error);
       const message = mapDashboardErrorToMessage(error);
-      this._recordDashboardPollFailure();
+      if (retryable) {
+        this._recordDashboardPollFailure();
+      } else {
+        this._resetDashboardPollBackoff();
+      }
       model.setProperties({
         isInitialLoading: false,
         isRefreshing: false,
@@ -536,7 +565,7 @@ export default class FiberLinkDashboardRoute extends Route {
     }
 
     return (
-      this._dashboardPollFailureCount <= DASHBOARD_POLL_MAX_FAILURES &&
+      this._dashboardPollFailureCount < DASHBOARD_POLL_MAX_FAILURES &&
       Date.now() - this._dashboardPollFirstFailureAt <=
         DASHBOARD_POLL_MAX_FAILURE_WINDOW_MS
     );
