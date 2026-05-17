@@ -292,6 +292,42 @@ RSpec.describe ::FiberLink::RpcController, type: :request do
       }
     end
 
+    it "rejects non-object JSON-RPC payloads without forwarding" do
+      sign_in(user)
+
+      stub_request(:post, "https://fiber-link.example/rpc").to_return(status: 200, body: "{}")
+
+      [[], "x"].each do |payload|
+        post "/fiber-link/rpc", params: payload, as: :json
+
+        expect(response).to have_http_status(:bad_request)
+        body = JSON.parse(response.body)
+        expect(body.fetch("jsonrpc")).to eq("2.0")
+        expect(body.fetch("id")).to be_nil
+        expect(body.dig("error", "code")).to eq(-32600)
+      end
+
+      expect(WebMock).not_to have_requested(:post, "https://fiber-link.example/rpc")
+    end
+
+    it "rejects non-object JSON-RPC params without forwarding" do
+      sign_in(user)
+
+      stub_request(:post, "https://fiber-link.example/rpc").to_return(status: 200, body: "{}")
+
+      post "/fiber-link/rpc",
+           params: { jsonrpc: "2.0", id: "array-params", method: "dashboard.summary", params: [] },
+           as: :json
+
+      expect(response).to have_http_status(:bad_request)
+      body = JSON.parse(response.body)
+      expect(body.fetch("jsonrpc")).to eq("2.0")
+      expect(body.fetch("id")).to eq("array-params")
+      expect(body.dig("error", "code")).to eq(-32602)
+
+      expect(WebMock).not_to have_requested(:post, "https://fiber-link.example/rpc")
+    end
+
     it "rejects unknown methods without forwarding" do
       sign_in(user)
 
@@ -308,6 +344,83 @@ RSpec.describe ::FiberLink::RpcController, type: :request do
       expect(body.dig("error", "code")).to eq(-32601)
 
       expect(WebMock).not_to have_requested(:post, "https://fiber-link.example/rpc")
+    end
+
+    it "returns JSON-RPC internal error when service settings are missing" do
+      sign_in(user)
+      SiteSetting.fiber_link_service_url = ""
+
+      stub_request(:post, "https://fiber-link.example/rpc").to_return(status: 200, body: "{}")
+
+      post "/fiber-link/rpc",
+           params: { jsonrpc: "2.0", id: "missing-settings", method: "tip.status", params: { invoice: "inv-1" } },
+           as: :json
+
+      expect(response).to have_http_status(:bad_request)
+      body = JSON.parse(response.body)
+      expect(body.fetch("jsonrpc")).to eq("2.0")
+      expect(body.fetch("id")).to eq("missing-settings")
+      expect(body.dig("error", "code")).to eq(-32603)
+
+      expect(WebMock).not_to have_requested(:post, "https://fiber-link.example/rpc")
+    end
+
+    it "rate limits high-rate mutating RPC methods without forwarding" do
+      sign_in(user)
+
+      stub_request(:post, "https://fiber-link.example/rpc").to_return(status: 200, body: "{}")
+      limiter = instance_double(::RateLimiter)
+      rate_limiter_called = false
+      allow(::RateLimiter).to receive(:new).and_wrap_original do |original, *args|
+        actor, key, max_requests, window_seconds = args
+        if actor.is_a?(User) && key == "fiber_link_rpc_tip_create" && max_requests == 10 && window_seconds == 60
+          rate_limiter_called = true
+          limiter
+        else
+          original.call(*args)
+        end
+      end
+      expect(limiter).to receive(:performed!).and_raise(RateLimiter::LimitExceeded.new(1))
+
+      post "/fiber-link/rpc",
+           params: { jsonrpc: "2.0", id: "limited", method: "tip.create", params: { postId: topic.first_post.id } },
+           as: :json
+
+      expect(rate_limiter_called).to eq(true)
+      expect(response).to have_http_status(:too_many_requests)
+      body = JSON.parse(response.body)
+      expect(body.fetch("jsonrpc")).to eq("2.0")
+      expect(body.fetch("id")).to eq("limited")
+      expect(body.dig("error", "code")).to eq(-32005)
+      expect(body.dig("error", "message")).to eq("Rate limit exceeded")
+
+      expect(WebMock).not_to have_requested(:post, "https://fiber-link.example/rpc")
+    end
+
+    it "lets admins bypass RPC method rate limits" do
+      admin = Fabricate(:admin)
+      sign_in(admin)
+
+      stub_request(:post, "https://fiber-link.example/rpc").to_return(
+        status: 200,
+        body: { jsonrpc: "2.0", id: "admin-bypass", result: { invoice: "inv-admin" } }.to_json,
+        headers: { "Content-Type" => "application/json" },
+      )
+
+      expect(::RateLimiter).not_to receive(:new)
+
+      post "/fiber-link/rpc",
+           params: {
+             jsonrpc: "2.0",
+             id: "admin-bypass",
+             method: "tip.create",
+             params: { amount: "1", asset: "CKB", postId: topic.first_post.id },
+           },
+           as: :json
+
+      expect(response).to have_http_status(:ok)
+      body = JSON.parse(response.body)
+      expect(body.dig("result", "invoice")).to eq("inv-admin")
     end
 
     it "returns a JSON-RPC error envelope for invalid postId" do

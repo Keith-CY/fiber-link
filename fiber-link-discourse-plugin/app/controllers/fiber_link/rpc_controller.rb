@@ -12,6 +12,9 @@ module ::FiberLink
 
     ALLOWED_WITHDRAWAL_STATES = ["ALL", "LIQUIDITY_PENDING", "PENDING", "PROCESSING", "RETRY_PENDING", "COMPLETED", "FAILED"].freeze
     ALLOWED_SETTLEMENT_STATES = ["ALL", "UNPAID", "SETTLED", "FAILED"].freeze
+    READ_METHOD_RATE_LIMIT = [60, 60].freeze
+    MUTATING_METHOD_RATE_LIMIT = [10, 60].freeze
+    MUTATING_METHODS = ["tip.create", "withdrawal.request"].freeze
 
     def proxy
       request_json = parse_request_json
@@ -19,10 +22,19 @@ module ::FiberLink
 
       request_id = request_json["id"]
       method = request_json["method"]
-      params = request_json["params"] || {}
+      params = request_json.key?("params") ? request_json["params"] : {}
+
+      unless params.is_a?(Hash)
+        render_error(request_id, :bad_request, -32602, "Invalid params")
+        return
+      end
 
       sanitized_params = sanitize_params(method, params, request_id)
       return unless sanitized_params
+
+      return unless validate_service_settings(request_id)
+
+      return unless enforce_method_rate_limit(method, request_id)
 
       response = service_client.post(method:, params: sanitized_params, request_id:)
       render body: enrich_response_body(method, response.body), status: response.status, content_type: "application/json"
@@ -50,7 +62,11 @@ module ::FiberLink
     end
 
     def parse_request_json
-      JSON.parse(request.raw_post)
+      payload = JSON.parse(request.raw_post)
+      return payload if payload.is_a?(Hash)
+
+      render_error(nil, :bad_request, -32600, "Invalid request")
+      nil
     rescue JSON::ParserError
       render json: {
                jsonrpc: "2.0",
@@ -197,6 +213,32 @@ module ::FiberLink
           payload[:paymentRequest] = legacy_to_address
         end
       end
+    end
+
+    def validate_service_settings(request_id)
+      missing_setting = %i[fiber_link_service_url fiber_link_app_id fiber_link_app_secret].find do |setting|
+        SiteSetting.public_send(setting).blank?
+      end
+      return true unless missing_setting
+
+      render_error(request_id, :bad_request, -32603, missing_setting.to_s.humanize)
+      false
+    end
+
+    def enforce_method_rate_limit(method, request_id)
+      return true unless defined?(::RateLimiter)
+      return true if current_user&.admin?
+
+      max_requests, window_seconds = rate_limit_for_method(method)
+      ::RateLimiter.new(current_user, "fiber_link_rpc_#{method.tr(".", "_")}", max_requests, window_seconds).performed!
+      true
+    rescue ::RateLimiter::LimitExceeded
+      render_error(request_id, :too_many_requests, -32005, "Rate limit exceeded")
+      false
+    end
+
+    def rate_limit_for_method(method)
+      MUTATING_METHODS.include?(method) ? MUTATING_METHOD_RATE_LIMIT : READ_METHOD_RATE_LIMIT
     end
 
     def enrich_response_body(method, raw_body)
