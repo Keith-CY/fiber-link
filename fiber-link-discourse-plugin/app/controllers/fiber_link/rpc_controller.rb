@@ -221,19 +221,18 @@ module ::FiberLink
       end
       return true unless missing_setting
 
-      render_error(request_id, :bad_request, -32602, missing_setting.to_s.humanize)
+      render_error(request_id, :bad_request, -32603, missing_setting.to_s.humanize)
       false
     end
 
     def enforce_method_rate_limit(method, request_id)
       return true unless defined?(::RateLimiter)
+      return true if current_user&.admin?
 
       max_requests, window_seconds = rate_limit_for_method(method)
       ::RateLimiter.new(current_user, "fiber_link_rpc_#{method.tr(".", "_")}", max_requests, window_seconds).performed!
       true
-    rescue StandardError => error
-      raise unless defined?(::RateLimiter::LimitExceeded) && error.is_a?(::RateLimiter::LimitExceeded)
-
+    rescue ::RateLimiter::LimitExceeded
       render_error(request_id, :too_many_requests, -32005, "Rate limit exceeded")
       false
     end
