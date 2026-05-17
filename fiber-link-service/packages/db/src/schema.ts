@@ -227,11 +227,15 @@ export const withdrawals = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
     completedAt: timestamp("completed_at"),
     txHash: text("tx_hash"),
+    clientRequestId: text("client_request_id"),
     liquidityRequestId: uuid("liquidity_request_id").references(() => liquidityRequests.id),
     liquidityPendingReason: text("liquidity_pending_reason"),
     liquidityCheckedAt: timestamp("liquidity_checked_at"),
   },
   (table) => ({
+    clientRequestUnique: uniqueIndex("withdrawals_app_user_client_request_unique")
+      .on(table.appId, table.userId, table.clientRequestId)
+      .where(sql`${table.clientRequestId} IS NOT NULL`),
     byStateRetryAt: index("withdrawals_state_next_retry_at_idx").on(table.state, table.nextRetryAt, table.createdAt),
     byAccountAssetState: index("withdrawals_account_asset_state_idx").on(table.appId, table.userId, table.asset, table.state),
     liquidityPendingFieldsCheck: check(

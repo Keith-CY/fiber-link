@@ -15,6 +15,7 @@ export type CreateWithdrawalInput = {
   amount: string;
   toAddress: string;
   destinationKind?: WithdrawalDestinationKind;
+  clientRequestId?: string;
 };
 
 export type CreateLiquidityPendingWithdrawalInput = CreateWithdrawalInput & {
@@ -33,6 +34,7 @@ export type WithdrawalRecord = CreateWithdrawalInput & {
   updatedAt: Date;
   completedAt: Date | null;
   txHash: string | null;
+  clientRequestId: string | null;
   liquidityRequestId: string | null;
   liquidityPendingReason: string | null;
   liquidityCheckedAt: Date | null;
@@ -84,6 +86,12 @@ export type ActiveCkbAddressReservationTotalInput = {
   network: "AGGRON4" | "LINA";
 };
 
+export type FindByClientRequestIdInput = {
+  appId: string;
+  userId: string;
+  clientRequestId: string;
+};
+
 export type CompletionDeps = {
   ledgerRepo: LedgerRepo;
 };
@@ -98,6 +106,7 @@ export type WithdrawalRepo = {
   createWithBalanceCheck(input: CreateWithdrawalInput, deps: BalanceCheckDeps): Promise<WithdrawalRecord>;
   getPendingTotal(input: PendingTotalInput): Promise<string>;
   getActiveCkbAddressReservationTotal(input: ActiveCkbAddressReservationTotalInput): Promise<string>;
+  findByClientRequestId(input: FindByClientRequestIdInput): Promise<WithdrawalRecord | null>;
   findByIdOrThrow(id: string): Promise<WithdrawalRecord>;
   listLiquidityPending(): Promise<WithdrawalRecord[]>;
   listReadyForProcessing(now: Date): Promise<WithdrawalRecord[]>;
@@ -133,6 +142,7 @@ function toRecord(row: WithdrawalRow): WithdrawalRecord {
     updatedAt: row.updatedAt,
     completedAt: row.completedAt,
     txHash: row.txHash,
+    clientRequestId: row.clientRequestId,
     liquidityRequestId: row.liquidityRequestId,
     liquidityPendingReason: row.liquidityPendingReason,
     liquidityCheckedAt: row.liquidityCheckedAt,
@@ -145,6 +155,56 @@ function inferDestinationKind(toAddress: string): WithdrawalDestinationKind {
     return "CKB_ADDRESS";
   }
   return "PAYMENT_REQUEST";
+}
+
+function isUniqueViolation(err: unknown): boolean {
+  return Boolean(
+    err &&
+      typeof err === "object" &&
+      "code" in err &&
+      (err as { code?: unknown }).code === "23505",
+  );
+}
+
+async function findByClientRequestIdWithClient(
+  client: DbClient,
+  input: FindByClientRequestIdInput,
+): Promise<WithdrawalRecord | null> {
+  const [row] = await client
+    .select()
+    .from(withdrawals)
+    .where(
+      and(
+        eq(withdrawals.appId, input.appId),
+        eq(withdrawals.userId, input.userId),
+        eq(withdrawals.clientRequestId, input.clientRequestId),
+      ),
+    )
+    .limit(1);
+  return row ? toRecord(row) : null;
+}
+
+async function acquireClientRequestLock(
+  client: DbClient,
+  input: { appId: string; userId: string; clientRequestId?: string },
+): Promise<void> {
+  if (!input.clientRequestId) return;
+
+  const clientRequestLockKey = `${input.appId}:${input.userId}:client-request:${input.clientRequestId}`;
+  await client.execute(sql`select pg_advisory_xact_lock(hashtext(${clientRequestLockKey}))`);
+}
+
+async function findExistingClientRequestWithdrawal(
+  client: DbClient,
+  input: { appId: string; userId: string; clientRequestId?: string },
+): Promise<WithdrawalRecord | null> {
+  if (!input.clientRequestId) return null;
+
+  return findByClientRequestIdWithClient(client, {
+    appId: input.appId,
+    userId: input.userId,
+    clientRequestId: input.clientRequestId,
+  });
 }
 
 function sumAmounts(amounts: string[]): string {
@@ -223,55 +283,99 @@ export function createDbWithdrawalRepo(db: DbClient): WithdrawalRepo {
   return {
     async create(input) {
       assertPositiveAmount(input.amount);
-      const now = new Date();
-      const [row] = await db
-        .insert(withdrawals)
-        .values({
+      if (input.clientRequestId) {
+        const existing = await findByClientRequestIdWithClient(db, {
           appId: input.appId,
           userId: input.userId,
-          asset: input.asset,
-          amount: input.amount,
-          destinationKind: input.destinationKind ?? inferDestinationKind(input.toAddress),
-          toAddress: input.toAddress,
-          state: "PENDING",
-          retryCount: 0,
-          nextRetryAt: null,
-          lastError: null,
-          createdAt: now,
-          updatedAt: now,
-          completedAt: null,
-          txHash: null,
-        })
-        .returning();
-      return toRecord(row);
+          clientRequestId: input.clientRequestId,
+        });
+        if (existing) return existing;
+      }
+      const now = new Date();
+      try {
+        const [row] = await db
+          .insert(withdrawals)
+          .values({
+            appId: input.appId,
+            userId: input.userId,
+            asset: input.asset,
+            amount: input.amount,
+            destinationKind: input.destinationKind ?? inferDestinationKind(input.toAddress),
+            toAddress: input.toAddress,
+            state: "PENDING",
+            retryCount: 0,
+            nextRetryAt: null,
+            lastError: null,
+            createdAt: now,
+            updatedAt: now,
+            completedAt: null,
+            txHash: null,
+            clientRequestId: input.clientRequestId ?? null,
+          })
+          .returning();
+        return toRecord(row);
+      } catch (error) {
+        if (!input.clientRequestId || !isUniqueViolation(error)) {
+          throw error;
+        }
+        const existing = await findByClientRequestIdWithClient(db, {
+          appId: input.appId,
+          userId: input.userId,
+          clientRequestId: input.clientRequestId,
+        });
+        if (existing) return existing;
+        throw error;
+      }
     },
 
     async createLiquidityPending(input) {
       assertPositiveAmount(input.amount);
-      const now = new Date();
-      const [row] = await db
-        .insert(withdrawals)
-        .values({
+      if (input.clientRequestId) {
+        const existing = await findByClientRequestIdWithClient(db, {
           appId: input.appId,
           userId: input.userId,
-          asset: input.asset,
-          amount: input.amount,
-          destinationKind: input.destinationKind ?? inferDestinationKind(input.toAddress),
-          toAddress: input.toAddress,
-          state: "LIQUIDITY_PENDING",
-          retryCount: 0,
-          nextRetryAt: null,
-          lastError: null,
-          createdAt: now,
-          updatedAt: now,
-          completedAt: null,
-          txHash: null,
-          liquidityRequestId: input.liquidityRequestId,
-          liquidityPendingReason: input.liquidityPendingReason,
-          liquidityCheckedAt: now,
-        })
-        .returning();
-      return toRecord(row);
+          clientRequestId: input.clientRequestId,
+        });
+        if (existing) return existing;
+      }
+      const now = new Date();
+      try {
+        const [row] = await db
+          .insert(withdrawals)
+          .values({
+            appId: input.appId,
+            userId: input.userId,
+            asset: input.asset,
+            amount: input.amount,
+            destinationKind: input.destinationKind ?? inferDestinationKind(input.toAddress),
+            toAddress: input.toAddress,
+            state: "LIQUIDITY_PENDING",
+            retryCount: 0,
+            nextRetryAt: null,
+            lastError: null,
+            createdAt: now,
+            updatedAt: now,
+            completedAt: null,
+            txHash: null,
+            clientRequestId: input.clientRequestId ?? null,
+            liquidityRequestId: input.liquidityRequestId,
+            liquidityPendingReason: input.liquidityPendingReason,
+            liquidityCheckedAt: now,
+          })
+          .returning();
+        return toRecord(row);
+      } catch (error) {
+        if (!input.clientRequestId || !isUniqueViolation(error)) {
+          throw error;
+        }
+        const existing = await findByClientRequestIdWithClient(db, {
+          appId: input.appId,
+          userId: input.userId,
+          clientRequestId: input.clientRequestId,
+        });
+        if (existing) return existing;
+        throw error;
+      }
     },
 
     async createLiquidityPendingWithBalanceCheck(input, _deps) {
@@ -279,6 +383,10 @@ export function createDbWithdrawalRepo(db: DbClient): WithdrawalRepo {
       return db.transaction(async (tx) => {
         const lockKey = `${input.appId}:${input.userId}:${input.asset}`;
         await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${lockKey}))`);
+        await acquireClientRequestLock(tx, input);
+
+        const existing = await findExistingClientRequestWithdrawal(tx, input);
+        if (existing) return existing;
 
         const ledgerRepo = createDbLedgerRepo(tx);
         const balance = await ledgerRepo.getBalance({
@@ -313,6 +421,7 @@ export function createDbWithdrawalRepo(db: DbClient): WithdrawalRepo {
             updatedAt: now,
             completedAt: null,
             txHash: null,
+            clientRequestId: input.clientRequestId ?? null,
             liquidityRequestId: input.liquidityRequestId,
             liquidityPendingReason: input.liquidityPendingReason,
             liquidityCheckedAt: now,
@@ -328,6 +437,10 @@ export function createDbWithdrawalRepo(db: DbClient): WithdrawalRepo {
       return db.transaction(async (tx) => {
         const lockKey = `${input.appId}:${input.userId}:${input.asset}`;
         await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${lockKey}))`);
+        await acquireClientRequestLock(tx, input);
+
+        const existing = await findExistingClientRequestWithdrawal(tx, input);
+        if (existing) return existing;
 
         const ledgerRepo = createDbLedgerRepo(tx);
         const balance = await ledgerRepo.getBalance({
@@ -362,6 +475,7 @@ export function createDbWithdrawalRepo(db: DbClient): WithdrawalRepo {
             updatedAt: now,
             completedAt: null,
             txHash: null,
+            clientRequestId: input.clientRequestId ?? null,
           })
           .returning();
 
@@ -375,6 +489,10 @@ export function createDbWithdrawalRepo(db: DbClient): WithdrawalRepo {
 
     async getActiveCkbAddressReservationTotal(input) {
       return getActiveCkbAddressReservationTotalWithClient(db, input);
+    },
+
+    async findByClientRequestId(input) {
+      return findByClientRequestIdWithClient(db, input);
     },
 
     async findByIdOrThrow(id) {
@@ -608,9 +726,34 @@ export function createInMemoryWithdrawalRepo(): WithdrawalRepo {
     };
   }
 
+  function findExistingClientRequest(input: {
+    appId: string;
+    userId: string;
+    clientRequestId?: string;
+  }): WithdrawalRecord | null {
+    if (!input.clientRequestId) return null;
+
+    const record = records.find(
+      (item) =>
+        item.appId === input.appId &&
+        item.userId === input.userId &&
+        item.clientRequestId === input.clientRequestId,
+    );
+    return record ? clone(record) : null;
+  }
+
   return {
     async create(input) {
       assertPositiveAmount(input.amount);
+      if (input.clientRequestId) {
+        const existing = records.find(
+          (item) =>
+            item.appId === input.appId &&
+            item.userId === input.userId &&
+            item.clientRequestId === input.clientRequestId,
+        );
+        if (existing) return clone(existing);
+      }
       const now = new Date();
       const record: WithdrawalRecord = {
         ...input,
@@ -624,6 +767,7 @@ export function createInMemoryWithdrawalRepo(): WithdrawalRepo {
         updatedAt: now,
         completedAt: null,
         txHash: null,
+        clientRequestId: input.clientRequestId ?? null,
         liquidityRequestId: null,
         liquidityPendingReason: null,
         liquidityCheckedAt: null,
@@ -634,6 +778,15 @@ export function createInMemoryWithdrawalRepo(): WithdrawalRepo {
 
     async createLiquidityPending(input) {
       assertPositiveAmount(input.amount);
+      if (input.clientRequestId) {
+        const existing = records.find(
+          (item) =>
+            item.appId === input.appId &&
+            item.userId === input.userId &&
+            item.clientRequestId === input.clientRequestId,
+        );
+        if (existing) return clone(existing);
+      }
       const now = new Date();
       const record: WithdrawalRecord = {
         ...input,
@@ -647,6 +800,7 @@ export function createInMemoryWithdrawalRepo(): WithdrawalRepo {
         updatedAt: now,
         completedAt: null,
         txHash: null,
+        clientRequestId: input.clientRequestId ?? null,
         liquidityRequestId: input.liquidityRequestId,
         liquidityPendingReason: input.liquidityPendingReason,
         liquidityCheckedAt: now,
@@ -656,6 +810,8 @@ export function createInMemoryWithdrawalRepo(): WithdrawalRepo {
     },
 
     async createLiquidityPendingWithBalanceCheck(input, deps) {
+      const existing = findExistingClientRequest(input);
+      if (existing) return existing;
       const pending = await this.getPendingTotal({
         appId: input.appId,
         userId: input.userId,
@@ -673,6 +829,8 @@ export function createInMemoryWithdrawalRepo(): WithdrawalRepo {
     },
 
     async createWithBalanceCheck(input, deps) {
+      const existing = findExistingClientRequest(input);
+      if (existing) return existing;
       const pending = await this.getPendingTotal({
         appId: input.appId,
         userId: input.userId,
@@ -714,6 +872,14 @@ export function createInMemoryWithdrawalRepo(): WithdrawalRepo {
             item.state === "RETRY_PENDING"),
       );
       return sumAmounts(active.map((item) => item.amount));
+    },
+
+    async findByClientRequestId(input) {
+      const record = records.find(
+        (item) =>
+          item.appId === input.appId && item.userId === input.userId && item.clientRequestId === input.clientRequestId,
+      );
+      return record ? clone(record) : null;
     },
 
     async findByIdOrThrow(id) {

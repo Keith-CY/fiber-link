@@ -19,6 +19,7 @@ export type RequestWithdrawalInput = {
   userId: string;
   asset: Asset;
   amount: string;
+  clientRequestId?: string;
   destination: WithdrawalDestination;
 };
 

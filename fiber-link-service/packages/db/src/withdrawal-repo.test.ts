@@ -583,6 +583,47 @@ describe("createInMemoryWithdrawalRepo balance gating", () => {
     expect(created.state).toBe("PENDING");
   });
 
+  it("returns the existing withdrawal for duplicate client request ids without reserving funds twice", async () => {
+    const ledger = createInMemoryLedgerRepo();
+    const repo = createInMemoryWithdrawalRepo();
+
+    await ledger.creditOnce({
+      appId: "app1",
+      userId: "u1",
+      asset: "USDI",
+      amount: "10",
+      refId: "credit-1",
+      idempotencyKey: "credit-1",
+    });
+
+    const first = await repo.createWithBalanceCheck(
+      {
+        appId: "app1",
+        userId: "u1",
+        asset: "USDI",
+        amount: "10",
+        toAddress: "fiber:invoice:idempotent",
+        clientRequestId: "withdrawal-retry-1",
+      },
+      { ledgerRepo: ledger },
+    );
+    const second = await repo.createWithBalanceCheck(
+      {
+        appId: "app1",
+        userId: "u1",
+        asset: "USDI",
+        amount: "10",
+        toAddress: "fiber:invoice:idempotent",
+        clientRequestId: "withdrawal-retry-1",
+      },
+      { ledgerRepo: ledger },
+    );
+
+    expect(second.id).toBe(first.id);
+    expect(second.clientRequestId).toBe("withdrawal-retry-1");
+    expect(await repo.getPendingTotal({ appId: "app1", userId: "u1", asset: "USDI" })).toBe("10");
+  });
+
   it("creates a withdrawal in LIQUIDITY_PENDING with linked liquidity request", async () => {
     const repo = createInMemoryWithdrawalRepo();
 
