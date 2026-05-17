@@ -167,8 +167,7 @@ const FIBER_WITHDRAWAL_ERROR_CONTRACT = {
     "EAI_AGAIN",
     "EPIPE",
   ]),
-  transientMessagePattern:
-    /\b(?:abort(?:ed)?|fetch failed|network error|timeout|timed out|ECONNRESET|ECONNREFUSED|ECONNABORTED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|EPIPE)\b/i,
+  transientMessagePattern: /\b(?:abort(?:ed)?|fetch failed|network error|timeout|timed out)\b/i,
   defaultFiberKind: "transient" as const,
   defaultUnknownKind: "permanent" as const,
 };
@@ -212,10 +211,7 @@ function classifyFiberRpcError(error: FiberRpcError): ExecutionFailureKind {
 }
 
 function getErrorCode(error: unknown): string | null {
-  if (!error || typeof error !== "object" || !("code" in error)) {
-    return null;
-  }
-  const code = (error as { code?: unknown }).code;
+  const code = (error as { code?: unknown } | null | undefined)?.code;
   return typeof code === "string" ? code : null;
 }
 
