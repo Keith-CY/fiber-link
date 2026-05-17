@@ -4,6 +4,7 @@ import type { DbClient } from "./client";
 import { assertPositiveAmount, formatDecimal, parseDecimal, pow10 } from "./amount";
 import { withdrawalDebitIdempotencyKey } from "./idempotency";
 import { createDbLedgerRepo, type LedgerRepo } from "./ledger-repo";
+import { computeRetryDelay } from "./retry";
 import { withdrawals, type Asset, type WithdrawalDestinationKind, type WithdrawalState } from "./schema";
 
 export type WithdrawalAsset = Asset;
@@ -91,7 +92,7 @@ export type CompletionDeps = {
 export type ReapStaleProcessingInput = {
   now: Date;
   staleBefore: Date;
-  nextRetryAt: Date;
+  baseRetryDelayMs: number;
   error: string;
 };
 
@@ -423,7 +424,7 @@ export function createDbWithdrawalRepo(db: DbClient): WithdrawalRepo {
         .set({
           state: "RETRY_PENDING",
           retryCount: sql`${withdrawals.retryCount} + 1`,
-          nextRetryAt: input.nextRetryAt,
+          nextRetryAt: sql`${input.now} + ((${input.baseRetryDelayMs} * pow(2, least(${withdrawals.retryCount}, 8))) || ' milliseconds')::interval`,
           lastError: input.error,
           updatedAt: input.now,
         })
@@ -771,9 +772,10 @@ export function createInMemoryWithdrawalRepo(): WithdrawalRepo {
         if (record.state !== "PROCESSING" || record.updatedAt > input.staleBefore) {
           continue;
         }
+        const computedRetryDelayMs = computeRetryDelay(input.baseRetryDelayMs, record.retryCount);
         record.state = "RETRY_PENDING";
         record.retryCount += 1;
-        record.nextRetryAt = input.nextRetryAt;
+        record.nextRetryAt = new Date(input.now.getTime() + computedRetryDelayMs);
         record.lastError = input.error;
         record.updatedAt = input.now;
         reaped.push(clone(record));

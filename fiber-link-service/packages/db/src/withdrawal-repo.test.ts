@@ -517,14 +517,13 @@ describe("createDbWithdrawalRepo", () => {
     const mock = createDbMock();
     const repo = createDbWithdrawalRepo(mock.db);
     const now = new Date("2026-02-07T12:10:00.000Z");
-    const nextRetryAt = new Date("2026-02-07T12:11:00.000Z");
 
     mock.updateReturning.mockResolvedValueOnce([
       mockRow({
         id: "stale1",
         state: "RETRY_PENDING",
         retryCount: 2,
-        nextRetryAt,
+        nextRetryAt: new Date("2026-02-07T12:12:00.000Z"),
         lastError: "processing lease expired",
         updatedAt: now,
       }),
@@ -533,7 +532,7 @@ describe("createDbWithdrawalRepo", () => {
     const reaped = await repo.reapStaleProcessing({
       now,
       staleBefore: new Date("2026-02-07T12:05:00.000Z"),
-      nextRetryAt,
+      baseRetryDelayMs: 60_000,
       error: "processing lease expired",
     });
 
@@ -541,7 +540,8 @@ describe("createDbWithdrawalRepo", () => {
     const setArg = mock.updateSet.mock.calls[0][0] as Record<string, unknown>;
     expect(setArg.state).toBe("RETRY_PENDING");
     expect(setArg.retryCount).not.toBe(2);
-    expect(setArg.nextRetryAt).toBe(nextRetryAt);
+    expect(setArg.nextRetryAt).toBeDefined();
+    expect(setArg.nextRetryAt).not.toBeInstanceOf(Date);
     expect(setArg.lastError).toBe("processing lease expired");
   });
 });

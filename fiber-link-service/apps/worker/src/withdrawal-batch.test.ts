@@ -214,6 +214,12 @@ describe("runWithdrawalBatch", () => {
       amount: "10",
       toAddress: "fiber:invoice:stale-processing",
     });
+    await repo.markProcessing(created.id, new Date("2026-02-07T11:58:00.000Z"));
+    await repo.markRetryPending(created.id, {
+      now: new Date("2026-02-07T11:59:00.000Z"),
+      nextRetryAt: new Date("2026-02-07T12:00:00.000Z"),
+      error: "previous transient failure",
+    });
     await repo.markProcessing(created.id, new Date("2026-02-07T12:00:00.000Z"));
     const executeWithdrawal = vi.fn(async () => ({ ok: true, txHash: "0xshould-not-run" }) as const);
 
@@ -230,9 +236,9 @@ describe("runWithdrawalBatch", () => {
     expect(executeWithdrawal).not.toHaveBeenCalled();
     const saved = await repo.findByIdOrThrow(created.id);
     expect(saved.state).toBe("RETRY_PENDING");
-    expect(saved.retryCount).toBe(1);
+    expect(saved.retryCount).toBe(2);
     expect(saved.lastError).toBe("processing lease expired");
-    expect(saved.nextRetryAt?.toISOString()).toBe("2026-02-07T12:11:00.000Z");
+    expect(saved.nextRetryAt?.toISOString()).toBe("2026-02-07T12:12:00.000Z");
   });
 
   it("does not reap fresh PROCESSING withdrawals", async () => {

@@ -387,7 +387,7 @@ export async function runWithdrawalBatch(options: RunWithdrawalBatchOptions = {}
     await repo.reapStaleProcessing({
       now,
       staleBefore: new Date(now.getTime() - processingLeaseMs),
-      nextRetryAt: new Date(now.getTime() + retryDelayMs),
+      baseRetryDelayMs: retryDelayMs,
       error: "processing lease expired",
     })
   ).length;
