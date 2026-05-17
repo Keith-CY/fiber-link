@@ -512,6 +512,38 @@ describe("createDbWithdrawalRepo", () => {
     const ready = await repo.listReadyForProcessing(new Date("2026-02-07T00:01:00.000Z"));
     expect(ready.map((item) => item.id)).toEqual(["p1", "r1"]);
   });
+
+  it("reaps stale PROCESSING rows atomically into RETRY_PENDING", async () => {
+    const mock = createDbMock();
+    const repo = createDbWithdrawalRepo(mock.db);
+    const now = new Date("2026-02-07T12:10:00.000Z");
+    const nextRetryAt = new Date("2026-02-07T12:11:00.000Z");
+
+    mock.updateReturning.mockResolvedValueOnce([
+      mockRow({
+        id: "stale1",
+        state: "RETRY_PENDING",
+        retryCount: 2,
+        nextRetryAt,
+        lastError: "processing lease expired",
+        updatedAt: now,
+      }),
+    ]);
+
+    const reaped = await repo.reapStaleProcessing({
+      now,
+      staleBefore: new Date("2026-02-07T12:05:00.000Z"),
+      nextRetryAt,
+      error: "processing lease expired",
+    });
+
+    expect(reaped.map((item) => item.id)).toEqual(["stale1"]);
+    const setArg = mock.updateSet.mock.calls[0][0] as Record<string, unknown>;
+    expect(setArg.state).toBe("RETRY_PENDING");
+    expect(setArg.retryCount).not.toBe(2);
+    expect(setArg.nextRetryAt).toBe(nextRetryAt);
+    expect(setArg.lastError).toBe("processing lease expired");
+  });
 });
 
 describe("createInMemoryWithdrawalRepo balance gating", () => {

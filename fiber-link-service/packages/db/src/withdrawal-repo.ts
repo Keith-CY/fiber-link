@@ -88,6 +88,13 @@ export type CompletionDeps = {
   ledgerRepo: LedgerRepo;
 };
 
+export type ReapStaleProcessingInput = {
+  now: Date;
+  staleBefore: Date;
+  nextRetryAt: Date;
+  error: string;
+};
+
 export type WithdrawalRepo = {
   create(input: CreateWithdrawalInput): Promise<WithdrawalRecord>;
   createLiquidityPending(input: CreateLiquidityPendingWithdrawalInput): Promise<WithdrawalRecord>;
@@ -102,6 +109,7 @@ export type WithdrawalRepo = {
   listLiquidityPending(): Promise<WithdrawalRecord[]>;
   listReadyForProcessing(now: Date): Promise<WithdrawalRecord[]>;
   listBroadcastedForConfirmation(): Promise<WithdrawalRecord[]>;
+  reapStaleProcessing(input: ReapStaleProcessingInput): Promise<WithdrawalRecord[]>;
   markPendingFromLiquidity(id: string, now: Date): Promise<WithdrawalRecord>;
   markProcessing(id: string, now: Date): Promise<WithdrawalRecord>;
   markBroadcastedWithDebit(id: string, params: { now: Date; txHash: string }, deps: CompletionDeps): Promise<WithdrawalRecord>;
@@ -406,6 +414,21 @@ export function createDbWithdrawalRepo(db: DbClient): WithdrawalRepo {
         .select()
         .from(withdrawals)
         .where(eq(withdrawals.state, "BROADCASTED"));
+      return rows.map(toRecord);
+    },
+
+    async reapStaleProcessing(input) {
+      const rows = await db
+        .update(withdrawals)
+        .set({
+          state: "RETRY_PENDING",
+          retryCount: sql`${withdrawals.retryCount} + 1`,
+          nextRetryAt: input.nextRetryAt,
+          lastError: input.error,
+          updatedAt: input.now,
+        })
+        .where(and(eq(withdrawals.state, "PROCESSING"), lte(withdrawals.updatedAt, input.staleBefore)))
+        .returning();
       return rows.map(toRecord);
     },
 
@@ -740,6 +763,22 @@ export function createInMemoryWithdrawalRepo(): WithdrawalRepo {
 
     async listBroadcastedForConfirmation() {
       return records.filter((item) => item.state === "BROADCASTED").map(clone);
+    },
+
+    async reapStaleProcessing(input) {
+      const reaped: WithdrawalRecord[] = [];
+      for (const record of records) {
+        if (record.state !== "PROCESSING" || record.updatedAt > input.staleBefore) {
+          continue;
+        }
+        record.state = "RETRY_PENDING";
+        record.retryCount += 1;
+        record.nextRetryAt = input.nextRetryAt;
+        record.lastError = input.error;
+        record.updatedAt = input.now;
+        reaped.push(clone(record));
+      }
+      return reaped;
     },
 
     async markPendingFromLiquidity(id, now) {

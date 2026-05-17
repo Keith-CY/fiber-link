@@ -38,6 +38,7 @@ export type RunWithdrawalBatchOptions = {
   now?: Date;
   maxRetries?: number;
   retryDelayMs?: number;
+  processingLeaseMs?: number;
   executeWithdrawal?: (withdrawal: WithdrawalRecord) => Promise<WithdrawalExecutionResult>;
   confirmWithdrawal?: (withdrawal: WithdrawalRecord) => Promise<WithdrawalConfirmationResult>;
   ledgerRepo?: LedgerRepo;
@@ -227,6 +228,7 @@ export async function runWithdrawalBatch(options: RunWithdrawalBatchOptions = {}
   // maxRetries counts retry attempts after the initial processing attempt.
   const maxRetries = options.maxRetries ?? 3;
   const retryDelayMs = options.retryDelayMs ?? 60_000;
+  const processingLeaseMs = options.processingLeaseMs ?? 5 * 60_000;
   const executeWithdrawal = options.executeWithdrawal ?? defaultExecuteWithdrawal;
   const confirmWithdrawal = options.confirmWithdrawal ?? defaultConfirmWithdrawal;
   const repo = options.repo ?? getDefaultRepo();
@@ -381,5 +383,14 @@ export async function runWithdrawalBatch(options: RunWithdrawalBatchOptions = {}
     }
   }
 
-  return { processed, broadcasted, completed, retryPending, failed, skipped };
+  const reapedProcessing = (
+    await repo.reapStaleProcessing({
+      now,
+      staleBefore: new Date(now.getTime() - processingLeaseMs),
+      nextRetryAt: new Date(now.getTime() + retryDelayMs),
+      error: "processing lease expired",
+    })
+  ).length;
+
+  return { processed, broadcasted, completed, retryPending, failed, skipped, reapedProcessing };
 }
