@@ -4,6 +4,7 @@ import type { DbClient } from "./client";
 import { assertPositiveAmount, formatDecimal, parseDecimal, pow10 } from "./amount";
 import { withdrawalDebitIdempotencyKey } from "./idempotency";
 import { createDbLedgerRepo, type LedgerRepo } from "./ledger-repo";
+import { computeRetryDelay } from "./retry";
 import { withdrawals, type Asset, type WithdrawalDestinationKind, type WithdrawalState } from "./schema";
 
 export type WithdrawalAsset = Asset;
@@ -96,6 +97,13 @@ export type CompletionDeps = {
   ledgerRepo: LedgerRepo;
 };
 
+export type ReapStaleProcessingInput = {
+  now: Date;
+  staleBefore: Date;
+  baseRetryDelayMs: number;
+  error: string;
+};
+
 export type WithdrawalRepo = {
   create(input: CreateWithdrawalInput): Promise<WithdrawalRecord>;
   createLiquidityPending(input: CreateLiquidityPendingWithdrawalInput): Promise<WithdrawalRecord>;
@@ -111,6 +119,7 @@ export type WithdrawalRepo = {
   listLiquidityPending(): Promise<WithdrawalRecord[]>;
   listReadyForProcessing(now: Date): Promise<WithdrawalRecord[]>;
   listBroadcastedForConfirmation(): Promise<WithdrawalRecord[]>;
+  reapStaleProcessing(input: ReapStaleProcessingInput): Promise<WithdrawalRecord[]>;
   markPendingFromLiquidity(id: string, now: Date): Promise<WithdrawalRecord>;
   markProcessing(id: string, now: Date): Promise<WithdrawalRecord>;
   markBroadcastedWithDebit(id: string, params: { now: Date; txHash: string }, deps: CompletionDeps): Promise<WithdrawalRecord>;
@@ -527,6 +536,21 @@ export function createDbWithdrawalRepo(db: DbClient): WithdrawalRepo {
       return rows.map(toRecord);
     },
 
+    async reapStaleProcessing(input) {
+      const rows = await db
+        .update(withdrawals)
+        .set({
+          state: "RETRY_PENDING",
+          retryCount: sql`${withdrawals.retryCount} + 1`,
+          nextRetryAt: sql`${input.now} + ((${input.baseRetryDelayMs} * pow(2, least(${withdrawals.retryCount}, 8))) || ' milliseconds')::interval`,
+          lastError: input.error,
+          updatedAt: input.now,
+        })
+        .where(and(eq(withdrawals.state, "PROCESSING"), lte(withdrawals.updatedAt, input.staleBefore)))
+        .returning();
+      return rows.map(toRecord);
+    },
+
     async markPendingFromLiquidity(id, now) {
       const [row] = await db
         .update(withdrawals)
@@ -906,6 +930,23 @@ export function createInMemoryWithdrawalRepo(): WithdrawalRepo {
 
     async listBroadcastedForConfirmation() {
       return records.filter((item) => item.state === "BROADCASTED").map(clone);
+    },
+
+    async reapStaleProcessing(input) {
+      const reaped: WithdrawalRecord[] = [];
+      for (const record of records) {
+        if (record.state !== "PROCESSING" || record.updatedAt > input.staleBefore) {
+          continue;
+        }
+        const computedRetryDelayMs = computeRetryDelay(input.baseRetryDelayMs, record.retryCount);
+        record.state = "RETRY_PENDING";
+        record.retryCount += 1;
+        record.nextRetryAt = new Date(input.now.getTime() + computedRetryDelayMs);
+        record.lastError = input.error;
+        record.updatedAt = input.now;
+        reaped.push(clone(record));
+      }
+      return reaped;
     },
 
     async markPendingFromLiquidity(id, now) {
