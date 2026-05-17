@@ -45,8 +45,11 @@ function isAbortError(error: unknown) {
 }
 
 function isRetryableError(error: unknown) {
+  if (error instanceof FiberRpcTimeoutError) {
+    return true;
+  }
   if (error instanceof FiberRpcError) {
-    return false;
+    return typeof error.code === "number" && [502, 503, 504].includes(error.code);
   }
   return error instanceof TypeError || isAbortError(error);
 }
@@ -59,15 +62,16 @@ function delay(ms: number, signal?: AbortSignal) {
     return Promise.resolve();
   }
   return new Promise<void>((resolve, reject) => {
-    const timeout = setTimeout(resolve, ms);
-    signal?.addEventListener(
-      "abort",
-      () => {
-        clearTimeout(timeout);
-        reject(signal.reason ?? new DOMException("Fiber RPC aborted", "AbortError"));
-      },
-      { once: true },
-    );
+    let timeout: ReturnType<typeof setTimeout>;
+    const onAbort = () => {
+      clearTimeout(timeout);
+      reject(signal?.reason ?? new DOMException("Fiber RPC aborted", "AbortError"));
+    };
+    timeout = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener("abort", onAbort, { once: true });
   });
 }
 
@@ -131,7 +135,7 @@ export async function rpcCall(endpoint: FiberRpcEndpoint, method: string, params
       });
 
       if (!response.ok) {
-        throw new FiberRpcError(`Fiber RPC HTTP ${response.status}`);
+        throw new FiberRpcError(`Fiber RPC HTTP ${response.status}`, response.status);
       }
 
       const payload = await response.json();
