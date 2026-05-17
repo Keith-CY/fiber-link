@@ -13,15 +13,17 @@ DRY_RUN=0
 SKIP_SMOKE=0
 VERBOSE=0
 WAIT_SECONDS=120
+DESTROY_VOLUMES="${FIBER_LINK_DESTROY_VOLUMES:-0}"
 
 usage() {
   cat <<'EOF'
-Usage: compose-readiness.sh [--dry-run] [--skip-smoke] [--verbose]
+Usage: compose-readiness.sh [--dry-run] [--skip-smoke] [--verbose] [--destroy-volumes]
 
 Options:
-  --dry-run     Print commands without executing side effects.
-  --skip-smoke  Start services and wait for readiness without HTTP smoke checks.
-  --verbose     Print command execution details.
+  --dry-run          Print commands without executing side effects.
+  --skip-smoke       Start services and wait for readiness without HTTP smoke checks.
+  --verbose          Print command execution details.
+  --destroy-volumes  Remove compose volumes during cleanup. Can also be enabled with FIBER_LINK_DESTROY_VOLUMES=1.
 EOF
 }
 
@@ -35,6 +37,9 @@ while [[ $# -gt 0 ]]; do
       ;;
     --verbose)
       VERBOSE=1
+      ;;
+    --destroy-volumes)
+      DESTROY_VOLUMES=1
       ;;
     -h|--help)
       usage
@@ -59,8 +64,22 @@ fi
 
 RPC_PORT="${RPC_PORT:-3000}"
 RPC_URL="http://127.0.0.1:${RPC_PORT}"
+export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-fiber-link-readiness-$(date -u +"%Y%m%d%H%M%S")-$$}"
+COMPOSE_DOWN_ARGS="--remove-orphans"
+if [[ "${DESTROY_VOLUMES}" == "1" ]]; then
+  COMPOSE_DOWN_ARGS="${COMPOSE_DOWN_ARGS} --volumes"
+fi
 
 echo "Evidence directory: ${EVIDENCE_DIR}"
+echo "Compose project: ${COMPOSE_PROJECT_NAME}"
+
+if [[ "${DESTROY_VOLUMES}" == "1" ]]; then
+  cat >&2 <<EOF
+WARNING: destructive compose volume cleanup is enabled.
+Target compose project: ${COMPOSE_PROJECT_NAME}
+Env file: ${ENV_FILE}
+EOF
+fi
 
 declare -A CHECK_STATUS=(
   [precheck]="not_run"
@@ -198,7 +217,7 @@ fi
 run_step "compose-logs" "${EVIDENCE_DIR}/compose-logs.log" "docker compose -f \"$COMPOSE_FILE\" logs --no-color --timestamps rpc worker fnn postgres redis"
 
 if [[ "${CHECK_STATUS[spinup]}" == "pass" ]]; then
-  if run_step "compose-down" "${EVIDENCE_DIR}/compose-down.log" "cd \"$ROOT_DIR\" && docker compose -f \"$COMPOSE_FILE\" down --remove-orphans --volumes"; then
+  if run_step "compose-down" "${EVIDENCE_DIR}/compose-down.log" "cd \"$ROOT_DIR\" && docker compose -f \"$COMPOSE_FILE\" down ${COMPOSE_DOWN_ARGS}"; then
     CHECK_STATUS[shutdown]="pass"
   else
     CHECK_STATUS[shutdown]="fail"
@@ -223,6 +242,8 @@ cat > "$summary_file" <<EOF
   "timestamp": "${TIMESTAMP}",
   "dryRun": ${DRY_RUN},
   "skipSmoke": ${SKIP_SMOKE},
+  "destroyVolumes": "${DESTROY_VOLUMES}",
+  "composeProjectName": "${COMPOSE_PROJECT_NAME}",
   "waitSeconds": ${WAIT_SECONDS},
   "checks": {
     "precheck": "${CHECK_STATUS[precheck]}",
