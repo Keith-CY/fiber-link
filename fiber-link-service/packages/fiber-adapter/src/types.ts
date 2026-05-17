@@ -140,11 +140,18 @@ export type SettlementSubscriptionConfig = {
   authToken?: string;
 };
 
+export type FiberRpcRequestOptions = {
+  timeoutMs?: number;
+  retryCount?: number;
+  retryDelayMs?: number;
+  signal?: AbortSignal;
+};
+
 export type CreateAdapterArgs = {
   endpoint: string;
   settlementSubscription?: SettlementSubscriptionConfig;
   fetchFn?: typeof fetch;
-};
+} & FiberRpcRequestOptions;
 
 export type GetHotWalletInventoryArgs = {
   asset: Asset;

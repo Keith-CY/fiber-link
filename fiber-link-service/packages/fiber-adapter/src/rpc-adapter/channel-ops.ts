@@ -1,4 +1,4 @@
-import { FiberRpcError, rpcCall } from "../fiber-client";
+import { FiberRpcError, rpcCall, type FiberRpcEndpoint } from "../fiber-client";
 import { hasLocalChainLiquiditySweepSupport } from "./rebalance-ops";
 import { normalizeRpcAmount, normalizeRpcInteger, pickRequiredAmount, pickStringCandidate, pickTxEvidence, toHexQuantity } from "./normalize";
 import { rpcCallWithoutParams, toRpcUdtTypeScript } from "./invoice-ops";
@@ -81,7 +81,7 @@ function isUnsupportedRpcMethodError(error: unknown): boolean {
   return message === "unauthorized" || message.includes("method not found") || message.includes("unknown method");
 }
 
-async function probeDirectRebalanceSupport(endpoint: string): Promise<boolean> {
+async function probeDirectRebalanceSupport(endpoint: FiberRpcEndpoint): Promise<boolean> {
   try {
     await rpcCall(endpoint, "get_rebalance_status", {
       request_id: "__capability_probe__",
@@ -95,7 +95,7 @@ async function probeDirectRebalanceSupport(endpoint: string): Promise<boolean> {
   }
 }
 
-async function probeChannelLifecycleSupport(endpoint: string): Promise<boolean> {
+async function probeChannelLifecycleSupport(endpoint: FiberRpcEndpoint): Promise<boolean> {
   try {
     await rpcCall(endpoint, "list_channels", {});
     return true;
@@ -108,7 +108,7 @@ async function probeChannelLifecycleSupport(endpoint: string): Promise<boolean> 
 }
 
 export async function listChannels(
-  endpoint: string,
+  endpoint: FiberRpcEndpoint,
   { includeClosed = false, peerId }: ListChannelsArgs,
 ): Promise<ListChannelsResult> {
   const payload: Record<string, unknown> = {};
@@ -129,7 +129,7 @@ export async function listChannels(
 }
 
 export async function openChannel(
-  endpoint: string,
+  endpoint: FiberRpcEndpoint,
   { peerId, fundingAmount, fundingUdtTypeScript, tlcFeeProportionalMillionths }: OpenChannelArgs,
 ): Promise<OpenChannelResult> {
   const payload: Record<string, unknown> = {
@@ -152,7 +152,7 @@ export async function openChannel(
 }
 
 export async function acceptChannel(
-  endpoint: string,
+  endpoint: FiberRpcEndpoint,
   { temporaryChannelId, fundingAmount }: AcceptChannelArgs,
 ): Promise<AcceptChannelResult> {
   const result = (await rpcCall(endpoint, "accept_channel", {
@@ -164,14 +164,14 @@ export async function acceptChannel(
 }
 
 export async function getCkbChannelAcceptancePolicy(
-  endpoint: string,
+  endpoint: FiberRpcEndpoint,
 ): Promise<CkbChannelAcceptancePolicy> {
   const result = (await rpcCallWithoutParams(endpoint, "node_info")) as Record<string, unknown> | undefined;
   return parseCkbChannelAcceptancePolicy(result);
 }
 
 export async function shutdownChannel(
-  endpoint: string,
+  endpoint: FiberRpcEndpoint,
   { channelId, closeScript, feeRate, force }: ShutdownChannelArgs,
 ): Promise<ShutdownChannelResult> {
   const payload: Record<string, unknown> = {
@@ -192,7 +192,7 @@ export async function shutdownChannel(
   return txHash ? { txHash } : {};
 }
 
-export async function getLiquidityCapabilities(endpoint: string): Promise<LiquidityCapabilities> {
+export async function getLiquidityCapabilities(endpoint: FiberRpcEndpoint): Promise<LiquidityCapabilities> {
   const [directRebalance, channelLifecycle] = await Promise.all([
     probeDirectRebalanceSupport(endpoint),
     probeChannelLifecycleSupport(endpoint),

@@ -10,6 +10,52 @@ function createDeferred<T>() {
 }
 
 describe("createWorkerRuntime", () => {
+  it("aborts in-flight work before waiting for graceful drain on shutdown", async () => {
+    const ticks: Array<() => void> = [];
+    const exitCodes: number[] = [];
+    let observedSignal: AbortSignal | undefined;
+    let resolveOnAbort!: () => void;
+    const aborted = new Promise<void>((resolve) => {
+      resolveOnAbort = resolve;
+    });
+    let calls = 0;
+
+    const runtime = createWorkerRuntime({
+      intervalMs: 1000,
+      maxRetries: 3,
+      retryDelayMs: 60_000,
+      shutdownTimeoutMs: 50,
+      runWithdrawalBatch: async ({ signal }) => {
+        calls += 1;
+        if (calls === 2) {
+          observedSignal = signal;
+          signal.addEventListener("abort", resolveOnAbort, { once: true });
+          await aborted;
+        }
+      },
+      setIntervalFn: (tick) => {
+        ticks.push(tick);
+        return 1 as unknown as ReturnType<typeof setInterval>;
+      },
+      clearIntervalFn: () => {},
+      exitFn: (code) => {
+        exitCodes.push(code);
+      },
+      logger: {
+        info: () => {},
+        warn: () => {},
+        error: () => {},
+      },
+    });
+
+    await runtime.start();
+    ticks[0]?.();
+    await runtime.shutdown("SIGTERM");
+
+    expect(observedSignal?.aborted).toBe(true);
+    expect(exitCodes).toEqual([0]);
+  });
+
   it("waits for in-flight batch to finish before exiting on shutdown", async () => {
     const ticks: Array<() => void> = [];
     const exitCodes: number[] = [];

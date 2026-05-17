@@ -9,6 +9,10 @@ export type CreateAdapterProviderArgs = {
   endpoint?: string;
   settlementSubscription?: CreateAdapterArgs["settlementSubscription"];
   fetchFn?: CreateAdapterArgs["fetchFn"];
+  timeoutMs?: CreateAdapterArgs["timeoutMs"];
+  retryCount?: CreateAdapterArgs["retryCount"];
+  retryDelayMs?: CreateAdapterArgs["retryDelayMs"];
+  signal?: CreateAdapterArgs["signal"];
   simulation?: CreateSimulationAdapterArgs;
   rpcFactory?: (args: CreateAdapterArgs) => FiberAdapter;
   env?: NodeJS.ProcessEnv;
@@ -79,5 +83,9 @@ export function createAdapterProvider(args: CreateAdapterProviderArgs = {}): Fib
     endpoint,
     settlementSubscription: args.settlementSubscription,
     fetchFn: args.fetchFn,
+    timeoutMs: args.timeoutMs,
+    retryCount: args.retryCount,
+    retryDelayMs: args.retryDelayMs,
+    signal: args.signal,
   });
 }

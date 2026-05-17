@@ -1,4 +1,4 @@
-import { FiberRpcError, rpcCall } from "../fiber-client";
+import { FiberRpcError, rpcCall, type FiberRpcEndpoint } from "../fiber-client";
 import { toHexQuantity, normalizeOptionalName } from "./normalize";
 import type {
   Asset,
@@ -62,24 +62,10 @@ function isUdtTypeScript(value: unknown): value is RpcUdtTypeScript {
   );
 }
 
-async function rpcCallWithoutParams(endpoint: string, method: string): Promise<unknown> {
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params: [] }),
-  });
-
-  if (!response.ok) {
-    throw new FiberRpcError(`Fiber RPC HTTP ${response.status}`);
-  }
-
-  const payload = await response.json();
-  if (payload?.error) {
-    throw new FiberRpcError(payload.error.message ?? "Fiber RPC error", payload.error.code, payload.error.data);
-  }
-
-  return payload?.result;
+async function rpcCallWithoutParams(endpoint: FiberRpcEndpoint, method: string): Promise<unknown> {
+  return rpcCall(endpoint, method, undefined, { omitParams: true });
 }
+
 
 function pickUsdiUdtScript(nodeInfo: unknown): RpcUdtTypeScript | null {
   if (!nodeInfo || typeof nodeInfo !== "object") {
@@ -111,7 +97,7 @@ function pickUsdiUdtScript(nodeInfo: unknown): RpcUdtTypeScript | null {
   return script;
 }
 
-export async function resolveUsdiUdtScript(endpoint: string): Promise<RpcUdtTypeScript> {
+export async function resolveUsdiUdtScript(endpoint: FiberRpcEndpoint): Promise<RpcUdtTypeScript> {
   const envJson = process.env.FIBER_USDI_UDT_TYPE_SCRIPT_JSON;
   if (typeof envJson === "string" && envJson.trim()) {
     let parsed: unknown;
@@ -160,7 +146,7 @@ export function toRpcUdtTypeScript(script: UdtTypeScript): RpcUdtTypeScript {
   };
 }
 
-export async function createInvoice(endpoint: string, { amount, asset }: CreateInvoiceArgs) {
+export async function createInvoice(endpoint: FiberRpcEndpoint, { amount, asset }: CreateInvoiceArgs) {
   const payload: Record<string, unknown> = {
     amount: toHexQuantity(amount),
     currency: mapAssetToCurrency(asset),
@@ -176,7 +162,7 @@ export async function createInvoice(endpoint: string, { amount, asset }: CreateI
   return { invoice: result.invoice_address };
 }
 
-export async function getInvoiceStatus(endpoint: string, { invoice }: { invoice: string }) {
+export async function getInvoiceStatus(endpoint: FiberRpcEndpoint, { invoice }: { invoice: string }) {
   const parsed = (await rpcCall(endpoint, "parse_invoice", {
     invoice,
   })) as Record<string, unknown> | undefined;

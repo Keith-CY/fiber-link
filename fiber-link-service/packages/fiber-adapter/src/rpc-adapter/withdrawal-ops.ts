@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { rpcCall } from "../fiber-client";
+import { rpcCall, type FiberRpcEndpoint } from "../fiber-client";
 import { executeCkbOnchainWithdrawal } from "../ckb-onchain-withdrawal";
 import { executeUdtOnchainWithdrawal } from "../udt-onchain-withdrawal";
 import { pickTxEvidence, toHexQuantity } from "./normalize";
@@ -11,7 +11,7 @@ function generateFallbackRequestId({ invoice, amount, asset }: { invoice: string
 }
 
 export async function executeWithdrawal(
-  endpoint: string,
+  endpoint: FiberRpcEndpoint,
   { amount, asset, destination, requestId }: ExecuteWithdrawalArgs,
 ) {
   if (destination.kind === "CKB_ADDRESS") {
