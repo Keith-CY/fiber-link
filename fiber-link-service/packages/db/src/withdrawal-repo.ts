@@ -184,6 +184,29 @@ async function findByClientRequestIdWithClient(
   return row ? toRecord(row) : null;
 }
 
+async function acquireClientRequestLock(
+  client: DbClient,
+  input: { appId: string; userId: string; clientRequestId?: string },
+): Promise<void> {
+  if (!input.clientRequestId) return;
+
+  const clientRequestLockKey = `${input.appId}:${input.userId}:client-request:${input.clientRequestId}`;
+  await client.execute(sql`select pg_advisory_xact_lock(hashtext(${clientRequestLockKey}))`);
+}
+
+async function findExistingClientRequestWithdrawal(
+  client: DbClient,
+  input: { appId: string; userId: string; clientRequestId?: string },
+): Promise<WithdrawalRecord | null> {
+  if (!input.clientRequestId) return null;
+
+  return findByClientRequestIdWithClient(client, {
+    appId: input.appId,
+    userId: input.userId,
+    clientRequestId: input.clientRequestId,
+  });
+}
+
 function sumAmounts(amounts: string[]): string {
   if (amounts.length === 0) return "0";
   const parsed = amounts.map(parseDecimal);
@@ -360,19 +383,10 @@ export function createDbWithdrawalRepo(db: DbClient): WithdrawalRepo {
       return db.transaction(async (tx) => {
         const lockKey = `${input.appId}:${input.userId}:${input.asset}`;
         await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${lockKey}))`);
-        if (input.clientRequestId) {
-          const clientRequestLockKey = `${input.appId}:${input.userId}:client-request:${input.clientRequestId}`;
-          await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${clientRequestLockKey}))`);
-        }
+        await acquireClientRequestLock(tx, input);
 
-        if (input.clientRequestId) {
-          const existing = await findByClientRequestIdWithClient(tx, {
-            appId: input.appId,
-            userId: input.userId,
-            clientRequestId: input.clientRequestId,
-          });
-          if (existing) return existing;
-        }
+        const existing = await findExistingClientRequestWithdrawal(tx, input);
+        if (existing) return existing;
 
         const ledgerRepo = createDbLedgerRepo(tx);
         const balance = await ledgerRepo.getBalance({
@@ -423,19 +437,10 @@ export function createDbWithdrawalRepo(db: DbClient): WithdrawalRepo {
       return db.transaction(async (tx) => {
         const lockKey = `${input.appId}:${input.userId}:${input.asset}`;
         await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${lockKey}))`);
-        if (input.clientRequestId) {
-          const clientRequestLockKey = `${input.appId}:${input.userId}:client-request:${input.clientRequestId}`;
-          await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${clientRequestLockKey}))`);
-        }
+        await acquireClientRequestLock(tx, input);
 
-        if (input.clientRequestId) {
-          const existing = await findByClientRequestIdWithClient(tx, {
-            appId: input.appId,
-            userId: input.userId,
-            clientRequestId: input.clientRequestId,
-          });
-          if (existing) return existing;
-        }
+        const existing = await findExistingClientRequestWithdrawal(tx, input);
+        if (existing) return existing;
 
         const ledgerRepo = createDbLedgerRepo(tx);
         const balance = await ledgerRepo.getBalance({
@@ -721,6 +726,22 @@ export function createInMemoryWithdrawalRepo(): WithdrawalRepo {
     };
   }
 
+  function findExistingClientRequest(input: {
+    appId: string;
+    userId: string;
+    clientRequestId?: string;
+  }): WithdrawalRecord | null {
+    if (!input.clientRequestId) return null;
+
+    const record = records.find(
+      (item) =>
+        item.appId === input.appId &&
+        item.userId === input.userId &&
+        item.clientRequestId === input.clientRequestId,
+    );
+    return record ? clone(record) : null;
+  }
+
   return {
     async create(input) {
       assertPositiveAmount(input.amount);
@@ -789,14 +810,8 @@ export function createInMemoryWithdrawalRepo(): WithdrawalRepo {
     },
 
     async createLiquidityPendingWithBalanceCheck(input, deps) {
-      if (input.clientRequestId) {
-        const existing = await this.findByClientRequestId({
-          appId: input.appId,
-          userId: input.userId,
-          clientRequestId: input.clientRequestId,
-        });
-        if (existing) return existing;
-      }
+      const existing = findExistingClientRequest(input);
+      if (existing) return existing;
       const pending = await this.getPendingTotal({
         appId: input.appId,
         userId: input.userId,
@@ -814,14 +829,8 @@ export function createInMemoryWithdrawalRepo(): WithdrawalRepo {
     },
 
     async createWithBalanceCheck(input, deps) {
-      if (input.clientRequestId) {
-        const existing = await this.findByClientRequestId({
-          appId: input.appId,
-          userId: input.userId,
-          clientRequestId: input.clientRequestId,
-        });
-        if (existing) return existing;
-      }
+      const existing = findExistingClientRequest(input);
+      if (existing) return existing;
       const pending = await this.getPendingTotal({
         appId: input.appId,
         userId: input.userId,
