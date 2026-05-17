@@ -86,6 +86,7 @@ describe("rpc contracts", () => {
         userId: "u1",
         asset: "USDI",
         amount: "1",
+        clientRequestId: "withdrawal-retry-1",
         destination: {
           kind: "PAYMENT_REQUEST",
           paymentRequest: "fiber:invoice:example",
@@ -105,17 +106,17 @@ describe("rpc contracts", () => {
       }).state,
     ).toBe("LIQUIDITY_PENDING");
     expect(
-      WithdrawalRequestResultSchema.safeParse({
+      WithdrawalRequestResultSchema.parse({
         id: "w2",
         state: "RETRY_PENDING",
-      }).success,
-    ).toBe(false);
+      }).state,
+    ).toBe("RETRY_PENDING");
     expect(
-      WithdrawalRequestResultSchema.safeParse({
+      WithdrawalRequestResultSchema.parse({
         id: "w3",
         state: "COMPLETED",
-      }).success,
-    ).toBe(false);
+      }).state,
+    ).toBe("COMPLETED");
     expect(DashboardWithdrawalStateFilterSchema.options).toContain("LIQUIDITY_PENDING");
     expect(
       DashboardSummaryResultSchema.safeParse({

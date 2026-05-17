@@ -134,6 +134,75 @@ describe("requestWithdrawal", () => {
     expect(saved.nextRetryAt).toBeNull();
   });
 
+  it("returns the same withdrawal when a clientRequestId is retried", async () => {
+    const ledger = createInMemoryLedgerRepo();
+    await ledger.creditOnce({
+      appId: "app1",
+      userId: "u1",
+      asset: "USDI",
+      amount: "10",
+      refId: "t1",
+      idempotencyKey: "credit:t1",
+    });
+
+    const input = {
+      appId: "app1",
+      userId: "u1",
+      asset: "USDI" as const,
+      amount: "10",
+      clientRequestId: "withdrawal-retry-1",
+      destination: {
+        kind: "PAYMENT_REQUEST" as const,
+        paymentRequest: "fiber:invoice:idempotent",
+      },
+    };
+
+    const first = await requestWithdrawal(input, { repo, ledgerRepo: ledger });
+    const second = await requestWithdrawal(input, { repo, ledgerRepo: ledger });
+
+    expect(second).toEqual(first);
+    expect(await repo.getPendingTotal({ appId: "app1", userId: "u1", asset: "USDI" })).toBe("10");
+  });
+
+  it("returns the current withdrawal state when a completed clientRequestId is retried", async () => {
+    const ledger = createInMemoryLedgerRepo();
+    await ledger.creditOnce({
+      appId: "app1",
+      userId: "u1",
+      asset: "USDI",
+      amount: "10",
+      refId: "t1",
+      idempotencyKey: "credit:t1",
+    });
+
+    const input = {
+      appId: "app1",
+      userId: "u1",
+      asset: "USDI" as const,
+      amount: "10",
+      clientRequestId: "withdrawal-retry-completed",
+      destination: {
+        kind: "PAYMENT_REQUEST" as const,
+        paymentRequest: "fiber:invoice:idempotent-completed",
+      },
+    };
+
+    const first = await requestWithdrawal(input, { repo, ledgerRepo: ledger });
+    await repo.markProcessing(first.id, new Date("2026-02-27T12:00:00.000Z"));
+    await repo.markCompletedWithDebit(
+      first.id,
+      {
+        now: new Date("2026-02-27T12:01:00.000Z"),
+        txHash: "0xcompleted",
+      },
+      { ledgerRepo: ledger },
+    );
+
+    const second = await requestWithdrawal(input, { repo, ledgerRepo: ledger });
+
+    expect(second).toEqual({ id: first.id, state: "COMPLETED" });
+  });
+
   it("rejects request when available balance is insufficient", async () => {
     const ledger = createInMemoryLedgerRepo();
     await ledger.creditOnce({

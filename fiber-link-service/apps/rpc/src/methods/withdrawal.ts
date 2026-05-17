@@ -215,6 +215,17 @@ export async function requestWithdrawal(input: RequestWithdrawalInput, options: 
   const ledgerRepo = options.ledgerRepo ?? getDefaultLedgerRepo();
   const policyRepo = options.policyRepo === undefined ? getDefaultPolicyRepo() : options.policyRepo;
 
+  if (input.clientRequestId) {
+    const existing = await repo.findByClientRequestId({
+      appId: input.appId,
+      userId: input.userId,
+      clientRequestId: input.clientRequestId,
+    });
+    if (existing) {
+      return { id: existing.id, state: existing.state };
+    }
+  }
+
   const policy = (policyRepo ? await policyRepo.getByAppId(input.appId) : null) ?? defaultPolicyForApp(input.appId);
   const usage = policyRepo
     ? await policyRepo.getUsage({
@@ -234,6 +245,7 @@ export async function requestWithdrawal(input: RequestWithdrawalInput, options: 
     userId: input.userId,
     asset: input.asset,
     amount: input.amount,
+    clientRequestId: input.clientRequestId,
     ...mapDestinationForStorage(input.destination),
   };
 

@@ -42,6 +42,7 @@ const WithdrawalRequestBaseParamsSchema = z.object({
   userId: z.string().min(1),
   asset: z.enum(["CKB", "USDI"]),
   amount: PositiveAmountStringSchema,
+  clientRequestId: z.string().trim().min(1).max(128).optional(),
 });
 export const WithdrawalDestinationSchema = z.discriminatedUnion("kind", [
   z.object({
@@ -85,11 +86,10 @@ export const WithdrawalRequestParamsSchema = z
       userId: value.userId,
       asset: value.asset,
       amount: value.amount,
+      clientRequestId: value.clientRequestId,
       destination: inferWithdrawalDestinationFromLegacyToAddress(value.toAddress),
     };
   });
-
-const WithdrawalRequestAcceptedStateSchema = z.enum(["LIQUIDITY_PENDING", "PENDING"]);
 
 const WithdrawalStateSchema = z.enum([
   "LIQUIDITY_PENDING",
@@ -103,7 +103,7 @@ const WithdrawalStateSchema = z.enum([
 
 export const WithdrawalRequestResultSchema = z.object({
   id: z.string().min(1),
-  state: WithdrawalRequestAcceptedStateSchema,
+  state: WithdrawalStateSchema,
 });
 
 export const WithdrawalQuoteParamsSchema = z.object({
