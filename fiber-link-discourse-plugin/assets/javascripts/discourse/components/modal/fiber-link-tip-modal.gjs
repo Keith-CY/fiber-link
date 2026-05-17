@@ -14,6 +14,10 @@ import { createTip, getTipStatus } from "../../services/fiber-link-api";
 const AMOUNT_PATTERN = /^(?:\d+)(?:\.\d{1,8})?$/;
 const COPY_FEEDBACK_TIMEOUT_MS = 3000;
 const TIP_STATUS_AUTO_POLL_INTERVAL_MS = 1000;
+const TIP_STATUS_AUTO_POLL_MAX_BACKOFF_MS = 8000;
+const TIP_STATUS_AUTO_POLL_MAX_FAILURES = 5;
+const TIP_STATUS_AUTO_POLL_MAX_ELAPSED_MS = 120000;
+const TIP_STATUS_HIDDEN_POLL_INTERVAL_MS = 15000;
 const TIP_GENERATION_WATCHDOG_MS = 15000;
 const TIP_GENERATION_WATCHDOG_MESSAGE =
   "Fiber Link is busy while preparing invoice. Please retry.";
@@ -36,6 +40,19 @@ function isTransientNetworkError(message) {
     value.includes("timeout") ||
     value.includes("failed to fetch") ||
     value.includes("service unavailable")
+  );
+}
+
+function isRetryableStatusError(error) {
+  const status = Number(error?.status ?? error?.statusCode ?? error?.code);
+  const message = normalizeMessage(error?.message).toLowerCase();
+  return (
+    status === 429 ||
+    status === 503 ||
+    message.includes("429") ||
+    message.includes("rate limit") ||
+    message.includes("too many requests") ||
+    isTransientNetworkError(message)
   );
 }
 
@@ -125,6 +142,8 @@ export default class FiberLinkTipModal extends Component {
 
   _pollTimer = null;
   _copyFeedbackTimer = null;
+  _statusPollStartedAt = null;
+  _statusPollFailureCount = 0;
 
   constructor(owner, args) {
     super(owner, args);
@@ -354,6 +373,38 @@ export default class FiberLinkTipModal extends Component {
     }
   }
 
+  _resetStatusPollBounds() {
+    this._statusPollStartedAt = Date.now();
+    this._statusPollFailureCount = 0;
+  }
+
+  _isDocumentHidden() {
+    return typeof document !== "undefined" && document?.hidden === true;
+  }
+
+  _getStatusPollDelay() {
+    const backoffDelay = Math.min(
+      TIP_STATUS_AUTO_POLL_MAX_BACKOFF_MS,
+      TIP_STATUS_AUTO_POLL_INTERVAL_MS * Math.pow(2, this._statusPollFailureCount),
+    );
+
+    return this._isDocumentHidden()
+      ? Math.max(backoffDelay, TIP_STATUS_HIDDEN_POLL_INTERVAL_MS)
+      : backoffDelay;
+  }
+
+  _canContinueStatusPolling() {
+    if (!this._statusPollStartedAt) {
+      this._statusPollStartedAt = Date.now();
+    }
+
+    const elapsedMs = Date.now() - this._statusPollStartedAt;
+    return (
+      elapsedMs <= TIP_STATUS_AUTO_POLL_MAX_ELAPSED_MS &&
+      this._statusPollFailureCount <= TIP_STATUS_AUTO_POLL_MAX_FAILURES
+    );
+  }
+
   _clearCopyFeedbackTimer() {
     if (this._copyFeedbackTimer) {
       clearTimeout(this._copyFeedbackTimer);
@@ -381,10 +432,17 @@ export default class FiberLinkTipModal extends Component {
       return;
     }
 
+    if (!this._canContinueStatusPolling()) {
+      this.errorMessage = mapStatusErrorToMessage(
+        new Error("Status polling paused after repeated failures. Please retry."),
+      );
+      return;
+    }
+
     this._pollTimer = setTimeout(() => {
       this._pollTimer = null;
       void this.checkStatus({ isAutoPoll: true });
-    }, TIP_STATUS_AUTO_POLL_INTERVAL_MS);
+    }, this._getStatusPollDelay());
   }
 
   @action
@@ -459,6 +517,7 @@ export default class FiberLinkTipModal extends Component {
       this.statusState = "UNPAID";
       this.statusLabel = mapTipStateToLabel("UNPAID");
       this.statusClass = mapTipStateToClass("UNPAID");
+      this._resetStatusPollBounds();
       scheduleAutoPoll = true;
     } catch (e) {
       this.errorMessage = mapCreateTipErrorToMessage(e);
@@ -482,6 +541,7 @@ export default class FiberLinkTipModal extends Component {
     if (!isAutoPoll) {
       this.errorMessage = null;
       this._clearStatusPollTimer();
+      this._resetStatusPollBounds();
     }
     this.isChecking = true;
 
@@ -491,6 +551,7 @@ export default class FiberLinkTipModal extends Component {
       this.statusLabel = mapTipStateToLabel(state);
       this.statusClass = mapTipStateToClass(state);
       this.errorMessage = null;
+      this._statusPollFailureCount = 0;
 
       if (state === "SETTLED") {
         this.currentStep = "confirmed";
@@ -503,7 +564,8 @@ export default class FiberLinkTipModal extends Component {
         this._clearStatusPollTimer();
       }
     } catch (e) {
-      if (isAutoPoll && isTransientNetworkError(normalizeMessage(e?.message))) {
+      if (isAutoPoll && isRetryableStatusError(e)) {
+        this._statusPollFailureCount += 1;
         scheduleAutoPoll = true;
       } else {
         this.errorMessage = mapStatusErrorToMessage(e);
