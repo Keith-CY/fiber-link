@@ -559,22 +559,27 @@ describe("runWithdrawalBatch", () => {
     expect(saved.retryCount).toBe(1);
   });
 
-  it("does not use string heuristics for non-Fiber errors", async () => {
-    const created = await createPendingWithdrawal("non-fiber-timeout");
+  it.each([
+    ["AbortError", Object.assign(new Error("aborted"), { name: "AbortError" })],
+    ["ECONNRESET", Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" })],
+    ["ETIMEDOUT", Object.assign(new Error("request timed out"), { code: "ETIMEDOUT" })],
+    ["timeout message", new Error("network timeout")],
+  ])("maps non-Fiber %s withdrawal exception to transient retry", async (label, error) => {
+    const created = await createPendingWithdrawal(`non-fiber-${label}`);
 
     const res = await runWithdrawalBatch({
       now: new Date("2026-02-07T12:46:00.000Z"),
+      retryDelayMs: 60_000,
       executeWithdrawal: async () => {
-        throw new Error("network timeout");
+        throw error;
       },
       repo,
     });
 
-    expect(res.failed).toBe(1);
+    expect(res.retryPending).toBe(1);
     const saved = await repo.findByIdOrThrow(created.id);
-    expect(saved.state).toBe("FAILED");
-    expect(saved.retryCount).toBe(0);
-    expect(saved.nextRetryAt).toBeNull();
+    expect(saved.state).toBe("RETRY_PENDING");
+    expect(saved.retryCount).toBe(1);
   });
 
   it("uses adapter execution for USDI withdrawals to CKB addresses by default", async () => {
