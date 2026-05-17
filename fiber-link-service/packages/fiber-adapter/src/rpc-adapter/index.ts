@@ -12,22 +12,22 @@ import { ensureChainLiquidity, getRebalanceStatus } from "./rebalance-ops";
 import { createSettlementSubscriber } from "./settlement-stream";
 import type { CreateAdapterArgs, FiberAdapter } from "../types";
 
-export function createAdapter({ endpoint, settlementSubscription, fetchFn }: CreateAdapterArgs): FiberAdapter {
-  const resolvedFetch = fetchFn ?? fetch;
-  const subscribeSettlements = createSettlementSubscriber(settlementSubscription, resolvedFetch);
+export function createAdapter({ endpoint, settlementSubscription, fetchFn, timeoutMs, retryCount, retryDelayMs, signal }: CreateAdapterArgs): FiberAdapter {
+  const rpcEndpoint = { endpoint, fetchFn, timeoutMs, retryCount, retryDelayMs, signal };
+  const subscribeSettlements = createSettlementSubscriber(settlementSubscription, fetchFn ?? fetch);
 
   return {
-    createInvoice: (args) => createInvoice(endpoint, args),
-    getInvoiceStatus: (args) => getInvoiceStatus(endpoint, args),
+    createInvoice: (args) => createInvoice(rpcEndpoint, args),
+    getInvoiceStatus: (args) => getInvoiceStatus(rpcEndpoint, args),
     subscribeSettlements,
-    executeWithdrawal: (args) => executeWithdrawal(endpoint, args),
-    getLiquidityCapabilities: () => getLiquidityCapabilities(endpoint),
-    listChannels: (args) => listChannels(endpoint, args),
-    openChannel: (args) => openChannel(endpoint, args),
-    acceptChannel: (args) => acceptChannel(endpoint, args),
-    getCkbChannelAcceptancePolicy: () => getCkbChannelAcceptancePolicy(endpoint),
-    shutdownChannel: (args) => shutdownChannel(endpoint, args),
-    ensureChainLiquidity: (args) => ensureChainLiquidity(endpoint, args),
-    getRebalanceStatus: (args) => getRebalanceStatus(endpoint, args),
+    executeWithdrawal: (args) => executeWithdrawal(rpcEndpoint, args),
+    getLiquidityCapabilities: () => getLiquidityCapabilities(rpcEndpoint),
+    listChannels: (args) => listChannels(rpcEndpoint, args),
+    openChannel: (args) => openChannel(rpcEndpoint, args),
+    acceptChannel: (args) => acceptChannel(rpcEndpoint, args),
+    getCkbChannelAcceptancePolicy: () => getCkbChannelAcceptancePolicy(rpcEndpoint),
+    shutdownChannel: (args) => shutdownChannel(rpcEndpoint, args),
+    ensureChainLiquidity: (args) => ensureChainLiquidity(rpcEndpoint, args),
+    getRebalanceStatus: (args) => getRebalanceStatus(rpcEndpoint, args),
   };
 }

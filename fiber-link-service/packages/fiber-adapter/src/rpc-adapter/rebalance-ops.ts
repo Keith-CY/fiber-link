@@ -1,4 +1,4 @@
-import { FiberRpcError, rpcCall } from "../fiber-client";
+import { FiberRpcError, rpcCall, type FiberRpcEndpoint } from "../fiber-client";
 import {
   executeCkbOnchainTransfer,
   getCkbTransactionStatus,
@@ -234,7 +234,7 @@ async function getLocalChainLiquidityStatus(args: GetRebalanceStatusArgs): Promi
 }
 
 export async function ensureChainLiquidity(
-  endpoint: string,
+  endpoint: FiberRpcEndpoint,
   args: EnsureChainLiquidityArgs,
 ) {
   const tracked = await getOrRefreshLocalSweepTracking({ requestId: args.requestId });
@@ -263,7 +263,7 @@ export async function ensureChainLiquidity(
 }
 
 export async function getRebalanceStatus(
-  endpoint: string,
+  endpoint: FiberRpcEndpoint,
   args: GetRebalanceStatusArgs,
 ) {
   const localStatus = await getLocalChainLiquidityStatus(args);

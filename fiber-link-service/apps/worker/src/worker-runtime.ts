@@ -7,9 +7,9 @@ type WorkerLogger = {
   error: (event: string, context?: WorkerLogContext) => void;
 };
 
-type RunLiquidityBatchFn = () => Promise<unknown>;
-type RunWithdrawalBatchFn = (options: { maxRetries: number; retryDelayMs: number }) => Promise<unknown>;
-type PollSettlementsFn = (options: { limit: number }) => Promise<unknown>;
+type RunLiquidityBatchFn = (options: { signal: AbortSignal }) => Promise<unknown>;
+type RunWithdrawalBatchFn = (options: { maxRetries: number; retryDelayMs: number; signal: AbortSignal }) => Promise<unknown>;
+type PollSettlementsFn = (options: { limit: number; signal: AbortSignal }) => Promise<unknown>;
 
 export type CreateWorkerRuntimeOptions = {
   intervalMs: number;
@@ -75,6 +75,7 @@ export function createWorkerRuntime(options: CreateWorkerRuntimeOptions): Worker
   let shutdownPromise: Promise<void> | null = null;
   let lastWithdrawalRunAtMs: number | null = null;
   let lastSettlementRunAtMs: number | null = null;
+  let cycleAbortController: AbortController | null = null;
 
   async function processCycle() {
     if (shuttingDown) {
@@ -100,12 +101,14 @@ export function createWorkerRuntime(options: CreateWorkerRuntimeOptions): Worker
       return;
     }
 
+    const abortController = new AbortController();
+    cycleAbortController = abortController;
     inFlightBatch = (async () => {
       try {
         if (shouldRunWithdrawal) {
           if (runLiquidityBatch) {
             try {
-              const liquidityResult = await runLiquidityBatch();
+              const liquidityResult = await runLiquidityBatch({ signal: abortController.signal });
               logger.info("worker.liquidity.batch.succeeded", {
                 result: liquidityResult,
               });
@@ -118,6 +121,7 @@ export function createWorkerRuntime(options: CreateWorkerRuntimeOptions): Worker
             const result = await runWithdrawalBatch({
               maxRetries: options.maxRetries,
               retryDelayMs: options.retryDelayMs,
+              signal: abortController.signal,
             });
             lastWithdrawalRunAtMs = nowMs;
             logger.info("worker.withdrawal.batch.succeeded", {
@@ -130,7 +134,7 @@ export function createWorkerRuntime(options: CreateWorkerRuntimeOptions): Worker
 
         if (shouldRunSettlements && pollSettlements) {
           try {
-            const result = await pollSettlements({ limit: settlementBatchSize });
+            const result = await pollSettlements({ limit: settlementBatchSize, signal: abortController.signal });
             lastSettlementRunAtMs = nowMs;
             logger.info("worker.settlement.polling.succeeded", {
               result,
@@ -141,6 +145,9 @@ export function createWorkerRuntime(options: CreateWorkerRuntimeOptions): Worker
           }
         }
       } finally {
+        if (cycleAbortController === abortController) {
+          cycleAbortController = null;
+        }
         inFlightBatch = null;
       }
     })();
@@ -181,6 +188,7 @@ export function createWorkerRuntime(options: CreateWorkerRuntimeOptions): Worker
       }
 
       let exitCode = 0;
+      cycleAbortController?.abort(new Error(`Worker shutdown requested by ${signal}`));
       if (inFlightBatch) {
         const drained = await waitForDrain(inFlightBatch, options.shutdownTimeoutMs);
         if (!drained) {
