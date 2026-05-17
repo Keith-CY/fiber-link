@@ -6,6 +6,10 @@ import { getDashboardSummary } from "../services/fiber-link-api";
 const DEFAULT_POLL_INTERVAL_MS = 10000;
 const DASHBOARD_LIMIT = 20;
 const ALLOWED_POLL_INTERVALS = [10000, 30000, 60000];
+const DASHBOARD_POLL_MAX_BACKOFF_MS = 60000;
+const DASHBOARD_POLL_MAX_FAILURES = 5;
+const DASHBOARD_POLL_MAX_FAILURE_WINDOW_MS = 300000;
+const DASHBOARD_HIDDEN_POLL_INTERVAL_MS = 60000;
 const SYNC_AGE_TICK_MS = 1000;
 
 function mapDashboardErrorToMessage(error) {
@@ -18,6 +22,30 @@ function mapDashboardErrorToMessage(error) {
     return "Dashboard data timed out. The service may be busy; retry when traffic settles.";
   }
   return message;
+}
+
+function isTransientDashboardError(message) {
+  const value = message.toLowerCase();
+  return (
+    value.includes("network") ||
+    value.includes("timeout") ||
+    value.includes("failed to fetch") ||
+    value.includes("service unavailable")
+  );
+}
+
+function isRetryableDashboardError(error) {
+  const status = Number(error?.status ?? error?.statusCode ?? error?.code);
+  const message =
+    typeof error?.message === "string" ? error.message.trim() : "";
+  return (
+    status === 429 ||
+    status === 503 ||
+    message.includes("429") ||
+    message.toLowerCase().includes("rate limit") ||
+    message.toLowerCase().includes("too many requests") ||
+    isTransientDashboardError(message)
+  );
 }
 
 function formatSyncStatusLabel(rawValue) {
@@ -346,7 +374,9 @@ function normalizeTips(tips) {
       transactionConfirmationClassName: [
         "fiber-link-transaction-dialog__meta",
         status.key === "failed" ? "is-failed" : "",
-        status.key === "pending" || status.key === "broadcasted" ? "is-pending" : "",
+        status.key === "pending" || status.key === "broadcasted"
+          ? "is-pending"
+          : "",
       ]
         .filter(Boolean)
         .join(" "),
@@ -360,6 +390,9 @@ export default class FiberLinkDashboardRoute extends Route {
   _pollTimer = null;
   _syncAgeTimer = null;
   _lastTipFeedSignature = null;
+  _dashboardPollFailureCount = 0;
+  _dashboardPollFirstFailureAt = null;
+  _lastRefreshFailed = false;
 
   model() {
     this._clearPollTimer();
@@ -388,6 +421,7 @@ export default class FiberLinkDashboardRoute extends Route {
       tipFeedItems: [],
       retryDashboardSummary: () => {
         if (!model.isRefreshing) {
+          this._resetDashboardPollBackoff();
           model.set("isRefreshing", true);
           void this._refreshSummary(model);
         }
@@ -395,6 +429,7 @@ export default class FiberLinkDashboardRoute extends Route {
     });
 
     this._activeModel = model;
+    this._resetDashboardPollBackoff();
     void this._refreshSummary(model);
 
     return model;
@@ -478,13 +513,20 @@ export default class FiberLinkDashboardRoute extends Route {
       }
 
       model.setProperties(nextProperties);
+      this._resetDashboardPollBackoff();
       this._startSyncAgeTimer(model);
     } catch (error) {
       if (model !== this._activeModel) {
         return;
       }
 
+      const retryable = isRetryableDashboardError(error);
       const message = mapDashboardErrorToMessage(error);
+      if (retryable) {
+        this._recordDashboardPollFailure();
+      } else {
+        this._resetDashboardPollBackoff();
+      }
       model.setProperties({
         isInitialLoading: false,
         isRefreshing: false,
@@ -499,17 +541,70 @@ export default class FiberLinkDashboardRoute extends Route {
     }
   }
 
-  _schedulePoll(model) {
-    this._clearPollTimer();
+  _resetDashboardPollBackoff() {
+    this._dashboardPollFailureCount = 0;
+    this._dashboardPollFirstFailureAt = null;
+    this._lastRefreshFailed = false;
+  }
+
+  _recordDashboardPollFailure() {
+    if (!this._dashboardPollFirstFailureAt) {
+      this._dashboardPollFirstFailureAt = Date.now();
+    }
+    this._dashboardPollFailureCount += 1;
+    this._lastRefreshFailed = true;
+  }
+
+  _isDocumentHidden() {
+    return typeof document !== "undefined" && document?.hidden === true;
+  }
+
+  _canContinueDashboardPolling() {
+    if (!this._lastRefreshFailed) {
+      return true;
+    }
+
+    return (
+      this._dashboardPollFailureCount < DASHBOARD_POLL_MAX_FAILURES &&
+      Date.now() - this._dashboardPollFirstFailureAt <=
+        DASHBOARD_POLL_MAX_FAILURE_WINDOW_MS
+    );
+  }
+
+  _getDashboardPollDelay(model) {
     const pollIntervalMs = ALLOWED_POLL_INTERVALS.includes(
       Number(model?.pollIntervalMs),
     )
       ? Number(model.pollIntervalMs)
       : DEFAULT_POLL_INTERVAL_MS;
+    const backoffDelay = this._lastRefreshFailed
+      ? Math.min(
+          DASHBOARD_POLL_MAX_BACKOFF_MS,
+          pollIntervalMs *
+            Math.pow(2, Math.max(0, this._dashboardPollFailureCount - 1)),
+        )
+      : pollIntervalMs;
+
+    return this._isDocumentHidden()
+      ? Math.max(backoffDelay, DASHBOARD_HIDDEN_POLL_INTERVAL_MS)
+      : backoffDelay;
+  }
+
+  _schedulePoll(model) {
+    this._clearPollTimer();
+    if (!this._canContinueDashboardPolling()) {
+      const pauseMessage =
+        "Auto-refresh paused after repeated failures. Retry dashboard to resume.";
+      model?.setProperties?.({
+        summaryErrorMessage: pauseMessage,
+        feedErrorMessage: pauseMessage,
+      });
+      return;
+    }
 
     this._pollTimer = setTimeout(() => {
       void this._refreshSummary(model);
-    }, pollIntervalMs);
+    }, this._getDashboardPollDelay(model));
   }
 
   _startSyncAgeTimer(model) {
