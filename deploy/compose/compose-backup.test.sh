@@ -41,6 +41,22 @@ if [[ "${1:-}" == "compose" && "${2:-}" == "version" ]]; then
   exit 0
 fi
 
+if [[ "${1:-}" == "run" ]]; then
+  backup_mount=""
+  for arg in "$@"; do
+    case "${arg}" in
+      *:/backup)
+        backup_mount="${arg%%:/backup}"
+        ;;
+    esac
+  done
+  if [[ -n "${backup_mount}" ]]; then
+    printf 'tarball-bytes-from-fake-docker\n' > "${backup_mount}/data.tar.gz"
+    printf 'fake docker command log on stdout\n'
+  fi
+  exit 0
+fi
+
 exit 0
 EOF
   chmod +x "${fake_bin}/docker"
@@ -199,6 +215,32 @@ EOF_ENV
     || fail "expected ${backup_dir}/commands/command-index.log to contain '--env-file \"${custom_env_file}\"'"
 }
 
+run_backup_live_fnn_state_uses_separate_log() {
+  local fake_bin="${TMP_DIR}/fake-bin-live-fnn-state"
+  local output_root="${TMP_DIR}/backup-output-live-fnn-state"
+  local output
+  local backup_dir
+
+  export FAKE_DOCKER_LOG="${TMP_DIR}/fake-docker-live-fnn-state.log"
+  make_fake_docker "${fake_bin}"
+
+  output="$(
+    PATH="${fake_bin}:${PATH}" \
+      "${BACKUP_SCRIPT}" \
+      --include-fnn-state \
+      --output-root "${output_root}"
+  )"
+
+  assert_contains "${output}" "RESULT=PASS CODE=0"
+  backup_dir="$(printf '%s\n' "${output}" | sed -n 's/.*BACKUP_DIR=\([^ ]*\).*/\1/p')"
+  [[ -n "${backup_dir}" ]] || fail "failed to parse BACKUP_DIR from live fnn-state output"
+  assert_file_contains "${backup_dir}/fnn/data.tar.gz" "tarball-bytes-from-fake-docker"
+  assert_file_contains "${backup_dir}/fnn/data.tar.gz.log" "fake docker command log on stdout"
+  assert_file_contains "${backup_dir}/fnn2/data.tar.gz" "tarball-bytes-from-fake-docker"
+  assert_file_contains "${backup_dir}/fnn2/data.tar.gz.log" "fake docker command log on stdout"
+  (cd "${backup_dir}" && sha256sum -c metadata/checksums.sha256 >/dev/null) || fail "checksum validation failed for live fnn-state backup"
+}
+
 assert_repo_wiring() {
   [[ -f "${BACKUP_RUNBOOK_FILE}" ]] || fail "missing backup runbook"
   [[ -x "${BACKUP_SCRIPT}" ]] || fail "backup script is not executable"
@@ -217,5 +259,6 @@ run_backup_dry_run
 run_restore_dry_run
 run_backup_dry_run_with_fnn_state
 run_backup_dry_run_with_env_override
+run_backup_live_fnn_state_uses_separate_log
 
 printf 'compose-backup checks passed\n'

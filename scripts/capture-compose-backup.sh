@@ -98,6 +98,41 @@ run_capture_step() {
   return 0
 }
 
+run_file_capture_step() {
+  local name="$1"
+  local output_file="$2"
+  local log_file="$3"
+  local command="$4"
+  local dry_run_content="$5"
+
+  mkdir -p "$(dirname "${output_file}")" "$(dirname "${log_file}")"
+  printf '[%s] %s\n' "${name}" "${command}" >> "${COMMAND_LOG}"
+
+  if [[ "${DRY_RUN}" -eq 1 ]]; then
+    printf '%s\n' "${dry_run_content}" > "${output_file}"
+    printf 'DRY_RUN: command output captured separately from %s\n' "${output_file}" > "${log_file}"
+    write_step_result "${name}" "DRY_RUN" "${output_file}" "${command}"
+    return 0
+  fi
+
+  set +e
+  bash -c "${command}" > "${log_file}" 2>&1
+  local rc=$?
+  set -e
+
+  if [[ "${rc}" -eq 0 && -s "${output_file}" ]]; then
+    write_step_result "${name}" "PASS" "${output_file}" "${command}"
+    return 0
+  fi
+
+  if [[ "${rc}" -eq 0 ]]; then
+    printf 'capture command succeeded but did not create non-empty output file: %s\n' "${output_file}" >> "${log_file}"
+  fi
+  write_step_result "${name}" "FAIL:${rc}" "${output_file}" "${command}"
+  OVERALL_FAILURE=1
+  return 0
+}
+
 bool_status() {
   if [[ "$1" -eq 0 ]]; then
     printf 'PASS'
@@ -173,7 +208,7 @@ ARCHIVE_FILE="${BACKUP_DIR}.tar.gz"
 COMMAND_LOG="${BACKUP_DIR}/commands/command-index.log"
 STEP_RESULTS_FILE="${BACKUP_DIR}/status/step-results.tsv"
 
-for binary in bash docker git tar awk jq find xargs sha256sum; do
+for binary in awk bash docker find git jq sha256sum sort tar xargs; do
   if ! command -v "${binary}" >/dev/null 2>&1; then
     log "missing required binary: ${binary}"
     exit "${EXIT_PRECHECK}"
@@ -251,13 +286,15 @@ run_capture_step "worker-cursor" \
   "UNSET"
 
 if [[ "${INCLUDE_FNN_STATE}" -eq 1 ]]; then
-  run_capture_step "fnn-state" \
+  run_file_capture_step "fnn-state" \
     "${BACKUP_DIR}/fnn/data.tar.gz" \
+    "${BACKUP_DIR}/fnn/data.tar.gz.log" \
     "docker run --rm --volumes-from fiber-link-fnn -v \"${BACKUP_DIR}/fnn:/backup\" \"${BACKUP_HELPER_IMAGE}\" sh -lc 'cd /data && tar -czf /backup/data.tar.gz .'" \
     "DRY_RUN fnn /data volume tarball placeholder"
 
-  run_capture_step "fnn2-state" \
+  run_file_capture_step "fnn2-state" \
     "${BACKUP_DIR}/fnn2/data.tar.gz" \
+    "${BACKUP_DIR}/fnn2/data.tar.gz.log" \
     "docker run --rm --volumes-from fiber-link-fnn2 -v \"${BACKUP_DIR}/fnn2:/backup\" \"${BACKUP_HELPER_IMAGE}\" sh -lc 'cd /data && tar -czf /backup/data.tar.gz .'" \
     "DRY_RUN fnn2 /data volume tarball placeholder"
 else
