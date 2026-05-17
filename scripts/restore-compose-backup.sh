@@ -24,6 +24,7 @@ OVERALL_FAILURE=0
 POSTGRES_USER_DEFAULT="fiber"
 POSTGRES_DB_DEFAULT="fiber_link"
 WORKER_CURSOR_FILE_DEFAULT="/var/lib/fiber-link/settlement-cursor.json"
+BACKUP_HELPER_IMAGE_DEFAULT="public.ecr.aws/docker/library/alpine:3.20"
 
 usage() {
   printf '%s\n' \
@@ -97,6 +98,55 @@ run_restore_step() {
   return 0
 }
 
+validate_backup_integrity() {
+  local manifest="${BACKUP_DIR}/metadata/manifest.json"
+  local checksums="${BACKUP_DIR}/metadata/checksums.sha256"
+  local step_results="${BACKUP_DIR}/status/step-results.tsv"
+  local include_fnn_state
+
+  for required in \
+    "${BACKUP_DIR}/db/postgres.sql" \
+    "${BACKUP_DIR}/runtime/worker-settlement-cursor.json" \
+    "${manifest}" \
+    "${checksums}" \
+    "${step_results}"; do
+    if [[ ! -f "${required}" ]]; then
+      log "backup bundle missing required file: ${required}"
+      exit "${EXIT_PRECHECK}"
+    fi
+  done
+
+  if ! jq -e '.schemaVersion == 1 and (.overallStatus == "PASS" or .overallStatus == "DRY_RUN") and (.files.postgresDump | type == "string") and (.files.workerCursor | type == "string") and (.files.checksums == "metadata/checksums.sha256")' "${manifest}" >/dev/null; then
+    log "backup manifest schema/status validation failed: ${manifest}"
+    exit "${EXIT_PRECHECK}"
+  fi
+
+  if [[ "${DRY_RUN}" -eq 0 && "$(jq -r '.dryRun // false' "${manifest}")" == "true" ]]; then
+    log "refusing live restore from a dry-run backup bundle"
+    exit "${EXIT_PRECHECK}"
+  fi
+
+  if ! awk -F '\t' 'NR > 1 && $2 ~ /^FAIL/ { bad=1 } END { exit bad }' "${step_results}"; then
+    log "backup status includes failed capture steps: ${step_results}"
+    exit "${EXIT_PRECHECK}"
+  fi
+
+  include_fnn_state="$(jq -r '.includeFnnState // false' "${manifest}")"
+  if [[ "${include_fnn_state}" == "true" ]]; then
+    for required in "${BACKUP_DIR}/fnn/data.tar.gz" "${BACKUP_DIR}/fnn2/data.tar.gz"; do
+      if [[ ! -f "${required}" ]]; then
+        log "backup manifest requires FNN state but file is missing: ${required}"
+        exit "${EXIT_PRECHECK}"
+      fi
+    done
+  fi
+
+  if ! (cd "${BACKUP_DIR}" && sha256sum -c "metadata/checksums.sha256" >/dev/null); then
+    log "backup checksum validation failed: ${checksums}"
+    exit "${EXIT_PRECHECK}"
+  fi
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --backup)
@@ -141,8 +191,9 @@ fi
 POSTGRES_USER="${POSTGRES_USER:-${POSTGRES_USER_DEFAULT}}"
 POSTGRES_DB="${POSTGRES_DB:-${POSTGRES_DB_DEFAULT}}"
 WORKER_CURSOR_FILE="${WORKER_SETTLEMENT_CURSOR_FILE:-${WORKER_CURSOR_FILE_DEFAULT}}"
+BACKUP_HELPER_IMAGE="${BACKUP_HELPER_IMAGE:-${BACKUP_HELPER_IMAGE_DEFAULT}}"
 
-for binary in bash docker tar awk jq mktemp; do
+for binary in bash docker tar awk jq mktemp find head sha256sum; do
   if ! command -v "${binary}" >/dev/null 2>&1; then
     log "missing required binary: ${binary}"
     exit "${EXIT_PRECHECK}"
@@ -175,15 +226,7 @@ else
   exit "${EXIT_PRECHECK}"
 fi
 
-for required in \
-  "${BACKUP_DIR}/db/postgres.sql" \
-  "${BACKUP_DIR}/runtime/worker-settlement-cursor.json" \
-  "${BACKUP_DIR}/metadata/manifest.json"; do
-  if [[ ! -f "${required}" ]]; then
-    log "backup bundle missing required file: ${required}"
-    exit "${EXIT_PRECHECK}"
-  fi
-done
+validate_backup_integrity
 
 RESTORE_DIR="${BACKUP_DIR}/restore"
 COMMAND_LOG="${RESTORE_DIR}/command-index.log"
@@ -213,6 +256,17 @@ if [[ "$(cat "${BACKUP_DIR}/runtime/worker-settlement-cursor.json")" == "UNSET" 
 else
   run_restore_step "worker-cursor-restore" \
     "docker cp \"${BACKUP_DIR}/runtime/worker-settlement-cursor.json\" \"fiber-link-worker:${WORKER_CURSOR_FILE}\""
+fi
+
+if [[ "$(jq -r '.includeFnnState // false' "${BACKUP_DIR}/metadata/manifest.json")" == "true" ]]; then
+  run_restore_step "compose-stop-fnn" \
+    "cd \"${ROOT_DIR}\" && docker compose -f \"${COMPOSE_FILE}\" stop fnn fnn2 || true"
+  run_restore_step "fnn-state-restore" \
+    "docker run --rm --volumes-from fiber-link-fnn -v \"${BACKUP_DIR}/fnn:/backup:ro\" \"${BACKUP_HELPER_IMAGE}\" sh -lc 'cd /data && tar -xzf /backup/data.tar.gz'"
+  run_restore_step "fnn2-state-restore" \
+    "docker run --rm --volumes-from fiber-link-fnn2 -v \"${BACKUP_DIR}/fnn2:/backup:ro\" \"${BACKUP_HELPER_IMAGE}\" sh -lc 'cd /data && tar -xzf /backup/data.tar.gz'"
+  run_restore_step "compose-up-fnn" \
+    "cd \"${ROOT_DIR}\" && docker compose -f \"${COMPOSE_FILE}\" up -d fnn fnn2"
 fi
 
 run_restore_step "compose-up-apps" \
