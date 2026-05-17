@@ -242,7 +242,7 @@ cat > "$summary_file" <<EOF
   "timestamp": "${TIMESTAMP}",
   "dryRun": ${DRY_RUN},
   "skipSmoke": ${SKIP_SMOKE},
-  "destroyVolumes": "${DESTROY_VOLUMES}",
+  "destroyVolumes": ${DESTROY_VOLUMES},
   "composeProjectName": "${COMPOSE_PROJECT_NAME}",
   "waitSeconds": ${WAIT_SECONDS},
   "checks": {

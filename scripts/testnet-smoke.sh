@@ -82,7 +82,7 @@ cleanup_stack() {
 
   mkdir -p "${ARTIFACT_DIR}"
   compose logs --no-color > "${ARTIFACT_DIR}/compose.log" || true
-  compose down --remove-orphans > "${ARTIFACT_DIR}/compose-down.log" 2>&1
+  compose $(compose_down_reset_args) > "${ARTIFACT_DIR}/compose-down.log" 2>&1
 }
 
 exit_with() {
@@ -152,7 +152,7 @@ if [[ ! -f "${ENV_FILE}" ]]; then
 fi
 
 COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-$(get_env_value COMPOSE_PROJECT_NAME)}"
-export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-fiber-link-smoke-$(date +%Y%m%d%H%M%S)-$$}"
+export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-fiber-link-smoke-$(date -u +%Y%m%d%H%M%S)-$$}"
 
 if [[ "${DESTROY_VOLUMES}" == "1" ]]; then
   cat >&2 <<EOF
@@ -197,8 +197,7 @@ fi
 
 vlog "reset compose stack to deterministic baseline"
 # Preserve persistent compose volumes by default; opt in with --destroy-volumes or FIBER_LINK_DESTROY_VOLUMES=1.
-read -r -a reset_args <<< "$(compose_down_reset_args)"
-compose "${reset_args[@]}" || true
+compose $(compose_down_reset_args) || true
 
 vlog "starting compose stack"
 compose up -d --build > "${ARTIFACT_DIR}/compose-up.log" 2>&1
