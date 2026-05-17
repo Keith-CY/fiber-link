@@ -13,6 +13,7 @@ DRY_RUN=0
 SKIP_SMOKE=0
 VERBOSE=0
 STARTED_COMPOSE=0
+DESTROY_VOLUMES="${FIBER_LINK_DESTROY_VOLUMES:-0}"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPOSE_DIR="${ROOT_DIR}/deploy/compose"
@@ -21,13 +22,14 @@ ARTIFACT_DIR="${ROOT_DIR}/.tmp/testnet-smoke/$(date +%Y%m%d-%H%M%S)"
 
 usage() {
   cat <<'EOF'
-Usage: scripts/testnet-smoke.sh [--dry-run] [--skip-smoke] [--verbose]
+Usage: scripts/testnet-smoke.sh [--dry-run] [--skip-smoke] [--verbose] [--destroy-volumes]
 
 Options:
-  --dry-run     Print planned actions and validate prerequisites without starting containers.
-  --skip-smoke  Skip tip.create invoice smoke (health check still runs).
-  --verbose     Print additional progress logs.
-  -h, --help    Show this help message.
+  --dry-run          Print planned actions and validate prerequisites without starting containers.
+  --skip-smoke       Skip tip.create invoice smoke (health check still runs).
+  --verbose          Print additional progress logs.
+  --destroy-volumes  Remove compose volumes before the smoke run. Can also be enabled with FIBER_LINK_DESTROY_VOLUMES=1.
+  -h, --help         Show this help message.
 
 Exit codes:
   0   PASS
@@ -54,6 +56,14 @@ compose() {
   (cd "${COMPOSE_DIR}" && docker compose "$@")
 }
 
+compose_down_reset_args() {
+  local args=(down --remove-orphans)
+  if [[ "${DESTROY_VOLUMES}" == "1" ]]; then
+    args+=(--volumes)
+  fi
+  printf '%s\n' "${args[*]}"
+}
+
 get_env_value() {
   local key="$1"
   local line
@@ -72,7 +82,7 @@ cleanup_stack() {
 
   mkdir -p "${ARTIFACT_DIR}"
   compose logs --no-color > "${ARTIFACT_DIR}/compose.log" || true
-  compose down --remove-orphans > "${ARTIFACT_DIR}/compose-down.log" 2>&1
+  compose $(compose_down_reset_args) > "${ARTIFACT_DIR}/compose-down.log" 2>&1
 }
 
 exit_with() {
@@ -110,6 +120,9 @@ while [[ $# -gt 0 ]]; do
     --verbose)
       VERBOSE=1
       ;;
+    --destroy-volumes)
+      DESTROY_VOLUMES=1
+      ;;
     -h|--help)
       usage
       exit 0
@@ -138,6 +151,17 @@ if [[ ! -f "${ENV_FILE}" ]]; then
   exit_with "${EXIT_PRECHECK}" "missing ${ENV_FILE} (copy deploy/compose/.env.example first)"
 fi
 
+COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-$(get_env_value COMPOSE_PROJECT_NAME)}"
+export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-fiber-link-smoke-$(date -u +%Y%m%d%H%M%S)-$$}"
+
+if [[ "${DESTROY_VOLUMES}" == "1" ]]; then
+  cat >&2 <<EOF
+WARNING: destructive compose volume cleanup is enabled.
+Target compose project: ${COMPOSE_PROJECT_NAME}
+Env file: ${ENV_FILE}
+EOF
+fi
+
 required_keys=(
   POSTGRES_PASSWORD
   FIBER_SECRET_KEY_PASSWORD
@@ -158,7 +182,8 @@ HMAC_SECRET="$(get_env_value FIBER_LINK_HMAC_SECRET)"
 
 if [[ "${DRY_RUN}" -eq 1 ]]; then
   log "dry-run mode enabled"
-  log "would run: docker compose down -v --remove-orphans"
+  log "compose project: ${COMPOSE_PROJECT_NAME}"
+  log "would run: docker compose $(compose_down_reset_args)"
   log "would run: docker compose up -d --build"
   log "would wait for postgres/redis health and rpc/worker/fnn running"
   log "would run signed health.ping against http://127.0.0.1:${RPC_PORT}/rpc"
@@ -171,7 +196,8 @@ if [[ "${DRY_RUN}" -eq 1 ]]; then
 fi
 
 vlog "reset compose stack to deterministic baseline"
-compose down -v --remove-orphans || true
+# Preserve persistent compose volumes by default; opt in with --destroy-volumes or FIBER_LINK_DESTROY_VOLUMES=1.
+compose $(compose_down_reset_args) || true
 
 vlog "starting compose stack"
 compose up -d --build > "${ARTIFACT_DIR}/compose-up.log" 2>&1
