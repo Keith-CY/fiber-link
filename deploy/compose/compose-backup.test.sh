@@ -25,7 +25,7 @@ assert_contains() {
 assert_file_contains() {
   local file="$1"
   local needle="$2"
-  grep -Fq "${needle}" "${file}" || fail "expected ${file} to contain '${needle}'"
+  grep -Fq -- "${needle}" "${file}" || fail "expected ${file} to contain '${needle}'"
 }
 
 make_fake_docker() {
@@ -38,6 +38,22 @@ printf '[fake-docker] %s\n' "$*" >> "${FAKE_DOCKER_LOG}"
 
 if [[ "${1:-}" == "compose" && "${2:-}" == "version" ]]; then
   printf 'Docker Compose version v2.0.0\n'
+  exit 0
+fi
+
+if [[ "${1:-}" == "run" ]]; then
+  backup_mount=""
+  for arg in "$@"; do
+    case "${arg}" in
+      *:/backup)
+        backup_mount="${arg%%:/backup}"
+        ;;
+    esac
+  done
+  if [[ -n "${backup_mount}" ]]; then
+    printf 'tarball-bytes-from-fake-docker\n' > "${backup_mount}/data.tar.gz"
+    printf 'fake docker command log on stdout\n'
+  fi
   exit 0
 fi
 
@@ -85,12 +101,19 @@ run_backup_dry_run() {
   [[ -f "${backup_dir}/db/postgres.sql" ]] || fail "missing postgres.sql in dry-run backup"
   [[ -f "${backup_dir}/runtime/worker-settlement-cursor.json" ]] || fail "missing worker cursor placeholder in dry-run backup"
   [[ -f "${backup_dir}/metadata/manifest.json" ]] || fail "missing backup manifest in dry-run backup"
+  [[ -f "${backup_dir}/metadata/checksums.sha256" ]] || fail "missing backup checksums in dry-run backup"
   [[ -f "${backup_dir}/metadata/retention-policy.md" ]] || fail "missing backup retention policy in dry-run backup"
   [[ -f "${backup_dir}/status/step-results.tsv" ]] || fail "missing step-results.tsv in dry-run backup"
+  [[ -f "${backup_dir}/fnn/README.txt" ]] || fail "missing fnn state opt-in marker in dry-run backup"
+  [[ -f "${backup_dir}/fnn2/README.txt" ]] || fail "missing fnn2 state opt-in marker in dry-run backup"
 
   assert_file_contains "${backup_dir}/commands/command-index.log" "pg_dump"
   assert_file_contains "${backup_dir}/metadata/retention-policy.md" "45 days"
   assert_file_contains "${backup_dir}/status/step-results.tsv" "DRY_RUN"
+  assert_file_contains "${backup_dir}/status/step-results.tsv" $'fnn-state\tSKIPPED'
+  assert_file_contains "${backup_dir}/metadata/manifest.json" '"schemaVersion": 1'
+  assert_file_contains "${backup_dir}/metadata/manifest.json" '"includeFnnState": false'
+  (cd "${backup_dir}" && sha256sum -c metadata/checksums.sha256 >/dev/null) || fail "checksum validation failed for dry-run backup"
 
   printf '%s\n' "${backup_dir}" > "${TMP_DIR}/backup-dir.txt"
 }
@@ -118,6 +141,46 @@ run_restore_dry_run() {
   [[ -f "${backup_dir}/restore/step-results.tsv" ]] || fail "missing restore step results"
   assert_file_contains "${backup_dir}/restore/command-index.log" "docker compose"
   assert_file_contains "${backup_dir}/restore/step-results.tsv" "DRY_RUN"
+
+  set +e
+  output="$(
+    PATH="${fake_bin}:${PATH}" \
+      "${RESTORE_SCRIPT}" \
+      --backup "${backup_dir}" \
+      --yes 2>&1
+  )"
+  local rc=$?
+  set -e
+  [[ "${rc}" -eq 10 ]] || fail "expected live restore from dry-run bundle to fail precheck, got ${rc}: ${output}"
+  assert_contains "${output}" "refusing live restore from a dry-run backup bundle"
+}
+
+run_backup_dry_run_with_fnn_state() {
+  local fake_bin="${TMP_DIR}/fake-bin-fnn-state"
+  local output_root="${TMP_DIR}/backup-output-fnn-state"
+  local output
+  local backup_dir
+
+  export FAKE_DOCKER_LOG="${TMP_DIR}/fake-docker-fnn-state.log"
+  make_fake_docker "${fake_bin}"
+
+  output="$(
+    PATH="${fake_bin}:${PATH}" \
+      "${BACKUP_SCRIPT}" \
+      --dry-run \
+      --include-fnn-state \
+      --output-root "${output_root}"
+  )"
+
+  assert_contains "${output}" "RESULT=PASS CODE=0"
+  backup_dir="$(printf '%s\n' "${output}" | sed -n 's/.*BACKUP_DIR=\([^ ]*\).*/\1/p')"
+  [[ -n "${backup_dir}" ]] || fail "failed to parse BACKUP_DIR from fnn-state output"
+  [[ -f "${backup_dir}/fnn/data.tar.gz" ]] || fail "missing fnn state tarball placeholder"
+  [[ -f "${backup_dir}/fnn2/data.tar.gz" ]] || fail "missing fnn2 state tarball placeholder"
+  assert_file_contains "${backup_dir}/metadata/manifest.json" '"includeFnnState": true'
+  assert_file_contains "${backup_dir}/commands/command-index.log" "--volumes-from fiber-link-fnn"
+  assert_file_contains "${backup_dir}/commands/command-index.log" "--volumes-from fiber-link-fnn2"
+  (cd "${backup_dir}" && sha256sum -c metadata/checksums.sha256 >/dev/null) || fail "checksum validation failed for fnn-state backup"
 }
 
 run_backup_dry_run_with_env_override() {
@@ -152,6 +215,32 @@ EOF_ENV
     || fail "expected ${backup_dir}/commands/command-index.log to contain '--env-file \"${custom_env_file}\"'"
 }
 
+run_backup_live_fnn_state_uses_separate_log() {
+  local fake_bin="${TMP_DIR}/fake-bin-live-fnn-state"
+  local output_root="${TMP_DIR}/backup-output-live-fnn-state"
+  local output
+  local backup_dir
+
+  export FAKE_DOCKER_LOG="${TMP_DIR}/fake-docker-live-fnn-state.log"
+  make_fake_docker "${fake_bin}"
+
+  output="$(
+    PATH="${fake_bin}:${PATH}" \
+      "${BACKUP_SCRIPT}" \
+      --include-fnn-state \
+      --output-root "${output_root}"
+  )"
+
+  assert_contains "${output}" "RESULT=PASS CODE=0"
+  backup_dir="$(printf '%s\n' "${output}" | sed -n 's/.*BACKUP_DIR=\([^ ]*\).*/\1/p')"
+  [[ -n "${backup_dir}" ]] || fail "failed to parse BACKUP_DIR from live fnn-state output"
+  assert_file_contains "${backup_dir}/fnn/data.tar.gz" "tarball-bytes-from-fake-docker"
+  assert_file_contains "${backup_dir}/fnn/data.tar.gz.log" "fake docker command log on stdout"
+  assert_file_contains "${backup_dir}/fnn2/data.tar.gz" "tarball-bytes-from-fake-docker"
+  assert_file_contains "${backup_dir}/fnn2/data.tar.gz.log" "fake docker command log on stdout"
+  (cd "${backup_dir}" && sha256sum -c metadata/checksums.sha256 >/dev/null) || fail "checksum validation failed for live fnn-state backup"
+}
+
 assert_repo_wiring() {
   [[ -f "${BACKUP_RUNBOOK_FILE}" ]] || fail "missing backup runbook"
   [[ -x "${BACKUP_SCRIPT}" ]] || fail "backup script is not executable"
@@ -168,6 +257,8 @@ run_help_checks
 assert_repo_wiring
 run_backup_dry_run
 run_restore_dry_run
+run_backup_dry_run_with_fnn_state
 run_backup_dry_run_with_env_override
+run_backup_live_fnn_state_uses_separate_log
 
 printf 'compose-backup checks passed\n'

@@ -6,10 +6,12 @@ EXIT_USAGE=2
 EXIT_PRECHECK=10
 EXIT_CAPTURE_FAILURE=11
 EXIT_ARCHIVE_FAILURE=12
+EXIT_INTEGRITY_FAILURE=13
 
 DRY_RUN=0
 VERBOSE=0
 RETENTION_DAYS=""
+INCLUDE_FNN_STATE=0
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPOSE_FILE="${ROOT_DIR}/deploy/compose/docker-compose.yml"
@@ -25,6 +27,7 @@ OVERALL_FAILURE=0
 POSTGRES_USER_DEFAULT="fiber"
 POSTGRES_DB_DEFAULT="fiber_link"
 WORKER_CURSOR_FILE_DEFAULT="/var/lib/fiber-link/settlement-cursor.json"
+BACKUP_HELPER_IMAGE_DEFAULT="public.ecr.aws/docker/library/alpine:3.20"
 
 usage() {
   printf '%s\n' \
@@ -33,6 +36,7 @@ usage() {
     "Options:" \
     "  --output-root <path>    Output root directory (default: deploy/compose/backups)." \
     "  --retention-days <n>    Retention policy in days (default: BACKUP_RETENTION_DAYS from .env or 30)." \
+    "  --include-fnn-state     Include FNN and FNN2 /data volume tarballs in the backup bundle." \
     "  --dry-run               Generate the bundle structure and command plan without docker side effects." \
     "  --verbose               Print progress logs." \
     "  -h, --help              Show this help message." \
@@ -42,7 +46,8 @@ usage() {
     "  2   invalid usage" \
     "  10  precheck failure" \
     "  11  one or more capture steps failed" \
-    "  12  archive generation failure"
+    "  12  archive generation failure" \
+    "  13  manifest/checksum generation failure"
 }
 
 log() {
@@ -93,12 +98,56 @@ run_capture_step() {
   return 0
 }
 
+run_file_capture_step() {
+  local name="$1"
+  local output_file="$2"
+  local log_file="$3"
+  local command="$4"
+  local dry_run_content="$5"
+
+  mkdir -p "$(dirname "${output_file}")" "$(dirname "${log_file}")"
+  printf '[%s] %s\n' "${name}" "${command}" >> "${COMMAND_LOG}"
+
+  if [[ "${DRY_RUN}" -eq 1 ]]; then
+    printf '%s\n' "${dry_run_content}" > "${output_file}"
+    printf 'DRY_RUN: command output captured separately from %s\n' "${output_file}" > "${log_file}"
+    write_step_result "${name}" "DRY_RUN" "${output_file}" "${command}"
+    return 0
+  fi
+
+  set +e
+  bash -c "${command}" > "${log_file}" 2>&1
+  local rc=$?
+  set -e
+
+  if [[ "${rc}" -eq 0 && -s "${output_file}" ]]; then
+    write_step_result "${name}" "PASS" "${output_file}" "${command}"
+    return 0
+  fi
+
+  if [[ "${rc}" -eq 0 ]]; then
+    printf 'capture command succeeded but did not create non-empty output file: %s\n' "${output_file}" >> "${log_file}"
+  fi
+  write_step_result "${name}" "FAIL:${rc}" "${output_file}" "${command}"
+  OVERALL_FAILURE=1
+  return 0
+}
+
 bool_status() {
   if [[ "$1" -eq 0 ]]; then
     printf 'PASS'
   else
     printf 'FAIL'
   fi
+}
+
+write_checksums() {
+  (
+    cd "${BACKUP_DIR}"
+    find commands db fnn fnn2 metadata runtime snapshots status -type f ! -path 'metadata/checksums.sha256' -print \
+      | LC_ALL=C sort \
+      | xargs sha256sum
+  ) > "${BACKUP_DIR}/metadata/checksums.sha256"
 }
 
 while [[ $# -gt 0 ]]; do
@@ -112,6 +161,9 @@ while [[ $# -gt 0 ]]; do
       [[ $# -ge 2 ]] || { usage >&2; exit "${EXIT_USAGE}"; }
       RETENTION_DAYS="$2"
       shift
+      ;;
+    --include-fnn-state)
+      INCLUDE_FNN_STATE=1
       ;;
     --dry-run)
       DRY_RUN=1
@@ -149,13 +201,14 @@ fi
 POSTGRES_USER="${POSTGRES_USER:-${POSTGRES_USER_DEFAULT}}"
 POSTGRES_DB="${POSTGRES_DB:-${POSTGRES_DB_DEFAULT}}"
 WORKER_CURSOR_FILE="${WORKER_SETTLEMENT_CURSOR_FILE:-${WORKER_CURSOR_FILE_DEFAULT}}"
+BACKUP_HELPER_IMAGE="${BACKUP_HELPER_IMAGE:-${BACKUP_HELPER_IMAGE_DEFAULT}}"
 
 BACKUP_DIR="${OUTPUT_ROOT}/${TIMESTAMP}"
 ARCHIVE_FILE="${BACKUP_DIR}.tar.gz"
 COMMAND_LOG="${BACKUP_DIR}/commands/command-index.log"
 STEP_RESULTS_FILE="${BACKUP_DIR}/status/step-results.tsv"
 
-for binary in bash docker git tar awk jq; do
+for binary in awk bash docker find git jq sha256sum sort tar xargs; do
   if ! command -v "${binary}" >/dev/null 2>&1; then
     log "missing required binary: ${binary}"
     exit "${EXIT_PRECHECK}"
@@ -175,6 +228,8 @@ fi
 mkdir -p \
   "${BACKUP_DIR}/commands" \
   "${BACKUP_DIR}/db" \
+  "${BACKUP_DIR}/fnn" \
+  "${BACKUP_DIR}/fnn2" \
   "${BACKUP_DIR}/runtime" \
   "${BACKUP_DIR}/snapshots" \
   "${BACKUP_DIR}/metadata" \
@@ -210,6 +265,16 @@ run_capture_step "worker-inspect" \
   "docker inspect fiber-link-worker" \
   "{}"
 
+run_capture_step "fnn-inspect" \
+  "${BACKUP_DIR}/runtime/fnn-container-inspect.json" \
+  "docker inspect fiber-link-fnn" \
+  "{}"
+
+run_capture_step "fnn2-inspect" \
+  "${BACKUP_DIR}/runtime/fnn2-container-inspect.json" \
+  "docker inspect fiber-link-fnn2" \
+  "{}"
+
 run_capture_step "postgres-dump" \
   "${BACKUP_DIR}/db/postgres.sql" \
   "docker exec fiber-link-postgres pg_dump --clean --if-exists --create --format=plain --no-owner --no-privileges -U \"${POSTGRES_USER}\" -d \"${POSTGRES_DB}\"" \
@@ -219,6 +284,25 @@ run_capture_step "worker-cursor" \
   "${BACKUP_DIR}/runtime/worker-settlement-cursor.json" \
   "docker exec fiber-link-worker sh -lc 'if [ -f \"${WORKER_CURSOR_FILE}\" ]; then cat \"${WORKER_CURSOR_FILE}\"; else printf \"UNSET\\n\"; fi'" \
   "UNSET"
+
+if [[ "${INCLUDE_FNN_STATE}" -eq 1 ]]; then
+  run_file_capture_step "fnn-state" \
+    "${BACKUP_DIR}/fnn/data.tar.gz" \
+    "${BACKUP_DIR}/fnn/data.tar.gz.log" \
+    "docker run --rm --volumes-from fiber-link-fnn -v \"${BACKUP_DIR}/fnn:/backup\" \"${BACKUP_HELPER_IMAGE}\" sh -lc 'cd /data && tar -czf /backup/data.tar.gz .'" \
+    "DRY_RUN fnn /data volume tarball placeholder"
+
+  run_file_capture_step "fnn2-state" \
+    "${BACKUP_DIR}/fnn2/data.tar.gz" \
+    "${BACKUP_DIR}/fnn2/data.tar.gz.log" \
+    "docker run --rm --volumes-from fiber-link-fnn2 -v \"${BACKUP_DIR}/fnn2:/backup\" \"${BACKUP_HELPER_IMAGE}\" sh -lc 'cd /data && tar -czf /backup/data.tar.gz .'" \
+    "DRY_RUN fnn2 /data volume tarball placeholder"
+else
+  printf '%s\n' "FNN state capture disabled. Re-run with --include-fnn-state to include /data volume tarballs." > "${BACKUP_DIR}/fnn/README.txt"
+  printf '%s\n' "FNN2 state capture disabled. Re-run with --include-fnn-state to include /data volume tarballs." > "${BACKUP_DIR}/fnn2/README.txt"
+  write_step_result "fnn-state" "SKIPPED" "${BACKUP_DIR}/fnn/README.txt" "--include-fnn-state not set"
+  write_step_result "fnn2-state" "SKIPPED" "${BACKUP_DIR}/fnn2/README.txt" "--include-fnn-state not set"
+fi
 
 overall_status="$(bool_status "${OVERALL_FAILURE}")"
 
@@ -237,27 +321,43 @@ jq -n \
   --arg postgresUser "${POSTGRES_USER}" \
   --arg postgresDb "${POSTGRES_DB}" \
   --arg workerCursorFile "${WORKER_CURSOR_FILE}" \
+  --arg backupHelperImage "${BACKUP_HELPER_IMAGE}" \
   --argjson retentionDays "${RETENTION_DAYS}" \
   --argjson dryRun "$([[ "${DRY_RUN}" -eq 1 ]] && printf 'true' || printf 'false')" \
+  --argjson includeFnnState "$([[ "${INCLUDE_FNN_STATE}" -eq 1 ]] && printf 'true' || printf 'false')" \
   '{
+    schemaVersion: 1,
     generatedAtUtc: $generatedAtUtc,
     retentionDays: $retentionDays,
     dryRun: $dryRun,
+    includeFnnState: $includeFnnState,
     overallStatus: $overallStatus,
     postgresUser: $postgresUser,
     postgresDb: $postgresDb,
     workerCursorFile: $workerCursorFile,
+    backupHelperImage: $backupHelperImage,
     files: {
       commandLog: "commands/command-index.log",
       stepResults: "status/step-results.tsv",
+      checksums: "metadata/checksums.sha256",
       postgresDump: "db/postgres.sql",
       workerCursor: "runtime/worker-settlement-cursor.json",
       composeConfig: "snapshots/compose-config.txt",
       composePs: "snapshots/compose-ps.txt",
       postgresInspect: "runtime/postgres-container-inspect.json",
-      workerInspect: "runtime/worker-container-inspect.json"
+      workerInspect: "runtime/worker-container-inspect.json",
+      fnnInspect: "runtime/fnn-container-inspect.json",
+      fnn2Inspect: "runtime/fnn2-container-inspect.json",
+      fnnState: "fnn/data.tar.gz",
+      fnn2State: "fnn2/data.tar.gz"
     }
   }' > "${BACKUP_DIR}/metadata/manifest.json"
+
+if ! write_checksums; then
+  printf 'RESULT=FAIL CODE=%s MESSAGE=%s BACKUP_DIR=%s BACKUP_ARCHIVE=%s\n' \
+    "${EXIT_INTEGRITY_FAILURE}" "checksum generation failed" "${BACKUP_DIR}" "${ARCHIVE_FILE}"
+  exit "${EXIT_INTEGRITY_FAILURE}"
+fi
 
 set +e
 tar -czf "${ARCHIVE_FILE}" -C "$(dirname "${BACKUP_DIR}")" "$(basename "${BACKUP_DIR}")"
