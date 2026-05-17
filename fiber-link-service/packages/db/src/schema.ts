@@ -272,6 +272,9 @@ export const liquidityRequests = pgTable(
       table.createdAt,
       table.id,
     ),
+    openKeyUnique: uniqueIndex("liquidity_requests_open_key_unique")
+      .on(table.appId, table.asset, table.network, table.sourceKind)
+      .where(sql`${table.state} IN ('REQUESTED', 'REBALANCING')`),
   }),
 );
 
