@@ -409,7 +409,7 @@ RSpec.describe ::FiberLink::RpcController, type: :request do
 
       fiber_link_rate_limiter_calls = []
       allow(::RateLimiter).to receive(:new).and_wrap_original do |original, *args|
-        _actor, key, = args
+        _actor, key, * = args
         fiber_link_rate_limiter_calls << args if key.to_s.start_with?("fiber_link_rpc_")
         original.call(*args)
       end
@@ -433,7 +433,9 @@ RSpec.describe ::FiberLink::RpcController, type: :request do
       expect(body.dig("result", "state")).to eq("PENDING")
       expect(WebMock).to have_requested(:post, "https://fiber-link.example/rpc").with { |request|
         payload = JSON.parse(request.body)
-        payload.fetch("method") == "withdrawal.request" && payload.dig("params", "userId") == admin.id.to_s
+        expect(payload.fetch("method")).to eq("withdrawal.request")
+        expect(payload.dig("params", "userId")).to eq(admin.id.to_s)
+        true
       }
     end
 
