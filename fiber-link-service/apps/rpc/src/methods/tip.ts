@@ -151,9 +151,16 @@ async function appendTipTimelineEvent(
     await eventRepo.append(input);
   } catch (error) {
     if (log) {
-      log.error(error, "Failed to append tip intent timeline event");
+      log.error({ err: error, event: "tip_timeline_append_failed" }, "Failed to append tip intent timeline event");
     } else {
-      console.error("Failed to append tip intent timeline event.", error);
+      process.stderr.write(
+        JSON.stringify({
+          level: "error",
+          event: "tip_timeline_append_failed",
+          message: "Failed to append tip intent timeline event",
+          error: error instanceof Error ? error.message : String(error),
+        }) + "\n",
+      );
     }
   }
 }
