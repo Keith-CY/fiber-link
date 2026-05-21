@@ -40,11 +40,65 @@ export class RedisNonceStore implements NonceStore {
   }
 }
 
-export function createNonceStore() {
+export type FaultTolerantNonceStoreOptions = {
+  /** Called when Redis is unavailable and the fallback is used. */
+  onFallback?: (error: unknown) => void;
+};
+
+/**
+ * Wraps a primary Redis nonce store with an in-memory fallback.
+ *
+ * When Redis is temporarily unavailable (network hiccup, restart) requests
+ * are not rejected outright — the in-memory store handles the nonce check for
+ * that request and the error is surfaced via `onFallback` so operators can
+ * alert on it. Replay protection remains intact within the single process;
+ * cross-instance replay protection is degraded only for the duration of the
+ * outage.
+ *
+ * For stricter deployments where replay protection must never be degraded,
+ * use `RedisNonceStore` directly — errors will propagate and callers can
+ * decide how to handle them.
+ */
+export class FaultTolerantRedisNonceStore implements NonceStore {
+  private readonly fallback = new InMemoryNonceStore();
+
+  constructor(
+    private readonly primary: RedisNonceStore,
+    private readonly options: FaultTolerantNonceStoreOptions = {},
+  ) {}
+
+  async isReplay(appId: string, nonce: string, ttlMs: number): Promise<boolean> {
+    try {
+      return await this.primary.isReplay(appId, nonce, ttlMs);
+    } catch (error) {
+      this.options.onFallback?.(error);
+      return this.fallback.isReplay(appId, nonce, ttlMs);
+    }
+  }
+
+  async close(): Promise<void> {
+    await Promise.all([this.primary.close(), this.fallback.close()]);
+  }
+}
+
+export type CreateNonceStoreOptions = {
+  /**
+   * When `true`, Redis errors fall back to an in-memory store rather than
+   * propagating. Defaults to `false` (fail-closed / strict replay protection).
+   */
+  faultTolerant?: boolean;
+  onFallback?: (error: unknown) => void;
+};
+
+export function createNonceStore(options: CreateNonceStoreOptions = {}): NonceStore {
   const redisUrl = process.env.FIBER_LINK_NONCE_REDIS_URL ?? process.env.REDIS_URL;
   if (redisUrl) {
     const client = new Redis(redisUrl);
-    return new RedisNonceStore(client, true);
+    const primary = new RedisNonceStore(client, true);
+    if (options.faultTolerant) {
+      return new FaultTolerantRedisNonceStore(primary, { onFallback: options.onFallback });
+    }
+    return primary;
   }
   return new InMemoryNonceStore();
 }
