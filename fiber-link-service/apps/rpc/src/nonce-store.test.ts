@@ -66,6 +66,25 @@ describe("nonce store", () => {
       await store.close();
     });
 
+    it("still reaches the in-memory fallback when onFallback observer throws", async () => {
+      const failingRedis = {
+        set: async () => { throw new Error("Redis unavailable"); },
+        quit: async () => {},
+      } as unknown as Redis;
+
+      const primary = new RedisNonceStore(failingRedis);
+      const store = new FaultTolerantRedisNonceStore(primary, {
+        onFallback: () => { throw new Error("metrics pipeline exploded"); },
+      });
+
+      const first = await store.isReplay("app1", "nonce-obs-throw", 1_000);
+      const second = await store.isReplay("app1", "nonce-obs-throw", 1_000);
+
+      expect(first).toBe(false);
+      expect(second).toBe(true);
+      await store.close();
+    });
+
     it("treats different nonces independently when falling back", async () => {
       const failingRedis = {
         set: async () => { throw new Error("Redis unavailable"); },

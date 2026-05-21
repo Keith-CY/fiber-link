@@ -71,7 +71,11 @@ export class FaultTolerantRedisNonceStore implements NonceStore {
     try {
       return await this.primary.isReplay(appId, nonce, ttlMs);
     } catch (error) {
-      this.options.onFallback?.(error);
+      try {
+        this.options.onFallback?.(error);
+      } catch {
+        // Observer errors must not prevent fallback replay protection.
+      }
       return this.fallback.isReplay(appId, nonce, ttlMs);
     }
   }
