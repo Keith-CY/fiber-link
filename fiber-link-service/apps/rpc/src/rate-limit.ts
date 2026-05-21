@@ -89,7 +89,7 @@ export class RedisRateLimitStore implements RateLimitStore {
       number,
     ];
     const count = result[0];
-    const ttlMs = result[1];
+    const ttlMs = result[1] > 0 ? result[1] : input.windowMs;
 
     const resetAtEpochMs = Date.now() + Math.max(0, ttlMs);
     const allowed = count <= input.limit;
