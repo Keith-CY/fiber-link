@@ -11,9 +11,9 @@ export type DbClientOptions = {
   maxConnections?: number;
   /** Milliseconds a client must sit idle before being closed. Defaults to 30 000. */
   idleTimeoutMs?: number;
-  /** Milliseconds to wait for a connection before throwing. Defaults to 5 000. */
+  /** Milliseconds to wait for a connection before throwing. 0 = no timeout (pg default). Defaults to 0. */
   connectionTimeoutMs?: number;
-  /** PostgreSQL statement_timeout in milliseconds. 0 = unlimited. Defaults to 30 000. */
+  /** PostgreSQL statement_timeout in milliseconds. 0 = unlimited (pg default). Defaults to 0. */
   statementTimeoutMs?: number;
 };
 
@@ -32,8 +32,8 @@ function parsePoolEnv(): Pick<
   return {
     maxConnections: parseInt_(process.env.DB_POOL_MAX, 10),
     idleTimeoutMs: parseMs(process.env.DB_POOL_IDLE_TIMEOUT_MS, 30_000),
-    connectionTimeoutMs: parseMs(process.env.DB_POOL_CONNECTION_TIMEOUT_MS, 5_000),
-    statementTimeoutMs: parseMs(process.env.DB_STATEMENT_TIMEOUT_MS, 30_000),
+    connectionTimeoutMs: parseMs(process.env.DB_POOL_CONNECTION_TIMEOUT_MS, 0),
+    statementTimeoutMs: parseMs(process.env.DB_STATEMENT_TIMEOUT_MS, 0),
   };
 }
 
@@ -48,8 +48,8 @@ export function createDbClient(urlOrOptions: string | DbClientOptions = process.
 
   const maxConnections = opts.maxConnections ?? envDefaults.maxConnections ?? 10;
   const idleTimeoutMs = opts.idleTimeoutMs ?? envDefaults.idleTimeoutMs ?? 30_000;
-  const connectionTimeoutMs = opts.connectionTimeoutMs ?? envDefaults.connectionTimeoutMs ?? 5_000;
-  const statementTimeoutMs = opts.statementTimeoutMs ?? envDefaults.statementTimeoutMs ?? 30_000;
+  const connectionTimeoutMs = opts.connectionTimeoutMs ?? envDefaults.connectionTimeoutMs ?? 0;
+  const statementTimeoutMs = opts.statementTimeoutMs ?? envDefaults.statementTimeoutMs ?? 0;
 
   const pool = new Pool({
     connectionString: url,
