@@ -91,7 +91,7 @@ The main proof entry points are:
 | Boundary | Detail |
 |---|---|
 | **Hosted custody model** | The current MVP uses a hosted hub and internal ledger. This is intentional, but it requires clear limits, monitoring, key management, and recovery procedures. |
-| **Discourse-first integration** | The product is currently implemented and documented around Discourse. Other community surfaces are future integrations. |
+| **Discourse-first integration** | The product is currently implemented and documented around Discourse. User-facing Telegram support is a future integration and is tracked in [Telegram Integration Design](telegram-integration.md). |
 | **Operator setup required** | Community members should not need to run nodes, but the community operator still needs a correctly configured service, Fiber nodes, database, secrets, monitoring, and backups. |
 | **Liquidity is operationally meaningful** | Withdrawals depend on hot-wallet and Fiber liquidity readiness. The docs include recovery and liquidity runbooks because this is part of the product boundary. |
 | **Mainnet readiness is a gate, not a casual switch** | The repository includes mainnet checklists and evidence, but operators must complete the documented preflight, rollback, monitoring, and secret-management gates before production use. |

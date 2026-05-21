@@ -23,6 +23,7 @@ Practical, user-facing guides for understanding and operating the product:
 | [Getting Started](getting-started.md) | First-time orientation for evaluators, operators, Discourse admins, and developers. |
 | [Current Status](current-status.md) | Shipped capabilities, operator surfaces, verified evidence, and limitations. |
 | [Overview](00-overview.md) | Short project overview, motivation, hosted-hub model, and proposal reference. |
+| [Telegram Integration Design](telegram-integration.md) | Phase 1 design for Telegram Bot + Mini App user-facing tipping (Issue #383). |
 | [MVP Scope](01-scope-mvp.md) | MVP scope, non-goals, and product boundary. |
 | [Development Progress](06-development-progress.md) | Delivery history and completed milestone checkpoints. |
 | [Admin Installation](admin-installation.md) | Install and verify the Discourse plugin and compose deployment. |
