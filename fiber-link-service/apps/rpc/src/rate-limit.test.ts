@@ -78,6 +78,30 @@ describe("rpc rate limit", () => {
     await client.quit();
   });
 
+  it("RedisRateLimitStore recovers a key that has no TTL set", async () => {
+    // A key can lose its TTL via manual PERSIST, Redis restore, or a prior partial
+    // failure before PEXPIRE ran. Without the pttl<0 branch the key would increment
+    // forever and permanently rate-limit the caller. The Lua script detects PTTL==-1
+    // and resets the expiry on the next request.
+    const client = new Redis();
+    const store = new RedisRateLimitStore(client);
+
+    // Seed a key with no TTL directly via the mock client.
+    const rawKey = `rate:${rateLimitKey("recover", "tip.create")}`;
+    await (client as unknown as Redis).set(rawKey, "5");
+
+    const result = await store.consume({ key: rateLimitKey("recover", "tip.create"), limit: 100, windowMs: 60_000 });
+
+    // After the consume the key must have a TTL so it will eventually expire.
+    const pttl = await (client as unknown as Redis).pttl(rawKey);
+    expect(pttl).toBeGreaterThan(0);
+    expect(result.allowed).toBe(true);
+    expect(result.remaining).toBe(94); // 100 - 6
+
+    await store.close();
+    await client.quit();
+  });
+
   it("createRateLimitStore uses Redis when a Redis URL is configured", async () => {
     const store = createRateLimitStore(
       {

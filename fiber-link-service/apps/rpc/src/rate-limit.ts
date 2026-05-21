@@ -65,15 +65,17 @@ export class InMemoryRateLimitStore implements RateLimitStore {
   }
 }
 
-// Lua script: atomically increment and set TTL on first write.
-// Returns [count, pttl_ms]. Using PEXPIRE only when count==1 ensures the
-// sliding window is not accidentally reset by concurrent requests.
+// Lua script: atomically increment and conditionally set TTL.
+// PEXPIRE runs when the key is new (count==1) or has no TTL (pttl<0), the
+// latter recovering keys that lost their expiry through manual intervention,
+// a Redis restore, or a prior partial failure.
 const RATE_LIMIT_LUA = `
 local count = redis.call('INCR', KEYS[1])
-if count == 1 then
-  redis.call('PEXPIRE', KEYS[1], ARGV[1])
-end
 local pttl = redis.call('PTTL', KEYS[1])
+if count == 1 or pttl < 0 then
+  redis.call('PEXPIRE', KEYS[1], ARGV[1])
+  pttl = tonumber(ARGV[1])
+end
 return {count, pttl}
 `.trim();
 
@@ -87,7 +89,7 @@ export class RedisRateLimitStore implements RateLimitStore {
       number,
     ];
     const count = result[0];
-    const ttlMs = result[1] >= 0 ? result[1] : input.windowMs;
+    const ttlMs = result[1];
 
     const resetAtEpochMs = Date.now() + Math.max(0, ttlMs);
     const allowed = count <= input.limit;
