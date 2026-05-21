@@ -83,6 +83,25 @@ describe("createWebhookChannelHandler", () => {
     await expect(handler({ target: BASE_TARGET, event: COMPLETED_EVENT })).rejects.toThrow("HTTP 404");
   });
 
+  it("includes a response body snippet in the non-2xx error message", async () => {
+    const mockFetch = vi.fn(async () => new Response('{"error":"invalid_token"}', { status: 401 }));
+    const handler = createWebhookChannelHandler({ fetch: mockFetch as unknown as typeof fetch });
+
+    await expect(handler({ target: BASE_TARGET, event: COMPLETED_EVENT })).rejects.toThrow(
+      /HTTP 401.*invalid_token/,
+    );
+  });
+
+  it("truncates long response bodies to 200 characters in the error message", async () => {
+    const longBody = "x".repeat(500);
+    const mockFetch = vi.fn(async () => new Response(longBody, { status: 500 }));
+    const handler = createWebhookChannelHandler({ fetch: mockFetch as unknown as typeof fetch });
+
+    await expect(handler({ target: BASE_TARGET, event: COMPLETED_EVENT })).rejects.toThrow(
+      /HTTP 500.*x{200}$/,
+    );
+  });
+
   it("includes retry-pending fields for WITHDRAWAL_RETRY_PENDING events", async () => {
     const mockFetch = vi.fn(async () => new Response(null, { status: 200 }));
     const handler = createWebhookChannelHandler({ fetch: mockFetch as unknown as typeof fetch });

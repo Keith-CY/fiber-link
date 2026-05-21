@@ -74,7 +74,10 @@ export function createWebhookChannelHandler(options: WebhookDeliveryOptions = {}
       });
 
       if (!response.ok) {
-        throw new Error(`Webhook delivery failed: HTTP ${response.status} from ${target.target}`);
+        const snippet = await response.text().then((t) => t.slice(0, 200)).catch(() => "");
+        throw new Error(
+          `Webhook delivery failed: HTTP ${response.status} from ${target.target}${snippet ? ` — ${snippet}` : ""}`,
+        );
       }
     } finally {
       clearTimeout(timer);
