@@ -1,6 +1,7 @@
 import type { NotificationChannelKind } from "@fiber-link/db";
 import type { WithdrawalNotificationEvent } from "./notification-events";
 import type { NotificationDispatchTarget, NotificationRepo } from "./notification-repo";
+import { createWebhookChannelHandler } from "./webhook-handler";
 
 export type NotificationDispatchInput = {
   target: NotificationDispatchTarget;
@@ -26,12 +27,8 @@ export type CreateNotificationDispatcherOptions = {
   onDispatchError?: (input: NotificationDispatchInput & { error: unknown }) => void;
 };
 
-const NOOP_CHANNEL_HANDLER: NotificationChannelHandler = async () => {
-  return;
-};
-
 const DEFAULT_CHANNEL_HANDLERS: Record<NotificationChannelKind, NotificationChannelHandler> = {
-  WEBHOOK: NOOP_CHANNEL_HANDLER,
+  WEBHOOK: createWebhookChannelHandler(),
 };
 
 export function createNoopNotificationDispatcher(): NotificationDispatcher {
