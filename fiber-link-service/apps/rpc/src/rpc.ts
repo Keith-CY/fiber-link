@@ -48,9 +48,7 @@ function getDefaultAppRepo(): AppRepo | null {
   try {
     defaultAppRepo = createDbAppRepo(createDbClient());
   } catch (error) {
-    process.stderr.write(
-      JSON.stringify({ severity: "error", event: "app_repo_init_failed", error: String(error) }) + "\n",
-    );
+    console.error("Failed to initialize default AppRepo, RPC will fall back to env secrets.", error);
     defaultAppRepo = null;
   }
   return defaultAppRepo;

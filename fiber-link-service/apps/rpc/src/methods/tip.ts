@@ -45,9 +45,7 @@ function getDefaultTipIntentRepo(): TipIntentRepo {
   try {
     defaultTipIntentRepo = createDbTipIntentRepo(createDbClient());
   } catch (error) {
-    process.stderr.write(
-      JSON.stringify({ severity: "error", event: "tip_intent_repo_init_failed", error: String(error) }) + "\n",
-    );
+    console.error("Failed to initialize default TipIntentRepo.", error);
     defaultTipIntentRepo = null;
     throw error;
   }
@@ -71,9 +69,7 @@ function getDefaultTipIntentEventRepo(): TipIntentEventRepo | null {
   try {
     defaultTipIntentEventRepo = createDbTipIntentEventRepo(createDbClient());
   } catch (error) {
-    process.stderr.write(
-      JSON.stringify({ severity: "error", event: "tip_intent_event_repo_init_failed", error: String(error) }) + "\n",
-    );
+    console.error("Failed to initialize default TipIntentEventRepo.", error);
     defaultTipIntentEventRepo = null;
   }
 
@@ -154,8 +150,11 @@ async function appendTipTimelineEvent(
   try {
     await eventRepo.append(input);
   } catch (error) {
-    (log ?? { error: (obj: unknown, msg?: string) => process.stderr.write(JSON.stringify({ severity: "error", event: msg ?? "tip_timeline_append_failed", error: String(obj) }) + "\n") })
-      .error(error, "Failed to append tip intent timeline event");
+    if (log) {
+      log.error(error, "Failed to append tip intent timeline event");
+    } else {
+      console.error("Failed to append tip intent timeline event.", error);
+    }
   }
 }
 
