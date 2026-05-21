@@ -151,7 +151,7 @@ async function appendTipTimelineEvent(
     await eventRepo.append(input);
   } catch (error) {
     if (log) {
-      log.error({ err: error, event: "tip_timeline_append_failed" }, "Failed to append tip intent timeline event");
+      log.error(error, "Failed to append tip intent timeline event");
     } else {
       process.stderr.write(
         JSON.stringify({
