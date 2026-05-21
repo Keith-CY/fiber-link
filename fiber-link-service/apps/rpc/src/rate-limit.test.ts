@@ -54,6 +54,30 @@ describe("rpc rate limit", () => {
     await client.quit();
   });
 
+  it("RedisRateLimitStore does not reset the TTL window on concurrent requests", async () => {
+    // If two requests arrive concurrently both get count=1 from separate INCR calls
+    // before either sets the TTL, the second PEXPIRE call would silently reset the
+    // window. The Lua script fixes this by only calling PEXPIRE when count===1 inside
+    // a single atomic operation, so the TTL is stable across concurrent calls.
+    const client = new Redis();
+    const store = new RedisRateLimitStore(client);
+
+    const [first, second] = await Promise.all([
+      store.consume({ key: rateLimitKey("concurrent", "tip.create"), limit: 10, windowMs: 60_000 }),
+      store.consume({ key: rateLimitKey("concurrent", "tip.create"), limit: 10, windowMs: 60_000 }),
+    ]);
+
+    // Both should be counted; no window reset means resetAtEpochMs is consistent.
+    expect(first.allowed).toBe(true);
+    expect(second.allowed).toBe(true);
+    const delta = Math.abs(first.resetAtEpochMs - second.resetAtEpochMs);
+    // Both reset times should be within the same window, not independently extended.
+    expect(delta).toBeLessThan(1_000);
+
+    await store.close();
+    await client.quit();
+  });
+
   it("createRateLimitStore uses Redis when a Redis URL is configured", async () => {
     const store = createRateLimitStore(
       {

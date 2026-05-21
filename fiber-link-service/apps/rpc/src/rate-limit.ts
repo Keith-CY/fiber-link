@@ -12,7 +12,7 @@ export type RateLimitStore = {
   close(): Promise<void>;
 };
 
-type RedisLike = Pick<Redis, "incr" | "pexpire" | "pttl" | "quit">;
+type RedisLike = Pick<Redis, "incr" | "pexpire" | "pttl" | "quit" | "eval">;
 
 type Bucket = {
   count: number;
@@ -65,18 +65,29 @@ export class InMemoryRateLimitStore implements RateLimitStore {
   }
 }
 
+// Lua script: atomically increment and set TTL on first write.
+// Returns [count, pttl_ms]. Using PEXPIRE only when count==1 ensures the
+// sliding window is not accidentally reset by concurrent requests.
+const RATE_LIMIT_LUA = `
+local count = redis.call('INCR', KEYS[1])
+if count == 1 then
+  redis.call('PEXPIRE', KEYS[1], ARGV[1])
+end
+local pttl = redis.call('PTTL', KEYS[1])
+return {count, pttl}
+`.trim();
+
 export class RedisRateLimitStore implements RateLimitStore {
   constructor(private client: RedisLike, private owned = false) {}
 
   async consume(input: { key: string; limit: number; windowMs: number }): Promise<RateLimitDecision> {
     const redisKey = `rate:${input.key}`;
-    const count = await this.client.incr(redisKey);
-
-    let ttlMs = await this.client.pttl(redisKey);
-    if (count === 1 || ttlMs < 0) {
-      await this.client.pexpire(redisKey, input.windowMs);
-      ttlMs = input.windowMs;
-    }
+    const result = (await this.client.eval(RATE_LIMIT_LUA, 1, redisKey, String(input.windowMs))) as [
+      number,
+      number,
+    ];
+    const count = result[0];
+    const ttlMs = result[1] >= 0 ? result[1] : input.windowMs;
 
     const resetAtEpochMs = Date.now() + Math.max(0, ttlMs);
     const allowed = count <= input.limit;
