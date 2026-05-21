@@ -388,7 +388,7 @@ describe("json-rpc", () => {
 
       expect(res.statusCode).toBe(200);
       expect(res.json()).toEqual({ jsonrpc: "2.0", id: "s1", result: { state: "UNPAID" } });
-      expect(tipStatusSpy).toHaveBeenCalledWith({ invoice: "inv-1" });
+      expect(tipStatusSpy).toHaveBeenCalledWith({ invoice: "inv-1" }, expect.objectContaining({ log: expect.anything() }));
     } finally {
       tipStatusSpy.mockRestore();
     }
@@ -423,7 +423,7 @@ describe("json-rpc", () => {
 
       expect(res.statusCode).toBe(200);
       expect(res.json()).toEqual({ jsonrpc: "2.0", id: "g1", result: { state: "UNPAID" } });
-      expect(tipStatusSpy).toHaveBeenCalledWith({ invoice: "inv-1" });
+      expect(tipStatusSpy).toHaveBeenCalledWith({ invoice: "inv-1" }, expect.objectContaining({ log: expect.anything() }));
     } finally {
       tipStatusSpy.mockRestore();
     }
@@ -1055,14 +1055,17 @@ describe("json-rpc", () => {
         id: "create-1",
         result: { invoice: "inv-happy-1" },
       });
-      expect(tipCreateSpy).toHaveBeenCalledWith({
-        amount: "1",
-        appId: "app1",
-        asset: "CKB",
-        fromUserId: "u1",
-        postId: "p1",
-        toUserId: "u2",
-      });
+      expect(tipCreateSpy).toHaveBeenCalledWith(
+        {
+          amount: "1",
+          appId: "app1",
+          asset: "CKB",
+          fromUserId: "u1",
+          postId: "p1",
+          toUserId: "u2",
+        },
+        expect.objectContaining({ log: expect.anything() }),
+      );
 
       const getPayload = {
         jsonrpc: "2.0",
@@ -1098,7 +1101,7 @@ describe("json-rpc", () => {
         id: "get-1",
         result: { state: "UNPAID" },
       });
-      expect(tipStatusSpy).toHaveBeenCalledWith({ invoice: "inv-happy-1" });
+      expect(tipStatusSpy).toHaveBeenCalledWith({ invoice: "inv-happy-1" }, expect.objectContaining({ log: expect.anything() }));
     } finally {
       tipCreateSpy.mockRestore();
       tipStatusSpy.mockRestore();

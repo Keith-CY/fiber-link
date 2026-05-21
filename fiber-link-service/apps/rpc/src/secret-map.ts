@@ -9,7 +9,9 @@ export function loadSecretMap() {
   try {
     return JSON.parse(mapRaw) as SecretMap;
   } catch (error) {
-    console.error("FATAL: Invalid FIBER_LINK_HMAC_SECRET_MAP. Must be valid JSON.", error);
+    process.stderr.write(
+      JSON.stringify({ severity: "fatal", event: "invalid_hmac_secret_map", error: String(error) }) + "\n",
+    );
     throw new Error("Invalid FIBER_LINK_HMAC_SECRET_MAP");
   }
 }

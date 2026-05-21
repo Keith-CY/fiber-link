@@ -10,6 +10,8 @@ import {
 } from "@fiber-link/db";
 import type { InvoiceState } from "@fiber-link/fiber-adapter";
 
+type SimpleLogger = { error: (obj: unknown, msg?: string) => void };
+
 let defaultTipIntentRepo: TipIntentRepo | null | undefined;
 let defaultLedgerRepo: LedgerRepo | null | undefined;
 let defaultAdapter: ReturnType<typeof createAdapterProvider> | null | undefined;
@@ -43,7 +45,9 @@ function getDefaultTipIntentRepo(): TipIntentRepo {
   try {
     defaultTipIntentRepo = createDbTipIntentRepo(createDbClient());
   } catch (error) {
-    console.error("Failed to initialize default TipIntentRepo.", error);
+    process.stderr.write(
+      JSON.stringify({ severity: "error", event: "tip_intent_repo_init_failed", error: String(error) }) + "\n",
+    );
     defaultTipIntentRepo = null;
     throw error;
   }
@@ -67,7 +71,9 @@ function getDefaultTipIntentEventRepo(): TipIntentEventRepo | null {
   try {
     defaultTipIntentEventRepo = createDbTipIntentEventRepo(createDbClient());
   } catch (error) {
-    console.error("Failed to initialize default TipIntentEventRepo.", error);
+    process.stderr.write(
+      JSON.stringify({ severity: "error", event: "tip_intent_event_repo_init_failed", error: String(error) }) + "\n",
+    );
     defaultTipIntentEventRepo = null;
   }
 
@@ -112,6 +118,7 @@ type HandleTipStatusOptions = {
   tipIntentRepo?: TipIntentRepo;
   ledgerRepo?: LedgerRepo;
   tipIntentEventRepo?: TipIntentEventRepo;
+  log?: SimpleLogger;
   adapter?: {
     getInvoiceStatus: (input: { invoice: string }) => Promise<{ state: InvoiceState }>;
   };
@@ -120,6 +127,7 @@ type HandleTipStatusOptions = {
 type HandleTipCreateOptions = {
   tipIntentRepo?: TipIntentRepo;
   tipIntentEventRepo?: TipIntentEventRepo;
+  log?: SimpleLogger;
   adapter?: {
     createInvoice: (input: { amount: string; asset: "CKB" | "USDI" }) => Promise<{ invoice: string }>;
   };
@@ -138,6 +146,7 @@ function statusStateToTimelineType(state: InvoiceState): "TIP_STATUS_UNPAID_OBSE
 async function appendTipTimelineEvent(
   eventRepo: TipIntentEventRepo | null,
   input: Parameters<TipIntentEventRepo["append"]>[0],
+  log?: SimpleLogger,
 ): Promise<void> {
   if (!eventRepo) {
     return;
@@ -145,7 +154,8 @@ async function appendTipTimelineEvent(
   try {
     await eventRepo.append(input);
   } catch (error) {
-    console.error("Failed to append tip intent timeline event.", error);
+    (log ?? { error: (obj: unknown, msg?: string) => process.stderr.write(JSON.stringify({ severity: "error", event: msg ?? "tip_timeline_append_failed", error: String(obj) }) + "\n") })
+      .error(error, "Failed to append tip intent timeline event");
   }
 }
 
@@ -178,7 +188,7 @@ export async function handleTipCreate(
       appId: tipIntent.appId,
       postId: tipIntent.postId,
     },
-  });
+  }, options.log);
   return { invoice: invoice.invoice };
 }
 
@@ -204,7 +214,7 @@ export async function handleTipStatus(
         observedState: tipIntent.invoiceState,
         skippedUpstreamCheck: true,
       },
-    });
+    }, options.log);
     return { state: tipIntent.invoiceState };
   }
 
@@ -240,7 +250,7 @@ export async function handleTipStatus(
       metadata: {
         observedState: "SETTLED",
       },
-    });
+    }, options.log);
     return { state: nextState };
   }
 
@@ -267,7 +277,7 @@ export async function handleTipStatus(
       metadata: {
         observedState: "FAILED",
       },
-    });
+    }, options.log);
     return { state: nextState };
   }
 
@@ -281,7 +291,7 @@ export async function handleTipStatus(
     metadata: {
       observedState: "UNPAID",
     },
-  });
+  }, options.log);
   return { state: tipIntent.invoiceState };
 }
 

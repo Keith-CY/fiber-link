@@ -48,7 +48,9 @@ function getDefaultAppRepo(): AppRepo | null {
   try {
     defaultAppRepo = createDbAppRepo(createDbClient());
   } catch (error) {
-    console.error("Failed to initialize default AppRepo, RPC will fall back to env secrets.", error);
+    process.stderr.write(
+      JSON.stringify({ severity: "error", event: "app_repo_init_failed", error: String(error) }) + "\n",
+    );
     defaultAppRepo = null;
   }
   return defaultAppRepo;
@@ -290,13 +292,13 @@ export function registerRpc(
         "tip.create": {
           paramsSchema: TipCreateParamsSchema,
           resultSchema: TipCreateResultSchema,
-          handler: (params) => handleTipCreate({ ...params, appId }),
+          handler: (params, ctx) => handleTipCreate({ ...params, appId }, { log: ctx.log }),
           methodLabel: "tip.create",
         },
         "tip.status": {
           paramsSchema: TipStatusParamsSchema,
           resultSchema: TipStatusResultSchema,
-          handler: (params) => handleTipStatus({ ...params }),
+          handler: (params, ctx) => handleTipStatus({ ...params }, { log: ctx.log }),
           errorMap: [
             { match: (e) => e instanceof TipIntentNotFoundError, code: RpcErrorCode.TIP_NOT_FOUND, message: "Tip not found" },
           ],
