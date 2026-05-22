@@ -10,6 +10,8 @@ import {
 } from "@fiber-link/db";
 import type { InvoiceState } from "@fiber-link/fiber-adapter";
 
+type SimpleLogger = { error: (obj: unknown, msg?: string) => void };
+
 let defaultTipIntentRepo: TipIntentRepo | null | undefined;
 let defaultLedgerRepo: LedgerRepo | null | undefined;
 let defaultAdapter: ReturnType<typeof createAdapterProvider> | null | undefined;
@@ -112,6 +114,7 @@ type HandleTipStatusOptions = {
   tipIntentRepo?: TipIntentRepo;
   ledgerRepo?: LedgerRepo;
   tipIntentEventRepo?: TipIntentEventRepo;
+  log?: SimpleLogger;
   adapter?: {
     getInvoiceStatus: (input: { invoice: string }) => Promise<{ state: InvoiceState }>;
   };
@@ -120,6 +123,7 @@ type HandleTipStatusOptions = {
 type HandleTipCreateOptions = {
   tipIntentRepo?: TipIntentRepo;
   tipIntentEventRepo?: TipIntentEventRepo;
+  log?: SimpleLogger;
   adapter?: {
     createInvoice: (input: { amount: string; asset: "CKB" | "USDI" }) => Promise<{ invoice: string }>;
   };
@@ -138,6 +142,7 @@ function statusStateToTimelineType(state: InvoiceState): "TIP_STATUS_UNPAID_OBSE
 async function appendTipTimelineEvent(
   eventRepo: TipIntentEventRepo | null,
   input: Parameters<TipIntentEventRepo["append"]>[0],
+  log?: SimpleLogger,
 ): Promise<void> {
   if (!eventRepo) {
     return;
@@ -145,7 +150,18 @@ async function appendTipTimelineEvent(
   try {
     await eventRepo.append(input);
   } catch (error) {
-    console.error("Failed to append tip intent timeline event.", error);
+    if (log) {
+      log.error(error, "Failed to append tip intent timeline event");
+    } else {
+      process.stderr.write(
+        JSON.stringify({
+          level: "error",
+          event: "tip_timeline_append_failed",
+          message: "Failed to append tip intent timeline event",
+          error: error instanceof Error ? error.message : String(error),
+        }) + "\n",
+      );
+    }
   }
 }
 
@@ -178,7 +194,7 @@ export async function handleTipCreate(
       appId: tipIntent.appId,
       postId: tipIntent.postId,
     },
-  });
+  }, options.log);
   return { invoice: invoice.invoice };
 }
 
@@ -204,7 +220,7 @@ export async function handleTipStatus(
         observedState: tipIntent.invoiceState,
         skippedUpstreamCheck: true,
       },
-    });
+    }, options.log);
     return { state: tipIntent.invoiceState };
   }
 
@@ -240,7 +256,7 @@ export async function handleTipStatus(
       metadata: {
         observedState: "SETTLED",
       },
-    });
+    }, options.log);
     return { state: nextState };
   }
 
@@ -267,7 +283,7 @@ export async function handleTipStatus(
       metadata: {
         observedState: "FAILED",
       },
-    });
+    }, options.log);
     return { state: nextState };
   }
 
@@ -281,7 +297,7 @@ export async function handleTipStatus(
     metadata: {
       observedState: "UNPAID",
     },
-  });
+  }, options.log);
   return { state: tipIntent.invoiceState };
 }
 

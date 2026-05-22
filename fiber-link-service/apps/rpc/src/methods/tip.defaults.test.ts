@@ -102,7 +102,11 @@ describe("tip defaults", () => {
   });
 
   it("continues tip create when event timeline append fails", async () => {
-    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const stderrLines: string[] = [];
+    const stderrWrite = vi.spyOn(process.stderr, "write").mockImplementation((chunk) => {
+      stderrLines.push(String(chunk));
+      return true;
+    });
     const { handleTipCreate } = await setupTipModule({
       eventAppendError: new Error("append failed"),
       statusState: "UNPAID",
@@ -119,10 +123,16 @@ describe("tip defaults", () => {
 
     expect(result.invoice).toBe("inv-default-1");
     expect(
-      consoleError.mock.calls.some(
-        (call) => call[0] === "Failed to append tip intent timeline event." && String(call[1]).includes("append failed"),
-      ),
+      stderrLines.some((line) => {
+        try {
+          const parsed = JSON.parse(line);
+          return parsed.event === "tip_timeline_append_failed" && String(parsed.error).includes("append failed");
+        } catch {
+          return false;
+        }
+      }),
     ).toBe(true);
+    stderrWrite.mockRestore();
   });
 
   it("continues tip create when event repo initialization fails", async () => {
