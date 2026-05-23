@@ -123,7 +123,7 @@ export class FiberLinkClient {
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       throw new FiberLinkNetworkError(
-        msg.includes("abort") ? `Request timed out after ${this.timeoutMs}ms` : msg,
+        e instanceof Error && e.name === "AbortError" ? `Request timed out after ${this.timeoutMs}ms` : msg,
       );
     } finally {
       clearTimeout(timer);
@@ -133,15 +133,18 @@ export class FiberLinkClient {
       throw new FiberLinkNetworkError(`HTTP ${response.status}`);
     }
 
-    let body: { result?: T; error?: { code?: number; message?: string } };
+    let body: { result?: T; error?: { code?: number; message?: string } } | null;
     try {
       body = (await response.json()) as typeof body;
     } catch {
       throw new FiberLinkResponseError(undefined, "Invalid JSON response from server");
     }
 
-    if (body.error) {
+    if (body?.error) {
       throw new FiberLinkResponseError(body.error.code, body.error.message ?? "RPC error");
+    }
+    if (!body) {
+      throw new FiberLinkResponseError(undefined, "Invalid or empty response from server");
     }
 
     return body.result as T;
@@ -162,7 +165,7 @@ export class FiberLinkClient {
     if (!params.postId?.trim()) throw new FiberLinkValidationError("postId", "postId is required");
     if (!params.fromUserId?.trim()) throw new FiberLinkValidationError("fromUserId", "fromUserId is required");
     if (!params.toUserId?.trim()) throw new FiberLinkValidationError("toUserId", "toUserId is required");
-    if (!params.amount?.trim() || Number(params.amount) <= 0) {
+    if (!params.amount?.trim() || !(Number(params.amount) > 0)) {
       throw new FiberLinkValidationError("amount", "amount must be a positive number");
     }
 
@@ -210,10 +213,12 @@ export class FiberLinkClient {
 
     es.onmessage = (event: MessageEvent) => {
       try {
-        const data = JSON.parse(event.data as string) as StreamEvent;
-        onEvent(data);
-        if (data.status === "SETTLED" || data.status === "TIMEOUT") {
-          es.close();
+        const data = JSON.parse(event.data as string);
+        if (data && typeof data === "object" && "status" in data) {
+          onEvent(data as StreamEvent);
+          if (data.status === "SETTLED" || data.status === "TIMEOUT") {
+            es.close();
+          }
         }
       } catch {
         // ignore malformed events

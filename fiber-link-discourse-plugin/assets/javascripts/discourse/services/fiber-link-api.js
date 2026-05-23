@@ -189,9 +189,11 @@ export function streamTipStatus(invoice, onEvent) {
   es.onmessage = (event) => {
     try {
       const data = JSON.parse(event.data);
-      onEvent(data);
-      if (data?.status === "SETTLED" || data?.status === "TIMEOUT") {
-        es.close();
+      if (data && typeof data === "object" && data.status) {
+        onEvent(data);
+        if (data.status === "SETTLED" || data.status === "TIMEOUT") {
+          es.close();
+        }
       }
     } catch {
       // ignore malformed events
