@@ -2,6 +2,8 @@ import type { FastifyInstance } from "fastify";
 import { InsufficientFundsError, TipIntentNotFoundError, createDbClient, toErrorMessage } from "@fiber-link/db";
 import { verifyHmac } from "./auth/hmac";
 import {
+  DashboardAnalyticsParamsSchema,
+  DashboardAnalyticsResultSchema,
   DashboardSummaryParamsSchema,
   DashboardSummaryResultSchema,
   RpcErrorCode,
@@ -20,7 +22,7 @@ import {
   type RpcId,
 } from "./contracts";
 import { handleTipCreate, handleTipSettledFeed, handleTipStatus } from "./methods/tip";
-import { handleDashboardSummary } from "./methods/dashboard";
+import { handleDashboardSummary, handleDashboardAnalytics } from "./methods/dashboard";
 import { WithdrawalPolicyViolationError, quoteWithdrawal, requestWithdrawal } from "./methods/withdrawal";
 import { createNonceStore } from "./nonce-store";
 import { dispatchMethod, type MethodDef } from "./rpc-dispatch";
@@ -313,6 +315,12 @@ export function registerRpc(
           resultSchema: DashboardSummaryResultSchema,
           handler: (params) => handleDashboardSummary({ appId, ...params }),
           methodLabel: "dashboard.summary",
+        },
+        "dashboard.analytics": {
+          paramsSchema: DashboardAnalyticsParamsSchema,
+          resultSchema: DashboardAnalyticsResultSchema,
+          handler: (params) => handleDashboardAnalytics({ appId, ...params }),
+          methodLabel: "dashboard.analytics",
         },
         "withdrawal.quote": {
           paramsSchema: WithdrawalQuoteParamsSchema,

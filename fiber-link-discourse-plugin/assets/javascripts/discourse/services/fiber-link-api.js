@@ -137,3 +137,7 @@ export async function requestWithdrawal({
     destination,
   });
 }
+
+export async function getDashboardAnalytics({ range = "30d" } = {}) {
+  return rpcCall("dashboard.analytics", { range });
+}

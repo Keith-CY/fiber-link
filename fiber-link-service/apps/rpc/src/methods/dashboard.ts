@@ -1,5 +1,6 @@
 import { and, desc, eq, or, sql } from "drizzle-orm";
-import { apps, createDbClient, createDbLedgerRepo, createDbWithdrawalRepo, tipIntents, withdrawals } from "@fiber-link/db";
+import { apps, createDbClient, createDbLedgerRepo, createDbWithdrawalRepo, getCreatorAnalytics, tipIntents, withdrawals } from "@fiber-link/db";
+import type { AnalyticsRange } from "@fiber-link/db";
 import type {
   DashboardSummaryResult,
   DashboardSettlementStateFilterSchema,
@@ -324,4 +325,18 @@ export async function handleDashboardSummary(input: HandleDashboardSummaryInput)
     ...(admin ? { admin } : {}),
     generatedAt: new Date().toISOString(),
   };
+}
+
+export async function handleDashboardAnalytics({
+  appId,
+  userId,
+  range,
+}: {
+  appId: string;
+  userId: string;
+  range: AnalyticsRange;
+}) {
+  const db = getDefaultDbClient();
+  const result = await getCreatorAnalytics(db, { appId, userId, range });
+  return { ...result, range, generatedAt: new Date().toISOString() };
 }
