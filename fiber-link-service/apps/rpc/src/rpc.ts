@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { InsufficientFundsError, TipIntentNotFoundError, createDbClient, toErrorMessage } from "@fiber-link/db";
+import { registerStreamRoute } from "./stream";
 import { verifyHmac } from "./auth/hmac";
 import {
   DashboardSummaryParamsSchema,
@@ -173,6 +174,8 @@ export function registerRpc(
 ) {
   const rateLimitStore = options.rateLimitStore ?? createRateLimitStore();
   const rateLimitConfig = options.rateLimitConfig ?? parseRpcRateLimitConfig();
+
+  registerStreamRoute(app);
 
   app.get("/healthz/live", async () => {
     return { status: "alive" as const };
