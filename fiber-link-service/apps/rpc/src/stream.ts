@@ -8,6 +8,49 @@ function getRedisUrl(): string | null {
   return process.env.FIBER_LINK_NONCE_REDIS_URL ?? process.env.REDIS_URL ?? null;
 }
 
+// Singleton DB to avoid a new connection pool per SSE request.
+let defaultDb: ReturnType<typeof createDbClient> | null = null;
+function getDefaultDb() {
+  if (!defaultDb) defaultDb = createDbClient();
+  return defaultDb;
+}
+
+// Shared subscriber connection with per-channel listener dispatch, so we open
+// one Redis connection regardless of how many concurrent SSE connections exist.
+let sharedRedis: Redis | null = null;
+const channelListeners = new Map<string, Set<(msg: string) => void>>();
+
+function getOrCreateSharedRedis(redisUrl: string): Redis {
+  if (!sharedRedis) {
+    sharedRedis = new Redis(redisUrl, { lazyConnect: false });
+    sharedRedis.on("message", (ch: string, msg: string) => {
+      channelListeners.get(ch)?.forEach((fn) => fn(msg));
+    });
+    sharedRedis.on("error", () => {}); // ioredis reconnects automatically; avoid crash on transient errors
+  }
+  return sharedRedis;
+}
+
+async function addChannelListener(sub: Redis, channel: string, fn: (msg: string) => void) {
+  let set = channelListeners.get(channel);
+  if (!set) {
+    set = new Set();
+    channelListeners.set(channel, set);
+    await sub.subscribe(channel);
+  }
+  set.add(fn);
+}
+
+function removeChannelListener(sub: Redis, channel: string, fn: (msg: string) => void) {
+  const set = channelListeners.get(channel);
+  if (!set) return;
+  set.delete(fn);
+  if (set.size === 0) {
+    channelListeners.delete(channel);
+    sub.unsubscribe(channel).catch(() => {});
+  }
+}
+
 export function registerStreamRoute(
   app: FastifyInstance,
   options: {
@@ -20,8 +63,7 @@ export function registerStreamRoute(
     options.getInvoiceState ??
     (async (invoice: string) => {
       try {
-        const db = createDbClient();
-        const repo = createDbTipIntentRepo(db);
+        const repo = createDbTipIntentRepo(getDefaultDb());
         const intent = await repo.findByInvoiceOrThrow(invoice);
         return intent.invoiceState;
       } catch (e) {
@@ -30,16 +72,12 @@ export function registerStreamRoute(
       }
     });
 
-  const createSubscriber =
-    options.createSubscriber ?? ((url: string) => new Redis(url, { lazyConnect: false }));
-
   app.get("/rpc/stream", async (req, reply) => {
     const invoice = ((req.query as Record<string, string>)?.invoice ?? "").trim();
     if (!invoice) {
       return reply.status(400).send({ error: "Missing invoice" });
     }
 
-    // Validate the invoice exists — invoice strings are opaque bearer tokens.
     let currentState: string | null;
     try {
       currentState = await getInvoiceState(invoice);
@@ -51,7 +89,6 @@ export function registerStreamRoute(
       return reply.status(404).send({ error: "Invoice not found" });
     }
 
-    // If already settled, respond immediately without opening a Redis subscription.
     if (currentState === "SETTLED") {
       reply.raw.setHeader("Content-Type", "text/event-stream");
       reply.raw.setHeader("Cache-Control", "no-cache");
@@ -73,14 +110,38 @@ export function registerStreamRoute(
     reply.raw.setHeader("Access-Control-Allow-Origin", "*");
 
     const channel = `fiber-link:settlement:${invoice}`;
-    const subscriber = createSubscriber(redisUrl ?? "");
+
+    // Tests inject createSubscriber for a per-request mock; production uses the shared singleton.
+    const useShared = !options.createSubscriber;
+    const sub = useShared
+      ? getOrCreateSharedRedis(redisUrl ?? "")
+      : options.createSubscriber!(redisUrl ?? "");
+
     let finished = false;
+
+    function messageHandler(raw: string) {
+      if (finished) return;
+      try {
+        const payload = JSON.parse(raw);
+        reply.raw.write(`data: ${JSON.stringify(payload)}\n\n`);
+        if (payload.status === "SETTLED") {
+          clearTimeout(timeout);
+          finish();
+        }
+      } catch {
+        // malformed message — ignore
+      }
+    }
 
     function finish() {
       if (finished) return;
       finished = true;
-      subscriber.unsubscribe(channel).catch(() => {});
-      subscriber.disconnect();
+      if (useShared) {
+        removeChannelListener(sub, channel, messageHandler);
+      } else {
+        sub.unsubscribe(channel).catch(() => {});
+        sub.disconnect();
+      }
       if (!reply.raw.writableEnded) reply.raw.end();
     }
 
@@ -96,38 +157,38 @@ export function registerStreamRoute(
       finish();
     });
 
-    subscriber.on("error", () => {
-      clearTimeout(timeout);
-      finish();
-    });
-
-    subscriber.subscribe(channel, (err) => {
-      if (err) {
+    if (useShared) {
+      try {
+        await addChannelListener(sub, channel, messageHandler);
+        reply.raw.write(`data: ${JSON.stringify({ invoice, status: "LISTENING" })}\n\n`);
+      } catch {
         clearTimeout(timeout);
         finish();
-        return;
       }
-      reply.raw.write(`data: ${JSON.stringify({ invoice, status: "LISTENING" })}\n\n`);
-    });
+    } else {
+      sub.on("error", () => {
+        clearTimeout(timeout);
+        finish();
+      });
 
-    subscriber.on("message", (_ch: string, raw: string) => {
-      if (finished) return;
-      try {
-        const payload = JSON.parse(raw);
-        reply.raw.write(`data: ${JSON.stringify(payload)}\n\n`);
-        if (payload.status === "SETTLED") {
+      sub.subscribe(channel, (err) => {
+        if (err) {
           clearTimeout(timeout);
           finish();
+          return;
         }
-      } catch {
-        // malformed message — ignore
-      }
-    });
+        reply.raw.write(`data: ${JSON.stringify({ invoice, status: "LISTENING" })}\n\n`);
+      });
 
-    // Prevent Fastify from auto-closing the reply before we finish.
+      sub.on("message", (_ch: string, raw: string) => {
+        messageHandler(raw);
+      });
+    }
+
     await new Promise<void>((resolve) => {
       reply.raw.on("finish", resolve);
       reply.raw.on("error", resolve);
+      req.raw.on("close", resolve);
     });
   });
 }

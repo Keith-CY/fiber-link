@@ -40,9 +40,8 @@ module ::FiberLink
         return
       end
 
-      backend_url = URI("#{service_url}/rpc/stream?invoice=#{URI.encode_www_form_component(invoice)}")
-
       begin
+        backend_url = URI("#{service_url}/rpc/stream?invoice=#{URI.encode_www_form_component(invoice)}")
         Net::HTTP.start(backend_url.host, backend_url.port, use_ssl: backend_url.scheme == "https", read_timeout: 65) do |http|
           http.request(Net::HTTP::Get.new(backend_url)) do |resp|
             resp.read_body do |chunk|
