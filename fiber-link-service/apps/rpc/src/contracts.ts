@@ -151,6 +151,13 @@ export const DashboardSummaryParamsSchema = z.object({
     .optional(),
 });
 
+const AssetBalanceSchema = z.object({
+  asset: z.enum(["CKB", "USDI"]),
+  available: z.string().min(1),
+  pending: z.string().min(1),
+  locked: z.string().min(1),
+});
+
 export const DashboardSummaryResultSchema = z.object({
   balance: z.string().min(1),
   balances: z.object({
@@ -159,6 +166,7 @@ export const DashboardSummaryResultSchema = z.object({
     locked: z.string().min(1),
     asset: z.enum(["CKB", "USDI"]),
   }),
+  assetBalances: z.array(AssetBalanceSchema),
   stats: z.object({
     pendingCount: z.number().int().min(0),
     completedCount: z.number().int().min(0),

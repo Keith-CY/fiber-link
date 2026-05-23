@@ -119,6 +119,26 @@
     </article>
   </section>
 
+  {{#if this.model.assetBalances.length}}
+    <section class="fiber-link-dashboard__asset-balances" aria-label="Per-asset balances">
+      {{#each this.model.assetBalances as |ab|}}
+        <article class="fiber-link-dashboard__asset-balance-card">
+          <span class="fiber-link-dashboard__asset-badge">{{ab.asset}}</span>
+          <div class="fiber-link-dashboard__asset-balance-row">
+            <span class="fiber-link-dashboard__asset-balance-label">Available</span>
+            <strong class="fiber-link-dashboard__asset-balance-value">{{ab.available}}</strong>
+          </div>
+          {{#if (gt (parseFloat ab.locked) 0)}}
+            <div class="fiber-link-dashboard__asset-balance-row is-locked">
+              <span class="fiber-link-dashboard__asset-balance-label">Locked</span>
+              <span class="fiber-link-dashboard__asset-balance-value">{{ab.locked}}</span>
+            </div>
+          {{/if}}
+        </article>
+      {{/each}}
+    </section>
+  {{/if}}
+
   <div class="fiber-link-dashboard__content-grid">
     <FiberLinkWithdrawalPanel
       @asset={{this.model.balanceAsset}}

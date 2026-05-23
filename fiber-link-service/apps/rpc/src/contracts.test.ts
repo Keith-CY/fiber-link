@@ -127,6 +127,10 @@ describe("rpc contracts", () => {
           locked: "1",
           asset: "CKB",
         },
+        assetBalances: [
+          { asset: "CKB", available: "10", pending: "2", locked: "1" },
+          { asset: "USDI", available: "0", pending: "0", locked: "0" },
+        ],
         stats: {
           pendingCount: 1,
           completedCount: 3,
@@ -209,6 +213,10 @@ describe("rpc contracts", () => {
           locked: "0",
           asset: "CKB",
         },
+        assetBalances: [
+          { asset: "CKB", available: "0", pending: "0", locked: "0" },
+          { asset: "USDI", available: "0", pending: "0", locked: "0" },
+        ],
         stats: {
           pendingCount: 0,
           completedCount: 0,
