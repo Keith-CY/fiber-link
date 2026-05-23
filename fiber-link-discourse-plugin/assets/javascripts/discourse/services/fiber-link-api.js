@@ -1,3 +1,13 @@
+/**
+ * Fiber Link API service for the Discourse plugin.
+ *
+ * Implements the same interface as @fiber-link/client in "presigned" mode:
+ * the Discourse Ruby proxy handles HMAC signing server-side; this module
+ * only handles request shaping, response parsing, and SSE streaming.
+ *
+ * For non-Discourse platform integrations use the @fiber-link/client npm
+ * package directly (supports both "signed" and "presigned" modes).
+ */
 import { ajax } from "discourse/lib/ajax";
 
 const DEFAULT_RPC_PATH = "/fiber-link/rpc";
@@ -36,6 +46,10 @@ function buildRequestId() {
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
+// ---------------------------------------------------------------------------
+// Core RPC call — delegates auth to the Discourse proxy (presigned mode).
+// Mirrors FiberLinkClient#rpcCall from @fiber-link/client.
+// ---------------------------------------------------------------------------
 async function rpcCall(method, params = {}) {
   assertInitialized();
   let data;
@@ -88,6 +102,10 @@ async function rpcCall(method, params = {}) {
   return data?.result;
 }
 
+// ---------------------------------------------------------------------------
+// Public API — mirrors FiberLinkClient methods from @fiber-link/client.
+// ---------------------------------------------------------------------------
+
 export async function createTip({
   amount,
   asset,
@@ -136,4 +154,58 @@ export async function requestWithdrawal({
     asset,
     destination,
   });
+}
+
+/**
+ * Opens a Server-Sent Events stream for real-time settlement status.
+ * Mirrors FiberLinkClient#streamTipStatus from @fiber-link/client.
+ *
+ * Falls back gracefully when EventSource is unavailable.
+ * Returns a handle with a `close()` method, or null if SSE is unavailable.
+ *
+ * onEvent receives `{ invoice, status }` objects:
+ *   "LISTENING" – stream connected, waiting for settlement
+ *   "SETTLED"   – invoice settled; handle auto-closes
+ *   "TIMEOUT"   – server-side 60 s window elapsed
+ *   "SSE_ERROR" – EventSource error — caller should fall back to polling
+ */
+export function streamTipStatus(invoice, onEvent) {
+  assertInitialized();
+
+  if (typeof EventSource === "undefined") {
+    return null;
+  }
+
+  const streamPath = runtimeConfig.rpcPath + "/stream";
+  const url = `${streamPath}?invoice=${encodeURIComponent(invoice)}`;
+
+  let es;
+  try {
+    es = new EventSource(url);
+  } catch {
+    return null;
+  }
+
+  es.onmessage = (event) => {
+    try {
+      const data = JSON.parse(event.data);
+      onEvent(data);
+      if (data?.status === "SETTLED" || data?.status === "TIMEOUT") {
+        es.close();
+      }
+    } catch {
+      // ignore malformed events
+    }
+  };
+
+  es.onerror = () => {
+    es.close();
+    onEvent({ invoice, status: "SSE_ERROR" });
+  };
+
+  return {
+    close() {
+      es.close();
+    },
+  };
 }

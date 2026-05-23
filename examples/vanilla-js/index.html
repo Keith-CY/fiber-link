@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Fiber Link — Vanilla JS Integration Example</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 600px; margin: 2rem auto; padding: 0 1rem; }
+    label { display: block; margin-top: 1rem; font-weight: 600; }
+    input { width: 100%; box-sizing: border-box; padding: 0.5rem; margin-top: 0.25rem; }
+    button { margin-top: 1rem; padding: 0.6rem 1.2rem; cursor: pointer; }
+    #status { margin-top: 1.5rem; padding: 1rem; background: #f5f5f5; border-radius: 4px; min-height: 4rem; }
+    .settled { color: #1a7f37; font-weight: bold; }
+    .error   { color: #cf222e; }
+  </style>
+</head>
+<body>
+  <h1>Fiber Link Tip Example</h1>
+  <p>Demonstrates <code>@fiber-link/client</code> in <strong>signed mode</strong>. Connects directly to a local Fiber Link stack — run <code>docker-compose up</code> in <code>deploy/compose/</code> first.</p>
+
+  <label>RPC Endpoint
+    <input id="endpoint" value="http://localhost:3000/rpc" />
+  </label>
+  <label>App ID
+    <input id="appId" placeholder="your-app-id" />
+  </label>
+  <label>HMAC Secret
+    <input id="secret" type="password" placeholder="your-hmac-secret" />
+  </label>
+  <label>Post ID
+    <input id="postId" value="42" />
+  </label>
+  <label>From User ID
+    <input id="fromUserId" value="1" />
+  </label>
+  <label>To User ID
+    <input id="toUserId" value="2" />
+  </label>
+  <label>Amount (CKB)
+    <input id="amount" value="1" />
+  </label>
+
+  <button id="tipBtn">Send Tip</button>
+
+  <div id="status">Status will appear here…</div>
+
+  <script type="module" src="./index.js"></script>
+</body>
+</html>
