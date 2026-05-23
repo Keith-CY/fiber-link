@@ -32,3 +32,15 @@ export type WithdrawalNotificationEvent =
   | WithdrawalRetryPendingNotificationEvent
   | WithdrawalFailedNotificationEvent
   | WithdrawalCompletedNotificationEvent;
+
+export type TipSettledNotificationEvent = {
+  type: "TIP_SETTLED";
+  occurredAt: Date;
+  appId: string;
+  toUserId: string;
+  fromUserId: string;
+  postId: string;
+  invoice: string;
+  asset: string;
+  amount: string;
+};

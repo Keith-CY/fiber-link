@@ -7,6 +7,7 @@ import {
   type LedgerRepo,
   type TipIntentRepo,
 } from "@fiber-link/db";
+import type { NotificationDispatcher } from "@fiber-link/notifications";
 
 let defaultDb: DbClient | null = null;
 let defaultTipIntentRepo: TipIntentRepo | null = null;
@@ -35,7 +36,11 @@ function getDefaultLedgerRepo(): LedgerRepo {
 
 export async function markSettled(
   { invoice }: { invoice: string },
-  options: { tipIntentRepo?: TipIntentRepo; ledgerRepo?: LedgerRepo } = {},
+  options: {
+    tipIntentRepo?: TipIntentRepo;
+    ledgerRepo?: LedgerRepo;
+    dispatcher?: NotificationDispatcher;
+  } = {},
 ) {
   const tipIntentRepo = options.tipIntentRepo ?? getDefaultTipIntentRepo();
   const ledgerRepo = options.ledgerRepo ?? getDefaultLedgerRepo();
@@ -55,6 +60,22 @@ export async function markSettled(
   // Keep invoice state convergent even if credit was already written earlier.
   if (tipIntent.invoiceState !== "SETTLED") {
     await tipIntentRepo.updateInvoiceState(invoice, "SETTLED");
+  }
+
+  if (options.dispatcher) {
+    options.dispatcher
+      .dispatchTipSettledEvent({
+        type: "TIP_SETTLED",
+        occurredAt: new Date(),
+        appId: tipIntent.appId,
+        toUserId: tipIntent.toUserId,
+        fromUserId: tipIntent.fromUserId,
+        postId: tipIntent.postId,
+        invoice,
+        asset: tipIntent.asset,
+        amount: String(tipIntent.amount),
+      })
+      .catch((e) => console.warn("TIP_SETTLED notification dispatch failed:", e));
   }
 
   return { credited: credited.applied, idempotencyKey };
