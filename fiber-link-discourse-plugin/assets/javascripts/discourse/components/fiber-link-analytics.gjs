@@ -4,6 +4,9 @@ import { action } from "@ember/object";
 import { on } from "@ember/modifier";
 import { getDashboardAnalytics } from "../services/fiber-link-api";
 
+const eq = (a, b) => a === b;
+const inc = (n) => n + 1;
+
 const RANGES = [
   { value: "7d", label: "7 days" },
   { value: "30d", label: "30 days" },
@@ -122,7 +125,7 @@ export default class FiberLinkAnalytics extends Component {
                 <tbody>
                   {{#each this.data.topPosts as |post i|}}
                     <tr>
-                      <td>{{add i 1}}</td>
+                      <td>{{inc i}}</td>
                       <td>
                         <a href="/p/{{post.postId}}" target="_blank" rel="noopener noreferrer">
                           Post #{{post.postId}}
@@ -147,7 +150,7 @@ export default class FiberLinkAnalytics extends Component {
                 <tbody>
                   {{#each this.data.topTippers as |tipper i|}}
                     <tr>
-                      <td>{{add i 1}}</td>
+                      <td>{{inc i}}</td>
                       <td>{{tipper.userId}}</td>
                       <td>{{tipper.tipCount}}</td>
                       <td>{{formatAmount tipper.totalAmount}}</td>
