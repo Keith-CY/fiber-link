@@ -2,11 +2,14 @@
 
 require "base64"
 require "json"
+require "net/http"
 require "rqrcode"
 require "rqrcode/export/svg"
 
 module ::FiberLink
   class RpcController < ::ApplicationController
+    include ActionController::Live
+
     requires_plugin "fiber-link"
     before_action :ensure_logged_in
 
@@ -15,6 +18,47 @@ module ::FiberLink
     READ_METHOD_RATE_LIMIT = [60, 60].freeze
     MUTATING_METHOD_RATE_LIMIT = [10, 60].freeze
     MUTATING_METHODS = ["tip.create", "withdrawal.request"].freeze
+
+    # Proxy the backend SSE stream to the browser so clients don't need direct
+    # access to the Fastify service and authentication remains Discourse-session-gated.
+    def stream
+      invoice = params[:invoice].to_s.strip
+
+      if invoice.blank?
+        render status: :bad_request, json: { error: "Missing invoice" }
+        return
+      end
+
+      response.headers["Content-Type"] = "text/event-stream"
+      response.headers["Cache-Control"] = "no-cache"
+      response.headers["X-Accel-Buffering"] = "no"
+
+      service_url = SiteSetting.fiber_link_service_url
+      if service_url.blank?
+        response.stream.write("data: #{JSON.generate({ status: "SSE_ERROR", reason: "service_unavailable" })}\n\n")
+        response.stream.close
+        return
+      end
+
+      begin
+        backend_url = URI("#{service_url}/rpc/stream?invoice=#{URI.encode_www_form_component(invoice)}")
+        Net::HTTP.start(backend_url.host, backend_url.port, use_ssl: backend_url.scheme == "https", read_timeout: 65) do |http|
+          http.request(Net::HTTP::Get.new(backend_url)) do |resp|
+            resp.read_body do |chunk|
+              break if response.stream.closed?
+              response.stream.write(chunk)
+            end
+          end
+        end
+      rescue ActionController::Live::ClientDisconnected
+        # Browser closed the connection — normal.
+      rescue => error
+        Rails.logger.error("Fiber Link SSE stream error: #{error.message}")
+        response.stream.write("data: #{JSON.generate({ status: "SSE_ERROR" })}\n\n") rescue nil
+      ensure
+        response.stream.close rescue nil
+      end
+    end
 
     def proxy
       request_json = parse_request_json

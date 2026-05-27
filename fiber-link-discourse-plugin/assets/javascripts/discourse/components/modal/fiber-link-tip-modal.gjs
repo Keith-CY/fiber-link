@@ -9,7 +9,7 @@ import DModalCancel from "discourse/components/d-modal-cancel";
 import { avatarUrl } from "discourse/lib/avatar-utils";
 import { clipboardCopy } from "discourse/lib/utilities";
 
-import { createTip, getTipStatus } from "../../services/fiber-link-api";
+import { createTip, getTipStatus, streamTipStatus } from "../../services/fiber-link-api";
 
 const AMOUNT_PATTERN = /^(?:\d+)(?:\.\d{1,8})?$/;
 const COPY_FEEDBACK_TIMEOUT_MS = 3000;
@@ -144,13 +144,46 @@ export default class FiberLinkTipModal extends Component {
   _copyFeedbackTimer = null;
   _statusPollStartedAt = null;
   _statusPollFailureCount = 0;
+  _sseHandle = null;
 
   constructor(owner, args) {
     super(owner, args);
     registerDestructor(this, () => {
       this._clearStatusPollTimer();
       this._clearCopyFeedbackTimer();
+      this._closeSse();
     });
+  }
+
+  _closeSse() {
+    if (this._sseHandle) {
+      this._sseHandle.close();
+      this._sseHandle = null;
+    }
+  }
+
+  _tryOpenSse(invoice) {
+    this._closeSse();
+    const handle = streamTipStatus(invoice, (event) => {
+      const status = event?.status;
+      if (status === "SETTLED") {
+        this._closeSse();
+        this._clearStatusPollTimer();
+        this.statusState = "SETTLED";
+        this.statusLabel = mapTipStateToLabel("SETTLED");
+        this.statusClass = mapTipStateToClass("SETTLED");
+        this.currentStep = "confirmed";
+      } else if (status === "TIMEOUT" || status === "SSE_ERROR") {
+        // SSE unavailable or timed out — fall back to polling.
+        this._closeSse();
+        this._scheduleStatusPoll();
+      }
+    });
+    if (handle) {
+      this._sseHandle = handle;
+      return true;
+    }
+    return false;
   }
 
   get postId() {
@@ -521,7 +554,12 @@ export default class FiberLinkTipModal extends Component {
       this.statusLabel = mapTipStateToLabel("UNPAID");
       this.statusClass = mapTipStateToClass("UNPAID");
       this._resetStatusPollBounds();
-      scheduleAutoPoll = true;
+
+      // Try SSE first; fall back to polling if the browser or proxy doesn't support it.
+      const sseOpened = this._tryOpenSse(this.invoice);
+      if (!sseOpened) {
+        scheduleAutoPoll = true;
+      }
     } catch (e) {
       this.errorMessage = mapCreateTipErrorToMessage(e);
     } finally {
