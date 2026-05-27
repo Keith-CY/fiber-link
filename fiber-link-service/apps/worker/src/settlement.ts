@@ -7,6 +7,7 @@ import {
   type LedgerRepo,
   type TipIntentRepo,
 } from "@fiber-link/db";
+import { type SettlementPublisher } from "./settlement-publisher";
 
 let defaultDb: DbClient | null = null;
 let defaultTipIntentRepo: TipIntentRepo | null = null;
@@ -35,7 +36,7 @@ function getDefaultLedgerRepo(): LedgerRepo {
 
 export async function markSettled(
   { invoice }: { invoice: string },
-  options: { tipIntentRepo?: TipIntentRepo; ledgerRepo?: LedgerRepo } = {},
+  options: { tipIntentRepo?: TipIntentRepo; ledgerRepo?: LedgerRepo; publisher?: SettlementPublisher } = {},
 ) {
   const tipIntentRepo = options.tipIntentRepo ?? getDefaultTipIntentRepo();
   const ledgerRepo = options.ledgerRepo ?? getDefaultLedgerRepo();
@@ -55,6 +56,13 @@ export async function markSettled(
   // Keep invoice state convergent even if credit was already written earlier.
   if (tipIntent.invoiceState !== "SETTLED") {
     await tipIntentRepo.updateInvoiceState(invoice, "SETTLED");
+  }
+
+  // Publish settlement event for real-time SSE subscribers. Failure is non-blocking.
+  if (options.publisher) {
+    await options.publisher.publish(invoice).catch((err) => {
+      console.warn("settlement-publisher: publish failed", err);
+    });
   }
 
   return { credited: credited.applied, idempotencyKey };

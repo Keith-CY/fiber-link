@@ -142,5 +142,6 @@ after_initialize do
   Discourse::Application.routes.prepend do
     get "/fiber-link" => "list#latest", constraints: route_enabled
     post "/fiber-link/rpc" => "fiber_link/rpc#proxy", constraints: route_enabled
+    get "/fiber-link/rpc/stream" => "fiber_link/rpc#stream", constraints: route_enabled
   end
 end
