@@ -2,7 +2,7 @@ import { BI, Indexer, RPC, commons, config, hd, helpers } from "@ckb-lumos/lumos
 import type { Asset, CkbNetwork, ExecuteWithdrawalArgs, WithdrawalExecutionKind } from "./types";
 import { SHANNONS_PER_CKB, parseCkbDecimalToShannons } from "./rpc-adapter/normalize";
 const DEFAULT_FEE_RATE_SHANNONS_PER_KB = 1_000n;
-const DEFAULT_TESTNET_CKB_RPC_URL = "https://testnet.ckbapp.dev/";
+const DEFAULT_TESTNET_CKB_RPC_URL = "https://testnet.ckb.dev/";
 
 export type LumosConfig = typeof config.predefined.LINA;
 export type CkbNetworkConfig = { cfg: LumosConfig; isTestnet: boolean };
