@@ -498,7 +498,9 @@ export default class FiberLinkDashboardRoute extends Route {
             : "0",
         balanceAsset: result?.balances?.asset === "USDI" ? "USDI" : "CKB",
         assetBalances: Array.isArray(result?.assetBalances)
-          ? result.assetBalances.filter((b) => parseFloat(b?.available ?? "0") > 0 || b?.asset === "CKB")
+          ? result.assetBalances
+              .filter((b) => parseFloat(b?.available ?? "0") > 0 || b?.asset === "CKB")
+              .map((b) => ({ ...b, hasLockedBalance: parseFloat(b?.locked ?? "0") > 0 }))
           : [],
         pendingCount,
         completedCount,

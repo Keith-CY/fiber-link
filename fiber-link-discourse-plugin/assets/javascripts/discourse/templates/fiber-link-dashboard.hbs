@@ -128,7 +128,7 @@
             <span class="fiber-link-dashboard__asset-balance-label">Available</span>
             <strong class="fiber-link-dashboard__asset-balance-value">{{ab.available}}</strong>
           </div>
-          {{#if (gt (parseFloat ab.locked) 0)}}
+          {{#if ab.hasLockedBalance}}
             <div class="fiber-link-dashboard__asset-balance-row is-locked">
               <span class="fiber-link-dashboard__asset-balance-label">Locked</span>
               <span class="fiber-link-dashboard__asset-balance-value">{{ab.locked}}</span>
