@@ -20,7 +20,7 @@ export type GetHotWalletInventoryDeps = {
   estimateUsdiFeeShannons?: (network: CkbNetwork, cells: readonly HotWalletCell[]) => Promise<string> | string;
 };
 
-const DEFAULT_TESTNET_CKB_RPC_URL = "https://testnet.ckbapp.dev/";
+const DEFAULT_TESTNET_CKB_RPC_URL = "https://testnet.ckb.dev/";
 
 function resolveWithdrawalPrivateKey(): string {
   const raw = process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY?.trim();
