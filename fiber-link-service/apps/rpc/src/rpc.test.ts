@@ -505,6 +505,10 @@ describe("json-rpc", () => {
         locked: "0",
         asset: "CKB",
       },
+      assetBalances: [
+        { asset: "CKB", available: "12.5", pending: "0", locked: "0" },
+        { asset: "USDI", available: "0", pending: "0", locked: "0" },
+      ],
       stats: {
         pendingCount: 0,
         completedCount: 0,
@@ -596,6 +600,10 @@ describe("json-rpc", () => {
             locked: "0",
             asset: "CKB",
           },
+          assetBalances: [
+            { asset: "CKB", available: "12.5", pending: "0", locked: "0" },
+            { asset: "USDI", available: "0", pending: "0", locked: "0" },
+          ],
           stats: {
             pendingCount: 0,
             completedCount: 0,

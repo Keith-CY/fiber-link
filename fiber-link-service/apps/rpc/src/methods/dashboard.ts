@@ -54,7 +54,9 @@ export async function handleDashboardSummary(input: HandleDashboardSummaryInput)
   const withdrawalRepo = createDbWithdrawalRepo(db);
   const limit = input.limit ?? 20;
 
-  const [balance, lockedBalance, recentTips, recentWithdrawals, tipSummary] = await Promise.all([
+  const SUPPORTED_ASSETS = ["CKB", "USDI"] as const;
+
+  const [balance, lockedBalance, usdiBalance, usdiLockedBalance, recentTips, recentWithdrawals, tipSummary] = await Promise.all([
     ledgerRepo.getBalance({
       appId: input.appId,
       userId: input.userId,
@@ -64,6 +66,16 @@ export async function handleDashboardSummary(input: HandleDashboardSummaryInput)
       appId: input.appId,
       userId: input.userId,
       asset: "CKB",
+    }),
+    ledgerRepo.getBalance({
+      appId: input.appId,
+      userId: input.userId,
+      asset: "USDI",
+    }),
+    withdrawalRepo.getPendingTotal({
+      appId: input.appId,
+      userId: input.userId,
+      asset: "USDI",
     }),
     db
       .select()
@@ -275,6 +287,20 @@ export async function handleDashboardSummary(input: HandleDashboardSummaryInput)
       locked: String(lockedBalance),
       asset: "CKB" as const,
     },
+    assetBalances: [
+      {
+        asset: "CKB" as const,
+        available: String(balance),
+        pending: String(tipSummary?.pendingAmount ?? "0"),
+        locked: String(lockedBalance),
+      },
+      {
+        asset: "USDI" as const,
+        available: String(usdiBalance),
+        pending: "0",
+        locked: String(usdiLockedBalance),
+      },
+    ],
     stats: {
       pendingCount: Number(tipSummary?.pendingCount ?? 0),
       completedCount: Number(tipSummary?.completedCount ?? 0),

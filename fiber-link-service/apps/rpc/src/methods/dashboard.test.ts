@@ -90,8 +90,10 @@ describe("handleDashboardSummary", () => {
       ],
       [{ pendingAmount: '0', pendingCount: 0, completedCount: 1, failedCount: 0 }],
     );
-    getBalance.mockResolvedValueOnce(88n);
-    getPendingTotal.mockResolvedValueOnce('0');
+    getBalance.mockResolvedValueOnce(88n); // CKB
+    getPendingTotal.mockResolvedValueOnce('0'); // CKB locked
+    getBalance.mockResolvedValueOnce("0"); // USDI
+    getPendingTotal.mockResolvedValueOnce('0'); // USDI locked
 
     const userOnly = await handleDashboardSummary({
       appId: "app-1",
@@ -106,6 +108,10 @@ describe("handleDashboardSummary", () => {
       locked: "0",
       asset: "CKB",
     });
+    expect(userOnly.assetBalances).toEqual([
+      { asset: "CKB", available: "88", pending: "0", locked: "0" },
+      { asset: "USDI", available: "0", pending: "0", locked: "0" },
+    ]);
     expect(userOnly.stats).toEqual({
       pendingCount: 0,
       completedCount: 1,
@@ -221,8 +227,10 @@ describe("handleDashboardSummary", () => {
         },
       ],
     );
-    getBalance.mockResolvedValueOnce("91.2");
-    getPendingTotal.mockResolvedValueOnce('5');
+    getBalance.mockResolvedValueOnce("91.2"); // CKB
+    getPendingTotal.mockResolvedValueOnce('5'); // CKB locked
+    getBalance.mockResolvedValueOnce("10"); // USDI
+    getPendingTotal.mockResolvedValueOnce('0'); // USDI locked
 
     const withAdmin = await handleDashboardSummary({
       appId: "app-1",
