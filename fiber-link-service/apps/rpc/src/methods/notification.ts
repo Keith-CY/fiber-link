@@ -29,15 +29,17 @@ function serializeChannel(
 
 export async function handleNotificationChannelCreate({ appId, name, kind, target, secret, events }: CreateParams) {
   const db = getDefaultDb();
-  const repo = createDbNotificationRepo(db);
 
-  const channel = await repo.createChannel({ appId, name, kind, target, secret: secret ?? null });
+  return db.transaction(async (tx) => {
+    const repo = createDbNotificationRepo(tx);
+    const channel = await repo.createChannel({ appId, name, kind, target, secret: secret ?? null });
 
-  await Promise.all(
-    events.map((event) => repo.createRule({ appId, channelId: channel.id, event: event as any })),
-  );
+    await Promise.all(
+      events.map((event) => repo.createRule({ appId, channelId: channel.id, event: event as any })),
+    );
 
-  return serializeChannel(channel, events);
+    return serializeChannel(channel, events);
+  });
 }
 
 export async function handleNotificationChannelList({ appId }: { appId: string }) {
