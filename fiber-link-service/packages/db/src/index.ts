@@ -9,3 +9,4 @@ export * from "./tip-intent-event-repo";
 export * from "./ledger-repo";
 export * from "./amount";
 export * from "./retry";
+export * from "./analytics-repo";

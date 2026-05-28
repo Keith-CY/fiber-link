@@ -5,6 +5,8 @@ import { fn } from "@ember/helper";
 import { on } from "@ember/modifier";
 
 const joinEvents = (events) => (Array.isArray(events) ? events : []).join(", ");
+const isInSet = (set, value) => set instanceof Set && set.has(value);
+const yesNo = (v) => (v ? "Yes" : "No");
 
 const SUPPORTED_EVENTS = [
   { value: "TIP_SETTLED", label: "Tip settled" },
@@ -158,7 +160,7 @@ export default class FiberLinkNotifications extends Component {
               <label class="fiber-link-notifications__event-label">
                 <input
                   type="checkbox"
-                  checked={{this.newEvents.has ev.value}}
+                  checked={{isInSet this.newEvents ev.value}}
                   {{on "change" (fn this.toggleEvent ev.value)}}
                 />
                 {{ev.label}}
@@ -193,7 +195,7 @@ export default class FiberLinkNotifications extends Component {
                 <td>{{ch.name}}</td>
                 <td class="fiber-link-notifications__target">{{ch.target}}</td>
                 <td>{{joinEvents ch.events}}</td>
-                <td>{{if ch.enabled "Yes" "No"}}</td>
+                <td>{{yesNo ch.enabled}}</td>
               </tr>
             {{/each}}
           </tbody>

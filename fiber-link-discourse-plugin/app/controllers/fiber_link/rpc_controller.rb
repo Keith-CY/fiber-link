@@ -129,6 +129,8 @@ module ::FiberLink
         { invoice: params["invoice"] }
       when "dashboard.summary"
         sanitize_dashboard_summary_params(params, request_id)
+      when "dashboard.analytics"
+        sanitize_dashboard_analytics_params(params, request_id)
       when "withdrawal.quote"
         sanitize_withdrawal_params(params, request_id)
       when "withdrawal.request"
@@ -207,6 +209,12 @@ module ::FiberLink
           settlementState: settlement_state,
         },
       }
+    end
+
+    def sanitize_dashboard_analytics_params(params, _request_id)
+      allowed_ranges = %w[7d 30d all]
+      range = allowed_ranges.include?(params["range"].to_s) ? params["range"].to_s : "30d"
+      { userId: current_user.id.to_s, range: range }
     end
 
     ALLOWED_NOTIFICATION_EVENTS = %w[TIP_SETTLED WITHDRAWAL_COMPLETED WITHDRAWAL_FAILED WITHDRAWAL_RETRY_PENDING].freeze

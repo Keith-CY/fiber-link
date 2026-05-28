@@ -156,19 +156,10 @@ export async function requestWithdrawal({
   });
 }
 
-/**
- * Opens a Server-Sent Events stream for real-time settlement status.
- * Mirrors FiberLinkClient#streamTipStatus from @fiber-link/client.
- *
- * Falls back gracefully when EventSource is unavailable.
- * Returns a handle with a `close()` method, or null if SSE is unavailable.
- *
- * onEvent receives `{ invoice, status }` objects:
- *   "LISTENING" – stream connected, waiting for settlement
- *   "SETTLED"   – invoice settled; handle auto-closes
- *   "TIMEOUT"   – server-side 60 s window elapsed
- *   "SSE_ERROR" – EventSource error — caller should fall back to polling
- */
+export async function getDashboardAnalytics({ range = "30d" } = {}) {
+  return rpcCall("dashboard.analytics", { range });
+}
+
 export function streamTipStatus(invoice, onEvent) {
   assertInitialized();
 

@@ -3,6 +3,8 @@ import { InsufficientFundsError, TipIntentNotFoundError, createDbClient, toError
 import { registerStreamRoute } from "./stream";
 import { verifyHmac } from "./auth/hmac";
 import {
+  DashboardAnalyticsParamsSchema,
+  DashboardAnalyticsResultSchema,
   DashboardSummaryParamsSchema,
   DashboardSummaryResultSchema,
   NotificationChannelCreateParamsSchema,
@@ -25,7 +27,7 @@ import {
   type RpcId,
 } from "./contracts";
 import { handleTipCreate, handleTipSettledFeed, handleTipStatus } from "./methods/tip";
-import { handleDashboardSummary } from "./methods/dashboard";
+import { handleDashboardSummary, handleDashboardAnalytics } from "./methods/dashboard";
 import { handleNotificationChannelCreate, handleNotificationChannelList } from "./methods/notification";
 import { WithdrawalPolicyViolationError, quoteWithdrawal, requestWithdrawal } from "./methods/withdrawal";
 import { createNonceStore } from "./nonce-store";
@@ -321,6 +323,12 @@ export function registerRpc(
           resultSchema: DashboardSummaryResultSchema,
           handler: (params) => handleDashboardSummary({ appId, ...params }),
           methodLabel: "dashboard.summary",
+        },
+        "dashboard.analytics": {
+          paramsSchema: DashboardAnalyticsParamsSchema,
+          resultSchema: DashboardAnalyticsResultSchema,
+          handler: (params) => handleDashboardAnalytics({ appId, ...params }),
+          methodLabel: "dashboard.analytics",
         },
         "withdrawal.quote": {
           paramsSchema: WithdrawalQuoteParamsSchema,

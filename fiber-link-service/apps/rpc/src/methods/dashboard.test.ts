@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi, afterEach } from "vitest";
 
 type MockSelectQueue = unknown[][];
 
@@ -250,5 +250,58 @@ describe("handleDashboardSummary", () => {
     );
 
     expect(dbModule.createDbClient).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("handleDashboardAnalytics", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.restoreAllMocks();
+  });
+
+  it("calls getCreatorAnalytics and returns enriched result with range and generatedAt", async () => {
+    const mockDb = {};
+    const dbModule = await import("@fiber-link/db");
+    vi.spyOn(dbModule, "createDbClient").mockReturnValue(mockDb as never);
+
+    const analyticsResult = {
+      timeSeries: [{ date: "2026-05-01", amount: "100" }],
+      topPosts: [{ postId: "post-1", totalAmount: "50", tipCount: 3 }],
+      topTippers: [{ userId: "u-alice", totalAmount: "75", tipCount: 5 }],
+      withdrawalHistory: [],
+    };
+    vi.spyOn(dbModule, "getCreatorAnalytics").mockResolvedValueOnce(analyticsResult);
+
+    const { handleDashboardAnalytics } = await import("./dashboard");
+    const result = await handleDashboardAnalytics({ appId: "app-1", userId: "u-bob", range: "30d" });
+
+    expect(result.timeSeries).toEqual(analyticsResult.timeSeries);
+    expect(result.topPosts).toEqual(analyticsResult.topPosts);
+    expect(result.topTippers).toEqual(analyticsResult.topTippers);
+    expect(result.withdrawalHistory).toEqual([]);
+    expect(result.range).toBe("30d");
+    expect(typeof result.generatedAt).toBe("string");
+    expect(dbModule.getCreatorAnalytics).toHaveBeenCalledWith(mockDb, {
+      appId: "app-1",
+      userId: "u-bob",
+      range: "30d",
+    });
+  });
+
+  it("passes range=7d and range=all through to getCreatorAnalytics", async () => {
+    const mockDb = {};
+    const dbModule = await import("@fiber-link/db");
+    vi.spyOn(dbModule, "createDbClient").mockReturnValue(mockDb as never);
+
+    const emptyResult = { timeSeries: [], topPosts: [], topTippers: [], withdrawalHistory: [] };
+    vi.spyOn(dbModule, "getCreatorAnalytics").mockResolvedValue(emptyResult);
+
+    const { handleDashboardAnalytics } = await import("./dashboard");
+
+    await handleDashboardAnalytics({ appId: "app-1", userId: "u-bob", range: "7d" });
+    expect(dbModule.getCreatorAnalytics).toHaveBeenLastCalledWith(mockDb, expect.objectContaining({ range: "7d" }));
+
+    await handleDashboardAnalytics({ appId: "app-1", userId: "u-bob", range: "all" });
+    expect(dbModule.getCreatorAnalytics).toHaveBeenLastCalledWith(mockDb, expect.objectContaining({ range: "all" }));
   });
 });

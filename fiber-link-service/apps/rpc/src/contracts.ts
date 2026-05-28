@@ -295,6 +295,50 @@ export const RpcErrorCode = {
 export type RpcErrorCode = (typeof RpcErrorCode)[keyof typeof RpcErrorCode];
 
 // ---------------------------------------------------------------------------
+// dashboard.analytics
+// ---------------------------------------------------------------------------
+
+export const DashboardAnalyticsParamsSchema = z.object({
+  userId: z.string().min(1),
+  range: z.enum(["7d", "30d", "all"]).default("30d"),
+});
+
+const AnalyticsTimeSeriesItemSchema = z.object({
+  date: z.string(),
+  amount: z.string(),
+});
+
+const AnalyticsTopPostSchema = z.object({
+  postId: z.string(),
+  totalAmount: z.string(),
+  tipCount: z.number().int(),
+});
+
+const AnalyticsTopTipperSchema = z.object({
+  userId: z.string(),
+  totalAmount: z.string(),
+  tipCount: z.number().int(),
+});
+
+const AnalyticsWithdrawalSchema = z.object({
+  id: z.string(),
+  amount: z.string(),
+  asset: z.string(),
+  state: z.string(),
+  createdAt: z.string(),
+  completedAt: z.string().nullable(),
+});
+
+export const DashboardAnalyticsResultSchema = z.object({
+  range: z.enum(["7d", "30d", "all"]),
+  timeSeries: z.array(AnalyticsTimeSeriesItemSchema),
+  topPosts: z.array(AnalyticsTopPostSchema),
+  topTippers: z.array(AnalyticsTopTipperSchema),
+  withdrawalHistory: z.array(AnalyticsWithdrawalSchema),
+  generatedAt: z.string(),
+});
+
+// ---------------------------------------------------------------------------
 // notification.channel.*
 // ---------------------------------------------------------------------------
 
