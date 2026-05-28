@@ -4,6 +4,8 @@ import { action } from "@ember/object";
 import { fn } from "@ember/helper";
 import { on } from "@ember/modifier";
 
+const joinEvents = (events) => (Array.isArray(events) ? events : []).join(", ");
+
 const SUPPORTED_EVENTS = [
   { value: "TIP_SETTLED", label: "Tip settled" },
   { value: "WITHDRAWAL_COMPLETED", label: "Withdrawal completed" },
@@ -190,7 +192,7 @@ export default class FiberLinkNotifications extends Component {
               <tr>
                 <td>{{ch.name}}</td>
                 <td class="fiber-link-notifications__target">{{ch.target}}</td>
-                <td>{{ch.eventsLabel}}</td>
+                <td>{{joinEvents ch.events}}</td>
                 <td>{{if ch.enabled "Yes" "No"}}</td>
               </tr>
             {{/each}}
