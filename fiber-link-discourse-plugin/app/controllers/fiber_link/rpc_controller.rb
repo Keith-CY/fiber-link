@@ -2,11 +2,14 @@
 
 require "base64"
 require "json"
+require "net/http"
 require "rqrcode"
 require "rqrcode/export/svg"
 
 module ::FiberLink
   class RpcController < ::ApplicationController
+    include ActionController::Live
+
     requires_plugin "fiber-link"
     before_action :ensure_logged_in
 
@@ -15,6 +18,47 @@ module ::FiberLink
     READ_METHOD_RATE_LIMIT = [60, 60].freeze
     MUTATING_METHOD_RATE_LIMIT = [10, 60].freeze
     MUTATING_METHODS = ["tip.create", "withdrawal.request"].freeze
+
+    # Proxy the backend SSE stream to the browser so clients don't need direct
+    # access to the Fastify service and authentication remains Discourse-session-gated.
+    def stream
+      invoice = params[:invoice].to_s.strip
+
+      if invoice.blank?
+        render status: :bad_request, json: { error: "Missing invoice" }
+        return
+      end
+
+      response.headers["Content-Type"] = "text/event-stream"
+      response.headers["Cache-Control"] = "no-cache"
+      response.headers["X-Accel-Buffering"] = "no"
+
+      service_url = SiteSetting.fiber_link_service_url
+      if service_url.blank?
+        response.stream.write("data: #{JSON.generate({ status: "SSE_ERROR", reason: "service_unavailable" })}\n\n")
+        response.stream.close
+        return
+      end
+
+      begin
+        backend_url = URI("#{service_url}/rpc/stream?invoice=#{URI.encode_www_form_component(invoice)}")
+        Net::HTTP.start(backend_url.host, backend_url.port, use_ssl: backend_url.scheme == "https", read_timeout: 65) do |http|
+          http.request(Net::HTTP::Get.new(backend_url)) do |resp|
+            resp.read_body do |chunk|
+              break if response.stream.closed?
+              response.stream.write(chunk)
+            end
+          end
+        end
+      rescue ActionController::Live::ClientDisconnected
+        # Browser closed the connection — normal.
+      rescue => error
+        Rails.logger.error("Fiber Link SSE stream error: #{error.message}")
+        response.stream.write("data: #{JSON.generate({ status: "SSE_ERROR" })}\n\n") rescue nil
+      ensure
+        response.stream.close rescue nil
+      end
+    end
 
     def proxy
       request_json = parse_request_json
@@ -91,6 +135,10 @@ module ::FiberLink
         sanitize_withdrawal_params(params, request_id)
       when "withdrawal.request"
         sanitize_withdrawal_params(params, request_id)
+      when "notification.channel.create"
+        sanitize_notification_channel_create_params(params, request_id)
+      when "notification.channel.list"
+        {}
       else
         render_error(request_id, :bad_request, -32601, "Method not allowed")
         nil
@@ -167,6 +215,33 @@ module ::FiberLink
       allowed_ranges = %w[7d 30d all]
       range = allowed_ranges.include?(params["range"].to_s) ? params["range"].to_s : "30d"
       { userId: current_user.id.to_s, range: range }
+    end
+
+    ALLOWED_NOTIFICATION_EVENTS = %w[TIP_SETTLED WITHDRAWAL_COMPLETED WITHDRAWAL_FAILED WITHDRAWAL_RETRY_PENDING].freeze
+
+    def sanitize_notification_channel_create_params(params, request_id)
+      name = params["name"].to_s.strip
+      target = params["target"].to_s.strip
+      secret = params["secret"].to_s.strip.presence
+      events = Array(params["events"]).map(&:to_s).select { |e| ALLOWED_NOTIFICATION_EVENTS.include?(e) }.uniq
+
+      if name.blank? || target.blank? || events.empty?
+        render_error(request_id, :bad_request, -32602, "Invalid params")
+        return nil
+      end
+
+      begin
+        uri = URI.parse(target)
+        unless %w[http https].include?(uri.scheme)
+          render_error(request_id, :bad_request, -32602, "Invalid target URL")
+          return nil
+        end
+      rescue URI::InvalidURIError
+        render_error(request_id, :bad_request, -32602, "Invalid target URL")
+        return nil
+      end
+
+      { name: name, kind: "WEBHOOK", target: target, secret: secret, events: events }
     end
 
     def sanitize_withdrawal_params(params, request_id)

@@ -337,3 +337,40 @@ export const DashboardAnalyticsResultSchema = z.object({
   withdrawalHistory: z.array(AnalyticsWithdrawalSchema),
   generatedAt: z.string(),
 });
+
+// ---------------------------------------------------------------------------
+// notification.channel.*
+// ---------------------------------------------------------------------------
+
+export const NotificationChannelCreateParamsSchema = z.object({
+  name: z.string().trim().min(1).max(128),
+  kind: z.literal("WEBHOOK"),
+  target: z.string().url(),
+  secret: z.string().trim().min(8).max(256).optional().nullable(),
+  events: z.array(z.enum(["TIP_SETTLED", "WITHDRAWAL_COMPLETED", "WITHDRAWAL_FAILED", "WITHDRAWAL_RETRY_PENDING"])).min(1),
+});
+
+export const NotificationChannelCreateResultSchema = z.object({
+  id: z.string().min(1),
+  name: z.string(),
+  kind: z.literal("WEBHOOK"),
+  target: z.string(),
+  events: z.array(z.string()),
+  createdAt: z.string().datetime(),
+});
+
+export const NotificationChannelListParamsSchema = z.object({}).optional();
+
+export const NotificationChannelListResultSchema = z.object({
+  channels: z.array(
+    z.object({
+      id: z.string().min(1),
+      name: z.string(),
+      kind: z.literal("WEBHOOK"),
+      target: z.string(),
+      events: z.array(z.string()),
+      enabled: z.boolean(),
+      createdAt: z.string().datetime(),
+    }),
+  ),
+});

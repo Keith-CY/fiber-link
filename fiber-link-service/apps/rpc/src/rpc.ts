@@ -1,11 +1,16 @@
 import type { FastifyInstance } from "fastify";
 import { InsufficientFundsError, TipIntentNotFoundError, createDbClient, toErrorMessage } from "@fiber-link/db";
+import { registerStreamRoute } from "./stream";
 import { verifyHmac } from "./auth/hmac";
 import {
   DashboardAnalyticsParamsSchema,
   DashboardAnalyticsResultSchema,
   DashboardSummaryParamsSchema,
   DashboardSummaryResultSchema,
+  NotificationChannelCreateParamsSchema,
+  NotificationChannelCreateResultSchema,
+  NotificationChannelListParamsSchema,
+  NotificationChannelListResultSchema,
   RpcErrorCode,
   RpcIdSchema,
   RpcRequestSchema,
@@ -23,6 +28,7 @@ import {
 } from "./contracts";
 import { handleTipCreate, handleTipSettledFeed, handleTipStatus } from "./methods/tip";
 import { handleDashboardSummary, handleDashboardAnalytics } from "./methods/dashboard";
+import { handleNotificationChannelCreate, handleNotificationChannelList } from "./methods/notification";
 import { WithdrawalPolicyViolationError, quoteWithdrawal, requestWithdrawal } from "./methods/withdrawal";
 import { createNonceStore } from "./nonce-store";
 import { dispatchMethod, type MethodDef } from "./rpc-dispatch";
@@ -175,6 +181,8 @@ export function registerRpc(
 ) {
   const rateLimitStore = options.rateLimitStore ?? createRateLimitStore();
   const rateLimitConfig = options.rateLimitConfig ?? parseRpcRateLimitConfig();
+
+  registerStreamRoute(app);
 
   app.get("/healthz/live", async () => {
     return { status: "alive" as const };
@@ -340,6 +348,18 @@ export function registerRpc(
             { match: (e) => e instanceof WithdrawalPolicyViolationError, code: RpcErrorCode.INVALID_PARAMS, message: (e) => e.message },
           ],
           methodLabel: "withdrawal.request",
+        },
+        "notification.channel.create": {
+          paramsSchema: NotificationChannelCreateParamsSchema,
+          resultSchema: NotificationChannelCreateResultSchema,
+          handler: (params) => handleNotificationChannelCreate({ appId, ...params }),
+          methodLabel: "notification.channel.create",
+        },
+        "notification.channel.list": {
+          paramsSchema: NotificationChannelListParamsSchema,
+          resultSchema: NotificationChannelListResultSchema,
+          handler: () => handleNotificationChannelList({ appId }),
+          methodLabel: "notification.channel.list",
         },
       };
 

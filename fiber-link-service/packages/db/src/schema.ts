@@ -73,6 +73,7 @@ export const notificationEventEnum = pgEnum("notification_event", [
   "WITHDRAWAL_RETRY_PENDING",
   "WITHDRAWAL_FAILED",
   "WITHDRAWAL_COMPLETED",
+  "TIP_SETTLED",
 ]);
 export type NotificationEvent = (typeof notificationEventEnum.enumValues)[number];
 

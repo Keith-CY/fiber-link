@@ -8,7 +8,7 @@ WORKDIR /app
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates curl unzip \
   && rm -rf /var/lib/apt/lists/* \
-  && curl -fsSL https://bun.sh/install | bash -s -- bun-v1.2.19 \
+  && curl -fsSL https://bun.sh/install | bash -s -- bun-v1.3.11 \
   && ln -sf /root/.bun/bin/bun /usr/local/bin/bun \
   && ln -sf /root/.bun/bin/bunx /usr/local/bin/bunx
 
