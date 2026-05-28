@@ -37,20 +37,31 @@ export function createWebhookChannelHandler(options: WebhookDeliveryOptions = {}
       event: event.type,
       occurredAt: event.occurredAt.toISOString(),
       appId: event.appId,
-      userId: event.userId,
-      withdrawalId: event.withdrawalId,
-      asset: event.asset,
-      amount: event.amount,
-      ...(event.type === "WITHDRAWAL_COMPLETED" && { txHash: event.txHash }),
-      ...(event.type === "WITHDRAWAL_RETRY_PENDING" && {
-        retryCount: event.retryCount,
-        nextRetryAt: event.nextRetryAt.toISOString(),
-        error: event.error,
-      }),
-      ...(event.type === "WITHDRAWAL_FAILED" && {
-        retryCount: event.retryCount,
-        error: event.error,
-      }),
+      ...(event.type === "TIP_SETTLED"
+        ? {
+            toUserId: event.toUserId,
+            fromUserId: event.fromUserId,
+            postId: event.postId,
+            invoice: event.invoice,
+            asset: event.asset,
+            amount: event.amount,
+          }
+        : {
+            userId: event.userId,
+            withdrawalId: event.withdrawalId,
+            asset: event.asset,
+            amount: event.amount,
+            ...(event.type === "WITHDRAWAL_COMPLETED" && { txHash: event.txHash }),
+            ...(event.type === "WITHDRAWAL_RETRY_PENDING" && {
+              retryCount: event.retryCount,
+              nextRetryAt: event.nextRetryAt.toISOString(),
+              error: event.error,
+            }),
+            ...(event.type === "WITHDRAWAL_FAILED" && {
+              retryCount: event.retryCount,
+              error: event.error,
+            }),
+          }),
     });
 
     const headers: Record<string, string> = {

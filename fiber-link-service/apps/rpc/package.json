@@ -7,6 +7,7 @@
   "dependencies": {
     "@fiber-link/db": "workspace:*",
     "@fiber-link/fiber-adapter": "workspace:*",
+    "@fiber-link/notifications": "workspace:*",
     "fastify": "^4.27.0",
     "ioredis": "^5.4.1",
     "zod": "^3.23.8"

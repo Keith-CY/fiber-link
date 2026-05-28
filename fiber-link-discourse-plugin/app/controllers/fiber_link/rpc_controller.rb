@@ -133,6 +133,10 @@ module ::FiberLink
         sanitize_withdrawal_params(params, request_id)
       when "withdrawal.request"
         sanitize_withdrawal_params(params, request_id)
+      when "notification.channel.create"
+        sanitize_notification_channel_create_params(params, request_id)
+      when "notification.channel.list"
+        {}
       else
         render_error(request_id, :bad_request, -32601, "Method not allowed")
         nil
@@ -203,6 +207,33 @@ module ::FiberLink
           settlementState: settlement_state,
         },
       }
+    end
+
+    ALLOWED_NOTIFICATION_EVENTS = %w[TIP_SETTLED WITHDRAWAL_COMPLETED WITHDRAWAL_FAILED WITHDRAWAL_RETRY_PENDING].freeze
+
+    def sanitize_notification_channel_create_params(params, request_id)
+      name = params["name"].to_s.strip
+      target = params["target"].to_s.strip
+      secret = params["secret"].to_s.strip.presence
+      events = Array(params["events"]).map(&:to_s).select { |e| ALLOWED_NOTIFICATION_EVENTS.include?(e) }.uniq
+
+      if name.blank? || target.blank? || events.empty?
+        render_error(request_id, :bad_request, -32602, "Invalid params")
+        return nil
+      end
+
+      begin
+        uri = URI.parse(target)
+        unless %w[http https].include?(uri.scheme)
+          render_error(request_id, :bad_request, -32602, "Invalid target URL")
+          return nil
+        end
+      rescue URI::InvalidURIError
+        render_error(request_id, :bad_request, -32602, "Invalid target URL")
+        return nil
+      end
+
+      { name: name, kind: "WEBHOOK", target: target, secret: secret, events: events }
     end
 
     def sanitize_withdrawal_params(params, request_id)
