@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { InsufficientFundsError, TipIntentNotFoundError, createDbClient, toErrorMessage } from "@fiber-link/db";
+import { registerStreamRoute } from "./stream";
 import { verifyHmac } from "./auth/hmac";
 import {
   DashboardSummaryParamsSchema,
@@ -179,6 +180,8 @@ export function registerRpc(
   const rateLimitStore = options.rateLimitStore ?? createRateLimitStore();
   const rateLimitConfig = options.rateLimitConfig ?? parseRpcRateLimitConfig();
 
+  registerStreamRoute(app);
+
   app.get("/healthz/live", async () => {
     return { status: "alive" as const };
   });
@@ -295,13 +298,13 @@ export function registerRpc(
         "tip.create": {
           paramsSchema: TipCreateParamsSchema,
           resultSchema: TipCreateResultSchema,
-          handler: (params) => handleTipCreate({ ...params, appId }),
+          handler: (params, ctx) => handleTipCreate({ ...params, appId }, { log: ctx.log }),
           methodLabel: "tip.create",
         },
         "tip.status": {
           paramsSchema: TipStatusParamsSchema,
           resultSchema: TipStatusResultSchema,
-          handler: (params) => handleTipStatus({ ...params }),
+          handler: (params, ctx) => handleTipStatus({ ...params }, { log: ctx.log }),
           errorMap: [
             { match: (e) => e instanceof TipIntentNotFoundError, code: RpcErrorCode.TIP_NOT_FOUND, message: "Tip not found" },
           ],

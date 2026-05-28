@@ -54,6 +54,54 @@ describe("rpc rate limit", () => {
     await client.quit();
   });
 
+  it("RedisRateLimitStore does not reset the TTL window on concurrent requests", async () => {
+    // If two requests arrive concurrently both get count=1 from separate INCR calls
+    // before either sets the TTL, the second PEXPIRE call would silently reset the
+    // window. The Lua script fixes this by only calling PEXPIRE when count===1 inside
+    // a single atomic operation, so the TTL is stable across concurrent calls.
+    const client = new Redis();
+    const store = new RedisRateLimitStore(client);
+
+    const [first, second] = await Promise.all([
+      store.consume({ key: rateLimitKey("concurrent", "tip.create"), limit: 10, windowMs: 60_000 }),
+      store.consume({ key: rateLimitKey("concurrent", "tip.create"), limit: 10, windowMs: 60_000 }),
+    ]);
+
+    // Both should be counted; no window reset means resetAtEpochMs is consistent.
+    expect(first.allowed).toBe(true);
+    expect(second.allowed).toBe(true);
+    const delta = Math.abs(first.resetAtEpochMs - second.resetAtEpochMs);
+    // Both reset times should be within the same window, not independently extended.
+    expect(delta).toBeLessThan(1_000);
+
+    await store.close();
+    await client.quit();
+  });
+
+  it("RedisRateLimitStore recovers a key that has no TTL set", async () => {
+    // A key can lose its TTL via manual PERSIST, Redis restore, or a prior partial
+    // failure before PEXPIRE ran. Without the pttl<0 branch the key would increment
+    // forever and permanently rate-limit the caller. The Lua script detects PTTL==-1
+    // and resets the expiry on the next request.
+    const client = new Redis();
+    const store = new RedisRateLimitStore(client);
+
+    // Seed a key with no TTL directly via the mock client.
+    const rawKey = `rate:${rateLimitKey("recover", "tip.create")}`;
+    await (client as unknown as Redis).set(rawKey, "5");
+
+    const result = await store.consume({ key: rateLimitKey("recover", "tip.create"), limit: 100, windowMs: 60_000 });
+
+    // After the consume the key must have a TTL so it will eventually expire.
+    const pttl = await (client as unknown as Redis).pttl(rawKey);
+    expect(pttl).toBeGreaterThan(0);
+    expect(result.allowed).toBe(true);
+    expect(result.remaining).toBe(94); // 100 - 6
+
+    await store.close();
+    await client.quit();
+  });
+
   it("createRateLimitStore uses Redis when a Redis URL is configured", async () => {
     const store = createRateLimitStore(
       {

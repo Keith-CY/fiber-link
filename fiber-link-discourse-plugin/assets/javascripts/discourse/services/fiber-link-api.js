@@ -137,3 +137,55 @@ export async function requestWithdrawal({
     destination,
   });
 }
+
+/**
+ * Opens a Server-Sent Events stream for real-time settlement status.
+ * Falls back gracefully when EventSource is unavailable.
+ *
+ * Returns a handle with a `close()` method, or null if SSE is unavailable.
+ * `onEvent` receives `{ invoice, status }` objects:
+ *   - "LISTENING": stream connected, waiting for settlement
+ *   - "SETTLED":   invoice was settled; handle auto-closes
+ *   - "TIMEOUT":   server-side 60s timeout elapsed
+ *   - "SSE_ERROR": EventSource error — caller should fall back to polling
+ */
+export function streamTipStatus(invoice, onEvent) {
+  assertInitialized();
+
+  if (typeof EventSource === "undefined") {
+    return null;
+  }
+
+  const streamPath = runtimeConfig.rpcPath + "/stream";
+  const url = `${streamPath}?invoice=${encodeURIComponent(invoice)}`;
+
+  let es;
+  try {
+    es = new EventSource(url);
+  } catch {
+    return null;
+  }
+
+  es.onmessage = (event) => {
+    try {
+      const data = JSON.parse(event.data);
+      onEvent(data);
+      if (data?.status === "SETTLED" || data?.status === "TIMEOUT") {
+        es.close();
+      }
+    } catch {
+      // ignore malformed events
+    }
+  };
+
+  es.onerror = () => {
+    es.close();
+    onEvent({ invoice, status: "SSE_ERROR" });
+  };
+
+  return {
+    close() {
+      es.close();
+    },
+  };
+}

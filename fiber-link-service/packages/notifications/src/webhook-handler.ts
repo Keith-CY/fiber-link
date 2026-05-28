@@ -2,14 +2,32 @@ import crypto from "node:crypto";
 import type { NotificationChannelHandler, NotificationDispatchInput } from "./dispatcher";
 
 export type WebhookDeliveryOptions = {
+  /** Maximum time in milliseconds to wait for the webhook endpoint to respond. */
   timeoutMs?: number;
+  /** Custom fetch implementation, defaults to the global fetch. */
   fetch?: typeof globalThis.fetch;
 };
 
+/**
+ * Sign the payload with the channel secret using HMAC-SHA256 so the receiver
+ * can verify the request originated from Fiber Link. The signature is placed
+ * in the `X-Fiber-Link-Signature` header as `sha256=<hex>`.
+ */
 function signPayload(secret: string, body: string): string {
   return "sha256=" + crypto.createHmac("sha256", secret).update(body).digest("hex");
 }
 
+/**
+ * Build a webhook notification handler that POSTs the event as JSON to the
+ * channel's target URL.
+ *
+ * If the channel has a `secret` configured, every request includes an
+ * `X-Fiber-Link-Signature` header containing an HMAC-SHA256 signature of the
+ * request body so receivers can authenticate the payload.
+ *
+ * Non-2xx responses and network errors are treated as delivery failures and
+ * will increment the `failed` counter in the dispatch summary.
+ */
 export function createWebhookChannelHandler(options: WebhookDeliveryOptions = {}): NotificationChannelHandler {
   const fetchImpl = options.fetch ?? globalThis.fetch;
   const timeoutMs = options.timeoutMs ?? 10_000;
@@ -69,7 +87,7 @@ export function createWebhookChannelHandler(options: WebhookDeliveryOptions = {}
       if (!response.ok) {
         const snippet = await response.text().then((t) => t.slice(0, 200)).catch(() => "");
         throw new Error(
-          `Webhook delivery failed: HTTP ${response.status}${snippet ? ` — ${snippet}` : ""}`,
+          `Webhook delivery failed: HTTP ${response.status} from ${target.target}${snippet ? ` — ${snippet}` : ""}`,
         );
       }
     } finally {

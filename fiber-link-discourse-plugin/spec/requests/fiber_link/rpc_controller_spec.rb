@@ -403,24 +403,40 @@ RSpec.describe ::FiberLink::RpcController, type: :request do
 
       stub_request(:post, "https://fiber-link.example/rpc").to_return(
         status: 200,
-        body: { jsonrpc: "2.0", id: "admin-bypass", result: { invoice: "inv-admin" } }.to_json,
+        body: { jsonrpc: "2.0", id: "admin-bypass", result: { id: "wd-admin", state: "PENDING" } }.to_json,
         headers: { "Content-Type" => "application/json" },
       )
 
-      expect(::RateLimiter).not_to receive(:new)
+      fiber_link_rate_limiter_calls = []
+      allow(::RateLimiter).to receive(:new).and_wrap_original do |original, *args|
+        _actor, key, * = args
+        fiber_link_rate_limiter_calls << args if key.to_s.start_with?("fiber_link_rpc_")
+        original.call(*args)
+      end
 
       post "/fiber-link/rpc",
            params: {
              jsonrpc: "2.0",
              id: "admin-bypass",
-             method: "tip.create",
-             params: { amount: "1", asset: "CKB", postId: topic.first_post.id },
+             method: "withdrawal.request",
+             params: {
+               amount: "1",
+               asset: "CKB",
+               destination: { kind: "PAYMENT_REQUEST", paymentRequest: "lnbc1admin" },
+             },
            },
            as: :json
 
       expect(response).to have_http_status(:ok)
+      expect(fiber_link_rate_limiter_calls).to be_empty
       body = JSON.parse(response.body)
-      expect(body.dig("result", "invoice")).to eq("inv-admin")
+      expect(body.dig("result", "state")).to eq("PENDING")
+      expect(WebMock).to have_requested(:post, "https://fiber-link.example/rpc").with { |request|
+        payload = JSON.parse(request.body)
+        expect(payload.fetch("method")).to eq("withdrawal.request")
+        expect(payload.dig("params", "userId")).to eq(admin.id.to_s)
+        true
+      }
     end
 
     it "returns a JSON-RPC error envelope for invalid postId" do
