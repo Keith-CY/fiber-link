@@ -1,6 +1,7 @@
 import Component from "@glimmer/component";
 import { tracked } from "@glimmer/tracking";
 import { action } from "@ember/object";
+import { fn } from "@ember/helper";
 import { on } from "@ember/modifier";
 
 const SUPPORTED_EVENTS = [
@@ -41,6 +42,10 @@ export default class FiberLinkNotifications extends Component {
     super(owner, args);
     this.loadChannels();
   }
+
+  @action setNewName(e) { this.newName = e.target.value; }
+  @action setNewTarget(e) { this.newTarget = e.target.value; }
+  @action setNewSecret(e) { this.newSecret = e.target.value; }
 
   @action
   async loadChannels() {
@@ -121,7 +126,7 @@ export default class FiberLinkNotifications extends Component {
             class="input-small"
             placeholder="My webhook"
             value={{this.newName}}
-            {{on "input" (action (mut this.newName) value="target.value")}}
+            {{on "input" this.setNewName}}
           />
         </div>
         <div class="fiber-link-notifications__field">
@@ -131,7 +136,7 @@ export default class FiberLinkNotifications extends Component {
             class="input-small"
             placeholder="https://example.com/webhook"
             value={{this.newTarget}}
-            {{on "input" (action (mut this.newTarget) value="target.value")}}
+            {{on "input" this.setNewTarget}}
           />
         </div>
         <div class="fiber-link-notifications__field">
@@ -141,7 +146,7 @@ export default class FiberLinkNotifications extends Component {
             class="input-small"
             placeholder="at least 8 characters"
             value={{this.newSecret}}
-            {{on "input" (action (mut this.newSecret) value="target.value")}}
+            {{on "input" this.setNewSecret}}
           />
         </div>
         <div class="fiber-link-notifications__field">
@@ -185,7 +190,7 @@ export default class FiberLinkNotifications extends Component {
               <tr>
                 <td>{{ch.name}}</td>
                 <td class="fiber-link-notifications__target">{{ch.target}}</td>
-                <td>{{ch.events.join ", "}}</td>
+                <td>{{ch.eventsLabel}}</td>
                 <td>{{if ch.enabled "Yes" "No"}}</td>
               </tr>
             {{/each}}

@@ -105,6 +105,7 @@ describe("schema", () => {
       "WITHDRAWAL_RETRY_PENDING",
       "WITHDRAWAL_FAILED",
       "WITHDRAWAL_COMPLETED",
+      "TIP_SETTLED",
     ]);
   });
 
