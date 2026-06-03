@@ -502,6 +502,8 @@ async (page) => {
   const realtimeEvidence = {
     mode: disableEventSource ? "eventsource-disabled" : "sse",
     streamRequests: [],
+    streamResponses: [],
+    streamFailures: [],
     tipStatusRequests: [],
     sseEvents: [],
     sseErrors: [],
@@ -534,6 +536,29 @@ async (page) => {
       realtimeEvidence.tipStatusRequests.push({
         url,
         at: now,
+      });
+    }
+  });
+
+  page.on("response", (response) => {
+    const url = response.url();
+    if (/\/fiber-link\/rpc\/stream\?/.test(url) || /\/rpc\/stream\?/.test(url)) {
+      realtimeEvidence.streamResponses.push({
+        url,
+        status: response.status(),
+        contentType: response.headers()["content-type"] || null,
+        at: Date.now(),
+      });
+    }
+  });
+
+  page.on("requestfailed", (request) => {
+    const url = request.url();
+    if (/\/fiber-link\/rpc\/stream\?/.test(url) || /\/rpc\/stream\?/.test(url)) {
+      realtimeEvidence.streamFailures.push({
+        url,
+        failure: request.failure()?.errorText || null,
+        at: Date.now(),
       });
     }
   });

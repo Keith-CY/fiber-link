@@ -324,6 +324,12 @@ if [[ -n "${FLOW12_RESULT_JSON}" ]]; then
     and ((.payment.settled // false) == true)
     and ((.rpc.dashboardSummary.ok // false) == true)
     and ((.rpc.tipStatus.response.result.state // "") == "SETTLED")
+    and ((.realtimeEvidence.mode // "") == "sse")
+    and ((.realtimeEvidence.streamRequests // []) | length >= 1)
+    and ((.realtimeEvidence.sseStatuses // []) | index("LISTENING") != null)
+    and ((.realtimeEvidence.sseStatuses // []) | index("SETTLED") != null)
+    and ((.realtimeEvidence.tipStatusRequestsAfterStreamBeforeConfirmed // []) | length == 0)
+    and ((.realtimeEvidence.settlement.confirmationLatencyMs // 999999) < 1000)
   ')"
 fi
 

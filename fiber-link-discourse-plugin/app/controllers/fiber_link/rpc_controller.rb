@@ -47,6 +47,7 @@ module ::FiberLink
             resp.read_body do |chunk|
               break if response.stream.closed?
               response.stream.write(chunk)
+              response.stream.flush if response.stream.respond_to?(:flush)
             end
           end
         end
