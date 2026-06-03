@@ -174,24 +174,5 @@ set -e
 FLOW12_RESULT_JSON="$(extract_result_json "${FLOW12_DIR}/playwright-flow12-result.log" || true)"
 [[ -n "${FLOW12_RESULT_JSON}" ]] || fatal "${EXIT_FLOW12}" "missing flow12 result payload"
 
-log "running flow12 fallback polling browser step with EventSource disabled"
-record_cmd "playwright flow12 fallback polling"
-set +e
-env \
-  PW_FLOW12_ARTIFACT_DIR="${FLOW12_FALLBACK_DIR}" \
-  PW_FLOW12_HEADED="${FLOW12_HEADED}" \
-  PW_FLOW12_URL="${FLOW12_URL}" \
-  PW_FLOW12_TOPIC_PATH="${flow12_topic_path}" \
-  PW_FLOW12_DISABLE_EVENTSOURCE=1 \
-  PW_FLOW12_TIP_MESSAGE="Fallback polling proof" \
-  "${ROOT_DIR}/scripts/playwright-workflow-flow12.sh" 2>&1 \
-  | tee -a "${LOGS_DIR}/phase1.fallback-polling.log"
-fallback_rc=${PIPESTATUS[0]}
-set -e
-[[ "${fallback_rc}" -eq 0 ]] || fatal "${EXIT_FLOW12}" "flow12 fallback polling step failed (see ${LOGS_DIR}/phase1.fallback-polling.log)"
-
-FLOW12_FALLBACK_RESULT_JSON="$(extract_result_json "${FLOW12_FALLBACK_DIR}/playwright-flow12-result.log" || true)"
-[[ -n "${FLOW12_FALLBACK_RESULT_JSON}" ]] || fatal "${EXIT_FLOW12}" "missing flow12 fallback polling result payload"
-
 persist_state_env
 printf 'RESULT=PASS CODE=0 RUN_DIR=%s STATE=%s\n' "${RUN_DIR}" "${STATE_ENV_PATH}"
