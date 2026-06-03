@@ -498,6 +498,84 @@ async (page) => {
     return { ...pageDiagnostics, ...buttonDiagnostics };
   }
 
+  const realtimeEvidence = {
+    streamRequests: [],
+    tipStatusRequests: [],
+    sseEvents: [],
+    sseErrors: [],
+    settlement: {
+      sendPaymentStartedAt: null,
+      sendPaymentCompletedAt: null,
+      confirmedAt: null,
+      confirmationLatencyMs: null,
+    },
+  };
+
+  page.on("request", (request) => {
+    const now = Date.now();
+    const url = request.url();
+    if (/\/fiber-link\/rpc\/stream\?/.test(url) || /\/rpc\/stream\?/.test(url)) {
+      realtimeEvidence.streamRequests.push({
+        url,
+        method: request.method(),
+        at: now,
+      });
+      return;
+    }
+
+    if (request.method() !== "POST" || !/\/fiber-link\/rpc(?:$|[?#])/.test(url)) {
+      return;
+    }
+
+    const postData = request.postData() || "";
+    if (postData.includes('"method":"tip.status"') || postData.includes('"method": "tip.status"')) {
+      realtimeEvidence.tipStatusRequests.push({
+        url,
+        at: now,
+      });
+    }
+  });
+
+  await page.addInitScript(() => {
+    window.__fiberLinkRealtimeEvidence = {
+      eventSources: [],
+      events: [],
+      errors: [],
+    };
+
+    const NativeEventSource = window.EventSource;
+    if (!NativeEventSource) {
+      return;
+    }
+
+    window.EventSource = class FiberLinkEvidenceEventSource extends NativeEventSource {
+      constructor(url, config) {
+        super(url, config);
+        const evidence = window.__fiberLinkRealtimeEvidence;
+        const index = evidence.eventSources.length;
+        evidence.eventSources.push({ url: String(url), at: Date.now() });
+
+        this.addEventListener("message", (event) => {
+          let parsed = null;
+          try {
+            parsed = JSON.parse(event.data);
+          } catch (_error) {
+            parsed = null;
+          }
+          evidence.events.push({
+            index,
+            at: Date.now(),
+            data: event.data,
+            parsed,
+          });
+        });
+        this.addEventListener("error", () => {
+          evidence.errors.push({ index, at: Date.now() });
+        });
+      }
+    };
+  });
+
   await page.setViewportSize(viewport);
   await login(username, password);
 
@@ -603,7 +681,9 @@ async (page) => {
   };
 
   if (settleInvoice) {
+    realtimeEvidence.settlement.sendPaymentStartedAt = Date.now();
     const settlementResult = await settleInvoiceFromPayer(invoice);
+    realtimeEvidence.settlement.sendPaymentCompletedAt = Date.now();
     payment = {
       attempted: true,
       settled: true,
@@ -627,9 +707,30 @@ async (page) => {
       { timeout: 45_000 },
     );
 
+    realtimeEvidence.settlement.confirmedAt = Date.now();
+    if (realtimeEvidence.settlement.sendPaymentCompletedAt) {
+      realtimeEvidence.settlement.confirmationLatencyMs =
+        realtimeEvidence.settlement.confirmedAt - realtimeEvidence.settlement.sendPaymentCompletedAt;
+    }
+
     await page.waitForTimeout(500);
     await modal.screenshot({ path: tipModalStepConfirmedScreenshotPath });
   }
+
+  const browserRealtimeEvidence = await page.evaluate(() => window.__fiberLinkRealtimeEvidence || null).catch(() => null);
+  if (browserRealtimeEvidence) {
+    realtimeEvidence.eventSources = browserRealtimeEvidence.eventSources || [];
+    realtimeEvidence.sseEvents = browserRealtimeEvidence.events || [];
+    realtimeEvidence.sseErrors = browserRealtimeEvidence.errors || [];
+  }
+  const firstStreamAt = realtimeEvidence.streamRequests[0]?.at ?? realtimeEvidence.eventSources[0]?.at ?? null;
+  const confirmedAt = realtimeEvidence.settlement.confirmedAt;
+  realtimeEvidence.tipStatusRequestsAfterStreamBeforeConfirmed = realtimeEvidence.tipStatusRequests.filter((request) =>
+    firstStreamAt && confirmedAt && request.at >= firstStreamAt && request.at <= confirmedAt
+  );
+  realtimeEvidence.sseStatuses = realtimeEvidence.sseEvents
+    .map((event) => event?.parsed?.status)
+    .filter(Boolean);
 
   const dashboardSummary = await rpcCall("dashboard.summary", {});
   const tipStatus = await rpcCall("tip.status", { invoice });
@@ -656,6 +757,7 @@ async (page) => {
       tipperDashboard: tipperDashboardScreenshotPath,
     },
     payment,
+    realtimeEvidence,
     rpc: {
       dashboardSummary,
       tipStatus,

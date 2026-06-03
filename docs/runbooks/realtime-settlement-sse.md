@@ -43,6 +43,17 @@ Polling is still intentionally available, but only as a fallback path:
 - Client SDK helper:
   - `fiber-link-service/packages/client/src/client.ts`
 
+## Evidence artifacts
+
+The visual-acceptance flow records real-time settlement proof in `playwright-flow12-result.log` under the returned `realtimeEvidence` object:
+
+- `streamRequests`: browser requests to `/fiber-link/rpc/stream?invoice=<id>`.
+- `sseStatuses`: parsed SSE statuses; expected to include `LISTENING` and `SETTLED` on the happy path.
+- `tipStatusRequestsAfterStreamBeforeConfirmed`: expected to be empty for the SSE happy path.
+- `settlement.confirmationLatencyMs`: time from payer `send_payment` completion to confirmed modal state; expected to be below 1000ms for Issue #414 acceptance.
+
+The same run still captures the confirmed modal screenshot at `playwright-flow1-tip-modal-step3-confirmed.png`.
+
 ## Verification commands
 
 Run the focused service tests from the repository root:
