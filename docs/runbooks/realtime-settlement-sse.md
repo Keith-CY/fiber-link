@@ -52,6 +52,13 @@ The visual-acceptance flow records real-time settlement proof in `playwright-flo
 - `tipStatusRequestsAfterStreamBeforeConfirmed`: expected to be empty for the SSE happy path.
 - `settlement.confirmationLatencyMs`: time from payer `send_payment` completion to confirmed modal state; expected to be below 1000ms for Issue #414 acceptance.
 
+The hosted visual-acceptance job also runs a second browser proof at `flow12-fallback/playwright-flow12-result.log` with `EventSource` disabled. That fallback artifact must show:
+
+- `realtimeEvidence.mode == "eventsource-disabled"`.
+- No SSE handle or `/fiber-link/rpc/stream` request was opened.
+- `tipStatusRequestsBeforeConfirmed` is non-empty, proving the modal used polling.
+- The payer-settled invoice still reaches the confirmed modal state and `tip.status` returns `SETTLED`.
+
 The same run still captures the confirmed modal screenshot at `playwright-flow1-tip-modal-step3-confirmed.png`.
 
 ## Verification commands

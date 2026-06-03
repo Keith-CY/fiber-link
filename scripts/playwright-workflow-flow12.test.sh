@@ -74,6 +74,7 @@ PW_FLOW12_ARTIFACT_DIR="${ARTIFACT_DIR}" \
 PW_FLOW12_URL="http://127.0.0.1:4200" \
 PW_FLOW12_TOPIC_PATH="/t/fiber-link-local-workflow-topic/7" \
 PW_FLOW12_HEADED=0 \
+PW_FLOW12_DISABLE_EVENTSOURCE=1 \
 PLAYWRIGHT_CLI_DOCKER_IMAGE="fake-image" \
 PLAYWRIGHT_CLI_DOCKER_NETWORK_MODE="host" \
 PLAYWRIGHT_CLI_HOST_ACCESS_HOST="127.0.0.1" \
@@ -88,3 +89,5 @@ grep -q 'review & pay' "${CAPTURE_DIR}/playwright-flow12.run-code.js"
 grep -q 'invoice-value' "${CAPTURE_DIR}/playwright-flow12.run-code.js"
 grep -q 'realtimeEvidence' "${CAPTURE_DIR}/playwright-flow12.run-code.js"
 grep -q 'tipStatusRequestsAfterStreamBeforeConfirmed' "${CAPTURE_DIR}/playwright-flow12.run-code.js"
+grep -q '"disableEventSource":"1"' "${CAPTURE_DIR}/playwright-flow12.run-code.js"
+grep -q 'tipStatusRequestsBeforeConfirmed' "${CAPTURE_DIR}/playwright-flow12.run-code.js"

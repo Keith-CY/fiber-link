@@ -248,10 +248,12 @@ jq -n \
   }' > "${ARTIFACTS_DIR}/flow2-rpc-calls.json"
 
 FLOW12_RESULT_JSON="$(extract_result_json "${FLOW12_DIR}/playwright-flow12-result.log" || true)"
+FLOW12_FALLBACK_RESULT_JSON="$(extract_result_json "${FLOW12_FALLBACK_DIR}/playwright-flow12-result.log" || true)"
 forum_entry_ok=false
 topic_thread_ok=false
 tip_flow_ok=false
 tipper_dashboard_ok=false
+fallback_polling_ok=false
 flow1_ok=false
 if [[ -n "${FLOW12_RESULT_JSON}" ]]; then
   forum_entry_ok="$(printf '%s' "${FLOW12_RESULT_JSON}" | jq -r '
@@ -289,6 +291,20 @@ if [[ -n "${FLOW12_RESULT_JSON}" ]]; then
     and ((.rpc.tipStatus.response.result.state // "") == "SETTLED")
   ')"
 fi
+
+if [[ -n "${FLOW12_FALLBACK_RESULT_JSON}" ]]; then
+  fallback_polling_ok="$(printf '%s' "${FLOW12_FALLBACK_RESULT_JSON}" | jq -r '
+    ((.realtimeEvidence.mode // "") == "eventsource-disabled")
+    and ((.realtimeEvidence.eventSources // []) | length == 0)
+    and ((.realtimeEvidence.streamRequests // []) | length == 0)
+    and ((.realtimeEvidence.tipStatusRequestsBeforeConfirmed // []) | length > 0)
+    and ((.screenshots.tipModalStepConfirmed // "") != "")
+    and ((.payment.settled // false) == true)
+    and ((.rpc.tipStatus.response.result.state // "") == "SETTLED")
+  ')"
+fi
+
+flow1_ok="$(printf '%s\n%s' "${flow1_ok}" "${fallback_polling_ok}" | jq -Rsr 'split("\n")[:2] | all(. == "true")')"
 
 flow2_ok="$(jq -r '.methods | to_entries | all(.value.ok == true)' "${ARTIFACTS_DIR}/flow2-rpc-calls.json" 2>/dev/null || printf 'false')"
 
@@ -329,6 +345,7 @@ jq -n \
   --argjson topicThreadOk "${topic_thread_ok}" \
   --argjson tipFlowOk "${tip_flow_ok}" \
   --argjson tipperDashboardOk "${tipper_dashboard_ok}" \
+  --argjson fallbackPollingOk "${fallback_polling_ok}" \
   --argjson flow1Ok "${flow1_ok}" \
   --argjson flow2Ok "${flow2_ok}" \
   --argjson flow3SubscriptionOk "${flow3_sub_ok}" \
@@ -346,6 +363,8 @@ jq -n \
     flows: {
       flow1TipUi: {
         ok: $flow1Ok,
+        fallbackPollingOk: $fallbackPollingOk,
+        fallbackPollingEvidence: "flow12-fallback/playwright-flow12-result.log",
         screenshots: {
           forumEntryPoints: "screenshots/step1-forum-tip-entrypoints.png",
           topicThread: "screenshots/step2-topic-and-reply.png",

@@ -13,6 +13,7 @@ async (page) => {
   const payerRpcUrl = String(env.payerRpcUrl ?? "http://127.0.0.1:9227").trim();
   const paymentCurrency = String(env.paymentCurrency ?? "Fibt").trim() || "Fibt";
   const settleInvoice = String(env.settleInvoice ?? "1") !== "0";
+  const disableEventSource = String(env.disableEventSource ?? "0") !== "0";
   const viewportWidth = Number.parseInt(String(env.viewportWidth ?? "2560"), 10);
   const viewportHeight = Number.parseInt(String(env.viewportHeight ?? "1440"), 10);
   const viewport = {
@@ -499,6 +500,7 @@ async (page) => {
   }
 
   const realtimeEvidence = {
+    mode: disableEventSource ? "eventsource-disabled" : "sse",
     streamRequests: [],
     tipStatusRequests: [],
     sseEvents: [],
@@ -536,12 +538,18 @@ async (page) => {
     }
   });
 
-  await page.addInitScript(() => {
+  await page.addInitScript(({ disableEventSource: eventSourceDisabled }) => {
     window.__fiberLinkRealtimeEvidence = {
+      mode: eventSourceDisabled ? "eventsource-disabled" : "sse",
       eventSources: [],
       events: [],
       errors: [],
     };
+
+    if (eventSourceDisabled) {
+      window.EventSource = undefined;
+      return;
+    }
 
     const NativeEventSource = window.EventSource;
     if (!NativeEventSource) {
@@ -574,7 +582,7 @@ async (page) => {
         });
       }
     };
-  });
+  }, { disableEventSource });
 
   await page.setViewportSize(viewport);
   await login(username, password);
@@ -719,12 +727,16 @@ async (page) => {
 
   const browserRealtimeEvidence = await page.evaluate(() => window.__fiberLinkRealtimeEvidence || null).catch(() => null);
   if (browserRealtimeEvidence) {
+    realtimeEvidence.mode = browserRealtimeEvidence.mode || realtimeEvidence.mode;
     realtimeEvidence.eventSources = browserRealtimeEvidence.eventSources || [];
     realtimeEvidence.sseEvents = browserRealtimeEvidence.events || [];
     realtimeEvidence.sseErrors = browserRealtimeEvidence.errors || [];
   }
   const firstStreamAt = realtimeEvidence.streamRequests[0]?.at ?? realtimeEvidence.eventSources[0]?.at ?? null;
   const confirmedAt = realtimeEvidence.settlement.confirmedAt;
+  realtimeEvidence.tipStatusRequestsBeforeConfirmed = realtimeEvidence.tipStatusRequests.filter((request) =>
+    confirmedAt && request.at <= confirmedAt
+  );
   realtimeEvidence.tipStatusRequestsAfterStreamBeforeConfirmed = realtimeEvidence.tipStatusRequests.filter((request) =>
     firstStreamAt && confirmedAt && request.at >= firstStreamAt && request.at <= confirmedAt
   );

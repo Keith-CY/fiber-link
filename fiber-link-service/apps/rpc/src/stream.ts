@@ -152,7 +152,7 @@ export function registerStreamRoute(
       }
     }, options.timeoutMs ?? STREAM_TIMEOUT_MS);
 
-    req.raw.on("close", () => {
+    reply.raw.on("close", () => {
       clearTimeout(timeout);
       finish();
     });
@@ -188,7 +188,7 @@ export function registerStreamRoute(
     await new Promise<void>((resolve) => {
       reply.raw.on("finish", resolve);
       reply.raw.on("error", resolve);
-      req.raw.on("close", resolve);
+      reply.raw.on("close", resolve);
     });
   });
 }
