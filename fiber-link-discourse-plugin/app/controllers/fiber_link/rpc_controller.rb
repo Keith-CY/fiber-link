@@ -29,9 +29,10 @@ module ::FiberLink
         return
       end
 
-      response.headers["Content-Type"] = "text/event-stream"
+      response.headers["Content-Type"] = "text/event-stream; charset=utf-8"
       response.headers["Cache-Control"] = "no-cache"
       response.headers["X-Accel-Buffering"] = "no"
+      apply_stream_cors_headers
 
       service_url = SiteSetting.fiber_link_service_url
       if service_url.blank?
@@ -104,6 +105,14 @@ module ::FiberLink
 
     def service_client
       @service_client ||= ::FiberLink::ServiceClient.new
+    end
+
+    def apply_stream_cors_headers
+      origin = request.headers["Origin"].to_s
+      return if origin.blank?
+
+      response.headers["Access-Control-Allow-Origin"] = origin
+      response.headers["Access-Control-Allow-Credentials"] = "true"
     end
 
     def parse_request_json

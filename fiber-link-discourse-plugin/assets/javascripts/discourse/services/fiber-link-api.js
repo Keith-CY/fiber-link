@@ -160,6 +160,23 @@ export async function getDashboardAnalytics({ range = "30d" } = {}) {
   return rpcCall("dashboard.analytics", { range });
 }
 
+function buildStreamUrl(invoice) {
+  const streamPath = runtimeConfig.rpcPath + "/stream";
+  const streamUrl = `${streamPath}?invoice=${encodeURIComponent(invoice)}`;
+
+  if (
+    typeof window !== "undefined" &&
+    window.location?.port === "4200" &&
+    streamUrl.startsWith("/")
+  ) {
+    const directRailsUrl = new URL(streamUrl, window.location.origin);
+    directRailsUrl.port = "9292";
+    return directRailsUrl.toString();
+  }
+
+  return streamUrl;
+}
+
 export function streamTipStatus(invoice, onEvent) {
   assertInitialized();
 
@@ -167,12 +184,11 @@ export function streamTipStatus(invoice, onEvent) {
     return null;
   }
 
-  const streamPath = runtimeConfig.rpcPath + "/stream";
-  const url = `${streamPath}?invoice=${encodeURIComponent(invoice)}`;
+  const url = buildStreamUrl(invoice);
 
   let es;
   try {
-    es = new EventSource(url);
+    es = new EventSource(url, { withCredentials: true });
   } catch {
     return null;
   }
