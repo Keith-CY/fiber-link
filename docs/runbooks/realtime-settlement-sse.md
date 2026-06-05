@@ -70,9 +70,10 @@ cd fiber-link-service
 bunx vitest run apps/worker/src/settlement.test.ts apps/rpc/src/stream.test.ts packages/client/src/client.test.ts
 ```
 
-For the Discourse plugin path, run the plugin smoke test when a Discourse dev container is available:
+For the Discourse plugin path, return to the repository root and run the plugin smoke test when a Discourse dev container is available:
 
 ```bash
+cd ..
 ./scripts/plugin-smoke.sh
 ```
 
