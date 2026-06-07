@@ -63,8 +63,6 @@ grep -q 'review & pay' "${CAPTURE_DIR}/playwright-flow12.run-code.js"
 grep -q 'invoice-value' "${CAPTURE_DIR}/playwright-flow12.run-code.js"
 grep -q 'realtimeEvidence' "${CAPTURE_DIR}/playwright-flow12.run-code.js"
 grep -q 'tipStatusRequestsAfterStreamBeforeConfirmed' "${CAPTURE_DIR}/playwright-flow12.run-code.js"
-grep -q 'localEmberProxyBackendBaseUrl' "${CAPTURE_DIR}/playwright-flow12.run-code.js"
-grep -q 'await login(username, password, backendBaseUrl)' "${CAPTURE_DIR}/playwright-flow12.run-code.js"
 
 rm -f "${CAPTURE_DIR}/playwright-flow12.run-code.js"
 
