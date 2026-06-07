@@ -227,8 +227,24 @@ async (page) => {
     );
   }
 
-  async function login(loginUsername, loginPassword) {
-    await page.goto(`${baseUrl}/login`, { waitUntil: "domcontentloaded" });
+  function localEmberProxyBackendBaseUrl() {
+    try {
+      const parsed = new URL(baseUrl);
+      if (parsed.port !== "4200") {
+        return null;
+      }
+      parsed.port = "9292";
+      parsed.pathname = "";
+      parsed.search = "";
+      parsed.hash = "";
+      return parsed.toString().replace(/\/+$/, "");
+    } catch (_error) {
+      return null;
+    }
+  }
+
+  async function login(loginUsername, loginPassword, loginBaseUrl = baseUrl) {
+    await page.goto(`${loginBaseUrl}/login`, { waitUntil: "domcontentloaded" });
     const loginResult = await page.evaluate(async ({ login, password }) => {
       let csrfToken = null;
       try {
@@ -277,7 +293,7 @@ async (page) => {
       throw new Error(`login failed for ${loginUsername}${details ? `: ${details}` : ""}`);
     }
 
-    await page.goto(`${baseUrl}/`, { waitUntil: "domcontentloaded" });
+    await page.goto(`${loginBaseUrl}/`, { waitUntil: "domcontentloaded" });
     await waitForSessionLoggedIn(30_000);
   }
 
@@ -611,6 +627,16 @@ async (page) => {
 
   await page.setViewportSize(viewport);
   await login(username, password);
+  const backendBaseUrl = localEmberProxyBackendBaseUrl();
+  if (backendBaseUrl && !disableEventSource) {
+    // The local visual-acceptance app serves UI through ember-cli on :4200,
+    // but the plugin intentionally routes EventSource directly to Rails on
+    // :9292 so the dev proxy cannot turn the SSE request into an HTML shell.
+    // Prime that origin's Discourse session before opening the modal; otherwise
+    // Rails can answer the stream request with the login HTML page and the
+    // strict SSE evidence gate sees text/html instead of text/event-stream.
+    await login(username, password, backendBaseUrl);
+  }
 
   await openTopicByTitle(topicTitle, topicPath);
 
