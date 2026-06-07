@@ -439,6 +439,8 @@ export default class FiberLinkWithdrawalPanel extends Component {
             <input
               class="fiber-link-tip-input fiber-link-dashboard__withdrawal-input is-amount"
               data-fiber-link-withdrawal-input="amount"
+              id="fiber-link-withdrawal-amount"
+              name="fiber-link-withdrawal-amount"
               inputmode="decimal"
               min={{this.minimumWithdrawalAmount}}
               type="text"
@@ -473,6 +475,8 @@ export default class FiberLinkWithdrawalPanel extends Component {
             class="fiber-link-tip-input fiber-link-dashboard__withdrawal-input is-address"
             aria-label="Destination Address"
             data-fiber-link-withdrawal-input="address"
+              id="fiber-link-withdrawal-address"
+              name="fiber-link-withdrawal-address"
             placeholder="ckb1q..."
             spellcheck="false"
             type="text"

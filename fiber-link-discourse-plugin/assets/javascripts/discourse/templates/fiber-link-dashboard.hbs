@@ -45,6 +45,7 @@
   {{/if}}
 
   <section
+    id="fiber-link-summary"
     class="fiber-link-dashboard__metrics"
     aria-label="Fiber Link summary"
   >
@@ -139,14 +140,37 @@
     </section>
   {{/if}}
 
-  <div class="fiber-link-dashboard__content-grid">
-    <FiberLinkWithdrawalPanel
-      @asset={{this.model.balanceAsset}}
-      @availableBalance={{this.model.availableBalance}}
-      @lockedBalance={{this.model.lockedBalance}}
-    />
+  <nav class="fiber-link-dashboard__flow" aria-label="Creator dashboard flow">
+    <a href="#fiber-link-summary" aria-label="Jump to summary">
+      <strong aria-hidden="true">01</strong>
+      Summary
+    </a>
+    <a href="#fiber-link-analytics-panel" data-flow-primary aria-label="Jump to creator signals">
+      <strong aria-hidden="true">02</strong>
+      Creator signals
+    </a>
+    <a href="#fiber-link-withdrawal-panel" aria-label="Jump to payout desk">
+      <strong aria-hidden="true">03</strong>
+      Payout desk
+    </a>
+    <a href="#fiber-link-activity-log" aria-label="Jump to activity log">
+      <strong aria-hidden="true">04</strong>
+      Activity log
+    </a>
+  </nav>
 
-    <section class="fiber-link-dashboard__activity">
+  <FiberLinkAnalytics />
+
+  <div class="fiber-link-dashboard__content-grid">
+    <div id="fiber-link-withdrawal-panel" class="fiber-link-dashboard__withdrawal-anchor">
+      <FiberLinkWithdrawalPanel
+        @asset={{this.model.balanceAsset}}
+        @availableBalance={{this.model.availableBalance}}
+        @lockedBalance={{this.model.lockedBalance}}
+      />
+    </div>
+
+    <section id="fiber-link-activity-log" class="fiber-link-dashboard__activity">
       <FiberLinkTipFeed
         @tips={{this.model.tipFeedItems}}
         @isLoading={{this.model.isInitialLoading}}
