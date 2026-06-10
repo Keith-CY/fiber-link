@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.."; pwd)"
 FAKE_BIN_DIR="$(mktemp -d)"
 ARTIFACT_DIR="$(mktemp -d)"
 CAPTURE_DIR="$(mktemp -d)"
@@ -63,6 +63,8 @@ grep -q 'review & pay' "${CAPTURE_DIR}/playwright-flow12.run-code.js"
 grep -q 'invoice-value' "${CAPTURE_DIR}/playwright-flow12.run-code.js"
 grep -q 'realtimeEvidence' "${CAPTURE_DIR}/playwright-flow12.run-code.js"
 grep -q 'tipStatusRequestsAfterStreamBeforeConfirmed' "${CAPTURE_DIR}/playwright-flow12.run-code.js"
+grep -q 'localEmberProxyBackendBaseUrl' "${CAPTURE_DIR}/playwright-flow12.run-code.js"
+grep -q 'primeLocalRailsBackendSession' "${CAPTURE_DIR}/playwright-flow12.run-code.js"
 
 rm -f "${CAPTURE_DIR}/playwright-flow12.run-code.js"
 
@@ -91,3 +93,5 @@ grep -q 'realtimeEvidence' "${CAPTURE_DIR}/playwright-flow12.run-code.js"
 grep -q 'tipStatusRequestsAfterStreamBeforeConfirmed' "${CAPTURE_DIR}/playwright-flow12.run-code.js"
 grep -q '"disableEventSource":"1"' "${CAPTURE_DIR}/playwright-flow12.run-code.js"
 grep -q 'tipStatusRequestsBeforeConfirmed' "${CAPTURE_DIR}/playwright-flow12.run-code.js"
+grep -q 'localEmberProxyBackendBaseUrl' "${CAPTURE_DIR}/playwright-flow12.run-code.js"
+grep -q 'primeLocalRailsBackendSession' "${CAPTURE_DIR}/playwright-flow12.run-code.js"

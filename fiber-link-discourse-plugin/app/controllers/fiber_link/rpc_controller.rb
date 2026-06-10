@@ -11,8 +11,7 @@ module ::FiberLink
     include ActionController::Live
 
     requires_plugin "fiber-link"
-    prepend_before_action :apply_stream_cors_headers, only: [:stream]
-    before_action :ensure_logged_in, unless: :local_development_stream_request?
+    before_action :ensure_logged_in
 
     ALLOWED_WITHDRAWAL_STATES = ["ALL", "LIQUIDITY_PENDING", "PENDING", "PROCESSING", "RETRY_PENDING", "COMPLETED", "FAILED"].freeze
     ALLOWED_SETTLEMENT_STATES = ["ALL", "UNPAID", "SETTLED", "FAILED"].freeze
@@ -105,37 +104,6 @@ module ::FiberLink
 
     def service_client
       @service_client ||= ::FiberLink::ServiceClient.new
-    end
-
-    def local_development_stream_request?
-      action_name == "stream" && local_development_stream_origin?(request.headers["Origin"].to_s)
-    rescue URI::InvalidURIError
-      false
-    end
-
-    def apply_stream_cors_headers
-      origin = request.headers["Origin"].to_s
-      return if origin.blank?
-
-      return unless local_development_stream_origin?(origin)
-
-      response.headers["Access-Control-Allow-Origin"] = origin
-      response.headers["Access-Control-Allow-Credentials"] = "true"
-    rescue URI::InvalidURIError
-      nil
-    end
-
-    def local_development_stream_origin?(origin)
-      origin_uri = URI.parse(origin)
-      local_hosts = ["127.0.0.1", "localhost", "host.docker.internal"].freeze
-      return false unless origin_uri.scheme == request.protocol.delete_suffix("://")
-      return false unless origin_uri.port == 4200
-
-      request_host = request.host.to_s
-      origin_host = origin_uri.host.to_s
-      return false unless local_hosts.include?(request_host) && local_hosts.include?(origin_host)
-
-      request.port == 9292 || request.port == 4200
     end
 
     def parse_request_json

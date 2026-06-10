@@ -499,6 +499,58 @@ async (page) => {
     return { ...pageDiagnostics, ...buttonDiagnostics };
   }
 
+  function localEmberProxyBackendBaseUrl() {
+    try {
+      const parsed = new URL(baseUrl);
+      if (parsed.port !== "4200") return null;
+      const railsUrl = new URL(baseUrl);
+      railsUrl.port = "9292";
+      return railsUrl.origin;
+    } catch {
+      return null;
+    }
+  }
+
+  async function primeLocalRailsBackendSession(railsBaseUrl) {
+    const primePage = await page.context().newPage();
+    try {
+      await primePage.goto(`${railsBaseUrl}/`, { waitUntil: "domcontentloaded", timeout: 15000 });
+      await primePage.evaluate(async ({ loginUsername, loginPassword }) => {
+        let csrfToken = null;
+        try {
+          const r = await fetch("/session/csrf.json", {
+            credentials: "same-origin",
+            headers: { "x-requested-with": "XMLHttpRequest" },
+          });
+          const j = await r.json();
+          csrfToken = j?.csrf ?? null;
+        } catch (_error) {
+          csrfToken = null;
+        }
+        if (!csrfToken) {
+          csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribute("content");
+        }
+        const headers = {
+          "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
+          "x-requested-with": "XMLHttpRequest",
+        };
+        if (csrfToken) {
+          headers["x-csrf-token"] = csrfToken;
+        }
+        await fetch("/session", {
+          method: "POST",
+          credentials: "same-origin",
+          headers,
+          body: new URLSearchParams({ login: loginUsername, password: loginPassword }).toString(),
+        });
+      }, { loginUsername: username, loginPassword: password });
+    } catch (_error) {
+      // session priming is best-effort; SSE will fall back to polling on auth failure
+    } finally {
+      await primePage.close();
+    }
+  }
+
   const realtimeEvidence = {
     mode: disableEventSource ? "eventsource-disabled" : "sse",
     streamRequests: [],
@@ -611,6 +663,11 @@ async (page) => {
 
   await page.setViewportSize(viewport);
   await login(username, password);
+
+  const railsBackendBase = localEmberProxyBackendBaseUrl();
+  if (railsBackendBase) {
+    await primeLocalRailsBackendSession(railsBackendBase);
+  }
 
   await openTopicByTitle(topicTitle, topicPath);
 
