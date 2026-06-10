@@ -85,3 +85,10 @@ Manual browser check:
 4. Settle the invoice.
 5. Confirm the modal flips to `Payment complete` without repeated `tip.status` requests.
 6. Disable `EventSource` or break the stream route and confirm the bounded polling fallback still confirms settlement.
+
+## Known transient CI failures
+
+The visual-acceptance harness performs a real CKB withdrawal in phase 5. Occasionally the
+withdrawal reaches `FAILED` due to transient chain/faucet conditions (exit code 14:
+`withdrawal <id> reached FAILED`). This is unrelated to the SSE settlement path — re-run
+the workflow when phases 1–4 pass and only the withdrawal gate fails.
