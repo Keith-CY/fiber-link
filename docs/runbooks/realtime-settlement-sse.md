@@ -92,3 +92,4 @@ The visual-acceptance harness performs a real CKB withdrawal in phase 5. Occasio
 withdrawal reaches `FAILED` due to transient chain/faucet conditions (exit code 14:
 `withdrawal <id> reached FAILED`). This is unrelated to the SSE settlement path — re-run
 the workflow when phases 1–4 pass and only the withdrawal gate fails.
+# Re-run trigger 20260611T021036Z
