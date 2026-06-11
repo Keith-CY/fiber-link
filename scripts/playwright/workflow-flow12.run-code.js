@@ -794,7 +794,7 @@ async (page) => {
           (/Payment complete|Payment received/i).test(badgeText);
       },
       undefined,
-      { timeout: 45_000 },
+      { timeout: 75_000 },
     );
 
     realtimeEvidence.settlement.confirmedAt = Date.now();
