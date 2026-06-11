@@ -155,6 +155,9 @@ async function main() {
 
   async function shutdown(signal: NodeJS.Signals) {
     await subscriptionRunner?.close();
+    await settlementPublisher.close().catch((error) => {
+      console.warn("[worker] settlement publisher close failed", error);
+    });
     await runtime.shutdown(signal);
   }
 
