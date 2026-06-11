@@ -16,6 +16,7 @@ import {
 import { createSettlementUpdateEvent, type SettlementUpdateEvent, type SettlementUpdateOutcome } from "./contracts";
 import { createComponentLogger, type WorkerLogContext } from "./logger";
 import { markSettled } from "./settlement";
+import { type SettlementPublisher } from "./settlement-publisher";
 
 type SettlementAdapter = {
   getInvoiceStatus: (input: { invoice: string }) => Promise<{ state: unknown }>;
@@ -60,6 +61,7 @@ export type SettlementDiscoveryOptions = {
   tipIntentRepo?: TipIntentRepo;
   ledgerRepo?: LedgerRepo;
   tipIntentEventRepo?: TipIntentEventRepo;
+  publisher?: SettlementPublisher;
   nowMsFn?: () => number;
   logger?: SettlementLogger;
 };
@@ -275,6 +277,7 @@ export async function runSettlementDiscovery(options: SettlementDiscoveryOptions
   const ledgerRepo = options.ledgerRepo ?? getDefaultLedgerRepo();
   const tipIntentEventRepo = options.tipIntentEventRepo ?? getDefaultTipIntentEventRepo();
   const adapter = options.adapter ?? getDefaultAdapter();
+  const publisher = options.publisher;
   const nowMsFn = options.nowMsFn ?? Date.now;
   const maxRetries = options.maxRetries ?? 3;
   const retryDelayMs = options.retryDelayMs ?? 60_000;
@@ -377,6 +380,7 @@ export async function runSettlementDiscovery(options: SettlementDiscoveryOptions
           {
             tipIntentRepo,
             ledgerRepo,
+            publisher,
           },
         );
         await tipIntentRepo.clearSettlementFailure(intent.invoice, { now });

@@ -1,6 +1,7 @@
 import { toErrorMessage, type LedgerRepo, type TipIntentRepo } from "@fiber-link/db";
 import { createComponentLogger, type WorkerLogContext } from "./logger";
 import { markSettled } from "./settlement";
+import { type SettlementPublisher } from "./settlement-publisher";
 
 type QueueOverflowInfo = {
   invoice: string;
@@ -30,6 +31,7 @@ export type StartSettlementSubscriptionRunnerOptions = {
   adapter: SettlementSubscriptionAdapter;
   tipIntentRepo?: TipIntentRepo;
   ledgerRepo?: LedgerRepo;
+  publisher?: SettlementPublisher;
   logger?: SettlementSubscriptionLogger;
   concurrency?: number;
   maxPendingEvents?: number;
@@ -147,6 +149,7 @@ export async function startSettlementSubscriptionRunner(
             {
               tipIntentRepo: options.tipIntentRepo,
               ledgerRepo: options.ledgerRepo,
+              publisher: options.publisher,
             },
           );
           logger.info("settlement.subscription.processed", {
