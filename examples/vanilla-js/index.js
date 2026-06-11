@@ -83,8 +83,12 @@ document.getElementById("tipBtn").addEventListener("click", async () => {
 
     setStatus(`Invoice created: <code>${invoice.slice(0, 40)}…</code><br/>Waiting for payment…`);
 
-    // Try SSE first (requires /rpc/stream on the backend).
-    const streamUrl = endpoint.replace(/\/rpc$/, "/rpc/stream") + `?invoice=${encodeURIComponent(invoice)}`;
+    // Try SSE first (requires /rpc/stream on the backend). EventSource cannot
+    // set headers, so the app id rides along as a query param for the
+    // backend's invoice-ownership check.
+    const streamUrl =
+      endpoint.replace(/\/rpc$/, "/rpc/stream") +
+      `?invoice=${encodeURIComponent(invoice)}&appId=${encodeURIComponent(appId)}`;
     let sseHandled = false;
 
     if (typeof EventSource !== "undefined") {

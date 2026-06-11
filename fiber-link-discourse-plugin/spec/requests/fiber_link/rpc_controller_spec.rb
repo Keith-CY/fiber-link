@@ -494,4 +494,47 @@ RSpec.describe ::FiberLink::RpcController, type: :request do
       expect(WebMock).not_to have_requested(:post, "https://fiber-link.example/rpc")
     end
   end
+
+  describe "GET /fiber-link/rpc/stream" do
+    it "returns 400 when the invoice param is blank" do
+      sign_in(user)
+
+      get "/fiber-link/rpc/stream"
+
+      expect(response).to have_http_status(:bad_request)
+      expect(JSON.parse(response.body).fetch("error")).to eq("Missing invoice")
+    end
+
+    it "proxies the backend SSE stream with the forum app id header" do
+      sign_in(user)
+
+      stub_request(:get, "https://fiber-link.example/rpc/stream?invoice=inv-1").to_return(
+        status: 200,
+        body: "data: {\"invoice\":\"inv-1\",\"status\":\"SETTLED\"}\n\n",
+        headers: { "Content-Type" => "text/event-stream" },
+      )
+
+      get "/fiber-link/rpc/stream", params: { invoice: "inv-1" }
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("\"status\":\"SETTLED\"")
+      expect(WebMock).to have_requested(:get, "https://fiber-link.example/rpc/stream?invoice=inv-1")
+        .with(headers: { "x-app-id" => "app1" })
+    end
+
+    it "emits SSE_ERROR when the backend rejects the stream" do
+      sign_in(user)
+
+      stub_request(:get, "https://fiber-link.example/rpc/stream?invoice=inv-foreign").to_return(
+        status: 403,
+        body: { error: "Invoice does not belong to this app" }.to_json,
+        headers: { "Content-Type" => "application/json" },
+      )
+
+      get "/fiber-link/rpc/stream", params: { invoice: "inv-foreign" }
+
+      expect(response.body).to include("\"status\":\"SSE_ERROR\"")
+      expect(response.body).to include("upstream_http_403")
+    end
+  end
 end

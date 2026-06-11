@@ -1,10 +1,14 @@
+export type SettlementPublishOptions = {
+  settledAt?: Date | null;
+};
+
 export interface SettlementPublisher {
-  publish(invoice: string): Promise<void>;
+  publish(invoice: string, options?: SettlementPublishOptions): Promise<void>;
   close(): Promise<void>;
 }
 
 export class NoopSettlementPublisher implements SettlementPublisher {
-  async publish(_invoice: string): Promise<void> {}
+  async publish(_invoice: string, _options?: SettlementPublishOptions): Promise<void> {}
   async close(): Promise<void> {}
 }
 
@@ -14,9 +18,14 @@ export class RedisSettlementPublisher implements SettlementPublisher {
     private readonly closeClient: () => Promise<void> = async () => {},
   ) {}
 
-  async publish(invoice: string): Promise<void> {
+  async publish(invoice: string, options?: SettlementPublishOptions): Promise<void> {
     const channel = `fiber-link:settlement:${invoice}`;
-    const message = JSON.stringify({ invoice, status: "SETTLED" });
+    const settledAt = options?.settledAt ?? new Date();
+    const message = JSON.stringify({
+      invoice,
+      status: "SETTLED",
+      settledAt: settledAt.toISOString(),
+    });
     await this.redisPublish(channel, message);
   }
 

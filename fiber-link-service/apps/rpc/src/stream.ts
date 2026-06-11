@@ -53,23 +53,25 @@ function removeChannelListener(sub: Redis, channel: string, fn: (msg: string) =>
 
 const POLL_INTERVAL_MS = 800;
 
+export type StreamInvoiceRecord = { invoiceState: string; appId: string };
+
 export function registerStreamRoute(
   app: FastifyInstance,
   options: {
-    getInvoiceState?: (invoice: string) => Promise<string | null>;
+    getInvoice?: (invoice: string) => Promise<StreamInvoiceRecord | null>;
     pollInvoiceStateFn?: (invoice: string) => Promise<string | null>;
     pollIntervalMs?: number;
     createSubscriber?: (redisUrl: string) => Redis;
     timeoutMs?: number;
   } = {},
 ) {
-  const getInvoiceState =
-    options.getInvoiceState ??
-    (async (invoice: string) => {
+  const getInvoice =
+    options.getInvoice ??
+    (async (invoice: string): Promise<StreamInvoiceRecord | null> => {
       try {
         const repo = createDbTipIntentRepo(getDefaultDb());
         const intent = await repo.findByInvoiceOrThrow(invoice);
-        return intent.invoiceState;
+        return { invoiceState: intent.invoiceState, appId: intent.appId };
       } catch (e) {
         if (e instanceof TipIntentNotFoundError) return null;
         throw e;
@@ -77,21 +79,40 @@ export function registerStreamRoute(
     });
 
   app.get("/rpc/stream", async (req, reply) => {
-    const invoice = ((req.query as Record<string, string>)?.invoice ?? "").trim();
+    const query = (req.query ?? {}) as Record<string, string>;
+    const invoice = (query.invoice ?? "").trim();
     if (!invoice) {
       return reply.status(400).send({ error: "Missing invoice" });
     }
 
-    let currentState: string | null;
+    // Server-side proxies identify via the x-app-id header; browser EventSource
+    // clients cannot set headers, so the appId query param is the fallback.
+    const headerAppId = req.headers["x-app-id"];
+    const requesterAppId = (
+      (Array.isArray(headerAppId) ? headerAppId[0] : headerAppId) ??
+      query.appId ??
+      ""
+    ).trim();
+    if (!requesterAppId) {
+      return reply.status(401).send({ error: "Missing app id" });
+    }
+
+    let intent: StreamInvoiceRecord | null;
     try {
-      currentState = await getInvoiceState(invoice);
+      intent = await getInvoice(invoice);
     } catch {
       return reply.status(503).send({ error: "Stream temporarily unavailable" });
     }
 
-    if (currentState === null) {
+    if (intent === null) {
       return reply.status(404).send({ error: "Invoice not found" });
     }
+
+    if (intent.appId !== requesterAppId) {
+      return reply.status(403).send({ error: "Invoice does not belong to this app" });
+    }
+
+    const currentState = intent.invoiceState;
 
     if (currentState === "SETTLED") {
       reply.raw.setHeader("Content-Type", "text/event-stream");
