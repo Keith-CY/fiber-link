@@ -101,4 +101,28 @@ describe("GET /rpc/stream", () => {
     expect(res.headers["cache-control"]).toBe("no-cache");
     expect(res.headers["access-control-allow-origin"]).toBe("*");
   });
+
+  it("resolves via pollInvoiceStateFn when Redis message never arrives", async () => {
+    const subscriber = makeMockSubscriber();
+    let pollCount = 0;
+
+    const app = Fastify({ logger: false });
+    registerStreamRoute(app, {
+      getInvoiceState: async () => "UNPAID",
+      createSubscriber: () => subscriber as unknown as InstanceType<typeof import("ioredis").default>,
+      timeoutMs: 5000,
+      pollIntervalMs: 20,
+      pollInvoiceStateFn: async () => {
+        pollCount += 1;
+        return pollCount >= 2 ? "SETTLED" : "UNPAID";
+      },
+    });
+
+    const res = await app.inject({ method: "GET", url: "/rpc/stream?invoice=inv-poll" });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toContain('"status":"LISTENING"');
+    expect(res.body).toContain('"status":"SETTLED"');
+    expect(res.body).not.toContain('"status":"TIMEOUT"');
+    expect(pollCount).toBeGreaterThanOrEqual(2);
+  });
 });

@@ -87,6 +87,14 @@ function getDefaultAdapter() {
   return defaultAdapter;
 }
 
+export function getDefaultAdapterForStream(): ReturnType<typeof createAdapterProvider> | null {
+  try {
+    return getDefaultAdapter();
+  } catch {
+    return null;
+  }
+}
+
 export type HandleTipCreateInput = {
   appId: string;
   postId: string;
