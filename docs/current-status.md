@@ -19,6 +19,7 @@ The repository has completed the current Milestone 1–3 acceptance checkpoints.
 - Discourse post and reply tipping through the Fiber Link plugin.
 - Server-side RPC proxying so the forum derives sender and recipient identities instead of trusting the browser.
 - Fiber invoice creation and payment-status handling.
+- Real-time tip settlement notifications through `/fiber-link/rpc/stream` → `/rpc/stream` SSE, with bounded polling retained only as a fallback.
 - Settlement discovery, replay, and idempotent ledger crediting.
 
 ### Creator Dashboard
@@ -81,6 +82,7 @@ The main proof entry points are:
 
 - [Milestone Acceptance Tracker](acceptance/README.md)
 - [Milestone 3 Evidence Index](runbooks/acceptance-evidence/milestone-3/index.md)
+- [Real-time Settlement via SSE](runbooks/realtime-settlement-sse.md)
 - [Deployment Evidence Runbook](runbooks/deployment-evidence.md)
 - [Mainnet Deployment Checklist](runbooks/mainnet-deployment-checklist.md)
 

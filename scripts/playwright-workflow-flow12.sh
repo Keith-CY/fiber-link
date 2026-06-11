@@ -128,6 +128,7 @@ payer_rpc_base_url="$(normalize_sidecar_url "${payer_rpc_base_url}")"
 payer_rpc_url="${PW_FLOW12_PAYER_RPC_URL:-${PW_DEMO_PAYER_RPC_URL:-${payer_rpc_base_url}:${FNN2_RPC_PORT:-9227}}}"
 payment_currency="${PW_FLOW12_PAYMENT_CURRENCY:-${PW_DEMO_PAYMENT_CURRENCY:-${FIBER_INVOICE_CURRENCY_CKB:-${FIBER_INVOICE_CURRENCY:-Fibt}}}}"
 settle_invoice="${PW_FLOW12_SETTLE_INVOICE:-${PW_DEMO_SETTLE_INVOICE:-1}}"
+disable_event_source="${PW_FLOW12_DISABLE_EVENTSOURCE:-${PW_DEMO_DISABLE_EVENTSOURCE:-0}}"
 viewport_width="${PW_FLOW12_VIEWPORT_WIDTH:-${E2E_SCREENSHOT_VIEWPORT_WIDTH:-2560}}"
 viewport_height="${PW_FLOW12_VIEWPORT_HEIGHT:-${E2E_SCREENSHOT_VIEWPORT_HEIGHT:-1440}}"
 
@@ -143,6 +144,7 @@ demo_env_json="$(
     --arg payerRpcUrl "${payer_rpc_url}" \
     --arg paymentCurrency "${payment_currency}" \
     --arg settleInvoice "${settle_invoice}" \
+    --arg disableEventSource "${disable_event_source}" \
     --arg viewportWidth "${viewport_width}" \
     --arg viewportHeight "${viewport_height}" \
     --arg artifactDir "${ARTIFACT_DIR}" \
@@ -157,6 +159,7 @@ demo_env_json="$(
       payerRpcUrl: $payerRpcUrl,
       paymentCurrency: $paymentCurrency,
       settleInvoice: $settleInvoice,
+      disableEventSource: $disableEventSource,
       viewportWidth: $viewportWidth,
       viewportHeight: $viewportHeight,
       artifactDir: $artifactDir

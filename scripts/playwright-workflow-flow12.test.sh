@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.."; pwd)"
 FAKE_BIN_DIR="$(mktemp -d)"
 ARTIFACT_DIR="$(mktemp -d)"
 CAPTURE_DIR="$(mktemp -d)"
@@ -61,6 +61,10 @@ grep -q '"baseUrl":"http://127.0.0.1:4200"' "${CAPTURE_DIR}/playwright-flow12.ru
 grep -q '"payerRpcUrl":"http://172.17.0.1:9227"' "${CAPTURE_DIR}/playwright-flow12.run-code.js"
 grep -q 'review & pay' "${CAPTURE_DIR}/playwright-flow12.run-code.js"
 grep -q 'invoice-value' "${CAPTURE_DIR}/playwright-flow12.run-code.js"
+grep -q 'realtimeEvidence' "${CAPTURE_DIR}/playwright-flow12.run-code.js"
+grep -q 'tipStatusRequestsAfterStreamBeforeConfirmed' "${CAPTURE_DIR}/playwright-flow12.run-code.js"
+grep -q 'localEmberProxyBackendBaseUrl' "${CAPTURE_DIR}/playwright-flow12.run-code.js"
+grep -q 'primeLocalRailsBackendSession' "${CAPTURE_DIR}/playwright-flow12.run-code.js"
 
 rm -f "${CAPTURE_DIR}/playwright-flow12.run-code.js"
 
@@ -72,6 +76,7 @@ PW_FLOW12_ARTIFACT_DIR="${ARTIFACT_DIR}" \
 PW_FLOW12_URL="http://127.0.0.1:4200" \
 PW_FLOW12_TOPIC_PATH="/t/fiber-link-local-workflow-topic/7" \
 PW_FLOW12_HEADED=0 \
+PW_FLOW12_DISABLE_EVENTSOURCE=1 \
 PLAYWRIGHT_CLI_DOCKER_IMAGE="fake-image" \
 PLAYWRIGHT_CLI_DOCKER_NETWORK_MODE="host" \
 PLAYWRIGHT_CLI_HOST_ACCESS_HOST="127.0.0.1" \
@@ -84,3 +89,9 @@ grep -q '"baseUrl":"http://127.0.0.1:4200"' "${CAPTURE_DIR}/playwright-flow12.ru
 grep -q '"payerRpcUrl":"http://127.0.0.1:9227"' "${CAPTURE_DIR}/playwright-flow12.run-code.js"
 grep -q 'review & pay' "${CAPTURE_DIR}/playwright-flow12.run-code.js"
 grep -q 'invoice-value' "${CAPTURE_DIR}/playwright-flow12.run-code.js"
+grep -q 'realtimeEvidence' "${CAPTURE_DIR}/playwright-flow12.run-code.js"
+grep -q 'tipStatusRequestsAfterStreamBeforeConfirmed' "${CAPTURE_DIR}/playwright-flow12.run-code.js"
+grep -q '"disableEventSource":"1"' "${CAPTURE_DIR}/playwright-flow12.run-code.js"
+grep -q 'tipStatusRequestsBeforeConfirmed' "${CAPTURE_DIR}/playwright-flow12.run-code.js"
+grep -q 'localEmberProxyBackendBaseUrl' "${CAPTURE_DIR}/playwright-flow12.run-code.js"
+grep -q 'primeLocalRailsBackendSession' "${CAPTURE_DIR}/playwright-flow12.run-code.js"

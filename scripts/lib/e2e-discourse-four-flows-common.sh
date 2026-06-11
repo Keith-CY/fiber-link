@@ -53,6 +53,7 @@ PHASE1_DIR=""
 PHASE2_DIR=""
 POLLING_DIR=""
 FLOW12_DIR=""
+FLOW12_FALLBACK_DIR=""
 PHASE3_DIR=""
 POSTCHECK_DIR=""
 EXPLORER_DIR=""
@@ -198,6 +199,7 @@ refresh_run_paths() {
   PHASE2_DIR="${RUN_DIR}/workflow-phase2-subscription"
   POLLING_DIR="${RUN_DIR}/workflow-polling"
   FLOW12_DIR="${RUN_DIR}/flow12"
+  FLOW12_FALLBACK_DIR="${RUN_DIR}/flow12-fallback"
   PHASE3_DIR="${RUN_DIR}/withdrawal-browser"
   POSTCHECK_DIR="${RUN_DIR}/postcheck"
   EXPLORER_DIR="${RUN_DIR}/explorer"
@@ -226,6 +228,7 @@ ensure_run_layout() {
     "${PHASE2_DIR}" \
     "${POLLING_DIR}" \
     "${FLOW12_DIR}" \
+    "${FLOW12_FALLBACK_DIR}" \
     "${PHASE3_DIR}" \
     "${POSTCHECK_DIR}" \
     "${EXPLORER_DIR}"

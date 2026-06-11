@@ -121,7 +121,10 @@ describe("settlement worker", () => {
         invoice: "inv-pub-1",
       });
 
-      const publisher: SettlementPublisher = { publish: vi.fn().mockResolvedValue(undefined) };
+      const publisher: SettlementPublisher = {
+        publish: vi.fn().mockResolvedValue(undefined),
+        close: vi.fn().mockResolvedValue(undefined),
+      };
       await markSettled({ invoice: "inv-pub-1" }, { tipIntentRepo, ledgerRepo, publisher });
       expect(publisher.publish).toHaveBeenCalledOnce();
       expect(publisher.publish).toHaveBeenCalledWith("inv-pub-1");
@@ -140,6 +143,7 @@ describe("settlement worker", () => {
 
       const publisher: SettlementPublisher = {
         publish: vi.fn().mockRejectedValue(new Error("Redis unavailable")),
+        close: vi.fn().mockResolvedValue(undefined),
       };
 
       await expect(

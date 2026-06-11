@@ -13,6 +13,7 @@ async (page) => {
   const payerRpcUrl = String(env.payerRpcUrl ?? "http://127.0.0.1:9227").trim();
   const paymentCurrency = String(env.paymentCurrency ?? "Fibt").trim() || "Fibt";
   const settleInvoice = String(env.settleInvoice ?? "1") !== "0";
+  const disableEventSource = String(env.disableEventSource ?? "0") !== "0";
   const viewportWidth = Number.parseInt(String(env.viewportWidth ?? "2560"), 10);
   const viewportHeight = Number.parseInt(String(env.viewportHeight ?? "1440"), 10);
   const viewport = {
@@ -498,8 +499,175 @@ async (page) => {
     return { ...pageDiagnostics, ...buttonDiagnostics };
   }
 
+  function localEmberProxyBackendBaseUrl() {
+    try {
+      const parsed = new URL(baseUrl);
+      if (parsed.port !== "4200") return null;
+      const railsUrl = new URL(baseUrl);
+      railsUrl.port = "9292";
+      return railsUrl.origin;
+    } catch {
+      return null;
+    }
+  }
+
+  async function primeLocalRailsBackendSession(railsBaseUrl) {
+    const primePage = await page.context().newPage();
+    try {
+      await primePage.goto(`${railsBaseUrl}/`, { waitUntil: "domcontentloaded", timeout: 15000 });
+      await primePage.evaluate(async ({ loginUsername, loginPassword }) => {
+        let csrfToken = null;
+        try {
+          const r = await fetch("/session/csrf.json", {
+            credentials: "same-origin",
+            headers: { "x-requested-with": "XMLHttpRequest" },
+          });
+          const j = await r.json();
+          csrfToken = j?.csrf ?? null;
+        } catch (_error) {
+          csrfToken = null;
+        }
+        if (!csrfToken) {
+          csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribute("content");
+        }
+        const headers = {
+          "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
+          "x-requested-with": "XMLHttpRequest",
+        };
+        if (csrfToken) {
+          headers["x-csrf-token"] = csrfToken;
+        }
+        await fetch("/session", {
+          method: "POST",
+          credentials: "same-origin",
+          headers,
+          body: new URLSearchParams({ login: loginUsername, password: loginPassword }).toString(),
+        });
+      }, { loginUsername: username, loginPassword: password });
+    } catch (_error) {
+      // session priming is best-effort; SSE will fall back to polling on auth failure
+    } finally {
+      await primePage.close();
+    }
+  }
+
+  const realtimeEvidence = {
+    mode: disableEventSource ? "eventsource-disabled" : "sse",
+    streamRequests: [],
+    streamResponses: [],
+    streamFailures: [],
+    tipStatusRequests: [],
+    sseEvents: [],
+    sseErrors: [],
+    settlement: {
+      sendPaymentStartedAt: null,
+      sendPaymentCompletedAt: null,
+      confirmedAt: null,
+      confirmationLatencyMs: null,
+    },
+  };
+
+  page.on("request", (request) => {
+    const now = Date.now();
+    const url = request.url();
+    if (/\/fiber-link\/rpc\/stream\?/.test(url) || /\/rpc\/stream\?/.test(url)) {
+      realtimeEvidence.streamRequests.push({
+        url,
+        method: request.method(),
+        at: now,
+      });
+      return;
+    }
+
+    if (request.method() !== "POST" || !/\/fiber-link\/rpc(?:$|[?#])/.test(url)) {
+      return;
+    }
+
+    const postData = request.postData() || "";
+    if (postData.includes('"method":"tip.status"') || postData.includes('"method": "tip.status"')) {
+      realtimeEvidence.tipStatusRequests.push({
+        url,
+        at: now,
+      });
+    }
+  });
+
+  page.on("response", (response) => {
+    const url = response.url();
+    if (/\/fiber-link\/rpc\/stream\?/.test(url) || /\/rpc\/stream\?/.test(url)) {
+      realtimeEvidence.streamResponses.push({
+        url,
+        status: response.status(),
+        contentType: response.headers()["content-type"] || null,
+        at: Date.now(),
+      });
+    }
+  });
+
+  page.on("requestfailed", (request) => {
+    const url = request.url();
+    if (/\/fiber-link\/rpc\/stream\?/.test(url) || /\/rpc\/stream\?/.test(url)) {
+      realtimeEvidence.streamFailures.push({
+        url,
+        failure: request.failure()?.errorText || null,
+        at: Date.now(),
+      });
+    }
+  });
+
+  await page.addInitScript(({ disableEventSource: eventSourceDisabled }) => {
+    window.__fiberLinkRealtimeEvidence = {
+      mode: eventSourceDisabled ? "eventsource-disabled" : "sse",
+      eventSources: [],
+      events: [],
+      errors: [],
+    };
+
+    if (eventSourceDisabled) {
+      window.EventSource = undefined;
+      return;
+    }
+
+    const NativeEventSource = window.EventSource;
+    if (!NativeEventSource) {
+      return;
+    }
+
+    window.EventSource = class FiberLinkEvidenceEventSource extends NativeEventSource {
+      constructor(url, config) {
+        super(url, config);
+        const evidence = window.__fiberLinkRealtimeEvidence;
+        const index = evidence.eventSources.length;
+        evidence.eventSources.push({ url: String(url), at: Date.now() });
+
+        this.addEventListener("message", (event) => {
+          let parsed = null;
+          try {
+            parsed = JSON.parse(event.data);
+          } catch (_error) {
+            parsed = null;
+          }
+          evidence.events.push({
+            index,
+            at: Date.now(),
+            data: event.data,
+            parsed,
+          });
+        });
+        this.addEventListener("error", () => {
+          evidence.errors.push({ index, at: Date.now() });
+        });
+      }
+    };
+  }, { disableEventSource });
+
   await page.setViewportSize(viewport);
   await login(username, password);
+
+  const railsBackendBase = localEmberProxyBackendBaseUrl();
+  if (railsBackendBase) {
+    await primeLocalRailsBackendSession(railsBackendBase);
+  }
 
   await openTopicByTitle(topicTitle, topicPath);
 
@@ -603,7 +771,9 @@ async (page) => {
   };
 
   if (settleInvoice) {
+    realtimeEvidence.settlement.sendPaymentStartedAt = Date.now();
     const settlementResult = await settleInvoiceFromPayer(invoice);
+    realtimeEvidence.settlement.sendPaymentCompletedAt = Date.now();
     payment = {
       attempted: true,
       settled: true,
@@ -624,12 +794,37 @@ async (page) => {
           (/Payment complete|Payment received/i).test(badgeText);
       },
       undefined,
-      { timeout: 45_000 },
+      { timeout: 75_000 },
     );
+
+    realtimeEvidence.settlement.confirmedAt = Date.now();
+    if (realtimeEvidence.settlement.sendPaymentCompletedAt) {
+      realtimeEvidence.settlement.confirmationLatencyMs =
+        realtimeEvidence.settlement.confirmedAt - realtimeEvidence.settlement.sendPaymentCompletedAt;
+    }
 
     await page.waitForTimeout(500);
     await modal.screenshot({ path: tipModalStepConfirmedScreenshotPath });
   }
+
+  const browserRealtimeEvidence = await page.evaluate(() => window.__fiberLinkRealtimeEvidence || null).catch(() => null);
+  if (browserRealtimeEvidence) {
+    realtimeEvidence.mode = browserRealtimeEvidence.mode || realtimeEvidence.mode;
+    realtimeEvidence.eventSources = browserRealtimeEvidence.eventSources || [];
+    realtimeEvidence.sseEvents = browserRealtimeEvidence.events || [];
+    realtimeEvidence.sseErrors = browserRealtimeEvidence.errors || [];
+  }
+  const firstStreamAt = realtimeEvidence.streamRequests[0]?.at ?? realtimeEvidence.eventSources[0]?.at ?? null;
+  const confirmedAt = realtimeEvidence.settlement.confirmedAt;
+  realtimeEvidence.tipStatusRequestsBeforeConfirmed = realtimeEvidence.tipStatusRequests.filter((request) =>
+    confirmedAt && request.at <= confirmedAt
+  );
+  realtimeEvidence.tipStatusRequestsAfterStreamBeforeConfirmed = realtimeEvidence.tipStatusRequests.filter((request) =>
+    firstStreamAt && confirmedAt && request.at >= firstStreamAt && request.at <= confirmedAt
+  );
+  realtimeEvidence.sseStatuses = realtimeEvidence.sseEvents
+    .map((event) => event?.parsed?.status)
+    .filter(Boolean);
 
   const dashboardSummary = await rpcCall("dashboard.summary", {});
   const tipStatus = await rpcCall("tip.status", { invoice });
@@ -656,6 +851,7 @@ async (page) => {
       tipperDashboard: tipperDashboardScreenshotPath,
     },
     payment,
+    realtimeEvidence,
     rpc: {
       dashboardSummary,
       tipStatus,

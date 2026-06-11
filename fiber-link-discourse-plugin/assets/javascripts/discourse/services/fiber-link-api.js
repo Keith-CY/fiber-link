@@ -172,7 +172,7 @@ export function streamTipStatus(invoice, onEvent) {
 
   let es;
   try {
-    es = new EventSource(url);
+    es = new EventSource(url, { withCredentials: true });
   } catch {
     return null;
   }

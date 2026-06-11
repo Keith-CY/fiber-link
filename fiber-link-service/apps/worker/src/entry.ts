@@ -9,6 +9,7 @@ import {
   type SettlementSubscriptionRunner,
 } from "./settlement-subscription-runner";
 import { runWithdrawalBatch } from "./withdrawal-batch";
+import { createSettlementPublisher } from "./settlement-publisher";
 import { createWorkerRuntime } from "./worker-runtime";
 
 async function main() {
@@ -35,6 +36,7 @@ async function main() {
           signal,
         });
   const fiberAdapter = createFiberAdapter();
+  const settlementPublisher = createSettlementPublisher();
   const cursorStore = createFileSettlementCursorStore(config.settlementCursorFile);
   const inventoryProvider = createDefaultHotWalletInventoryProvider();
   let settlementCursor: TipIntentListCursor | undefined = await cursorStore.load();
@@ -106,6 +108,7 @@ async function main() {
         maxRetries: config.settlementMaxRetries,
         retryDelayMs: config.settlementRetryDelayMs,
         pendingTimeoutMs: config.settlementPendingTimeoutMs,
+        publisher: settlementPublisher,
       });
       settlementCursor = summary.nextCursor ?? undefined;
       await cursorStore.save(settlementCursor);
@@ -127,6 +130,7 @@ async function main() {
           concurrency: config.subscriptionConcurrency,
           maxPendingEvents: config.subscriptionMaxPendingEvents,
           recentInvoiceDedupeSize: config.subscriptionRecentInvoiceDedupeSize,
+          publisher: settlementPublisher,
         });
       }
       console.info("[worker] settlement strategy enabled", {
@@ -151,6 +155,9 @@ async function main() {
 
   async function shutdown(signal: NodeJS.Signals) {
     await subscriptionRunner?.close();
+    await settlementPublisher.close().catch((error) => {
+      console.warn("[worker] settlement publisher close failed", error);
+    });
     await runtime.shutdown(signal);
   }
 

@@ -11,6 +11,10 @@ module ::FiberLink
     include ActionController::Live
 
     requires_plugin "fiber-link"
+    prepend_before_action :apply_stream_cors_headers, only: [:stream]
+    # EventSource requests are not XHR and accept text/event-stream, so
+    # check_xhr would short-circuit them into the HTML app shell (RenderEmpty).
+    skip_before_action :check_xhr, only: [:stream]
     before_action :ensure_logged_in
 
     ALLOWED_WITHDRAWAL_STATES = ["ALL", "LIQUIDITY_PENDING", "PENDING", "PROCESSING", "RETRY_PENDING", "COMPLETED", "FAILED"].freeze
@@ -29,7 +33,7 @@ module ::FiberLink
         return
       end
 
-      response.headers["Content-Type"] = "text/event-stream"
+      response.headers["Content-Type"] = "text/event-stream; charset=utf-8"
       response.headers["Cache-Control"] = "no-cache"
       response.headers["X-Accel-Buffering"] = "no"
 
@@ -47,6 +51,7 @@ module ::FiberLink
             resp.read_body do |chunk|
               break if response.stream.closed?
               response.stream.write(chunk)
+              response.stream.flush if response.stream.respond_to?(:flush)
             end
           end
         end
@@ -103,6 +108,35 @@ module ::FiberLink
 
     def service_client
       @service_client ||= ::FiberLink::ServiceClient.new
+    end
+
+    # The local dev Ember proxy serves the forum on :4200 while EventSource
+    # connects to the Rails origin on :9292 directly, so the SSE response needs
+    # credentialed CORS headers for that one cross-port case. Authentication is
+    # still enforced by ensure_logged_in.
+    def apply_stream_cors_headers
+      origin = request.headers["Origin"].to_s
+      return if origin.blank?
+
+      return unless local_development_stream_origin?(origin)
+
+      response.headers["Access-Control-Allow-Origin"] = origin
+      response.headers["Access-Control-Allow-Credentials"] = "true"
+    rescue URI::InvalidURIError
+      nil
+    end
+
+    def local_development_stream_origin?(origin)
+      origin_uri = URI.parse(origin)
+      local_hosts = ["127.0.0.1", "localhost", "host.docker.internal"].freeze
+      return false unless origin_uri.scheme == request.protocol.delete_suffix("://")
+      return false unless origin_uri.port == 4200
+
+      request_host = request.host.to_s
+      origin_host = origin_uri.host.to_s
+      return false unless local_hosts.include?(request_host) && local_hosts.include?(origin_host)
+
+      request.port == 9292 || request.port == 4200
     end
 
     def parse_request_json

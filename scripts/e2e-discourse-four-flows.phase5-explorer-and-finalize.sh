@@ -247,11 +247,48 @@ jq -n \
     }
   }' > "${ARTIFACTS_DIR}/flow2-rpc-calls.json"
 
+if [[ ! -f "${FLOW12_FALLBACK_DIR}/playwright-flow12-result.log" ]]; then
+  phase1_seed_path="${PHASE1_DIR}/discourse-seed.json"
+  flow12_topic_path=""
+  if [[ -f "${phase1_seed_path}" ]]; then
+    flow12_topic_path="$(jq -r '.topic.relative_url // empty' "${phase1_seed_path}")"
+    if [[ -z "${flow12_topic_path}" ]]; then
+      topic_id="$(jq -r '.topic.id // empty' "${phase1_seed_path}")"
+      if [[ -n "${topic_id}" ]]; then
+        flow12_topic_path="/t/-/${topic_id}"
+      fi
+    fi
+  fi
+
+  [[ -n "${flow12_topic_path}" ]] || fatal "${EXIT_FLOW12}" "failed to resolve topic path for fallback polling proof"
+
+  log "running post-flow fallback polling browser proof with EventSource disabled"
+  record_cmd "playwright flow12 fallback polling"
+  set +e
+  env \
+    PW_FLOW12_ARTIFACT_DIR="${FLOW12_FALLBACK_DIR}" \
+    PW_FLOW12_HEADED=0 \
+    PW_FLOW12_URL="${DISCOURSE_UI_BASE_URL}" \
+    PW_FLOW12_TOPIC_PATH="${flow12_topic_path}" \
+    PW_FLOW12_DISABLE_EVENTSOURCE=1 \
+    PW_FLOW12_TIP_MESSAGE="Fallback polling proof" \
+    "${ROOT_DIR}/scripts/playwright-workflow-flow12.sh" 2>&1 \
+    | tee -a "${LOGS_DIR}/phase5.fallback-polling.log"
+  fallback_rc=${PIPESTATUS[0]}
+  set -e
+  [[ "${fallback_rc}" -eq 0 ]] || fatal "${EXIT_FLOW12}" "flow12 fallback polling step failed (see ${LOGS_DIR}/phase5.fallback-polling.log)"
+
+  FLOW12_FALLBACK_RESULT_JSON="$(extract_result_json "${FLOW12_FALLBACK_DIR}/playwright-flow12-result.log" || true)"
+  [[ -n "${FLOW12_FALLBACK_RESULT_JSON}" ]] || fatal "${EXIT_FLOW12}" "missing flow12 fallback polling result payload"
+fi
+
 FLOW12_RESULT_JSON="$(extract_result_json "${FLOW12_DIR}/playwright-flow12-result.log" || true)"
+FLOW12_FALLBACK_RESULT_JSON="$(extract_result_json "${FLOW12_FALLBACK_DIR}/playwright-flow12-result.log" || true)"
 forum_entry_ok=false
 topic_thread_ok=false
 tip_flow_ok=false
 tipper_dashboard_ok=false
+fallback_polling_ok=false
 flow1_ok=false
 if [[ -n "${FLOW12_RESULT_JSON}" ]]; then
   forum_entry_ok="$(printf '%s' "${FLOW12_RESULT_JSON}" | jq -r '
@@ -287,8 +324,28 @@ if [[ -n "${FLOW12_RESULT_JSON}" ]]; then
     and ((.payment.settled // false) == true)
     and ((.rpc.dashboardSummary.ok // false) == true)
     and ((.rpc.tipStatus.response.result.state // "") == "SETTLED")
+    and ((.realtimeEvidence.mode // "") == "sse")
+    and ((.realtimeEvidence.streamRequests // []) | length >= 1)
+    and ((.realtimeEvidence.sseStatuses // []) | index("LISTENING") != null)
+    and ((.realtimeEvidence.sseStatuses // []) | index("SETTLED") != null)
+    and ((.realtimeEvidence.tipStatusRequestsAfterStreamBeforeConfirmed // []) | length == 0)
+    and ((.realtimeEvidence.settlement.confirmationLatencyMs // 999999) < 1000)
   ')"
 fi
+
+if [[ -n "${FLOW12_FALLBACK_RESULT_JSON}" ]]; then
+  fallback_polling_ok="$(printf '%s' "${FLOW12_FALLBACK_RESULT_JSON}" | jq -r '
+    ((.realtimeEvidence.mode // "") == "eventsource-disabled")
+    and ((.realtimeEvidence.eventSources // []) | length == 0)
+    and ((.realtimeEvidence.streamRequests // []) | length == 0)
+    and ((.realtimeEvidence.tipStatusRequestsBeforeConfirmed // []) | length > 0)
+    and ((.screenshots.tipModalStepConfirmed // "") != "")
+    and ((.payment.settled // false) == true)
+    and ((.rpc.tipStatus.response.result.state // "") == "SETTLED")
+  ')"
+fi
+
+flow1_ok="$(printf '%s\n%s' "${flow1_ok}" "${fallback_polling_ok}" | jq -Rsr 'split("\n")[:2] | all(. == "true")')"
 
 flow2_ok="$(jq -r '.methods | to_entries | all(.value.ok == true)' "${ARTIFACTS_DIR}/flow2-rpc-calls.json" 2>/dev/null || printf 'false')"
 
@@ -329,6 +386,7 @@ jq -n \
   --argjson topicThreadOk "${topic_thread_ok}" \
   --argjson tipFlowOk "${tip_flow_ok}" \
   --argjson tipperDashboardOk "${tipper_dashboard_ok}" \
+  --argjson fallbackPollingOk "${fallback_polling_ok}" \
   --argjson flow1Ok "${flow1_ok}" \
   --argjson flow2Ok "${flow2_ok}" \
   --argjson flow3SubscriptionOk "${flow3_sub_ok}" \
@@ -346,6 +404,8 @@ jq -n \
     flows: {
       flow1TipUi: {
         ok: $flow1Ok,
+        fallbackPollingOk: $fallbackPollingOk,
+        fallbackPollingEvidence: "flow12-fallback/playwright-flow12-result.log",
         screenshots: {
           forumEntryPoints: "screenshots/step1-forum-tip-entrypoints.png",
           topicThread: "screenshots/step2-topic-and-reply.png",

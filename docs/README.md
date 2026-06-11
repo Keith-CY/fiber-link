@@ -48,6 +48,7 @@ Use these when you need executable procedures rather than narrative explanation.
 | [Withdrawal Reconciliation](runbooks/withdrawal-reconciliation.md) | Reconcile ledger, withdrawal state, and execution evidence. |
 | [Settlement Recovery](runbooks/settlement-recovery.md) | Replay or backfill settlement discovery safely. |
 | [Tip Settlement Reconciliation](runbooks/tip-settlement-reconciliation.md) | Reconcile tips, invoices, settlement state, and ledger crediting. |
+| [Real-time Settlement via SSE](runbooks/realtime-settlement-sse.md) | Operate and verify push-based tip settlement notifications with polling fallback. |
 
 ---
 
