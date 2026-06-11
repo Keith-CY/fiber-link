@@ -51,10 +51,14 @@ function removeChannelListener(sub: Redis, channel: string, fn: (msg: string) =>
   }
 }
 
+const POLL_INTERVAL_MS = 800;
+
 export function registerStreamRoute(
   app: FastifyInstance,
   options: {
     getInvoiceState?: (invoice: string) => Promise<string | null>;
+    pollInvoiceStateFn?: (invoice: string) => Promise<string | null>;
+    pollIntervalMs?: number;
     createSubscriber?: (redisUrl: string) => Redis;
     timeoutMs?: number;
   } = {},
@@ -118,6 +122,7 @@ export function registerStreamRoute(
       : options.createSubscriber!(redisUrl ?? "");
 
     let finished = false;
+    let pollTimer: ReturnType<typeof setTimeout> | null = null;
 
     function messageHandler(raw: string) {
       if (finished) return;
@@ -136,6 +141,10 @@ export function registerStreamRoute(
     function finish() {
       if (finished) return;
       finished = true;
+      if (pollTimer) {
+        clearTimeout(pollTimer);
+        pollTimer = null;
+      }
       if (useShared) {
         removeChannelListener(sub, channel, messageHandler);
       } else {
@@ -143,6 +152,26 @@ export function registerStreamRoute(
         sub.disconnect();
       }
       if (!reply.raw.writableEnded) reply.raw.end();
+    }
+
+    function schedulePoll() {
+      if (finished || !options.pollInvoiceStateFn) return;
+      const intervalMs = options.pollIntervalMs ?? POLL_INTERVAL_MS;
+      pollTimer = setTimeout(async () => {
+        if (finished) return;
+        try {
+          const state = await options.pollInvoiceStateFn!(invoice);
+          if (!finished && state === "SETTLED") {
+            clearTimeout(timeout);
+            reply.raw.write(`data: ${JSON.stringify({ invoice, status: "SETTLED" })}\n\n`);
+            finish();
+            return;
+          }
+        } catch {
+          // poll failure is non-fatal; Redis path remains active
+        }
+        schedulePoll();
+      }, intervalMs);
     }
 
     const timeout = setTimeout(() => {
@@ -161,6 +190,7 @@ export function registerStreamRoute(
       try {
         await addChannelListener(sub, channel, messageHandler);
         reply.raw.write(`data: ${JSON.stringify({ invoice, status: "LISTENING" })}\n\n`);
+        schedulePoll();
       } catch {
         clearTimeout(timeout);
         finish();
@@ -178,6 +208,7 @@ export function registerStreamRoute(
           return;
         }
         reply.raw.write(`data: ${JSON.stringify({ invoice, status: "LISTENING" })}\n\n`);
+        schedulePoll();
       });
 
       sub.on("message", (_ch: string, raw: string) => {

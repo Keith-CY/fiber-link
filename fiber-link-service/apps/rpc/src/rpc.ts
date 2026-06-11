@@ -26,7 +26,7 @@ import {
   WithdrawalRequestResultSchema,
   type RpcId,
 } from "./contracts";
-import { handleTipCreate, handleTipSettledFeed, handleTipStatus } from "./methods/tip";
+import { handleTipCreate, handleTipSettledFeed, handleTipStatus, getDefaultAdapterForStream } from "./methods/tip";
 import { handleDashboardSummary, handleDashboardAnalytics } from "./methods/dashboard";
 import { handleNotificationChannelCreate, handleNotificationChannelList } from "./methods/notification";
 import { WithdrawalPolicyViolationError, quoteWithdrawal, requestWithdrawal } from "./methods/withdrawal";
@@ -182,7 +182,18 @@ export function registerRpc(
   const rateLimitStore = options.rateLimitStore ?? createRateLimitStore();
   const rateLimitConfig = options.rateLimitConfig ?? parseRpcRateLimitConfig();
 
-  registerStreamRoute(app);
+  registerStreamRoute(app, {
+    pollInvoiceStateFn: async (invoice: string) => {
+      try {
+        const adapter = getDefaultAdapterForStream();
+        if (!adapter) return null;
+        const result = await adapter.getInvoiceStatus({ invoice });
+        return typeof result?.state === "string" ? result.state : null;
+      } catch {
+        return null;
+      }
+    },
+  });
 
   app.get("/healthz/live", async () => {
     return { status: "alive" as const };
