@@ -12,6 +12,9 @@ module ::FiberLink
 
     requires_plugin "fiber-link"
     prepend_before_action :apply_stream_cors_headers, only: [:stream]
+    # EventSource requests are not XHR and accept text/event-stream, so
+    # check_xhr would short-circuit them into the HTML app shell (RenderEmpty).
+    skip_before_action :check_xhr, only: [:stream]
     before_action :ensure_logged_in
 
     ALLOWED_WITHDRAWAL_STATES = ["ALL", "LIQUIDITY_PENDING", "PENDING", "PROCESSING", "RETRY_PENDING", "COMPLETED", "FAILED"].freeze
