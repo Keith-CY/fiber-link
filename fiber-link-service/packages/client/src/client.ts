@@ -21,7 +21,12 @@ export type TipStatus = "UNPAID" | "SETTLED" | "FAILED";
 export type StreamStatus = "LISTENING" | "SETTLED" | "TIMEOUT" | "SSE_ERROR";
 
 export type StreamHandle = { close(): void };
-export type StreamEvent = { invoice: string; status: StreamStatus };
+export type StreamEvent = {
+  invoice: string;
+  status: StreamStatus;
+  /** ISO timestamp; present on SETTLED events published by the settlement worker. */
+  settledAt?: string;
+};
 
 const DEFAULT_TIMEOUT_MS = 15_000;
 

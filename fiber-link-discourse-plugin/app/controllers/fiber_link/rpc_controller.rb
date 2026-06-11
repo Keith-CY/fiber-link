@@ -45,7 +45,7 @@ module ::FiberLink
       end
 
       begin
-        backend_url = URI("#{service_url}/rpc/stream?invoice=#{URI.encode_www_form_component(invoice)}")
+        backend_url = URI("#{service_url.chomp("/")}/rpc/stream?invoice=#{URI.encode_www_form_component(invoice)}")
         backend_request = Net::HTTP::Get.new(backend_url)
         # The backend validates that the invoice belongs to this forum's app.
         backend_request["x-app-id"] = SiteSetting.fiber_link_app_id
@@ -54,6 +54,7 @@ module ::FiberLink
             if resp.code != "200"
               Rails.logger.warn("Fiber Link SSE stream rejected upstream: HTTP #{resp.code}")
               response.stream.write("data: #{JSON.generate({ invoice: invoice, status: "SSE_ERROR", reason: "upstream_http_#{resp.code}" })}\n\n")
+              response.stream.flush if response.stream.respond_to?(:flush)
               next
             end
 

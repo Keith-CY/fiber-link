@@ -87,7 +87,7 @@ document.getElementById("tipBtn").addEventListener("click", async () => {
     // set headers, so the app id rides along as a query param for the
     // backend's invoice-ownership check.
     const streamUrl =
-      endpoint.replace(/\/rpc$/, "/rpc/stream") +
+      endpoint.replace(/\/rpc\/?$/, "/rpc/stream") +
       `?invoice=${encodeURIComponent(invoice)}&appId=${encodeURIComponent(appId)}`;
     let sseHandled = false;
 

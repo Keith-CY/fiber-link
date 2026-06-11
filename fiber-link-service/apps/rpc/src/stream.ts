@@ -78,20 +78,22 @@ export function registerStreamRoute(
       }
     });
 
+  // Duplicate query params arrive as arrays; take the first value.
+  function firstValue(value: string | string[] | undefined): string {
+    return (Array.isArray(value) ? value[0] : value) ?? "";
+  }
+
   app.get("/rpc/stream", async (req, reply) => {
-    const query = (req.query ?? {}) as Record<string, string>;
-    const invoice = (query.invoice ?? "").trim();
+    const query = (req.query ?? {}) as Record<string, string | string[]>;
+    const invoice = firstValue(query.invoice).trim();
     if (!invoice) {
       return reply.status(400).send({ error: "Missing invoice" });
     }
 
     // Server-side proxies identify via the x-app-id header; browser EventSource
     // clients cannot set headers, so the appId query param is the fallback.
-    const headerAppId = req.headers["x-app-id"];
     const requesterAppId = (
-      (Array.isArray(headerAppId) ? headerAppId[0] : headerAppId) ??
-      query.appId ??
-      ""
+      firstValue(req.headers["x-app-id"]) || firstValue(query.appId)
     ).trim();
     if (!requesterAppId) {
       return reply.status(401).send({ error: "Missing app id" });

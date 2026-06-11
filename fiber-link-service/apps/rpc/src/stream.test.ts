@@ -74,6 +74,23 @@ describe("GET /rpc/stream", () => {
     expect(res.body).toContain('"status":"SETTLED"');
   });
 
+  it("takes the first value instead of crashing when query params are duplicated", async () => {
+    const seenInvoices: string[] = [];
+    const app = buildTestApp({
+      getInvoice: async (invoice) => {
+        seenInvoices.push(invoice);
+        return ownedInvoice("SETTLED");
+      },
+    });
+    const res = await app.inject({
+      method: "GET",
+      url: `/rpc/stream?invoice=inv-dup&invoice=inv-other&appId=${APP_ID}&appId=other-app`,
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toContain('"status":"SETTLED"');
+    expect(seenInvoices).toEqual(["inv-dup"]);
+  });
+
   it("returns 404 when invoice is not found", async () => {
     const app = buildTestApp({ getInvoice: async () => null });
     const res = await app.inject({

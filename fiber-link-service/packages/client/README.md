@@ -91,7 +91,7 @@ Opens a Server-Sent Events stream for real-time settlement. Falls back gracefull
 The server only streams invoices that belong to the requesting app. In `signed` mode the configured `appId` is appended as a query param (`EventSource` cannot set headers); in `presigned` mode the server-side proxy supplies the `x-app-id` header.
 
 **Returns:** `StreamHandle | null`  
-**`onEvent` receives:** `{ invoice, status: "LISTENING" | "SETTLED" | "TIMEOUT" | "SSE_ERROR" }`
+**`onEvent` receives:** `{ invoice, status: "LISTENING" | "SETTLED" | "TIMEOUT" | "SSE_ERROR", settledAt? }` — `settledAt` is an ISO timestamp present on `SETTLED` events published by the settlement worker.
 
 ## Error types
 
