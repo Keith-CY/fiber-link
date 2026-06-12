@@ -6,9 +6,9 @@ This runbook closes the real-time settlement milestone tracked in [Issue #414](h
 
 1. The Discourse tip modal creates an invoice through the forum RPC proxy.
 2. Once an invoice exists, the modal calls `streamTipStatus(invoice, onEvent)` and opens an `EventSource` against `/fiber-link/rpc/stream?invoice=<id>`.
-3. The Discourse plugin proxies that stream to the backend RPC service endpoint `/rpc/stream?invoice=<id>`.
-4. The backend RPC stream route validates that the invoice exists, subscribes to the Redis channel `fiber-link:settlement:<invoice>`, and emits `LISTENING` once the SSE subscription is ready.
-5. When the worker settles the tip intent and credits the recipient ledger, it publishes `{ invoice, status: "SETTLED" }` to the same Redis channel.
+3. The Discourse plugin proxies that stream to the backend RPC service endpoint `/rpc/stream?invoice=<id>`, attaching the forum's `x-app-id` header.
+4. The backend RPC stream route resolves the requesting app id (`x-app-id` header, or the `appId` query param for direct `EventSource` clients that cannot set headers), validates that the invoice exists and belongs to that app (`401` when no app id is supplied, `403` on ownership mismatch), subscribes to the Redis channel `fiber-link:settlement:<invoice>`, and emits `LISTENING` once the SSE subscription is ready.
+5. When the worker settles the tip intent and credits the recipient ledger, it publishes `{ invoice, status: "SETTLED", settledAt }` to the same Redis channel.
 6. The browser receives the `SETTLED` event, closes the SSE handle, cancels pending status-poll timers, and moves the modal to the confirmation state.
 
 ## Fallback behavior
@@ -17,6 +17,7 @@ Polling is still intentionally available, but only as a fallback path:
 
 - If the browser does not support `EventSource`, the modal starts the existing status polling loop.
 - If the SSE connection times out or emits an error, the modal closes the stream and falls back to polling.
+- If the backend rejects the stream (for example `401`/`403` from the app-ownership check), the Discourse proxy emits a one-shot `SSE_ERROR` event and the modal falls back to polling.
 - If the invoice is already settled when `/rpc/stream` is opened, the RPC service immediately returns a one-shot `SETTLED` SSE response.
 - Worker-side Redis publish failures are non-blocking: settlement and ledger crediting still succeed, and clients can recover through fallback polling.
 

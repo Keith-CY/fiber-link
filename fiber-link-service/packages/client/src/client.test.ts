@@ -171,6 +171,37 @@ describe("FiberLinkClient#streamTipStatus", () => {
     const client = makeClient();
     expect(() => client.streamTipStatus("", vi.fn())).toThrow(FiberLinkValidationError);
   });
+
+  it("appends the appId query param in signed mode so the server can check ownership", () => {
+    const seenUrls: string[] = [];
+    class FakeEventSource {
+      onmessage: unknown = null;
+      onerror: unknown = null;
+      constructor(url: string) {
+        seenUrls.push(url);
+      }
+      close() {}
+    }
+    vi.stubGlobal("EventSource", FakeEventSource);
+
+    try {
+      const signedClient = makeClient({ mode: "signed", appId: "app1", hmacSecret: "s" });
+      const handle = signedClient.streamTipStatus(FAKE_INVOICE, vi.fn());
+      expect(handle).not.toBeNull();
+      expect(seenUrls[0]).toBe(
+        `http://localhost:3000/rpc/stream?invoice=${encodeURIComponent(FAKE_INVOICE)}&appId=app1`,
+      );
+      handle?.close();
+
+      const presignedClient = makeClient();
+      presignedClient.streamTipStatus(FAKE_INVOICE, vi.fn())?.close();
+      expect(seenUrls[1]).toBe(
+        `http://localhost:3000/rpc/stream?invoice=${encodeURIComponent(FAKE_INVOICE)}`,
+      );
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 });
 
 describe("FiberLinkClient signed mode header generation", () => {

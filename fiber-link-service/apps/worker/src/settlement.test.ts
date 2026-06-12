@@ -5,7 +5,7 @@ import {
   settlementCreditIdempotencyKey,
 } from "@fiber-link/db";
 import { markSettled } from "./settlement";
-import { type SettlementPublisher } from "./settlement-publisher";
+import { RedisSettlementPublisher, type SettlementPublisher } from "./settlement-publisher";
 
 describe("settlement worker", () => {
   const tipIntentRepo = createInMemoryTipIntentRepo();
@@ -127,7 +127,36 @@ describe("settlement worker", () => {
       };
       await markSettled({ invoice: "inv-pub-1" }, { tipIntentRepo, ledgerRepo, publisher });
       expect(publisher.publish).toHaveBeenCalledOnce();
-      expect(publisher.publish).toHaveBeenCalledWith("inv-pub-1");
+      expect(publisher.publish).toHaveBeenCalledWith("inv-pub-1", { settledAt: expect.any(Date) });
+    });
+
+    it("publishes the settlement payload to the invoice Redis channel after credit", async () => {
+      await tipIntentRepo.create({
+        appId: "app1",
+        postId: "p-pub-redis",
+        fromUserId: "u1",
+        toUserId: "u2",
+        asset: "USDI",
+        amount: "5",
+        invoice: "inv-pub-redis",
+      });
+
+      const redisPublish = vi.fn().mockResolvedValue(1);
+      const publisher = new RedisSettlementPublisher(redisPublish);
+
+      await markSettled({ invoice: "inv-pub-redis" }, { tipIntentRepo, ledgerRepo, publisher });
+
+      expect(redisPublish).toHaveBeenCalledOnce();
+      const [channel, message] = redisPublish.mock.calls[0];
+      expect(channel).toBe("fiber-link:settlement:inv-pub-redis");
+      const payload = JSON.parse(message);
+      expect(payload).toEqual({
+        invoice: "inv-pub-redis",
+        status: "SETTLED",
+        settledAt: expect.any(String),
+      });
+      const saved = await tipIntentRepo.findByInvoiceOrThrow("inv-pub-redis");
+      expect(payload.settledAt).toBe(saved.settledAt?.toISOString());
     });
 
     it("does not block settlement when publisher.publish throws", async () => {

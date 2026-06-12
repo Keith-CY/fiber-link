@@ -21,7 +21,12 @@ export type TipStatus = "UNPAID" | "SETTLED" | "FAILED";
 export type StreamStatus = "LISTENING" | "SETTLED" | "TIMEOUT" | "SSE_ERROR";
 
 export type StreamHandle = { close(): void };
-export type StreamEvent = { invoice: string; status: StreamStatus };
+export type StreamEvent = {
+  invoice: string;
+  status: StreamStatus;
+  /** ISO timestamp; present on SETTLED events published by the settlement worker. */
+  settledAt?: string;
+};
 
 const DEFAULT_TIMEOUT_MS = 15_000;
 
@@ -193,12 +198,18 @@ export class FiberLinkClient {
    * Falls back gracefully when `EventSource` is unavailable (e.g., Node.js).
    * Returns a `StreamHandle` with `.close()`, or `null` if SSE is not available.
    *
+   * In "signed" mode the configured appId is sent as a query param —
+   * `EventSource` cannot set headers — so the server can verify the invoice
+   * belongs to this app. In "presigned" mode the server-side proxy injects
+   * the `x-app-id` header instead.
+   *
    * `onEvent` receives `StreamEvent` objects: LISTENING → SETTLED | TIMEOUT | SSE_ERROR.
    */
   streamTipStatus(invoice: string, onEvent: (event: StreamEvent) => void): StreamHandle | null {
     if (!invoice?.trim()) throw new FiberLinkValidationError("invoice", "invoice is required");
 
-    const streamUrl = `${this.endpoint}/stream?invoice=${encodeURIComponent(invoice)}`;
+    const appIdParam = this.appId ? `&appId=${encodeURIComponent(this.appId)}` : "";
+    const streamUrl = `${this.endpoint}/stream?invoice=${encodeURIComponent(invoice)}${appIdParam}`;
 
     if (typeof EventSource === "undefined") {
       return null;

@@ -60,8 +60,10 @@ export async function markSettled(
   });
 
   // Keep invoice state convergent even if credit was already written earlier.
+  let settledAt = tipIntent.settledAt;
   if (tipIntent.invoiceState !== "SETTLED") {
-    await tipIntentRepo.updateInvoiceState(invoice, "SETTLED");
+    const updated = await tipIntentRepo.updateInvoiceState(invoice, "SETTLED");
+    settledAt = updated.settledAt;
   }
 
   if (options.dispatcher) {
@@ -82,7 +84,7 @@ export async function markSettled(
 
   // Publish settlement event for real-time SSE subscribers. Failure is non-blocking.
   if (options.publisher) {
-    await options.publisher.publish(invoice).catch((err) => {
+    await options.publisher.publish(invoice, { settledAt }).catch((err) => {
       console.warn("settlement-publisher: publish failed", err);
     });
   }
