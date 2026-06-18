@@ -100,6 +100,15 @@ export type DashboardOperationsState = {
   backups: DashboardBackupsState;
 };
 
+export type DashboardOpsTriageCard = {
+  id: string;
+  label: string;
+  value: string;
+  severity: "ok" | "watch" | "alert";
+  description: string;
+  href: string;
+};
+
 type DashboardLoadingState = {
   status: "loading";
 };
@@ -143,6 +152,7 @@ type DashboardReadyViewModel = DashboardReadyState & {
   title: string;
   roleVisibility: DashboardRoleVisibility;
   withdrawalColumns: Array<"id" | "appId" | "userId" | "asset" | "amount" | "state" | "createdAt" | "txHash">;
+  opsTriageCards: DashboardOpsTriageCard[];
 };
 
 export type DashboardViewModel = DashboardLoadingViewModel | DashboardErrorViewModel | DashboardReadyViewModel;
@@ -204,6 +214,74 @@ export function summarizeWithdrawalStates(withdrawals: DashboardWithdrawal[]): D
   return WITHDRAWAL_STATE_ORDER.map((state) => ({ state, count: counts[state] ?? 0 }));
 }
 
+function countState(statusSummaries: DashboardStatusSummary[], state: WithdrawalState): number {
+  return statusSummaries.find((summary) => summary.state === state)?.count ?? 0;
+}
+
+function severityFromCount(count: number): DashboardOpsTriageCard["severity"] {
+  return count > 0 ? "alert" : "ok";
+}
+
+export function buildOpsTriageCards(state: DashboardReadyState): DashboardOpsTriageCard[] {
+  const liquidityPending = countState(state.statusSummaries, "LIQUIDITY_PENDING");
+  const failedWithdrawals = countState(state.statusSummaries, "FAILED");
+  const retryPendingWithdrawals = countState(state.statusSummaries, "RETRY_PENDING");
+  const withdrawalBacklog =
+    liquidityPending +
+    countState(state.statusSummaries, "PENDING") +
+    countState(state.statusSummaries, "PROCESSING") +
+    countState(state.statusSummaries, "BROADCASTED") +
+    retryPendingWithdrawals;
+
+  const monitoringSummary = state.operations?.monitoring.status === "ready" ? state.operations.monitoring.summary : undefined;
+  const unpaidBacklog = monitoringSummary?.unpaidBacklog ?? 0;
+  const settlementRetryPending = monitoringSummary?.retryPendingCount ?? 0;
+  const alertCount = monitoringSummary?.alertCount ?? 0;
+
+  return [
+    {
+      id: "settlement-backlog",
+      label: "Settlement backlog",
+      value: String(unpaidBacklog),
+      severity: severityFromCount(unpaidBacklog + settlementRetryPending),
+      description: settlementRetryPending > 0 ? `${settlementRetryPending} settlement(s) are retry pending.` : "Unpaid invoice backlog from ops summary.",
+      href: "#monitoring",
+    },
+    {
+      id: "withdrawal-backlog",
+      label: "Withdrawal backlog",
+      value: String(withdrawalBacklog),
+      severity: severityFromCount(withdrawalBacklog),
+      description: "Pending, processing, broadcasted, retry, and liquidity-pending withdrawals.",
+      href: "#withdrawals",
+    },
+    {
+      id: "liquidity-pending",
+      label: "Liquidity pending",
+      value: String(liquidityPending),
+      severity: severityFromCount(liquidityPending),
+      description: "Withdrawals blocked on available channel or chain liquidity.",
+      href: "#withdrawals",
+    },
+    {
+      id: "failed-withdrawals",
+      label: "Failed withdrawals",
+      value: String(failedWithdrawals),
+      severity: severityFromCount(failedWithdrawals),
+      description: "Terminal payout failures requiring operator investigation.",
+      href: "#withdrawals",
+    },
+    {
+      id: "ops-alerts",
+      label: "Ops alerts",
+      value: String(alertCount),
+      severity: severityFromCount(alertCount),
+      description: monitoringSummary ? `Ops summary status: ${monitoringSummary.status}.` : "Monitoring integration is unavailable.",
+      href: "#monitoring",
+    },
+  ];
+}
+
 export function buildDashboardViewModel(state: DashboardPageState): DashboardViewModel {
   if (state.status === "loading") {
     return {
@@ -230,5 +308,6 @@ export function buildDashboardViewModel(state: DashboardPageState): DashboardVie
     title: DASHBOARD_TITLE,
     roleVisibility,
     withdrawalColumns,
+    opsTriageCards: buildOpsTriageCards(state),
   };
 }

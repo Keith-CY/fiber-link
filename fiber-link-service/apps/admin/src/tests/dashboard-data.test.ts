@@ -154,6 +154,12 @@ describe("dashboard data", () => {
     });
     if (viewModel.status === "ready") {
       expect(viewModel.withdrawalColumns).toContain("userId");
+      expect(viewModel.opsTriageCards).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: "withdrawal-backlog", value: "1", severity: "alert", href: "#withdrawals" }),
+          expect.objectContaining({ id: "settlement-backlog", value: "0", severity: "ok", href: "#monitoring" }),
+        ]),
+      );
     }
   });
 

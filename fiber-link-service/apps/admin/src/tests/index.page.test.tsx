@@ -78,6 +78,13 @@ describe("dashboard page", () => {
 
     expect(html).toContain('class="dashboard-shell"');
     expect(html).toContain('class="hero-panel"');
+    expect(html).toContain("Operations command center");
+    expect(html).toContain('data-testid="ops-triage-settlement-backlog"');
+    expect(html).toContain("Settlement backlog");
+    expect(html).toContain("Withdrawal backlog");
+    expect(html).toContain("Liquidity pending");
+    expect(html).toContain("Failed withdrawals");
+    expect(html).toContain("Ops alerts");
     expect(html).toContain("Operations overview");
     expect(html).toContain("Monitoring");
     expect(html).toContain("Global rate limiting");
