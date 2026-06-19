@@ -113,7 +113,7 @@ export async function loadDashboardState(ctx: TrpcContext): Promise<DashboardSta
   try {
     const appCaller = appRouter.createCaller(ctx);
     const withdrawalCaller = withdrawalRouter.createCaller(ctx);
-    const [apps, withdrawals] = await Promise.all([appCaller.list(), withdrawalCaller.list()]);
+    const [apps, withdrawals] = await Promise.all([appCaller.list(), withdrawalCaller.list({})]);
 
     return createReadyDashboardState(ctx.role, apps, withdrawals);
   } catch (error) {
