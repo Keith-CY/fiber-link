@@ -248,12 +248,13 @@ export function buildOpsTriageCards(state: DashboardReadyState): DashboardOpsTri
     {
       id: "settlement-backlog",
       label: "Settlement backlog",
-      value: String(settlementBacklog),
-      severity: severityFromCount(settlementBacklog, 5),
-      description:
-        settlementRetryPending > 0
+      value: monitoringSummary ? String(settlementBacklog) : "N/A",
+      severity: monitoringSummary ? severityFromCount(settlementBacklog, 5) : "watch",
+      description: monitoringSummary
+        ? settlementRetryPending > 0
           ? `${unpaidBacklog} unpaid and ${settlementRetryPending} retry-pending settlement(s).`
-          : "Unpaid invoice backlog from ops summary.",
+          : "Unpaid invoice backlog from ops summary."
+        : "Monitoring integration is unavailable.",
       href: "#monitoring",
     },
     {
@@ -283,7 +284,7 @@ export function buildOpsTriageCards(state: DashboardReadyState): DashboardOpsTri
     {
       id: "ops-alerts",
       label: "Ops alerts",
-      value: String(alertCount),
+      value: monitoringSummary ? String(alertCount) : "N/A",
       severity: monitoringSummary ? severityFromCount(alertCount) : "watch",
       description: monitoringSummary ? `Ops summary status: ${monitoringSummary.status}.` : "Monitoring integration is unavailable.",
       href: "#monitoring",

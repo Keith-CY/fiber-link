@@ -117,23 +117,25 @@ export default function HomePage({
           ) : null}
         </section>
 
-        <section className="section-card" id="operations-command-center" aria-labelledby="operations-command-center-title">
-          <div className="section-header">
-            <h2 className="section-title" id="operations-command-center-title">Operations command center</h2>
-            <p className="section-caption">
-              Dedicated admin-only triage cards for settlement backlog, withdrawal queues, liquidity blockers, and production alerts.
-            </p>
-          </div>
-          <div className="triage-grid">
-            {viewModel.opsTriageCards.map((card) => (
-              <a className={`triage-card triage-card--${card.severity}`} href={card.href} key={card.id} data-testid={`ops-triage-${card.id}`}>
-                <span className="triage-label">{card.label}</span>
-                <span className="triage-value">{card.value}</span>
-                <span className="triage-description">{card.description}</span>
-              </a>
-            ))}
-          </div>
-        </section>
+        {viewModel.roleVisibility.showGlobalControls ? (
+          <section className="section-card" id="operations-command-center" aria-labelledby="operations-command-center-title">
+            <div className="section-header">
+              <h2 className="section-title" id="operations-command-center-title">Operations command center</h2>
+              <p className="section-caption">
+                Dedicated admin-only triage cards for settlement backlog, withdrawal queues, liquidity blockers, and production alerts.
+              </p>
+            </div>
+            <div className="triage-grid">
+              {viewModel.opsTriageCards.map((card) => (
+                <a className={`triage-card triage-card--${card.severity}`} href={card.href} key={card.id} data-testid={`ops-triage-${card.id}`}>
+                  <span className="triage-label">{card.label}</span>
+                  <span className="triage-value">{card.value}</span>
+                  <span className="triage-description">{card.description}</span>
+                </a>
+              ))}
+            </div>
+          </section>
+        ) : null}
 
         <div className="card-grid">
           {viewModel.roleVisibility.showGlobalControls ? (

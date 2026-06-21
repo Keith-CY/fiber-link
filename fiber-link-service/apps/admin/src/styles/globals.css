@@ -246,6 +246,13 @@ summary {
   flex-direction: column;
   gap: 8px;
   text-decoration: none;
+  transition: background-color 160ms ease-out, transform 160ms ease-out;
+}
+
+.triage-card:hover,
+.triage-card:focus-visible {
+  background: rgba(26, 28, 28, 0.03);
+  transform: translateY(-1px);
 }
 
 .triage-card--alert {

@@ -381,7 +381,10 @@ describe("dashboard data", () => {
     expect(viewModel.status).toBe("ready");
     if (viewModel.status === "ready") {
       expect(viewModel.opsTriageCards).toEqual(
-        expect.arrayContaining([expect.objectContaining({ id: "ops-alerts", value: "0", severity: "watch" })]),
+        expect.arrayContaining([
+          expect.objectContaining({ id: "settlement-backlog", value: "N/A", severity: "watch" }),
+          expect.objectContaining({ id: "ops-alerts", value: "N/A", severity: "watch" }),
+        ]),
       );
     }
   });
