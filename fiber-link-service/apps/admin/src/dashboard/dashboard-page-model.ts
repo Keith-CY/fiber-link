@@ -218,8 +218,12 @@ function countState(statusSummaries: DashboardStatusSummary[], state: Withdrawal
   return statusSummaries.find((summary) => summary.state === state)?.count ?? 0;
 }
 
-function severityFromCount(count: number): DashboardOpsTriageCard["severity"] {
-  return count > 0 ? "alert" : "ok";
+function severityFromCount(count: number, alertAt = 1): DashboardOpsTriageCard["severity"] {
+  if (count <= 0) {
+    return "ok";
+  }
+
+  return count >= alertAt ? "alert" : "watch";
 }
 
 export function buildOpsTriageCards(state: DashboardReadyState): DashboardOpsTriageCard[] {
@@ -238,20 +242,25 @@ export function buildOpsTriageCards(state: DashboardReadyState): DashboardOpsTri
   const settlementRetryPending = monitoringSummary?.retryPendingCount ?? 0;
   const alertCount = monitoringSummary?.alertCount ?? 0;
 
+  const settlementBacklog = unpaidBacklog + settlementRetryPending;
+
   return [
     {
       id: "settlement-backlog",
       label: "Settlement backlog",
-      value: String(unpaidBacklog),
-      severity: severityFromCount(unpaidBacklog + settlementRetryPending),
-      description: settlementRetryPending > 0 ? `${settlementRetryPending} settlement(s) are retry pending.` : "Unpaid invoice backlog from ops summary.",
+      value: String(settlementBacklog),
+      severity: severityFromCount(settlementBacklog, 5),
+      description:
+        settlementRetryPending > 0
+          ? `${unpaidBacklog} unpaid and ${settlementRetryPending} retry-pending settlement(s).`
+          : "Unpaid invoice backlog from ops summary.",
       href: "#monitoring",
     },
     {
       id: "withdrawal-backlog",
       label: "Withdrawal backlog",
       value: String(withdrawalBacklog),
-      severity: severityFromCount(withdrawalBacklog),
+      severity: severityFromCount(withdrawalBacklog, 5),
       description: "Pending, processing, broadcasted, retry, and liquidity-pending withdrawals.",
       href: "#withdrawals",
     },
@@ -275,7 +284,7 @@ export function buildOpsTriageCards(state: DashboardReadyState): DashboardOpsTri
       id: "ops-alerts",
       label: "Ops alerts",
       value: String(alertCount),
-      severity: severityFromCount(alertCount),
+      severity: monitoringSummary ? severityFromCount(alertCount) : "watch",
       description: monitoringSummary ? `Ops summary status: ${monitoringSummary.status}.` : "Monitoring integration is unavailable.",
       href: "#monitoring",
     },
