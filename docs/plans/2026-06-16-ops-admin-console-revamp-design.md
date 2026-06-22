@@ -42,7 +42,7 @@ Concrete limits of the current design:
 
 ## Authentication and roles (unchanged)
 
-The revamp keeps the existing trust model. The console trusts the `x-admin-role` and `x-admin-user-id` request headers, which a deployment-side reverse proxy is responsible for injecting. Environment fallbacks (`ADMIN_DASHBOARD_DEFAULT_ROLE`, `ADMIN_DASHBOARD_DEFAULT_ADMIN_USER_ID`) remain for development and fixture runs. The `admin_users` table continues to hold only email plus role; there is no credential store in the console.
+The revamp keeps the existing trust model. The console trusts the `x-admin-role` and `x-admin-user-id` request headers, which a deployment-side reverse proxy is responsible for injecting. To prevent header spoofing, that proxy must strip `x-admin-role`, `x-admin-user-id`, and any future admin identity headers from every incoming external request before forwarding traffic to the console, then inject the trusted values itself. Environment fallbacks (`ADMIN_DASHBOARD_DEFAULT_ROLE`, `ADMIN_DASHBOARD_DEFAULT_ADMIN_USER_ID`) remain for development and fixture runs. The `admin_users` table continues to hold only email plus role; there is no credential store in the console.
 
 Two roles continue to apply, consistent with the [Admin Membership Model](../decisions/2026-02-10-admin-membership-model.md):
 
@@ -96,7 +96,7 @@ The revamp introduces operator write actions that today require a runbook and sh
 - **Settlement and withdrawal intervention.** Retry or terminalize stuck items using the existing guarded state-transition helpers, never raw SQL. Settlement retry reuses `clearSettlementFailure` (UNPAID only); terminalize reuses `markSettlementTerminalFailure`. Withdrawal intervention adds guarded transitions to `packages/db/src/withdrawal-repo.ts`. The withdrawal "revive from FAILED" path must guard on `tx_hash IS NULL`, because broadcasted withdrawals already carry a ledger debit and reviving them would double-pay. This mirrors the safety rules in the [Settlement Recovery](../runbooks/settlement-recovery.md) and [Withdrawal Reconciliation](../runbooks/withdrawal-reconciliation.md) runbooks.
 - **App management.** Create an app with a generated HMAC secret, rotate a secret, and assign or remove a COMMUNITY_ADMIN on the `app_admins` table — closing the manual follow-up noted in the [Admin Membership SOP](../runbooks/admin-membership-sop.md).
 - **Webhook management.** Channel and rule create/update/delete plus a test delivery, reusing the signing path in `packages/notifications`.
-- **Admin audit log.** A new `admin_audit_log` table records actor, role, action, target, and a before/after payload for every write, with HMAC secrets redacted from the payload. The Ops page renders a viewer; the app detail page shows per-app history. This is the operator-action counterpart to the existing custody controls described in [Custody Ops Controls](../decisions/2026-02-10-custody-ops-controls.md).
+- **Admin audit log.** A new `admin_audit_log` table records actor, role, action, target, and a before/after payload for every write, with HMAC secrets redacted from the payload. Operator notes are stored as audit-log entries or dedicated note metadata on the relevant admin action; they must not reuse domain error fields such as a withdrawal's `lastError`, which remains reserved for the real failure reason. The Ops page renders a viewer; the app detail page shows per-app history. This is the operator-action counterpart to the existing custody controls described in [Custody Ops Controls](../decisions/2026-02-10-custody-ops-controls.md).
 
 ## Delivery roadmap
 
@@ -106,11 +106,11 @@ The work ships as three reviewable milestones rather than one large change. A se
 
 **Milestone 2 — read-only operational surfaces.** Add the Settlements pages (intent list, counts, and a `tip_intent_events` timeline), the liquidity view, the webhook read view, and the app detail aggregation including per-app funds. Switch Overview monitoring to the database-direct path by extracting the worker's ops-summary computation into a shared package, leaving the worker behaviour unchanged via a thin re-export.
 
-**Milestone 3 — write operations and audit.** Add the `admin_audit_log` migration and repository, the guarded intervention transitions, app create/secret-rotate/admin-assignment, webhook CRUD plus test delivery, and the audit wrapper around every mutation with its Ops-page viewer.
+**Milestone 3 — write operations and audit.** Add the `admin_audit_log` migration and repository, the guarded intervention transitions, app create/secret-rotate/admin-assignment, webhook CRUD plus test delivery, and the audit wrapper around every mutation with its Ops-page viewer. Before any financial or identity write action is enabled, verify in the real deployment that external requests cannot spoof admin identity headers and that the proxy injects trusted identity headers on `/api/trpc` XHR requests.
 
 ## Risks and open questions
 
-- **Proxy header injection on client requests.** The design assumes the auth proxy injects `x-admin-role`/`x-admin-user-id` on XHR calls to `/api/trpc`, not only on document navigations. If it decorates page loads only, mutations fail closed and a fallback (for example mirroring identity into a same-site signed cookie) is needed. This must be verified against the real deployment before Milestone 1 merges.
+- **Proxy header injection and stripping on client requests.** The design assumes the auth proxy strips any externally supplied `x-admin-role`/`x-admin-user-id` headers, then injects trusted values on XHR calls to `/api/trpc`, not only on document navigations. If it decorates page loads only, mutations fail closed and a fallback (for example mirroring identity into a same-site signed cookie) is needed. Header stripping and XHR injection must be verified against the real deployment before Milestone 1 merges, and re-verified as a hard gate before Milestone 3 financial writes are enabled.
 - **Authentication hardening is deferred.** Replacing the trust-proxy header model with real login/sessions is intentionally out of scope and should be tracked separately.
 - **Worker refactor blast radius.** Extracting ops-summary into a shared package touches the worker build. The move must be mechanical and behaviour-preserving, verified by the worker's existing tests and ops-summary output.
 - **Withdrawal revival invariant.** The "revive from FAILED" guard depends on the "debit happens at broadcast" model. Repository tests must pin this invariant so a future change cannot silently enable double-payment.
@@ -119,7 +119,9 @@ The work ships as three reviewable milestones rather than one large change. A se
 ## Related documents
 
 - [Admin Membership Model](../decisions/2026-02-10-admin-membership-model.md) — role definitions reused here.
+- [Admin Membership SOP](../runbooks/admin-membership-sop.md) — manual admin assignment procedures.
 - [Custody Ops Controls](../decisions/2026-02-10-custody-ops-controls.md) — custody baseline the audit log complements.
 - [Withdrawal Policy Operations](../runbooks/withdrawal-policy-operations.md) — current policy-editing procedure.
+- [Withdrawal Reconciliation](../runbooks/withdrawal-reconciliation.md) — safety rules for handling failed or broadcasted withdrawals.
 - [Settlement Recovery](../runbooks/settlement-recovery.md) — manual intervention semantics reused by the console.
 - [Compose Ops Monitoring](../runbooks/compose-ops-monitoring.md) — the monitoring path being replaced by database-direct reads.
