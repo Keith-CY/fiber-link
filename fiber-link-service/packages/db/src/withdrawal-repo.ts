@@ -24,7 +24,7 @@ export type CreateLiquidityPendingWithdrawalInput = CreateWithdrawalInput & {
   liquidityPendingReason: string;
 };
 
-export type WithdrawalRecord = CreateWithdrawalInput & {
+export type WithdrawalRecord = Omit<CreateWithdrawalInput, "clientRequestId"> & {
   id: string;
   destinationKind: WithdrawalDestinationKind;
   state: WithdrawalState;

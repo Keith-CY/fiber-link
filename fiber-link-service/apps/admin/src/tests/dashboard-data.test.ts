@@ -154,6 +154,12 @@ describe("dashboard data", () => {
     });
     if (viewModel.status === "ready") {
       expect(viewModel.withdrawalColumns).toContain("userId");
+      expect(viewModel.opsTriageCards).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: "withdrawal-backlog", value: "1", severity: "watch", href: "#withdrawals" }),
+          expect.objectContaining({ id: "settlement-backlog", value: "0", severity: "ok", href: "#monitoring" }),
+        ]),
+      );
     }
   });
 
@@ -301,6 +307,86 @@ describe("dashboard data", () => {
       { state: "COMPLETED", count: 0 },
       { state: "FAILED", count: 1 },
     ]);
+  });
+
+  it("uses watch severity for small queues and keeps settlement values aligned with retry counts", () => {
+    const now = "2026-02-17T00:00:00.000Z";
+    const viewModel = buildDashboardViewModel({
+      status: "ready",
+      role: "SUPER_ADMIN",
+      apps: [],
+      withdrawals: [],
+      statusSummaries: [
+        { state: "LIQUIDITY_PENDING", count: 0 },
+        { state: "PENDING", count: 0 },
+        { state: "PROCESSING", count: 0 },
+        { state: "BROADCASTED", count: 1 },
+        { state: "RETRY_PENDING", count: 0 },
+        { state: "COMPLETED", count: 0 },
+        { state: "FAILED", count: 0 },
+      ],
+      policies: [],
+      operations: {
+        monitoring: {
+          status: "ready",
+          summary: {
+            status: "ok",
+            generatedAt: now,
+            readinessStatus: "ready",
+            unpaidBacklog: 0,
+            retryPendingCount: 1,
+            withdrawalParityIssueCount: 0,
+            alertCount: 0,
+          },
+        },
+        rateLimit: { status: "error", message: "not loaded" },
+        backups: { status: "error", message: "not loaded" },
+      },
+    });
+
+    expect(viewModel.status).toBe("ready");
+    if (viewModel.status === "ready") {
+      expect(viewModel.opsTriageCards).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: "settlement-backlog", value: "1", severity: "watch" }),
+          expect.objectContaining({ id: "withdrawal-backlog", value: "1", severity: "watch" }),
+        ]),
+      );
+    }
+  });
+
+  it("marks the ops alert card as watch when monitoring is unavailable", () => {
+    const viewModel = buildDashboardViewModel({
+      status: "ready",
+      role: "SUPER_ADMIN",
+      apps: [],
+      withdrawals: [],
+      statusSummaries: [
+        { state: "LIQUIDITY_PENDING", count: 0 },
+        { state: "PENDING", count: 0 },
+        { state: "PROCESSING", count: 0 },
+        { state: "BROADCASTED", count: 0 },
+        { state: "RETRY_PENDING", count: 0 },
+        { state: "COMPLETED", count: 0 },
+        { state: "FAILED", count: 0 },
+      ],
+      policies: [],
+      operations: {
+        monitoring: { status: "error", message: "monitoring unavailable" },
+        rateLimit: { status: "error", message: "not loaded" },
+        backups: { status: "error", message: "not loaded" },
+      },
+    });
+
+    expect(viewModel.status).toBe("ready");
+    if (viewModel.status === "ready") {
+      expect(viewModel.opsTriageCards).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: "settlement-backlog", value: "N/A", severity: "watch" }),
+          expect.objectContaining({ id: "ops-alerts", value: "N/A", severity: "watch" }),
+        ]),
+      );
+    }
   });
 
   it("loads withdrawal policies into the ready state and view model", async () => {

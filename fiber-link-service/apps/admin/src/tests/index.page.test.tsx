@@ -78,6 +78,13 @@ describe("dashboard page", () => {
 
     expect(html).toContain('class="dashboard-shell"');
     expect(html).toContain('class="hero-panel"');
+    expect(html).toContain("Operations command center");
+    expect(html).toContain('data-testid="ops-triage-settlement-backlog"');
+    expect(html).toContain("Settlement backlog");
+    expect(html).toContain("Withdrawal backlog");
+    expect(html).toContain("Liquidity pending");
+    expect(html).toContain("Failed withdrawals");
+    expect(html).toContain("Ops alerts");
     expect(html).toContain("Operations overview");
     expect(html).toContain("Monitoring");
     expect(html).toContain("Global rate limiting");
@@ -87,6 +94,39 @@ describe("dashboard page", () => {
     expect(html).toContain("Restore plan");
     expect(html).toContain("RPC_RATE_LIMIT_WINDOW_MS=90000");
     expect(html).toContain("scripts/restore-compose-backup.sh");
+  });
+
+  it("hides global operations command center for COMMUNITY_ADMIN", () => {
+    const html = renderToStaticMarkup(
+      <HomePage
+        initialState={{
+          status: "ready",
+          role: "COMMUNITY_ADMIN",
+          apps: [{ appId: "app-scoped", createdAt: "2026-03-18T00:00:00.000Z" }],
+          withdrawals: [],
+          statusSummaries: [
+            { state: "LIQUIDITY_PENDING", count: 0 },
+            { state: "PENDING", count: 0 },
+            { state: "PROCESSING", count: 0 },
+            { state: "BROADCASTED", count: 0 },
+            { state: "RETRY_PENDING", count: 0 },
+            { state: "COMPLETED", count: 0 },
+            { state: "FAILED", count: 0 },
+          ],
+          policies: [],
+          operations: {
+            monitoring: { status: "error", message: "monitoring unavailable" },
+            rateLimit: { status: "error", message: "rate limits unavailable" },
+            backups: { status: "error", message: "backups unavailable" },
+          },
+        }}
+      />,
+    );
+
+    expect(html).not.toContain("Operations command center");
+    expect(html).not.toContain('data-testid="ops-triage-settlement-backlog"');
+    expect(html).not.toContain('href="#monitoring"');
+    expect(html).toContain("Status summaries");
   });
 
   it("renders editable policy forms and success feedback", () => {

@@ -121,6 +121,7 @@ summary {
 .card-grid,
 .policy-grid,
 .backup-grid,
+.triage-grid,
 .field-grid,
 .overview-list,
 .detail-list,
@@ -134,7 +135,8 @@ summary {
 }
 
 .hero-stat-grid,
-.card-grid {
+.card-grid,
+.triage-grid {
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
 }
 
@@ -142,7 +144,8 @@ summary {
 .metric-tile,
 .overview-item,
 .detail-item,
-.summary-badge {
+.summary-badge,
+.triage-card {
   min-height: 92px;
   padding-top: 14px;
   border-top: 1px solid var(--admin-line);
@@ -153,6 +156,7 @@ summary {
 .overview-label,
 .detail-label,
 .summary-badge-label,
+.triage-label,
 .field-label,
 .checkbox-group legend {
   margin: 0 0 8px;
@@ -235,6 +239,39 @@ summary {
   font-family: var(--admin-font-display);
   font-size: 1.6rem;
   line-height: 1.05;
+}
+
+.triage-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-decoration: none;
+  transition: background-color 160ms ease-out, transform 160ms ease-out;
+}
+
+.triage-card:hover,
+.triage-card:focus-visible {
+  background: rgba(26, 28, 28, 0.03);
+  transform: translateY(-1px);
+}
+
+.triage-card--alert {
+  border-top-color: var(--admin-danger);
+}
+
+.triage-card--watch {
+  border-top-color: var(--admin-accent);
+}
+
+.triage-value {
+  font-family: var(--admin-font-display);
+  font-size: clamp(2rem, 3.8vw, 3.2rem);
+  line-height: 0.95;
+}
+
+.triage-description {
+  color: var(--admin-muted);
+  line-height: 1.55;
 }
 
 .table-shell {
