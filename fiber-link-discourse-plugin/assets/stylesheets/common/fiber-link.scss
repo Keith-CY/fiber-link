@@ -3582,7 +3582,7 @@ body:has(.fiber-link-dashboard) .profiler-results {
 
 .fiber-link-dashboard__flow {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0;
   margin: -34px 0 44px;
   border-top: 1px solid var(--fl-dashboard-line);
