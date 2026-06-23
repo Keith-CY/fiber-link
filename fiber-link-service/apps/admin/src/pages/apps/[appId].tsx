@@ -167,9 +167,16 @@ export default function AppDetailPage() {
                 </Field>
               </div>
 
-              <Button type="submit" disabled={upsert.isPending}>
-                {upsert.isPending ? "Saving…" : "Save policy"}
-              </Button>
+              <div className="flex items-center gap-3">
+                <Button type="submit" disabled={upsert.isPending}>
+                  {upsert.isPending ? "Saving…" : "Save policy"}
+                </Button>
+                {upsert.isSuccess ? (
+                  <span className="text-sm text-success" data-testid="policy-saved">
+                    Policy saved for {appId}
+                  </span>
+                ) : null}
+              </div>
             </form>
           </CardContent>
         </Card>

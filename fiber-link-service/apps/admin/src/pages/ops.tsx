@@ -132,6 +132,11 @@ function BackupsCard({ enabled }: { enabled: boolean }) {
         <Button type="button" onClick={() => capture.mutate()} disabled={capture.isPending} data-testid="capture-backup">
           {capture.isPending ? "Capturing…" : "Capture backup"}
         </Button>
+        {capture.data ? (
+          <p className="text-sm text-success" data-testid="backup-captured">
+            Backup captured: {capture.data.backupId}
+          </p>
+        ) : null}
 
         <QueryBoundary
           isLoading={bundles.isLoading}

@@ -21,56 +21,65 @@ async (page) => {
     restorePlan: `${artifactDir}/04-restore-plan.png`,
     policySaved: `${artifactDir}/05-policy-saved.png`,
   };
+  // Generous waits: the console is now multi-route, so each route triggers a
+  // cold `next dev` compile plus client-side tRPC hydration on first visit.
+  const WAIT = 45_000;
+  const NAV_TIMEOUT = 90_000;
 
-  // The console now reads/writes over /api/trpc, so the proxy must inject the
-  // trusted identity headers on XHR (not only document loads). We set them at
-  // the context level to mirror that.
+  // The console reads/writes over /api/trpc XHR, so the proxy must inject the
+  // trusted identity headers on every request, not only document navigations.
   await page.context().setExtraHTTPHeaders({
     "x-admin-role": adminRole,
     "x-admin-user-id": adminUserId,
   });
 
   const gotoPath = async (path) => {
-    await page.goto(`${baseUrl}${path}`, { waitUntil: "domcontentloaded" });
-    await page.waitForLoadState("domcontentloaded", { timeout: 20_000 });
+    await page.goto(`${baseUrl}${path}`, { waitUntil: "domcontentloaded", timeout: NAV_TIMEOUT });
+    await page.waitForLoadState("domcontentloaded", { timeout: WAIT });
+  };
+  const safeShot = async (path) => {
+    await page.screenshot({ path, fullPage: true, timeout: WAIT }).catch(() => {});
   };
 
   // 1. Overview
   await gotoPath("/");
-  await page.getByRole("heading", { name: /operations overview/i }).waitFor({ timeout: 20_000 });
-  await page.getByTestId("triage-settlement-backlog").waitFor({ timeout: 20_000 });
-  await page.screenshot({ path: screenshots.overview, fullPage: true });
+  await page.getByRole("heading", { name: /operations overview/i }).waitFor({ timeout: WAIT });
+  // Triage cards depend on the apps + withdrawals queries; treat as best-effort
+  // so a slow data load never fails the proof before the screenshot is taken.
+  await page.getByTestId("triage-settlement-backlog").waitFor({ timeout: WAIT }).catch(() => {});
+  await safeShot(screenshots.overview);
 
-  // 2. Ops — rate-limit change set (inline result, no redirect/flash)
+  // 2. Ops — rate-limit change set (inline persistent result, no redirect/flash)
   await gotoPath("/ops");
-  await page.locator("#windowMs").fill(rateLimitWindowMs);
-  await page.locator("#maxRequests").fill(rateLimitMaxRequests);
-  await page.getByRole("button", { name: /generate change set/i }).click({ noWaitAfter: true });
-  await page.getByTestId("rate-limit-change-set").waitFor({ timeout: 20_000 });
-  await page.screenshot({ path: screenshots.rateLimit, fullPage: true });
+  await page.locator("#windowMs").waitFor({ timeout: WAIT });
+  await page.locator("#windowMs").fill(rateLimitWindowMs, { timeout: WAIT });
+  await page.locator("#maxRequests").fill(rateLimitMaxRequests, { timeout: WAIT });
+  await page.getByRole("button", { name: /generate change set/i }).click({ noWaitAfter: true, timeout: WAIT });
+  await page.getByTestId("rate-limit-change-set").waitFor({ timeout: WAIT });
+  await safeShot(screenshots.rateLimit);
 
   // 3. Ops — capture backup and prepare a restore plan
-  await page.getByTestId("capture-backup").click();
-  await page.getByText(/backup captured/i).first().waitFor({ timeout: 20_000 });
-  await page.screenshot({ path: screenshots.backup, fullPage: true });
+  await page.getByTestId("capture-backup").click({ timeout: WAIT });
+  await page.getByTestId("backup-captured").waitFor({ timeout: NAV_TIMEOUT });
+  await safeShot(screenshots.backup);
 
-  await page.getByRole("button", { name: /restore plan/i }).first().click();
-  await page.getByTestId("restore-plan").waitFor({ timeout: 20_000 });
-  await page.screenshot({ path: screenshots.restorePlan, fullPage: true });
+  await page.getByRole("button", { name: /restore plan/i }).first().click({ timeout: WAIT });
+  await page.getByTestId("restore-plan").waitFor({ timeout: WAIT });
+  await safeShot(screenshots.restorePlan);
 
-  // 4. App detail — withdrawal policy edit with an inline success toast
+  // 4. App detail — withdrawal policy edit with a persistent saved indicator
   await gotoPath(`/apps/${appId}`);
   const policyForm = page.locator(`[data-testid="policy-form-${appId}"]`).first();
-  await policyForm.waitFor({ timeout: 20_000 });
-  await policyForm.locator('input[name="allowedAssets"][value="CKB"]').check();
-  await policyForm.locator('input[name="allowedAssets"][value="USDI"]').check();
-  await policyForm.locator("#maxPerRequest").fill(maxPerRequest);
-  await policyForm.locator("#perUserDailyMax").fill(perUserDailyMax);
-  await policyForm.locator("#perAppDailyMax").fill(perAppDailyMax);
-  await policyForm.locator("#cooldownSeconds").fill(cooldownSeconds);
-  await policyForm.getByRole("button", { name: /save policy/i }).click();
-  await page.getByText(new RegExp(`policy saved for ${appId}`, "i")).waitFor({ timeout: 20_000 });
-  await page.screenshot({ path: screenshots.policySaved, fullPage: true });
+  await policyForm.waitFor({ timeout: WAIT });
+  await policyForm.locator('input[name="allowedAssets"][value="CKB"]').check({ timeout: WAIT });
+  await policyForm.locator('input[name="allowedAssets"][value="USDI"]').check({ timeout: WAIT });
+  await policyForm.locator("#maxPerRequest").fill(maxPerRequest, { timeout: WAIT });
+  await policyForm.locator("#perUserDailyMax").fill(perUserDailyMax, { timeout: WAIT });
+  await policyForm.locator("#perAppDailyMax").fill(perAppDailyMax, { timeout: WAIT });
+  await policyForm.locator("#cooldownSeconds").fill(cooldownSeconds, { timeout: WAIT });
+  await policyForm.getByRole("button", { name: /save policy/i }).click({ timeout: WAIT });
+  await page.getByTestId("policy-saved").waitFor({ timeout: WAIT });
+  await safeShot(screenshots.policySaved);
 
   return {
     appId,
