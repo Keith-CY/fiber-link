@@ -51,8 +51,12 @@ export default function AppDetailPage() {
         perAppDailyMax: policy.perAppDailyMax,
         cooldownSeconds: String(policy.cooldownSeconds),
       });
+    } else {
+      // Reset when switching to an app with no configured policy so values
+      // from a previously viewed app do not leak across navigations.
+      setForm(EMPTY_FORM);
     }
-  }, [policy]);
+  }, [policy, appId]);
 
   const upsert = trpc.withdrawalPolicy.upsert.useMutation({
     onSuccess: async () => {

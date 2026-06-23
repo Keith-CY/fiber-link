@@ -115,10 +115,8 @@ export default function WithdrawalsPage() {
               <TableBody>
                 {(withdrawals.data ?? []).map((row) => (
                   <TableRow key={row.id} data-testid={`withdrawal-row-${row.id}`}>
-                    <TableCell className="font-mono text-xs">
-                      <Link className="text-primary hover:underline" href={`/settlements?app=${row.appId}`}>
-                        {shorten(row.id)}
-                      </Link>
+                    <TableCell className="font-mono text-xs" title={row.id}>
+                      {shorten(row.id)}
                     </TableCell>
                     <TableCell>
                       <Link className="text-primary hover:underline" href={`/apps/${row.appId}`}>

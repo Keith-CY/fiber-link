@@ -9,7 +9,9 @@ afterEach(() => {
 
 describe("createAdminServices", () => {
   it("returns the fixture implementation when a fixture path is configured", async () => {
-    const services = createAdminServices({ ADMIN_DASHBOARD_FIXTURE_PATH: "fixtures/dashboard-proof.json" } as NodeJS.ProcessEnv);
+    const services = createAdminServices({
+      ADMIN_DASHBOARD_FIXTURE_PATH: "fixtures/dashboard-proof.json",
+    } as unknown as NodeJS.ProcessEnv);
     const apps = await services.listApps({ role: "SUPER_ADMIN" });
     expect(apps.length).toBeGreaterThan(0);
   });
