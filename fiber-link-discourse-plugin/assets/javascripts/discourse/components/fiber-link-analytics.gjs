@@ -14,6 +14,16 @@ const RANGES = [
 ];
 
 const RANKING_LIMIT = 5;
+const SHORT_DATE_FORMATTER = new Intl.DateTimeFormat(undefined, {
+  month: "short",
+  day: "numeric",
+});
+const DATE_TIME_FORMATTER = new Intl.DateTimeFormat(undefined, {
+  month: "short",
+  day: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+});
 
 function rangeLabelFor(value) {
   return RANGES.find((range) => range.value === value)?.label ?? "30 days";
@@ -30,26 +40,18 @@ function formatShortDate(value) {
   const dateOnlyMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
   if (dateOnlyMatch) {
     const [, year, month, day] = dateOnlyMatch;
-    return new Date(Number(year), Number(month) - 1, Number(day)).toLocaleDateString(undefined, {
-      month: "short",
-      day: "numeric",
-    });
+    return SHORT_DATE_FORMATTER.format(new Date(Number(year), Number(month) - 1, Number(day)));
   }
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return SHORT_DATE_FORMATTER.format(date);
 }
 
 function formatDateTime(value) {
   if (!value) return "Pending";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return DATE_TIME_FORMATTER.format(date);
 }
 
 function withdrawalStateLabel(state) {
@@ -98,7 +100,7 @@ export default class FiberLinkAnalytics extends Component {
   }
 
   get loadingMessage() {
-    return this.isRefreshingVisibleData ? "Refreshing creator signal..." : "Loading creator signal...";
+    return this.isRefreshingVisibleData ? "Refreshing creator signal…" : "Loading creator signal…";
   }
 
   get timeSeries() {
@@ -171,7 +173,7 @@ export default class FiberLinkAnalytics extends Component {
   }
 
   get peakDay() {
-    if (!this.timeSeries.length) return null;
+    if (!this.timeSeries.length || this.activeTipDays === 0) return null;
     return this.timeSeries.reduce((best, row) => {
       const rowAmount = parseFloat(row.amount ?? "0");
       const bestAmount = parseFloat(best.amount ?? "0");

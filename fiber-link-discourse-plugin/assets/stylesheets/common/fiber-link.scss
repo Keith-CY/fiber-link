@@ -2111,28 +2111,24 @@ body:has(.fiber-link-dashboard) .profiler-results {
   border-radius: 0;
   background: transparent !important;
   color: var(--fl-dashboard-black);
-  outline: 0 !important;
   -webkit-focus-ring-color: transparent;
   box-shadow: none !important;
 }
 
 .fiber-link-dashboard__withdrawal-input:focus,
 .fiber-link-dashboard__withdrawal-input:focus-visible {
-  outline: 0 !important;
   border-color: transparent !important;
   box-shadow: none !important;
 }
 
 .fiber-link-dashboard :is(input, select, textarea):focus,
 .fiber-link-dashboard :is(input, select, textarea):focus-visible {
-  outline: 0 !important;
   box-shadow: none !important;
   -webkit-focus-ring-color: transparent;
 }
 
 .fiber-link-dashboard__amount-input-wrap:focus-within,
 .fiber-link-dashboard .fiber-link-tip-field:focus-within {
-  outline: 0 !important;
   box-shadow: none !important;
 }
 
@@ -2307,7 +2303,6 @@ body:has(.fiber-link-dashboard) .profiler-results {
 
 .fiber-link-dashboard .fiber-link-tip-feed-search input:focus,
 .fiber-link-dashboard .fiber-link-tip-feed-search input:focus-visible {
-  outline: 0 !important;
   border-color: var(--fl-dashboard-black);
   box-shadow: none !important;
 }
@@ -4903,25 +4898,38 @@ body:has(.fiber-link-dashboard) .profiler-results {
   }
 }
 
-/* Creator dashboard visual reconciliation: keep the richer analytics structure, but
-   bring the page back toward Discourse's calmer plugin surface. */
+/* Creator dashboard visual reconciliation: keep the richer analytics structure,
+   but inherit the active Discourse theme instead of painting a separate app skin. */
 .fiber-link-dashboard {
-  --fiber-link-dashboard-bg: #fbfaf6;
-  --fiber-link-panel-bg: rgba(255, 253, 247, 0.86);
-  --fiber-link-panel-border: rgba(31, 31, 28, 0.1);
-  --fiber-link-accent-soft: rgba(213, 232, 92, 0.34);
+  --fl-dashboard-black: var(--primary, #222);
+  --fl-dashboard-ink: var(--primary-high, var(--primary, #222));
+  --fl-dashboard-muted: var(--primary-medium, #666);
+  --fl-dashboard-faint: var(--primary-medium, #777);
+  --fl-dashboard-line: var(--primary-low, rgba(0, 0, 0, 0.12));
+  --fl-dashboard-chalk: var(--primary-low, rgba(0, 0, 0, 0.12));
+  --fl-dashboard-powder: transparent;
+  --fl-dashboard-cream: transparent;
+  --fl-dashboard-chart: var(--tertiary, var(--primary, #222));
+  --fl-dashboard-copper: var(--primary-high, var(--primary, #222));
+  --fl-dashboard-blue: var(--tertiary, var(--primary, #222));
+  --fl-dashboard-green: var(--success, var(--primary, #222));
+  --fl-dashboard-red: var(--danger, var(--primary, #222));
+  --fl-dashboard-bg: transparent;
+  --fl-dashboard-sans: inherit;
+  background: transparent !important;
+  color: var(--fl-dashboard-black);
+  font-family: inherit;
 }
 
-.fiber-link-dashboard__hero {
-  background:
-    linear-gradient(135deg, rgba(255, 253, 240, 0.88), rgba(250, 246, 238, 0.72)),
-    radial-gradient(circle at 18% 12%, rgba(214, 232, 95, 0.24), transparent 34%);
-  border: 1px solid rgba(27, 28, 24, 0.08);
-  box-shadow: none;
+.fiber-link-dashboard,
+.fiber-link-dashboard * {
+  letter-spacing: 0;
 }
 
-.fiber-link-dashboard__hero-copy h1 {
-  letter-spacing: -0.065em;
+.fiber-link-dashboard::before,
+.fiber-link-analytics::before,
+.fiber-link-analytics::after {
+  display: none;
 }
 
 .fiber-link-dashboard__metrics,
@@ -4932,61 +4940,143 @@ body:has(.fiber-link-dashboard) .profiler-results {
   z-index: 1;
 }
 
+.fiber-link-dashboard__hero,
+.fiber-link-dashboard__asset-balance-card,
+.fiber-link-dashboard__flow,
+.fiber-link-analytics,
+.fiber-link-analytics__range-control,
+.fiber-link-analytics__scope-control,
+.fiber-link-analytics__proof-strip span,
+.fiber-link-analytics__loading,
+.fiber-link-analytics__empty,
+.fiber-link-analytics__brief,
+.fiber-link-analytics__actions article,
+.fiber-link-analytics__chart-card,
+.fiber-link-analytics__rank-card,
+.fiber-link-analytics__withdrawals,
+.fiber-link-analytics__freshness,
+.fiber-link-analytics__rank-evidence,
+.fiber-link-analytics__status {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.fiber-link-dashboard__hero,
+.fiber-link-analytics {
+  border-color: var(--fl-dashboard-line) !important;
+}
+
 .fiber-link-dashboard__asset-balances {
   margin-block: 18px 28px;
   padding-block: 4px 0;
 }
 
-.fiber-link-dashboard__asset-balance-card {
-  background: rgba(255, 255, 255, 0.68);
-  border: 1px solid rgba(27, 28, 24, 0.08);
+.fiber-link-dashboard__asset-balance-card,
+.fiber-link-analytics__range-control,
+.fiber-link-analytics__scope-control,
+.fiber-link-analytics__proof-strip span,
+.fiber-link-analytics__loading,
+.fiber-link-analytics__empty,
+.fiber-link-analytics__actions article,
+.fiber-link-analytics__chart-card,
+.fiber-link-analytics__rank-card,
+.fiber-link-analytics__withdrawals,
+.fiber-link-analytics__freshness,
+.fiber-link-analytics__rank-evidence,
+.fiber-link-analytics__status {
+  border-color: var(--fl-dashboard-line) !important;
 }
 
 .fiber-link-dashboard__flow {
-  margin-block: 0 26px;
-  border: 1px solid rgba(27, 28, 24, 0.1);
-  background: rgba(255, 255, 255, 0.72);
+  margin-block: 0 32px;
+  border: 1px solid var(--fl-dashboard-line);
 }
 
 .fiber-link-dashboard__flow a,
+.fiber-link-dashboard__flow a:visited,
 .fiber-link-dashboard__flow .active,
-.fiber-link-dashboard__flow [aria-current="page"] {
-  background: transparent;
-  color: #1e1f1b;
+.fiber-link-dashboard__flow [aria-current="page"],
+.fiber-link-dashboard__flow a[data-flow-primary],
+.fiber-link-dashboard__flow a[data-flow-primary]:visited {
+  background: transparent !important;
+  color: var(--fl-dashboard-muted) !important;
+  box-shadow: none !important;
 }
 
 .fiber-link-dashboard__flow a:hover,
+.fiber-link-dashboard__flow a:focus-visible {
+  background: transparent !important;
+  color: var(--fl-dashboard-black) !important;
+}
+
+.fiber-link-dashboard__flow a[data-flow-primary],
 .fiber-link-dashboard__flow .active,
 .fiber-link-dashboard__flow [aria-current="page"] {
-  background: rgba(213, 232, 92, 0.24);
-  box-shadow: inset 0 0 0 1px rgba(27, 28, 24, 0.1);
+  color: var(--fl-dashboard-black) !important;
+  box-shadow: inset 0 -2px 0 var(--fl-dashboard-black) !important;
+}
+
+.fiber-link-dashboard__flow a[data-flow-primary] strong {
+  color: var(--fl-dashboard-muted);
 }
 
 .fiber-link-analytics {
-  background:
-    linear-gradient(180deg, rgba(255, 253, 247, 0.94), rgba(255, 255, 255, 0.92)),
-    radial-gradient(circle at 92% 8%, rgba(213, 232, 92, 0.22), transparent 26%);
-  border-color: rgba(27, 28, 24, 0.1);
-  box-shadow: 0 18px 44px rgba(38, 35, 25, 0.08);
+  overflow: visible;
 }
 
-.fiber-link-analytics::before,
-.fiber-link-analytics::after {
-  opacity: 0.38;
+.fiber-link-analytics__eyebrow::before,
+.fiber-link-analytics__proof-strip span::before,
+.fiber-link-dashboard__live > span,
+.fiber-link-dashboard__live > span::after,
+.fiber-link-dashboard__live > span::before {
+  box-shadow: none !important;
 }
 
-.fiber-link-analytics__title {
-  letter-spacing: -0.06em;
+.fiber-link-analytics__brief {
+  color: var(--fl-dashboard-black);
 }
 
-.fiber-link-analytics__control-panel {
-  background: rgba(255, 255, 255, 0.72);
-  border-color: rgba(27, 28, 24, 0.1);
+.fiber-link-analytics__brief span,
+.fiber-link-analytics__brief p {
+  color: var(--fl-dashboard-muted);
 }
 
-.fiber-link-analytics__proof-chip {
-  background: rgba(255, 255, 255, 0.76);
-  border-color: rgba(27, 28, 24, 0.1);
+.fiber-link-analytics__brief strong {
+  color: var(--fl-dashboard-black);
+}
+
+.fiber-link-analytics__bar-fill {
+  background: var(--fl-dashboard-black);
+  box-shadow: none;
+}
+
+.fiber-link-analytics__bar-row.is-peak .fiber-link-analytics__bar-track::after {
+  color: var(--secondary, #fff);
+}
+
+.fiber-link-dashboard .fiber-link-dashboard__withdrawal-submit,
+.fiber-link-dashboard .fiber-link-dashboard__withdrawal-submit:hover,
+.fiber-link-dashboard .fiber-link-filter-chip.is-active,
+.fiber-link-dashboard .fiber-link-filter-chip.is-active:hover,
+.fiber-link-dashboard .fiber-link-transaction-dialog__explorer-link,
+.fiber-link-dashboard .fiber-link-transaction-dialog__explorer-link:link,
+.fiber-link-dashboard .fiber-link-transaction-dialog__explorer-link:visited,
+.fiber-link-dashboard .fiber-link-transaction-dialog__explorer-link:hover,
+.fiber-link-dashboard .fiber-link-transaction-dialog__explorer-link:focus-visible {
+  background: var(--fl-dashboard-black) !important;
+  color: var(--secondary, #fff) !important;
+}
+
+.fiber-link-dashboard :is(a, button, .btn, input, select, textarea):focus-visible,
+.fiber-link-tip-feed-row:focus-visible,
+.fiber-link-dashboard .fiber-link-transaction-dialog__close:focus-visible,
+.fiber-link-dashboard .fiber-link-transaction-dialog__copy:focus-visible {
+  outline: 2px solid var(--tertiary, var(--fl-dashboard-black)) !important;
+  outline-offset: 3px;
+}
+
+.fiber-link-dashboard :is(input, select, textarea):focus-visible {
+  border-color: var(--fl-dashboard-black) !important;
 }
 
 @media (max-width: 760px) {
@@ -4997,36 +5087,4 @@ body:has(.fiber-link-dashboard) .profiler-results {
   .fiber-link-dashboard__flow {
     margin-block-end: 22px;
   }
-
-  .fiber-link-dashboard__hero,
-  .fiber-link-analytics {
-    border-radius: 24px;
-  }
-}
-
-/* Hard override for Discourse dev CSS cache/order: the flow rail must never climb
-   into the per-asset balance row. */
-.fiber-link-dashboard > .fiber-link-dashboard__asset-balances {
-  margin-top: 18px !important;
-  margin-bottom: 28px !important;
-}
-
-.fiber-link-dashboard > .fiber-link-dashboard__flow {
-  margin-top: 0 !important;
-  margin-bottom: 32px !important;
-  background: rgba(255, 255, 255, 0.72) !important;
-  border: 1px solid rgba(27, 28, 24, 0.1) !important;
-}
-
-.fiber-link-dashboard > .fiber-link-dashboard__flow a,
-.fiber-link-dashboard > .fiber-link-dashboard__flow [aria-current="page"],
-.fiber-link-dashboard > .fiber-link-dashboard__flow .active {
-  background: transparent !important;
-  color: #1e1f1b !important;
-}
-
-.fiber-link-dashboard > .fiber-link-dashboard__flow a:hover,
-.fiber-link-dashboard > .fiber-link-dashboard__flow [aria-current="page"],
-.fiber-link-dashboard > .fiber-link-dashboard__flow .active {
-  background: rgba(213, 232, 92, 0.24) !important;
 }
