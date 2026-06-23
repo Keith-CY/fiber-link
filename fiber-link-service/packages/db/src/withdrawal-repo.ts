@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { and, eq, inArray, lte, or, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import type { DbClient } from "./client";
 import { assertPositiveAmount, formatDecimal, parseDecimal, pow10 } from "./amount";
 import { withdrawalDebitIdempotencyKey } from "./idempotency";
@@ -56,6 +56,23 @@ export class WithdrawalTransitionConflictError extends Error {
   ) {
     super(`invalid transition to ${targetState} from ${currentState}`);
     this.name = "WithdrawalTransitionConflictError";
+  }
+}
+
+/**
+ * Raised when an operator tries to revive a FAILED withdrawal that still
+ * carries a broadcast `tx_hash`. Such a row was already broadcast on-chain (the
+ * ledger debit happens at broadcast), so re-queueing it would broadcast a
+ * second on-chain payout while the row stays debited once. This guard keeps the
+ * "debit at broadcast" invariant from turning into a double-payment.
+ */
+export class WithdrawalRevivalBlockedError extends Error {
+  constructor(
+    public readonly withdrawalId: string,
+    public readonly txHash: string,
+  ) {
+    super("cannot revive a withdrawal that already has a broadcast tx_hash");
+    this.name = "WithdrawalRevivalBlockedError";
   }
 }
 
@@ -128,6 +145,14 @@ export type WithdrawalRepo = {
   markRetryPending(id: string, params: { now: Date; nextRetryAt: Date; error: string }): Promise<WithdrawalRecord>;
   markFailedFromBroadcasted(id: string, params: { now: Date; error: string }): Promise<WithdrawalRecord>;
   markFailed(id: string, params: { now: Date; error: string; incrementRetryCount?: boolean }): Promise<WithdrawalRecord>;
+  /**
+   * Operator interventions. These are guarded state transitions (never raw
+   * SQL) so the admin console inherits the same invariants and tests as the
+   * worker-driven transitions.
+   */
+  adminRetryNow(id: string, params: { now: Date }): Promise<WithdrawalRecord>;
+  adminReviveFromFailed(id: string, params: { now: Date }): Promise<WithdrawalRecord>;
+  adminTerminalize(id: string, params: { now: Date; reason: string }): Promise<WithdrawalRecord>;
   __resetForTests?: () => void;
 };
 
@@ -732,6 +757,57 @@ export function createDbWithdrawalRepo(db: DbClient): WithdrawalRepo {
       }
       return toRecord(row);
     },
+
+    async adminRetryNow(id, params) {
+      const [row] = await db
+        .update(withdrawals)
+        .set({ nextRetryAt: params.now, updatedAt: params.now })
+        .where(and(eq(withdrawals.id, id), eq(withdrawals.state, "RETRY_PENDING")))
+        .returning();
+      if (!row) {
+        await throwInvalidTransition(db, id, "RETRY_PENDING");
+      }
+      return toRecord(row);
+    },
+
+    async adminReviveFromFailed(id, params) {
+      const [row] = await db
+        .update(withdrawals)
+        .set({ state: "PENDING", retryCount: 0, nextRetryAt: null, lastError: null, updatedAt: params.now })
+        // The `tx_hash IS NULL` guard is the load-bearing safety rule: a FAILED
+        // row that still has a tx_hash was already broadcast on-chain, so
+        // re-queueing it would broadcast a second payout.
+        .where(and(eq(withdrawals.id, id), eq(withdrawals.state, "FAILED"), isNull(withdrawals.txHash)))
+        .returning();
+      if (!row) {
+        const [existing] = await db.select().from(withdrawals).where(eq(withdrawals.id, id)).limit(1);
+        if (!existing) {
+          throw new WithdrawalNotFoundError(id);
+        }
+        if (existing.state === "FAILED" && existing.txHash) {
+          throw new WithdrawalRevivalBlockedError(id, existing.txHash);
+        }
+        throw new WithdrawalTransitionConflictError("PENDING", String(existing.state), id);
+      }
+      return toRecord(row);
+    },
+
+    async adminTerminalize(id, params) {
+      const [row] = await db
+        .update(withdrawals)
+        .set({ state: "FAILED", nextRetryAt: null, lastError: params.reason, updatedAt: params.now })
+        .where(
+          and(
+            eq(withdrawals.id, id),
+            inArray(withdrawals.state, ["LIQUIDITY_PENDING", "PENDING", "RETRY_PENDING"]),
+          ),
+        )
+        .returning();
+      if (!row) {
+        await throwInvalidTransition(db, id, "FAILED");
+      }
+      return toRecord(row);
+    },
   };
 }
 
@@ -1089,6 +1165,55 @@ export function createInMemoryWithdrawalRepo(): WithdrawalRepo {
       record.state = "FAILED";
       record.nextRetryAt = null;
       record.lastError = params.error;
+      record.updatedAt = params.now;
+      return clone(record);
+    },
+
+    async adminRetryNow(id, params) {
+      const record = records.find((item) => item.id === id);
+      if (!record) {
+        throw new WithdrawalNotFoundError(id);
+      }
+      if (record.state !== "RETRY_PENDING") {
+        throw new WithdrawalTransitionConflictError("RETRY_PENDING", record.state, id);
+      }
+      record.nextRetryAt = params.now;
+      record.updatedAt = params.now;
+      return clone(record);
+    },
+
+    async adminReviveFromFailed(id, params) {
+      const record = records.find((item) => item.id === id);
+      if (!record) {
+        throw new WithdrawalNotFoundError(id);
+      }
+      if (record.state !== "FAILED") {
+        throw new WithdrawalTransitionConflictError("PENDING", record.state, id);
+      }
+      // Mirror the db guard: a broadcast tx_hash means an on-chain payout
+      // already went out, so reviving would double-pay.
+      if (record.txHash) {
+        throw new WithdrawalRevivalBlockedError(id, record.txHash);
+      }
+      record.state = "PENDING";
+      record.retryCount = 0;
+      record.nextRetryAt = null;
+      record.lastError = null;
+      record.updatedAt = params.now;
+      return clone(record);
+    },
+
+    async adminTerminalize(id, params) {
+      const record = records.find((item) => item.id === id);
+      if (!record) {
+        throw new WithdrawalNotFoundError(id);
+      }
+      if (record.state !== "LIQUIDITY_PENDING" && record.state !== "PENDING" && record.state !== "RETRY_PENDING") {
+        throw new WithdrawalTransitionConflictError("FAILED", record.state, id);
+      }
+      record.state = "FAILED";
+      record.nextRetryAt = null;
+      record.lastError = params.reason;
       record.updatedAt = params.now;
       return clone(record);
     },
