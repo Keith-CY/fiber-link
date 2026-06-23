@@ -15,67 +15,61 @@ async (page) => {
   const rateLimitWindowMs = String(env.rateLimitWindowMs ?? "90000");
   const rateLimitMaxRequests = String(env.rateLimitMaxRequests ?? "500");
   const screenshots = {
-    dashboard: `${artifactDir}/01-operations-overview.png`,
+    overview: `${artifactDir}/01-operations-overview.png`,
     rateLimit: `${artifactDir}/02-rate-limit-change-set.png`,
     backup: `${artifactDir}/03-backup-captured.png`,
     restorePlan: `${artifactDir}/04-restore-plan.png`,
     policySaved: `${artifactDir}/05-policy-saved.png`,
   };
-  const submitAndWaitForUrl = async (button, matchesUrl) => {
-    await Promise.all([
-      page.waitForURL(matchesUrl, { timeout: 20_000 }),
-      button.click({ noWaitAfter: true }),
-    ]);
-    await page.waitForLoadState("domcontentloaded", { timeout: 20_000 });
-  };
 
+  // The console now reads/writes over /api/trpc, so the proxy must inject the
+  // trusted identity headers on XHR (not only document loads). We set them at
+  // the context level to mirror that.
   await page.context().setExtraHTTPHeaders({
     "x-admin-role": adminRole,
     "x-admin-user-id": adminUserId,
   });
 
-  await page.goto(baseUrl, { waitUntil: "domcontentloaded" });
-  await page.getByRole("heading", { name: /fiber link admin dashboard/i }).waitFor({ timeout: 20_000 });
-  await page.getByRole("heading", { name: /operations overview/i }).waitFor({ timeout: 20_000 });
-  await page.screenshot({ path: screenshots.dashboard, fullPage: true });
+  const gotoPath = async (path) => {
+    await page.goto(`${baseUrl}${path}`, { waitUntil: "domcontentloaded" });
+    await page.waitForLoadState("domcontentloaded", { timeout: 20_000 });
+  };
 
-  const rateLimitForm = page.locator('form[action="/api/runtime-policies/rate-limit"]').first();
-  await rateLimitForm.locator('input[name="windowMs"]').fill(rateLimitWindowMs);
-  await rateLimitForm.locator('input[name="maxRequests"]').fill(rateLimitMaxRequests);
-  await submitAndWaitForUrl(
-    rateLimitForm.getByRole("button", { name: /generate rate-limit change set/i }),
-    (url) => url.searchParams.has("rateLimitEnvSnippet"),
-  );
-  await page.getByRole("heading", { name: /generated change set/i }).waitFor({ timeout: 20_000 });
+  // 1. Overview
+  await gotoPath("/");
+  await page.getByRole("heading", { name: /operations overview/i }).waitFor({ timeout: 20_000 });
+  await page.getByTestId("triage-settlement-backlog").waitFor({ timeout: 20_000 });
+  await page.screenshot({ path: screenshots.overview, fullPage: true });
+
+  // 2. Ops — rate-limit change set (inline result, no redirect/flash)
+  await gotoPath("/ops");
+  await page.locator("#windowMs").fill(rateLimitWindowMs);
+  await page.locator("#maxRequests").fill(rateLimitMaxRequests);
+  await page.getByRole("button", { name: /generate change set/i }).click({ noWaitAfter: true });
+  await page.getByTestId("rate-limit-change-set").waitFor({ timeout: 20_000 });
   await page.screenshot({ path: screenshots.rateLimit, fullPage: true });
 
-  await submitAndWaitForUrl(
-    page.getByRole("button", { name: /capture backup/i }),
-    (url) => url.searchParams.get("backupCaptureStatus") === "success",
-  );
-  await page.getByRole("status").waitFor({ timeout: 20_000 });
+  // 3. Ops — capture backup and prepare a restore plan
+  await page.getByTestId("capture-backup").click();
+  await page.getByText(/backup captured/i).first().waitFor({ timeout: 20_000 });
   await page.screenshot({ path: screenshots.backup, fullPage: true });
 
-  await submitAndWaitForUrl(
-    page.getByRole("button", { name: /generate restore plan/i }).first(),
-    (url) => url.searchParams.has("restoreCommand"),
-  );
-  await page.getByRole("heading", { name: /restore plan/i }).waitFor({ timeout: 20_000 });
+  await page.getByRole("button", { name: /restore plan/i }).first().click();
+  await page.getByTestId("restore-plan").waitFor({ timeout: 20_000 });
   await page.screenshot({ path: screenshots.restorePlan, fullPage: true });
 
+  // 4. App detail — withdrawal policy edit with an inline success toast
+  await gotoPath(`/apps/${appId}`);
   const policyForm = page.locator(`[data-testid="policy-form-${appId}"]`).first();
   await policyForm.waitFor({ timeout: 20_000 });
   await policyForm.locator('input[name="allowedAssets"][value="CKB"]').check();
   await policyForm.locator('input[name="allowedAssets"][value="USDI"]').check();
-  await policyForm.locator('input[name="maxPerRequest"]').fill(maxPerRequest);
-  await policyForm.locator('input[name="perUserDailyMax"]').fill(perUserDailyMax);
-  await policyForm.locator('input[name="perAppDailyMax"]').fill(perAppDailyMax);
-  await policyForm.locator('input[name="cooldownSeconds"]').fill(cooldownSeconds);
-  await submitAndWaitForUrl(
-    policyForm.getByRole("button", { name: /save policy/i }),
-    (url) => url.searchParams.get("savedAppId") === appId,
-  );
-  await page.getByRole("status").waitFor({ timeout: 20_000 });
+  await policyForm.locator("#maxPerRequest").fill(maxPerRequest);
+  await policyForm.locator("#perUserDailyMax").fill(perUserDailyMax);
+  await policyForm.locator("#perAppDailyMax").fill(perAppDailyMax);
+  await policyForm.locator("#cooldownSeconds").fill(cooldownSeconds);
+  await policyForm.getByRole("button", { name: /save policy/i }).click();
+  await page.getByText(new RegExp(`policy saved for ${appId}`, "i")).waitFor({ timeout: 20_000 });
   await page.screenshot({ path: screenshots.policySaved, fullPage: true });
 
   return {

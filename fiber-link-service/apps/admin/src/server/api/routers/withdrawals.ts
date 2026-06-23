@@ -1,0 +1,44 @@
+import { TRPCError } from "@trpc/server";
+import type { WithdrawalState } from "@fiber-link/db";
+import { adminProcedure, router } from "../trpc";
+import type { AdminWithdrawalFilters } from "../../services/types";
+
+const WITHDRAWAL_STATES: WithdrawalState[] = [
+  "LIQUIDITY_PENDING",
+  "PENDING",
+  "PROCESSING",
+  "BROADCASTED",
+  "RETRY_PENDING",
+  "COMPLETED",
+  "FAILED",
+];
+
+function parseWithdrawalFilters(input: unknown): AdminWithdrawalFilters {
+  if (input === undefined || input === null) {
+    return {};
+  }
+  if (typeof input !== "object") {
+    throw new TRPCError({ code: "BAD_REQUEST", message: "invalid withdrawal filters" });
+  }
+
+  const raw = input as Record<string, unknown>;
+  const filters: AdminWithdrawalFilters = {};
+
+  if (typeof raw.appId === "string" && raw.appId.trim()) {
+    filters.appId = raw.appId.trim();
+  }
+  if (typeof raw.state === "string" && raw.state.trim()) {
+    const state = raw.state.trim();
+    if (!WITHDRAWAL_STATES.includes(state as WithdrawalState)) {
+      throw new TRPCError({ code: "BAD_REQUEST", message: `unknown withdrawal state: ${state}` });
+    }
+    filters.state = state as WithdrawalState;
+  }
+  return filters;
+}
+
+export const withdrawalsRouter = router({
+  list: adminProcedure.input(parseWithdrawalFilters).query(async ({ ctx, input }) => {
+    return ctx.services.listWithdrawals(ctx.scope, input);
+  }),
+});

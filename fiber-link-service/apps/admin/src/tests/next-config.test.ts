@@ -14,24 +14,12 @@ describe("admin next config", () => {
     expect(nextConfig.outputFileTracingRoot).toBe(repoRoot);
   });
 
-  it("includes repo-level runtime scripts for ops routes", () => {
+  it("includes repo-level runtime scripts for the tRPC handler", () => {
     expect(nextConfig.outputFileTracingIncludes?.["/"]).toEqual(
-      expect.arrayContaining([
-        "../../../deploy/compose/**/*",
-        "../../../scripts/**/*",
-      ]),
+      expect.arrayContaining(["../../../deploy/compose/**/*", "../../../scripts/**/*"]),
     );
-    expect(nextConfig.outputFileTracingIncludes?.["/api/backups/capture"]).toEqual(
-      expect.arrayContaining([
-        "../../../deploy/compose/**/*",
-        "../../../scripts/**/*",
-      ]),
-    );
-    expect(nextConfig.outputFileTracingIncludes?.["/api/runtime-policies/rate-limit"]).toEqual(
-      expect.arrayContaining([
-        "../../../deploy/compose/**/*",
-        "../../../scripts/**/*",
-      ]),
+    expect(nextConfig.outputFileTracingIncludes?.["/api/trpc/[trpc]"]).toEqual(
+      expect.arrayContaining(["../../../deploy/compose/**/*", "../../../scripts/**/*"]),
     );
   });
 });
