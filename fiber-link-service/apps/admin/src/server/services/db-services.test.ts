@@ -81,6 +81,7 @@ describe("db admin services", () => {
     expect(rows[0]).toMatchObject({
       id: "w-1",
       userId: "user-1",
+      toAddress: "ckb1...",
       retryCount: 2,
       lastError: "boom",
       createdAt: "2026-03-18T00:10:00.000Z",
@@ -95,6 +96,7 @@ describe("db admin services", () => {
     const services = createDbAdminServices(db);
     const rows = await services.listWithdrawals({ role: "COMMUNITY_ADMIN", adminUserId: "c" });
     expect(rows[0]?.userId).toBe("");
+    expect(rows[0]?.toAddress).toBeNull();
   });
 
   it("persists a policy upsert and returns the stored row", async () => {
@@ -109,7 +111,7 @@ describe("db admin services", () => {
       createdAt: new Date("2026-03-18T00:00:00.000Z"),
       updatedAt: new Date("2026-03-18T00:00:00.000Z"),
     };
-    const { db, inserted } = makeDb({ policies: [policyRow] });
+    const { db, inserted } = makeDb({ apps: [APP_ROWS[0]], policies: [policyRow] });
     const services = createDbAdminServices(db);
     const saved = await services.upsertPolicy(
       { role: "SUPER_ADMIN", adminUserId: "ops-1" },
@@ -118,6 +120,18 @@ describe("db admin services", () => {
     expect(saved.appId).toBe("app-alpha");
     expect(saved.createdAt).toBe("2026-03-18T00:00:00.000Z");
     expect(inserted).toHaveLength(1);
+  });
+
+  it("rejects a policy upsert for an unknown app", async () => {
+    const { db, inserted } = makeDb({ apps: [] });
+    const services = createDbAdminServices(db);
+    await expect(
+      services.upsertPolicy(
+        { role: "SUPER_ADMIN", adminUserId: "ops-1" },
+        { appId: "ghost", allowedAssets: ["CKB"], maxPerRequest: "1", perUserDailyMax: "1", perAppDailyMax: "1", cooldownSeconds: 0 },
+      ),
+    ).rejects.toThrow(/unknown app/);
+    expect(inserted).toHaveLength(0);
   });
 
   it("blocks COMMUNITY_ADMIN policy writes outside assigned apps", async () => {

@@ -20,10 +20,18 @@ function readHeader(req: IncomingMessage, key: string): string | undefined {
  */
 export function createTrpcContext(opts: CreateNextContextOptions): TrpcContext {
   const env = process.env;
-  const role =
-    parseAdminRole(readHeader(opts.req, "x-admin-role")) ?? parseAdminRole(env.ADMIN_DASHBOARD_DEFAULT_ROLE);
+  // The default-identity env fallback exists only for local dev, fixtures, and
+  // the acceptance harness. In production the reverse proxy MUST inject the
+  // trusted identity headers, so a header-less request resolves to no role
+  // rather than silently becoming ADMIN_DASHBOARD_DEFAULT_ROLE (e.g. SUPER_ADMIN).
+  const allowEnvFallback = env.NODE_ENV !== "production";
+
+  const headerRole = parseAdminRole(readHeader(opts.req, "x-admin-role"));
+  const role = headerRole ?? (allowEnvFallback ? parseAdminRole(env.ADMIN_DASHBOARD_DEFAULT_ROLE) : undefined);
+
   const headerUserId = readHeader(opts.req, "x-admin-user-id")?.trim();
-  const adminUserId = headerUserId || env.ADMIN_DASHBOARD_DEFAULT_ADMIN_USER_ID?.trim() || undefined;
+  const fallbackUserId = allowEnvFallback ? env.ADMIN_DASHBOARD_DEFAULT_ADMIN_USER_ID?.trim() : undefined;
+  const adminUserId = headerUserId || fallbackUserId || undefined;
 
   return {
     role,

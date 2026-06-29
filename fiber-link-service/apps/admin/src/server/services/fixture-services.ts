@@ -95,12 +95,12 @@ export function createFixtureAdminServices(fixture: DashboardFixture): AdminServ
       return snapshot.apps.filter((app) => inScope(scope, app.appId)).map((app) => ({ ...app }));
     },
     async listWithdrawals(scope, filters?: AdminWithdrawalFilters) {
-      const hideUserId = scope.role === "COMMUNITY_ADMIN";
+      const redactPii = scope.role === "COMMUNITY_ADMIN";
       return snapshot.withdrawals
         .filter((row) => inScope(scope, row.appId))
         .filter((row) => (filters?.appId ? row.appId === filters.appId : true))
         .filter((row) => (filters?.state ? row.state === filters.state : true))
-        .map((row) => ({ ...row, userId: hideUserId ? "" : row.userId }));
+        .map((row) => ({ ...row, userId: redactPii ? "" : row.userId, toAddress: redactPii ? null : row.toAddress }));
     },
     async listPolicies(scope) {
       return Array.from(snapshot.policies.values())
@@ -110,6 +110,9 @@ export function createFixtureAdminServices(fixture: DashboardFixture): AdminServ
     async upsertPolicy(scope, input) {
       if (scope.role === "COMMUNITY_ADMIN" && !communityScope.has(input.appId)) {
         throw new Error("COMMUNITY_ADMIN can only update policies for managed apps");
+      }
+      if (!snapshot.apps.some((app) => app.appId === input.appId)) {
+        throw new Error(`unknown app: ${input.appId}`);
       }
       const now = new Date().toISOString();
       const existing = snapshot.policies.get(input.appId);

@@ -21,6 +21,7 @@ function buildFixture(overrides: Partial<DashboardFixture> = {}): DashboardFixtu
         state: "FAILED",
         createdAt: "2026-03-18T00:10:00.000Z",
         txHash: null,
+        toAddress: "ckb1qalpha",
       },
       {
         id: "w-2",
@@ -66,18 +67,20 @@ describe("fixture admin services", () => {
     expect(beta.map((w) => w.id)).toEqual(["w-2"]);
   });
 
-  it("trims userId for COMMUNITY_ADMIN withdrawals", async () => {
+  it("redacts userId and toAddress for COMMUNITY_ADMIN withdrawals", async () => {
     const services = createFixtureAdminServices(buildFixture());
     const rows = await services.listWithdrawals(COMMUNITY);
     expect(rows).toHaveLength(1);
     expect(rows[0]?.appId).toBe("app-alpha");
     expect(rows[0]?.userId).toBe("");
+    expect(rows[0]?.toAddress).toBeNull();
   });
 
-  it("keeps userId for SUPER_ADMIN withdrawals", async () => {
+  it("keeps userId and toAddress for SUPER_ADMIN withdrawals", async () => {
     const services = createFixtureAdminServices(buildFixture());
     const rows = await services.listWithdrawals(SUPER, { appId: "app-alpha" });
     expect(rows[0]?.userId).toBe("user-1");
+    expect(rows[0]?.toAddress).toBe("ckb1qalpha");
   });
 
   it("blocks COMMUNITY_ADMIN from editing unmanaged policies", async () => {
@@ -107,6 +110,20 @@ describe("fixture admin services", () => {
     expect(saved.updatedBy).toBe("ops-1");
     const policies = await services.listPolicies(SUPER);
     expect(policies.find((p) => p.appId === "app-alpha")?.maxPerRequest).toBe("5");
+  });
+
+  it("rejects a policy upsert for an unknown app", async () => {
+    const services = createFixtureAdminServices(buildFixture());
+    await expect(
+      services.upsertPolicy(SUPER, {
+        appId: "ghost",
+        allowedAssets: ["CKB"],
+        maxPerRequest: "1",
+        perUserDailyMax: "1",
+        perAppDailyMax: "1",
+        cooldownSeconds: 0,
+      }),
+    ).rejects.toThrow(/unknown app/);
   });
 
   it("captures a backup that appears at the head of the bundle list", async () => {

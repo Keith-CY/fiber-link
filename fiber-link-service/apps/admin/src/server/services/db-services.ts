@@ -124,16 +124,17 @@ export function createDbAdminServices(db: DbClient = createDbClient()): AdminSer
         },
       });
 
-      // COMMUNITY_ADMIN must not see end-user ids; trim them server-side so the
-      // restriction is enforced before the data leaves the procedure.
-      const hideUserId = scope.role === "COMMUNITY_ADMIN";
+      // COMMUNITY_ADMIN must not see end-user PII (user id or payout
+      // destination); redact server-side so the restriction is enforced before
+      // the data leaves the procedure, independent of which columns the UI shows.
+      const redactPii = scope.role === "COMMUNITY_ADMIN";
       return rows.map((row) => ({
         id: row.id,
         appId: row.appId,
-        userId: hideUserId ? "" : row.userId,
+        userId: redactPii ? "" : row.userId,
         asset: row.asset,
         amount: row.amount,
-        toAddress: row.toAddress ?? null,
+        toAddress: redactPii ? null : row.toAddress ?? null,
         state: row.state,
         retryCount: row.retryCount ?? 0,
         nextRetryAt: isoOrNull(row.nextRetryAt),
@@ -174,6 +175,17 @@ export function createDbAdminServices(db: DbClient = createDbClient()): AdminSer
         if (scoped === "ALL" || !scoped.includes(input.appId)) {
           throw new Error("COMMUNITY_ADMIN can only update policies for managed apps");
         }
+      }
+
+      // withdrawal_policies is keyed by text with no FK to apps, so reject
+      // unknown app ids instead of persisting a durable orphan policy (e.g.
+      // from a typo'd /apps/<id> URL).
+      const appRows = await db.query.apps.findMany({
+        columns: { appId: true },
+        where: (a, { eq }) => eq(a.appId, input.appId),
+      });
+      if (appRows.length === 0) {
+        throw new Error(`unknown app: ${input.appId}`);
       }
 
       const now = new Date();

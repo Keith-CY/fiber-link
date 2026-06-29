@@ -25,6 +25,9 @@ export const withdrawalPolicyRouter = router({
       if (error instanceof Error && error.message.includes("COMMUNITY_ADMIN")) {
         throw new TRPCError({ code: "FORBIDDEN", message: error.message });
       }
+      if (error instanceof Error && error.message.startsWith("unknown app")) {
+        throw new TRPCError({ code: "NOT_FOUND", message: error.message });
+      }
       throw new TRPCError({
         code: "INTERNAL_SERVER_ERROR",
         message: error instanceof Error ? error.message : "failed to persist withdrawal policy",

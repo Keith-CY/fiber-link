@@ -37,6 +37,10 @@ export default function AppDetailPage() {
   const role = session.data?.role ?? null;
   const utils = trpc.useUtils();
 
+  const apps = trpc.apps.list.useQuery(undefined, { enabled: Boolean(role && appId) });
+  // Treat as known until the list loads so the form is not flashed as missing.
+  const appKnown = apps.data ? apps.data.some((a) => a.appId === appId) : true;
+
   const policies = trpc.withdrawalPolicy.list.useQuery(undefined, { enabled: Boolean(role && appId) });
   const policy = policies.data?.find((p) => p.appId === appId);
 
@@ -99,7 +103,19 @@ export default function AppDetailPage() {
         }
       />
 
-      <QueryBoundary isLoading={session.isLoading || policies.isLoading} error={session.error ?? policies.error}>
+      <QueryBoundary
+        isLoading={session.isLoading || apps.isLoading || policies.isLoading}
+        error={session.error ?? apps.error ?? policies.error}
+      >
+        {!appKnown ? (
+          <Card className="max-w-2xl">
+            <CardContent className="py-6">
+              <p className="text-sm text-destructive" role="alert">
+                App <span className="font-mono">{appId}</span> was not found in your scope.
+              </p>
+            </CardContent>
+          </Card>
+        ) : (
         <Card className="max-w-2xl">
           <CardHeader>
             <CardTitle>Withdrawal policy</CardTitle>
@@ -180,6 +196,7 @@ export default function AppDetailPage() {
             </form>
           </CardContent>
         </Card>
+        )}
       </QueryBoundary>
     </div>
   );

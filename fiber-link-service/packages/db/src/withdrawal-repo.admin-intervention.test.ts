@@ -1,10 +1,23 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import type { DbClient } from "./client";
 import { createInMemoryLedgerRepo } from "./ledger-repo";
 import {
   WithdrawalRevivalBlockedError,
   WithdrawalTransitionConflictError,
+  createDbWithdrawalRepo,
   createInMemoryWithdrawalRepo,
 } from "./withdrawal-repo";
+
+/** Minimal db mock where the guarded UPDATE matches nothing and the follow-up
+ * SELECT returns the supplied anomalous row, so the guard branch can be tested
+ * for states the public state machine never produces on its own. */
+function guardProbeDb(existing: Record<string, unknown>): DbClient {
+  const updateReturning = vi.fn().mockResolvedValue([]);
+  const update = vi.fn(() => ({ set: () => ({ where: () => ({ returning: updateReturning }) }) }));
+  const selectLimit = vi.fn().mockResolvedValue([existing]);
+  const select = vi.fn(() => ({ from: () => ({ where: () => ({ limit: selectLimit }) }) }));
+  return { update, select } as unknown as DbClient;
+}
 
 function baseInput() {
   return { appId: "app1", userId: "u1", asset: "CKB" as const, amount: "10", toAddress: "ckt1qexample" };
@@ -83,6 +96,13 @@ describe("withdrawal repo admin interventions", () => {
     await expect(repo.adminRetryNow(w.id, { now: new Date() })).rejects.toBeInstanceOf(
       WithdrawalTransitionConflictError,
     );
+  });
+
+  // A RETRY_PENDING row that retained a tx_hash must not be expedited — same
+  // double-broadcast guard as revive (db path, via a constructed row).
+  it("refuses adminRetryNow on a RETRY_PENDING row that still has a tx_hash", async () => {
+    const repo = createDbWithdrawalRepo(guardProbeDb({ id: "w1", state: "RETRY_PENDING", txHash: "0xbeef" }));
+    await expect(repo.adminRetryNow("w1", { now: new Date() })).rejects.toBeInstanceOf(WithdrawalRevivalBlockedError);
   });
 
   it("terminalizes a PENDING withdrawal to FAILED with a standard reason", async () => {

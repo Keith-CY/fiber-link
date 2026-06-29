@@ -34,6 +34,22 @@ describe("createTrpcContext", () => {
     expect(ctx.adminUserId).toBe("default-admin");
   });
 
+  it("ignores the env default identity in production when headers are absent", () => {
+    (process.env as Record<string, string | undefined>).NODE_ENV = "production";
+    process.env.ADMIN_DASHBOARD_DEFAULT_ROLE = "SUPER_ADMIN";
+    process.env.ADMIN_DASHBOARD_DEFAULT_ADMIN_USER_ID = "default-admin";
+    const ctx = createTrpcContext(reqWith({}));
+    expect(ctx.role).toBeUndefined();
+    expect(ctx.adminUserId).toBeUndefined();
+  });
+
+  it("still honors injected headers in production", () => {
+    (process.env as Record<string, string | undefined>).NODE_ENV = "production";
+    const ctx = createTrpcContext(reqWith({ "x-admin-role": "SUPER_ADMIN", "x-admin-user-id": "ops-9" }));
+    expect(ctx.role).toBe("SUPER_ADMIN");
+    expect(ctx.adminUserId).toBe("ops-9");
+  });
+
   it("uses the first value when a header arrives as an array", () => {
     const ctx = createTrpcContext(reqWith({ "x-admin-role": ["SUPER_ADMIN", "COMMUNITY_ADMIN"] }));
     expect(ctx.role).toBe("SUPER_ADMIN");
