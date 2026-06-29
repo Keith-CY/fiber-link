@@ -5,6 +5,7 @@ import {
   type DashboardBackupBundle,
   type DashboardPageState,
   type DashboardRateLimitConfig,
+  type DashboardWithdrawal,
   type DashboardWithdrawalPolicy,
 } from "../dashboard/dashboard-page-model";
 import {
@@ -227,14 +228,9 @@ export default function HomePage({
                   <tbody>
                     {viewModel.withdrawals.map((withdrawal) => (
                       <tr key={withdrawal.id}>
-                        <td>{withdrawal.id}</td>
-                        <td>{withdrawal.appId}</td>
-                        {viewModel.roleVisibility.showUserId ? <td>{withdrawal.userId}</td> : null}
-                        <td>{withdrawal.asset}</td>
-                        <td>{withdrawal.amount}</td>
-                        <td>{withdrawal.state}</td>
-                        <td>{formatDate(withdrawal.createdAt)}</td>
-                        <td>{withdrawal.txHash ?? "N/A"}</td>
+                        {viewModel.withdrawalColumns.map((column) => (
+                          <td key={column}>{formatWithdrawalCell(withdrawal, column)}</td>
+                        ))}
                       </tr>
                     ))}
                   </tbody>
@@ -535,8 +531,41 @@ function getHeader(headers: RequestHeaders, key: string): string | undefined {
   return value;
 }
 
-function formatDate(dateText: string): string {
-  return dateText;
+function formatDate(dateText: string | null | undefined): string {
+  return dateText ?? "N/A";
+}
+
+function formatAge(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 48) return `${hours}h`;
+  return `${Math.floor(hours / 24)}d`;
+}
+
+function formatWithdrawalCell(withdrawal: DashboardWithdrawal, column: keyof DashboardWithdrawal): React.ReactNode {
+  switch (column) {
+    case "createdAt":
+      return formatDate(withdrawal.createdAt);
+    case "ageSeconds":
+      return formatAge(withdrawal.ageSeconds ?? 0);
+    case "nextRetryAt":
+    case "liquidityCheckedAt":
+      return formatDate(withdrawal[column]);
+    case "lastError":
+      return withdrawal.lastError ?? "N/A";
+    case "liquidityPendingReason":
+      return withdrawal.liquidityPendingReason ?? "N/A";
+    case "txHash":
+      return withdrawal.txHash && withdrawal.txExplorerUrl ? (
+        <a href={withdrawal.txExplorerUrl}>{withdrawal.txHash}</a>
+      ) : (
+        "N/A"
+      );
+    default:
+      return String(withdrawal[column as keyof DashboardWithdrawal] ?? "N/A");
+  }
 }
 
 function toSearchParams(query: ParsedUrlQuery): URLSearchParams {
@@ -658,6 +687,16 @@ function toColumnLabel(column: string): string {
       return "Created At";
     case "txHash":
       return "Tx Hash";
+    case "ageSeconds":
+      return "Age";
+    case "retryCount":
+      return "Retries";
+    case "lastError":
+      return "Last Error";
+    case "liquidityPendingReason":
+      return "Liquidity Status";
+    case "liquidityCheckedAt":
+      return "Liquidity Checked";
     default:
       return column.toUpperCase();
   }

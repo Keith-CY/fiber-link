@@ -14,8 +14,16 @@ export type DashboardWithdrawal = {
   asset: "CKB" | "USDI";
   amount: string;
   state: WithdrawalState;
+  retryCount?: number;
+  nextRetryAt?: string | null;
+  lastError?: string | null;
+  liquidityRequestId?: string | null;
+  liquidityPendingReason?: string | null;
+  liquidityCheckedAt?: string | null;
+  ageSeconds?: number;
   createdAt: string;
   txHash: string | null;
+  txExplorerUrl?: string | null;
 };
 
 export type DashboardStatusSummary = {
@@ -151,7 +159,21 @@ type DashboardErrorViewModel = {
 type DashboardReadyViewModel = DashboardReadyState & {
   title: string;
   roleVisibility: DashboardRoleVisibility;
-  withdrawalColumns: Array<"id" | "appId" | "userId" | "asset" | "amount" | "state" | "createdAt" | "txHash">;
+  withdrawalColumns: Array<
+    | "id"
+    | "appId"
+    | "userId"
+    | "asset"
+    | "amount"
+    | "state"
+    | "ageSeconds"
+    | "retryCount"
+    | "lastError"
+    | "liquidityPendingReason"
+    | "liquidityCheckedAt"
+    | "createdAt"
+    | "txHash"
+  >;
   opsTriageCards: DashboardOpsTriageCard[];
 };
 
@@ -310,8 +332,35 @@ export function buildDashboardViewModel(state: DashboardPageState): DashboardVie
 
   const roleVisibility = getRoleVisibility(state.role);
   const withdrawalColumns: DashboardReadyViewModel["withdrawalColumns"] = roleVisibility.showUserId
-    ? ["id", "appId", "userId", "asset", "amount", "state", "createdAt", "txHash"]
-    : ["id", "appId", "asset", "amount", "state", "createdAt", "txHash"];
+    ? [
+        "id",
+        "appId",
+        "userId",
+        "asset",
+        "amount",
+        "state",
+        "ageSeconds",
+        "retryCount",
+        "lastError",
+        "liquidityPendingReason",
+        "liquidityCheckedAt",
+        "createdAt",
+        "txHash",
+      ]
+    : [
+        "id",
+        "appId",
+        "asset",
+        "amount",
+        "state",
+        "ageSeconds",
+        "retryCount",
+        "lastError",
+        "liquidityPendingReason",
+        "liquidityCheckedAt",
+        "createdAt",
+        "txHash",
+      ];
 
   return {
     ...state,

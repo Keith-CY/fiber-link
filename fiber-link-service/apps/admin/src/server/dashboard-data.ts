@@ -40,7 +40,7 @@ const DEFAULT_DATA_DEPENDENCIES: DashboardDataDependencies = {
     }));
   },
   listWithdrawals: async (ctx) => {
-    const rows = await withdrawalRouter.createCaller(ctx).list();
+    const rows = await withdrawalRouter.createCaller(ctx).list({});
     return rows.map((row) => ({
       id: row.id,
       appId: row.appId,
@@ -48,8 +48,16 @@ const DEFAULT_DATA_DEPENDENCIES: DashboardDataDependencies = {
       asset: row.asset,
       amount: row.amount,
       state: row.state,
+      retryCount: row.retryCount,
+      nextRetryAt: row.nextRetryAt ? row.nextRetryAt.toISOString() : null,
+      lastError: row.lastError ?? null,
+      liquidityRequestId: row.liquidityRequestId ?? null,
+      liquidityPendingReason: row.liquidityPendingReason ?? null,
+      liquidityCheckedAt: row.liquidityCheckedAt ? row.liquidityCheckedAt.toISOString() : null,
+      ageSeconds: row.ageSeconds,
       createdAt: row.createdAt.toISOString(),
       txHash: row.txHash ?? null,
+      txExplorerUrl: row.txExplorerUrl ?? null,
     }));
   },
   listPolicies: async (ctx) => {

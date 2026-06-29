@@ -9,6 +9,28 @@ import {
 } from "../dashboard/dashboard-model";
 import { buildDashboardRenderModel } from "../dashboard/dashboard-view";
 
+function createWithdrawalFixture(
+  overrides: Partial<DashboardWithdrawal> & Pick<DashboardWithdrawal, "id" | "appId" | "userId" | "asset" | "amount" | "toAddress" | "state">,
+): DashboardWithdrawal {
+  const now = new Date("2026-02-17T10:00:00.000Z");
+  return {
+    destinationKind: "CKB_ADDRESS",
+    retryCount: 0,
+    nextRetryAt: null,
+    lastError: null,
+    createdAt: now,
+    updatedAt: now,
+    completedAt: null,
+    txHash: null,
+    txExplorerUrl: null,
+    liquidityRequestId: null,
+    liquidityPendingReason: null,
+    liquidityCheckedAt: null,
+    ageSeconds: 0,
+    ...overrides,
+  };
+}
+
 function createFixtures() {
   const now = new Date("2026-02-17T10:00:00.000Z");
   const apps: DashboardApp[] = [
@@ -16,7 +38,7 @@ function createFixtures() {
     { appId: "app-beta", createdAt: now },
   ];
   const withdrawals: DashboardWithdrawal[] = [
-    {
+    createWithdrawalFixture({
       id: "w-1",
       appId: "app-alpha",
       userId: "u-1",
@@ -24,15 +46,8 @@ function createFixtures() {
       amount: "10",
       toAddress: "ckt1q000",
       state: "PENDING",
-      retryCount: 0,
-      nextRetryAt: null,
-      lastError: null,
-      createdAt: now,
-      updatedAt: now,
-      completedAt: null,
-      txHash: null,
-    },
-    {
+    }),
+    createWithdrawalFixture({
       id: "w-2",
       appId: "app-beta",
       userId: "u-3",
@@ -40,15 +55,8 @@ function createFixtures() {
       amount: "15",
       toAddress: "ckt1q222",
       state: "LIQUIDITY_PENDING",
-      retryCount: 0,
-      nextRetryAt: null,
-      lastError: null,
-      createdAt: now,
-      updatedAt: now,
-      completedAt: null,
-      txHash: null,
-    },
-    {
+    }),
+    createWithdrawalFixture({
       id: "w-3",
       appId: "app-beta",
       userId: "u-2",
@@ -57,13 +65,8 @@ function createFixtures() {
       toAddress: "ckt1q111",
       state: "FAILED",
       retryCount: 2,
-      nextRetryAt: null,
       lastError: "insufficient balance",
-      createdAt: now,
-      updatedAt: now,
-      completedAt: null,
-      txHash: null,
-    },
+    }),
   ];
 
   return { apps, withdrawals };
@@ -136,7 +139,7 @@ describe("withdrawal summary", () => {
   it("does not produce NaN for unexpected withdrawal states during staggered deploys", () => {
     const now = new Date("2026-02-17T10:00:00.000Z");
     const summary = summarizeWithdrawalStates([
-      {
+      createWithdrawalFixture({
         id: "w-expected",
         appId: "app-alpha",
         userId: "u-1",
@@ -144,30 +147,20 @@ describe("withdrawal summary", () => {
         amount: "5",
         toAddress: "ckt1qexpected",
         state: "PENDING",
-        retryCount: 0,
-        nextRetryAt: null,
-        lastError: null,
         createdAt: now,
         updatedAt: now,
-        completedAt: null,
-        txHash: null,
-      },
-      {
+      }),
+      createWithdrawalFixture({
         id: "w-unknown",
         appId: "app-beta",
         userId: "u-2",
         asset: "CKB",
         amount: "7",
         toAddress: "ckt1qunknown",
-        state: "WAITING_FOR_BATCH",
-        retryCount: 0,
-        nextRetryAt: null,
-        lastError: null,
+        state: "WAITING_FOR_BATCH" as DashboardWithdrawal["state"],
         createdAt: now,
         updatedAt: now,
-        completedAt: null,
-        txHash: null,
-      } as unknown as DashboardWithdrawal,
+      }),
     ]);
 
     const dynamicCounts = summary.byState as Record<string, number>;

@@ -110,6 +110,31 @@ export const appAdmins = pgTable("app_admins", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+export const adminAuditEvents = pgTable(
+  "admin_audit_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    actorId: text("actor_id").notNull(),
+    actorRole: userRoleEnum("actor_role").notNull(),
+    action: text("action").notNull(),
+    targetType: text("target_type").notNull(),
+    targetId: text("target_id").notNull(),
+    requestId: text("request_id").notNull(),
+    reason: text("reason"),
+    before: jsonb("before").$type<Record<string, unknown> | null>(),
+    after: jsonb("after").$type<Record<string, unknown> | null>(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    byTargetCreatedAt: index("admin_audit_events_target_created_at_idx").on(
+      table.targetType,
+      table.targetId,
+      table.createdAt,
+    ),
+    byActorCreatedAt: index("admin_audit_events_actor_created_at_idx").on(table.actorId, table.createdAt),
+  }),
+);
+
 export const withdrawalPolicies = pgTable(
   "withdrawal_policies",
   {
