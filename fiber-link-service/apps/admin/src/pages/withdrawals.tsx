@@ -44,7 +44,9 @@ export default function WithdrawalsPage() {
     ...(appFilter ? { appId: appFilter } : {}),
   };
 
-  const withdrawals = trpc.withdrawals.list.useQuery(filters, { enabled: Boolean(role) });
+  // router.query is empty until hydration completes; waiting for isReady avoids
+  // an initial unfiltered fetch that is immediately refetched with URL filters.
+  const withdrawals = trpc.withdrawals.list.useQuery(filters, { enabled: Boolean(role) && router.isReady });
 
   function setFilter(key: string, value: string) {
     const next = { ...router.query };
