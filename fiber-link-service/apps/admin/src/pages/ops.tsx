@@ -19,9 +19,10 @@ export default function OpsPage() {
       <QueryBoundary isLoading={session.isLoading} error={session.error}>
         <RoleGate allowed={isSuperAdmin}>
           <div className="space-y-6">
-            <RateLimitCard enabled={isSuperAdmin} />
-            <BackupsCard enabled={isSuperAdmin} />
-            <MonitoringCard enabled={isSuperAdmin} />
+            {/* Cards mount only when RoleGate admits SUPER_ADMIN, so their queries can run unconditionally. */}
+            <RateLimitCard />
+            <BackupsCard />
+            <MonitoringCard />
           </div>
         </RoleGate>
       </QueryBoundary>
@@ -29,8 +30,8 @@ export default function OpsPage() {
   );
 }
 
-function RateLimitCard({ enabled }: { enabled: boolean }) {
-  const config = trpc.ops.rateLimitConfig.useQuery(undefined, { enabled });
+function RateLimitCard() {
+  const config = trpc.ops.rateLimitConfig.useQuery();
   const [form, setForm] = useState({ enabled: true, windowMs: "60000", maxRequests: "300" });
 
   useEffect(() => {
@@ -104,9 +105,9 @@ function RateLimitCard({ enabled }: { enabled: boolean }) {
   );
 }
 
-function BackupsCard({ enabled }: { enabled: boolean }) {
+function BackupsCard() {
   const utils = trpc.useUtils();
-  const bundles = trpc.ops.listBackups.useQuery(undefined, { enabled });
+  const bundles = trpc.ops.listBackups.useQuery();
   const [restorePlan, setRestorePlan] = useState<{ backupId: string; command: string; warnings: string[] } | null>(null);
 
   const capture = trpc.ops.captureBackup.useMutation({
@@ -187,8 +188,8 @@ function BackupsCard({ enabled }: { enabled: boolean }) {
   );
 }
 
-function MonitoringCard({ enabled }: { enabled: boolean }) {
-  const monitoring = trpc.ops.monitoring.useQuery(undefined, { enabled });
+function MonitoringCard() {
+  const monitoring = trpc.ops.monitoring.useQuery();
   return (
     <Card>
       <CardHeader>

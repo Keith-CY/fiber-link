@@ -50,6 +50,19 @@ describe("admin tRPC routers", () => {
     await expect(caller.withdrawals.list({ state: "NOPE" } as never)).rejects.toMatchObject({ code: "BAD_REQUEST" });
   });
 
+  it("returns a zero-filled per-state summary scoped to the caller", async () => {
+    const summary = await createCaller(ctxFor("SUPER_ADMIN", "ops")).withdrawals.stateSummary();
+    expect(summary).toHaveLength(7);
+    expect(summary.find((s) => s.state === "FAILED")?.count).toBe(1);
+    expect(summary.find((s) => s.state === "PENDING")?.count).toBe(0);
+
+    // COMMUNITY_ADMIN scope excludes nothing here (w-1 is in app-alpha), so
+    // the count survives; an unassigned role gets FORBIDDEN via adminProcedure.
+    const scoped = await createCaller(ctxFor("COMMUNITY_ADMIN", "c1")).withdrawals.stateSummary();
+    expect(scoped.find((s) => s.state === "FAILED")?.count).toBe(1);
+    await expect(createCaller(ctxFor(undefined)).withdrawals.stateSummary()).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
   it("rejects invalid withdrawal-policy input with BAD_REQUEST", async () => {
     const caller = createCaller(ctxFor("SUPER_ADMIN", "ops"));
     await expect(caller.withdrawalPolicy.upsert({ appId: "" } as never)).rejects.toMatchObject({ code: "BAD_REQUEST" });

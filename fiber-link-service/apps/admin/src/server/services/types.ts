@@ -4,6 +4,7 @@ import type {
   DashboardBackupBundle,
   DashboardMonitoringSummary,
   DashboardRateLimitConfig,
+  DashboardStatusSummary,
   DashboardWithdrawalPolicy,
 } from "../../dashboard/dashboard-page-model";
 import type { DashboardRateLimitChangeSet, DashboardRateLimitDraft } from "../dashboard-rate-limit";
@@ -48,6 +49,13 @@ export type AdminWithdrawalFilters = {
 };
 
 /**
+ * Cap for `listWithdrawals`. The queue view is filter-driven; an unbounded
+ * SELECT over a production withdrawals table would ship the whole table to the
+ * browser on every page load.
+ */
+export const WITHDRAWAL_LIST_LIMIT = 200;
+
+/**
  * The seam every admin tRPC router depends on. The real implementation
  * (`createDbAdminServices`) queries Postgres through the `@fiber-link/db`
  * repositories; the fixture implementation backs unit tests and the Playwright
@@ -55,7 +63,13 @@ export type AdminWithdrawalFilters = {
  */
 export interface AdminServices {
   listApps(scope: AdminScope): Promise<DashboardApp[]>;
+  /** Newest first, capped at {@link WITHDRAWAL_LIST_LIMIT} rows. */
   listWithdrawals(scope: AdminScope, filters?: AdminWithdrawalFilters): Promise<AdminWithdrawal[]>;
+  /**
+   * Per-state withdrawal counts over the WHOLE scope (not the capped list),
+   * zero-filled in canonical state order.
+   */
+  summarizeWithdrawals(scope: AdminScope): Promise<DashboardStatusSummary[]>;
   listPolicies(scope: AdminScope): Promise<DashboardWithdrawalPolicy[]>;
   upsertPolicy(scope: AdminScope, input: WithdrawalPolicyInput): Promise<DashboardWithdrawalPolicy>;
 

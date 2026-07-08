@@ -1,7 +1,5 @@
 import type { UserRole, WithdrawalState } from "@fiber-link/db";
 
-export const DASHBOARD_TITLE = "Fiber Link Admin Dashboard";
-
 export type DashboardApp = {
   appId: string;
   createdAt: string;
@@ -117,27 +115,11 @@ export type DashboardOpsTriageCard = {
   href: string;
 };
 
-type DashboardLoadingState = {
-  status: "loading";
-};
-
-type DashboardErrorState = {
-  status: "error";
-  role?: UserRole;
-  message: string;
-};
-
-type DashboardReadyState = {
-  status: "ready";
-  role: UserRole;
-  apps: DashboardApp[];
-  withdrawals: DashboardWithdrawal[];
+/** The slices of dashboard data the ops-triage cards derive from. */
+export type DashboardTriageInputs = {
   statusSummaries: DashboardStatusSummary[];
-  policies: DashboardWithdrawalPolicy[];
   operations?: DashboardOperationsState;
 };
-
-export type DashboardPageState = DashboardLoadingState | DashboardErrorState | DashboardReadyState;
 
 export type DashboardRoleVisibility = {
   scopeDescription: string;
@@ -145,41 +127,11 @@ export type DashboardRoleVisibility = {
   showGlobalControls: boolean;
 };
 
-type DashboardLoadingViewModel = {
-  status: "loading";
-  title: string;
-};
-
-type DashboardErrorViewModel = {
-  status: "error";
-  title: string;
-  message: string;
-};
-
-type DashboardReadyViewModel = DashboardReadyState & {
-  title: string;
-  roleVisibility: DashboardRoleVisibility;
-  withdrawalColumns: Array<
-    | "id"
-    | "appId"
-    | "userId"
-    | "asset"
-    | "amount"
-    | "state"
-    | "ageSeconds"
-    | "retryCount"
-    | "lastError"
-    | "liquidityPendingReason"
-    | "liquidityCheckedAt"
-    | "createdAt"
-    | "txHash"
-  >;
-  opsTriageCards: DashboardOpsTriageCard[];
-};
-
-export type DashboardViewModel = DashboardLoadingViewModel | DashboardErrorViewModel | DashboardReadyViewModel;
-
-const WITHDRAWAL_STATE_ORDER: WithdrawalState[] = [
+/**
+ * Canonical withdrawal-state list in display order — the single source for
+ * filter dropdowns, router filter validation, and state summaries.
+ */
+export const WITHDRAWAL_STATE_ORDER: WithdrawalState[] = [
   "LIQUIDITY_PENDING",
   "PENDING",
   "PROCESSING",
@@ -212,22 +164,16 @@ export function getRoleVisibility(role: UserRole): DashboardRoleVisibility {
   };
 }
 
-export function summarizeWithdrawalStates(withdrawals: DashboardWithdrawal[]): DashboardStatusSummary[] {
-  const counts = WITHDRAWAL_STATE_ORDER.reduce<Record<WithdrawalState, number>>(
-    (acc, state) => {
-      acc[state] = 0;
-      return acc;
-    },
-    {
-      LIQUIDITY_PENDING: 0,
-      PENDING: 0,
-      PROCESSING: 0,
-      BROADCASTED: 0,
-      RETRY_PENDING: 0,
-      COMPLETED: 0,
-      FAILED: 0,
-    },
-  );
+export function summarizeWithdrawalStates(withdrawals: Array<{ state: WithdrawalState }>): DashboardStatusSummary[] {
+  const counts: Record<WithdrawalState, number> = {
+    LIQUIDITY_PENDING: 0,
+    PENDING: 0,
+    PROCESSING: 0,
+    BROADCASTED: 0,
+    RETRY_PENDING: 0,
+    COMPLETED: 0,
+    FAILED: 0,
+  };
 
   for (const row of withdrawals) {
     counts[row.state] = (counts[row.state] ?? 0) + 1;
@@ -248,7 +194,7 @@ function severityFromCount(count: number, alertAt = 1): DashboardOpsTriageCard["
   return count >= alertAt ? "alert" : "watch";
 }
 
-export function buildOpsTriageCards(state: DashboardReadyState): DashboardOpsTriageCard[] {
+export function buildOpsTriageCards(state: DashboardTriageInputs): DashboardOpsTriageCard[] {
   const liquidityPending = countState(state.statusSummaries, "LIQUIDITY_PENDING");
   const failedWithdrawals = countState(state.statusSummaries, "FAILED");
   const retryPendingWithdrawals = countState(state.statusSummaries, "RETRY_PENDING");
@@ -312,61 +258,4 @@ export function buildOpsTriageCards(state: DashboardReadyState): DashboardOpsTri
       href: "#monitoring",
     },
   ];
-}
-
-export function buildDashboardViewModel(state: DashboardPageState): DashboardViewModel {
-  if (state.status === "loading") {
-    return {
-      status: "loading",
-      title: DASHBOARD_TITLE,
-    };
-  }
-
-  if (state.status === "error") {
-    return {
-      status: "error",
-      title: DASHBOARD_TITLE,
-      message: state.message,
-    };
-  }
-
-  const roleVisibility = getRoleVisibility(state.role);
-  const withdrawalColumns: DashboardReadyViewModel["withdrawalColumns"] = roleVisibility.showUserId
-    ? [
-        "id",
-        "appId",
-        "userId",
-        "asset",
-        "amount",
-        "state",
-        "ageSeconds",
-        "retryCount",
-        "lastError",
-        "liquidityPendingReason",
-        "liquidityCheckedAt",
-        "createdAt",
-        "txHash",
-      ]
-    : [
-        "id",
-        "appId",
-        "asset",
-        "amount",
-        "state",
-        "ageSeconds",
-        "retryCount",
-        "lastError",
-        "liquidityPendingReason",
-        "liquidityCheckedAt",
-        "createdAt",
-        "txHash",
-      ];
-
-  return {
-    ...state,
-    title: DASHBOARD_TITLE,
-    roleVisibility,
-    withdrawalColumns,
-    opsTriageCards: buildOpsTriageCards(state),
-  };
 }

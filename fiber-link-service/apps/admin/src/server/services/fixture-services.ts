@@ -1,19 +1,27 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import type {
-  DashboardApp,
-  DashboardBackupBundle,
-  DashboardMonitoringSummary,
-  DashboardRateLimitConfig,
-  DashboardWithdrawal,
-  DashboardWithdrawalPolicy,
+import {
+  summarizeWithdrawalStates,
+  type DashboardApp,
+  type DashboardBackupBundle,
+  type DashboardMonitoringSummary,
+  type DashboardRateLimitConfig,
+  type DashboardWithdrawal,
+  type DashboardWithdrawalPolicy,
 } from "../../dashboard/dashboard-page-model";
 import {
   buildDashboardRateLimitChangeSet,
   parseDashboardRateLimitInput,
 } from "../dashboard-rate-limit";
 import { buildDashboardBackupRestorePlan } from "../dashboard-backups";
-import type { AdminScope, AdminServices, AdminWithdrawal, AdminWithdrawalFilters } from "./types";
+import {
+  WITHDRAWAL_LIST_LIMIT,
+  type AdminScope,
+  type AdminServices,
+  type AdminWithdrawal,
+  type AdminWithdrawalFilters,
+} from "./types";
+import { PolicyScopeError, UnknownAppError } from "./errors";
 
 /**
  * On-disk fixture shape pointed at by `ADMIN_DASHBOARD_FIXTURE_PATH`. Withdrawal
@@ -92,7 +100,10 @@ export function createFixtureAdminServices(fixture: DashboardFixture): AdminServ
 
   return {
     async listApps(scope) {
-      return snapshot.apps.filter((app) => inScope(scope, app.appId)).map((app) => ({ ...app }));
+      return snapshot.apps
+        .filter((app) => inScope(scope, app.appId))
+        .map((app) => ({ ...app }))
+        .sort((a, b) => a.appId.localeCompare(b.appId));
     },
     async listWithdrawals(scope, filters?: AdminWithdrawalFilters) {
       const redactPii = scope.role === "COMMUNITY_ADMIN";
@@ -100,19 +111,25 @@ export function createFixtureAdminServices(fixture: DashboardFixture): AdminServ
         .filter((row) => inScope(scope, row.appId))
         .filter((row) => (filters?.appId ? row.appId === filters.appId : true))
         .filter((row) => (filters?.state ? row.state === filters.state : true))
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+        .slice(0, WITHDRAWAL_LIST_LIMIT)
         .map((row) => ({ ...row, userId: redactPii ? "" : row.userId, toAddress: redactPii ? null : row.toAddress }));
+    },
+    async summarizeWithdrawals(scope) {
+      return summarizeWithdrawalStates(snapshot.withdrawals.filter((row) => inScope(scope, row.appId)));
     },
     async listPolicies(scope) {
       return Array.from(snapshot.policies.values())
         .filter((policy) => inScope(scope, policy.appId))
-        .map((policy) => ({ ...policy }));
+        .map((policy) => ({ ...policy }))
+        .sort((a, b) => a.appId.localeCompare(b.appId));
     },
     async upsertPolicy(scope, input) {
       if (scope.role === "COMMUNITY_ADMIN" && !communityScope.has(input.appId)) {
-        throw new Error("COMMUNITY_ADMIN can only update policies for managed apps");
+        throw new PolicyScopeError();
       }
       if (!snapshot.apps.some((app) => app.appId === input.appId)) {
-        throw new Error(`unknown app: ${input.appId}`);
+        throw new UnknownAppError(input.appId);
       }
       const now = new Date().toISOString();
       const existing = snapshot.policies.get(input.appId);

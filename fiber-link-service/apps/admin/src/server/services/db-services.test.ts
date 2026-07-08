@@ -20,9 +20,27 @@ function makeDb(rows: FakeRows = {}): { db: DbClient; inserted: unknown[] } {
     },
     insert: () => ({
       values: (value: unknown) => ({
-        onConflictDoUpdate: async () => {
-          inserted.push(value);
-        },
+        onConflictDoUpdate: () => ({
+          returning: async () => {
+            inserted.push(value);
+            return rows.policies ?? [value];
+          },
+        }),
+      }),
+    }),
+    // Minimal stand-in for the GROUP BY aggregation used by summarizeWithdrawals.
+    select: () => ({
+      from: () => ({
+        where: () => ({
+          groupBy: async () => {
+            const counts = new Map<string, number>();
+            for (const row of rows.withdrawals ?? []) {
+              const state = String(row.state);
+              counts.set(state, (counts.get(state) ?? 0) + 1);
+            }
+            return Array.from(counts, ([state, count]) => ({ state, count }));
+          },
+        }),
       }),
     }),
   } as unknown as DbClient;
@@ -97,6 +115,24 @@ describe("db admin services", () => {
     const rows = await services.listWithdrawals({ role: "COMMUNITY_ADMIN", adminUserId: "c" });
     expect(rows[0]?.userId).toBe("");
     expect(rows[0]?.toAddress).toBeNull();
+  });
+
+  it("summarizes withdrawal states with zero-filled canonical order", async () => {
+    const { db } = makeDb({ withdrawals: [WITHDRAWAL_ROW, { ...WITHDRAWAL_ROW, id: "w-2", state: "PENDING" }] });
+    const services = createDbAdminServices(db);
+    const summary = await services.summarizeWithdrawals({ role: "SUPER_ADMIN" });
+    expect(summary).toHaveLength(7);
+    expect(summary[0]?.state).toBe("LIQUIDITY_PENDING");
+    expect(summary.find((s) => s.state === "FAILED")?.count).toBe(1);
+    expect(summary.find((s) => s.state === "PENDING")?.count).toBe(1);
+    expect(summary.find((s) => s.state === "COMPLETED")?.count).toBe(0);
+  });
+
+  it("returns an all-zero summary for a COMMUNITY_ADMIN with no memberships", async () => {
+    const { db } = makeDb({ memberships: [], withdrawals: [WITHDRAWAL_ROW] });
+    const services = createDbAdminServices(db);
+    const summary = await services.summarizeWithdrawals({ role: "COMMUNITY_ADMIN", adminUserId: "c" });
+    expect(summary.every((s) => s.count === 0)).toBe(true);
   });
 
   it("persists a policy upsert and returns the stored row", async () => {

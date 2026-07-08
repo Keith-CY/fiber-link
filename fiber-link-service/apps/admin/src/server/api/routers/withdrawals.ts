@@ -2,16 +2,7 @@ import { TRPCError } from "@trpc/server";
 import type { WithdrawalState } from "@fiber-link/db";
 import { adminProcedure, router } from "../trpc";
 import type { AdminWithdrawalFilters } from "../../services/types";
-
-const WITHDRAWAL_STATES: WithdrawalState[] = [
-  "LIQUIDITY_PENDING",
-  "PENDING",
-  "PROCESSING",
-  "BROADCASTED",
-  "RETRY_PENDING",
-  "COMPLETED",
-  "FAILED",
-];
+import { WITHDRAWAL_STATE_ORDER } from "../../../dashboard/dashboard-page-model";
 
 function parseWithdrawalFilters(input: unknown): AdminWithdrawalFilters {
   if (input === undefined || input === null) {
@@ -29,7 +20,7 @@ function parseWithdrawalFilters(input: unknown): AdminWithdrawalFilters {
   }
   if (typeof raw.state === "string" && raw.state.trim()) {
     const state = raw.state.trim();
-    if (!WITHDRAWAL_STATES.includes(state as WithdrawalState)) {
+    if (!WITHDRAWAL_STATE_ORDER.includes(state as WithdrawalState)) {
       throw new TRPCError({ code: "BAD_REQUEST", message: `unknown withdrawal state: ${state}` });
     }
     filters.state = state as WithdrawalState;
@@ -40,5 +31,10 @@ function parseWithdrawalFilters(input: unknown): AdminWithdrawalFilters {
 export const withdrawalsRouter = router({
   list: adminProcedure.input(parseWithdrawalFilters).query(async ({ ctx, input }) => {
     return ctx.services.listWithdrawals(ctx.scope, input);
+  }),
+
+  /** Per-state counts over the whole scope; the list itself is capped. */
+  stateSummary: adminProcedure.query(async ({ ctx }) => {
+    return ctx.services.summarizeWithdrawals(ctx.scope);
   }),
 });

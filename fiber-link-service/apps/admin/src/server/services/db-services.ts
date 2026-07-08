@@ -1,10 +1,13 @@
-import { createDbClient, withdrawalPolicies, type DbClient } from "@fiber-link/db";
-import type {
-  DashboardApp,
-  DashboardWithdrawalPolicy,
-  DashboardMonitoringSummary,
-  DashboardRateLimitConfig,
-  DashboardBackupBundle,
+import { inArray, sql } from "drizzle-orm";
+import { createDbClient, withdrawalPolicies, withdrawals, type DbClient, type WithdrawalState } from "@fiber-link/db";
+import {
+  WITHDRAWAL_STATE_ORDER,
+  type DashboardApp,
+  type DashboardStatusSummary,
+  type DashboardWithdrawalPolicy,
+  type DashboardMonitoringSummary,
+  type DashboardRateLimitConfig,
+  type DashboardBackupBundle,
 } from "../../dashboard/dashboard-page-model";
 import { loadDashboardMonitoringSummary } from "../dashboard-monitoring";
 import {
@@ -22,12 +25,14 @@ import {
   type DashboardBackupRestorePlan,
 } from "../dashboard-backups";
 import type { WithdrawalPolicyInput } from "../../withdrawal-policy-input";
-import type {
-  AdminScope,
-  AdminServices,
-  AdminWithdrawal,
-  AdminWithdrawalFilters,
+import {
+  WITHDRAWAL_LIST_LIMIT,
+  type AdminScope,
+  type AdminServices,
+  type AdminWithdrawal,
+  type AdminWithdrawalFilters,
 } from "./types";
+import { PolicyScopeError, UnknownAppError } from "./errors";
 
 const APP_COLUMNS = { appId: true, createdAt: true } as const;
 
@@ -96,6 +101,7 @@ export function createDbAdminServices(db: DbClient = createDbClient()): AdminSer
 
       const rows = await db.query.apps.findMany({
         columns: APP_COLUMNS,
+        orderBy: (a, { asc }) => [asc(a.appId)],
         ...(scoped === "ALL" ? {} : { where: (a, { inArray }) => inArray(a.appId, scoped) }),
       });
       return rows.map((row) => ({ appId: row.appId, createdAt: row.createdAt.toISOString() }));
@@ -109,6 +115,8 @@ export function createDbAdminServices(db: DbClient = createDbClient()): AdminSer
 
       const rows = await db.query.withdrawals.findMany({
         columns: WITHDRAWAL_COLUMNS,
+        orderBy: (w, { desc }) => [desc(w.createdAt)],
+        limit: WITHDRAWAL_LIST_LIMIT,
         where: (w, { and, eq, inArray }) => {
           const clauses = [];
           if (scoped !== "ALL") {
@@ -146,6 +154,25 @@ export function createDbAdminServices(db: DbClient = createDbClient()): AdminSer
       }));
     },
 
+    async summarizeWithdrawals(scope): Promise<DashboardStatusSummary[]> {
+      const scoped = await resolveScopedAppIds(db, scope);
+      const counts = new Map<WithdrawalState, number>();
+
+      if (scoped === "ALL" || scoped.length > 0) {
+        // Aggregate in SQL so the Overview cards do not pull the whole table.
+        const grouped = (await db
+          .select({ state: withdrawals.state, count: sql<number>`count(*)::int` })
+          .from(withdrawals)
+          .where(scoped === "ALL" ? undefined : inArray(withdrawals.appId, scoped))
+          .groupBy(withdrawals.state)) as Array<{ state: WithdrawalState; count: number }>;
+        for (const row of grouped) {
+          counts.set(row.state, row.count);
+        }
+      }
+
+      return WITHDRAWAL_STATE_ORDER.map((state) => ({ state, count: counts.get(state) ?? 0 }));
+    },
+
     async listPolicies(scope): Promise<DashboardWithdrawalPolicy[]> {
       const scoped = await resolveScopedAppIds(db, scope);
       if (scoped !== "ALL" && scoped.length === 0) {
@@ -154,7 +181,8 @@ export function createDbAdminServices(db: DbClient = createDbClient()): AdminSer
 
       const rows = await db.query.withdrawalPolicies.findMany({
         columns: POLICY_COLUMNS,
-        ...(scoped === "ALL" ? {} : { where: (p, { inArray }) => inArray(p.appId, scoped) }),
+        orderBy: (p, { asc }) => [asc(p.appId)],
+        ...(scoped === "ALL" ? {} : { where: (p, { inArray: inArr }) => inArr(p.appId, scoped) }),
       });
       return rows.map((row) => ({
         appId: row.appId,
@@ -173,7 +201,7 @@ export function createDbAdminServices(db: DbClient = createDbClient()): AdminSer
       if (scope.role === "COMMUNITY_ADMIN") {
         const scoped = await resolveScopedAppIds(db, scope);
         if (scoped === "ALL" || !scoped.includes(input.appId)) {
-          throw new Error("COMMUNITY_ADMIN can only update policies for managed apps");
+          throw new PolicyScopeError();
         }
       }
 
@@ -185,7 +213,7 @@ export function createDbAdminServices(db: DbClient = createDbClient()): AdminSer
         where: (a, { eq }) => eq(a.appId, input.appId),
       });
       if (appRows.length === 0) {
-        throw new Error(`unknown app: ${input.appId}`);
+        throw new UnknownAppError(input.appId);
       }
 
       const now = new Date();
@@ -200,15 +228,11 @@ export function createDbAdminServices(db: DbClient = createDbClient()): AdminSer
         updatedAt: now,
       };
 
-      await db
+      const rows = await db
         .insert(withdrawalPolicies)
         .values({ appId: input.appId, createdAt: now, ...set })
-        .onConflictDoUpdate({ target: withdrawalPolicies.appId, set });
-
-      const rows = await db.query.withdrawalPolicies.findMany({
-        columns: POLICY_COLUMNS,
-        where: (p, { eq }) => eq(p.appId, input.appId),
-      });
+        .onConflictDoUpdate({ target: withdrawalPolicies.appId, set })
+        .returning();
       const row = rows[0];
       if (!row) {
         throw new Error("failed to persist withdrawal policy");

@@ -3,11 +3,7 @@ import { trpc } from "../utils/trpc";
 import { PageHeader, QueryBoundary, StatCard } from "../components/page";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
 import { Badge } from "../components/ui/badge";
-import {
-  buildOpsTriageCards,
-  summarizeWithdrawalStates,
-  type DashboardOpsTriageCard,
-} from "../dashboard/dashboard-page-model";
+import { buildOpsTriageCards, type DashboardOpsTriageCard } from "../dashboard/dashboard-page-model";
 
 const TRIAGE_ROUTE: Record<string, string> = {
   "settlement-backlog": "/settlements",
@@ -29,19 +25,19 @@ export default function OverviewPage() {
   const isSuperAdmin = role === "SUPER_ADMIN";
 
   const apps = trpc.apps.list.useQuery(undefined, { enabled: Boolean(role) });
-  const withdrawals = trpc.withdrawals.list.useQuery({}, { enabled: Boolean(role) });
+  // Server-side GROUP BY over the whole scope — the capped list query would
+  // undercount and would ship every row just to derive these numbers.
+  const stateSummary = trpc.withdrawals.stateSummary.useQuery(undefined, { enabled: Boolean(role) });
   const monitoring = trpc.ops.monitoring.useQuery(undefined, { enabled: isSuperAdmin });
 
-  const summaries = withdrawals.data ? summarizeWithdrawalStates(withdrawals.data) : [];
+  const summaries = stateSummary.data ?? [];
+  const openWithdrawals = stateSummary.data
+    ? summaries.filter((s) => s.state !== "COMPLETED" && s.state !== "FAILED").reduce((sum, s) => sum + s.count, 0)
+    : null;
   const triageCards =
-    isSuperAdmin && withdrawals.data && apps.data
+    isSuperAdmin && stateSummary.data
       ? buildOpsTriageCards({
-          status: "ready",
-          role: "SUPER_ADMIN",
-          apps: apps.data,
-          withdrawals: withdrawals.data,
           statusSummaries: summaries,
-          policies: [],
           operations: monitoring.data
             ? {
                 monitoring: { status: "ready", summary: monitoring.data },
@@ -68,14 +64,7 @@ export default function OverviewPage() {
       >
         <section className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
           <StatCard label="Visible apps" value={apps.data?.length ?? "—"} />
-          <StatCard
-            label="Open withdrawals"
-            value={
-              withdrawals.data
-                ? withdrawals.data.filter((w) => w.state !== "COMPLETED" && w.state !== "FAILED").length
-                : "—"
-            }
-          />
+          <StatCard label="Open withdrawals" value={openWithdrawals ?? "—"} />
           {isSuperAdmin ? (
             <>
               <StatCard

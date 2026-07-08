@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  buildDashboardViewModel,
+  WITHDRAWAL_STATE_ORDER,
   buildOpsTriageCards,
   getRoleVisibility,
   parseAdminRole,
@@ -29,6 +29,7 @@ describe("dashboard page model", () => {
 
   it("summarizes withdrawal states in canonical order", () => {
     const summary = summarizeWithdrawalStates(WITHDRAWALS);
+    expect(summary.map((s) => s.state)).toEqual(WITHDRAWAL_STATE_ORDER);
     expect(summary.find((s) => s.state === "FAILED")?.count).toBe(1);
     expect(summary.find((s) => s.state === "LIQUIDITY_PENDING")?.count).toBe(1);
     expect(summary.find((s) => s.state === "PENDING")?.count).toBe(0);
@@ -36,12 +37,7 @@ describe("dashboard page model", () => {
 
   it("builds triage cards from monitoring + withdrawal posture", () => {
     const cards = buildOpsTriageCards({
-      status: "ready",
-      role: "SUPER_ADMIN",
-      apps: [],
-      withdrawals: WITHDRAWALS,
       statusSummaries: summarizeWithdrawalStates(WITHDRAWALS),
-      policies: [],
       operations: {
         monitoring: {
           status: "ready",
@@ -64,20 +60,9 @@ describe("dashboard page model", () => {
     expect(cards.find((c) => c.id === "failed-withdrawals")?.value).toBe("1");
   });
 
-  it("maps page state into view-model variants", () => {
-    expect(buildDashboardViewModel({ status: "loading" }).status).toBe("loading");
-    expect(buildDashboardViewModel({ status: "error", message: "bad" }).status).toBe("error");
-    const ready = buildDashboardViewModel({
-      status: "ready",
-      role: "COMMUNITY_ADMIN",
-      apps: [],
-      withdrawals: WITHDRAWALS,
-      statusSummaries: summarizeWithdrawalStates(WITHDRAWALS),
-      policies: [],
-    });
-    expect(ready.status).toBe("ready");
-    if (ready.status === "ready") {
-      expect(ready.withdrawalColumns).not.toContain("userId");
-    }
+  it("marks monitoring-derived cards unavailable without operations data", () => {
+    const cards = buildOpsTriageCards({ statusSummaries: summarizeWithdrawalStates(WITHDRAWALS) });
+    expect(cards.find((c) => c.id === "settlement-backlog")?.value).toBe("N/A");
+    expect(cards.find((c) => c.id === "failed-withdrawals")?.value).toBe("1");
   });
 });

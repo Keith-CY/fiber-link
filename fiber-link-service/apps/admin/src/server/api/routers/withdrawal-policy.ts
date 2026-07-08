@@ -1,6 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { adminProcedure, router } from "../trpc";
 import { parseWithdrawalPolicyInput, type WithdrawalPolicyInput } from "../../../withdrawal-policy-input";
+import { PolicyScopeError, UnknownAppError } from "../../services/errors";
 
 function parsePolicyInput(input: unknown): WithdrawalPolicyInput {
   try {
@@ -22,10 +23,10 @@ export const withdrawalPolicyRouter = router({
     try {
       return await ctx.services.upsertPolicy(ctx.scope, input);
     } catch (error) {
-      if (error instanceof Error && error.message.includes("COMMUNITY_ADMIN")) {
+      if (error instanceof PolicyScopeError) {
         throw new TRPCError({ code: "FORBIDDEN", message: error.message });
       }
-      if (error instanceof Error && error.message.startsWith("unknown app")) {
+      if (error instanceof UnknownAppError) {
         throw new TRPCError({ code: "NOT_FOUND", message: error.message });
       }
       throw new TRPCError({

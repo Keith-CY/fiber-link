@@ -3,6 +3,7 @@ import { createDbAdminServices } from "./db-services";
 import { loadFixtureAdminServices } from "./fixture-services";
 
 export * from "./types";
+export * from "./errors";
 export { createDbAdminServices } from "./db-services";
 export { createFixtureAdminServices, loadFixtureAdminServices, type DashboardFixture } from "./fixture-services";
 

@@ -67,6 +67,16 @@ describe("fixture admin services", () => {
     expect(beta.map((w) => w.id)).toEqual(["w-2"]);
   });
 
+  it("summarizes withdrawal states per scope in canonical order", async () => {
+    const services = createFixtureAdminServices(buildFixture());
+    const summary = await services.summarizeWithdrawals(SUPER);
+    expect(summary).toHaveLength(7);
+    expect(summary[0]?.state).toBe("LIQUIDITY_PENDING");
+    const scoped = await services.summarizeWithdrawals(COMMUNITY);
+    const scopedTotal = scoped.reduce((sum, s) => sum + s.count, 0);
+    expect(scopedTotal).toBe(1);
+  });
+
   it("redacts userId and toAddress for COMMUNITY_ADMIN withdrawals", async () => {
     const services = createFixtureAdminServices(buildFixture());
     const rows = await services.listWithdrawals(COMMUNITY);
