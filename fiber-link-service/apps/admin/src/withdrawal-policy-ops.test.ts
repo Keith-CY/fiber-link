@@ -22,7 +22,7 @@ describe("withdrawal policy ops", () => {
     const command = parseWithdrawalPolicyCommand(["list"], {
       ADMIN_ROLE: "COMMUNITY_ADMIN",
       ADMIN_USER_ID: "admin-42",
-    } as NodeJS.ProcessEnv);
+    } as unknown as NodeJS.ProcessEnv);
 
     expect(command).toEqual({
       action: "list",
@@ -45,7 +45,7 @@ describe("withdrawal policy ops", () => {
         ],
         {
           ADMIN_ROLE: "SUPER_ADMIN",
-        } as NodeJS.ProcessEnv,
+        } as unknown as NodeJS.ProcessEnv,
       ),
     ).toThrow("ADMIN_USER_ID is required");
   });
@@ -64,7 +64,7 @@ describe("withdrawal policy ops", () => {
       {
         ADMIN_ROLE: "SUPER_ADMIN",
         ADMIN_USER_ID: "admin-1",
-      } as NodeJS.ProcessEnv,
+      } as unknown as NodeJS.ProcessEnv,
     );
 
     const result = await runWithdrawalPolicyCommand(command, {
@@ -94,7 +94,7 @@ describe("withdrawal policy ops", () => {
   });
 
   it("returns list output with actor metadata", async () => {
-    const command = parseWithdrawalPolicyCommand(["list", "--role=SUPER_ADMIN"], {} as NodeJS.ProcessEnv);
+    const command = parseWithdrawalPolicyCommand(["list", "--role=SUPER_ADMIN"], {} as unknown as NodeJS.ProcessEnv);
 
     const result = await runWithdrawalPolicyCommand(command, {
       listPolicies: async ({ ctx }) => {

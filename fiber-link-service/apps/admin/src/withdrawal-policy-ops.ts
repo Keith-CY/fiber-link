@@ -1,6 +1,6 @@
-import { createDbClient, type DbClient, type UserRole, type WithdrawalPolicyRecord } from "@fiber-link/db";
-import { withdrawalPolicyRouter } from "./server/api/routers/withdrawal-policy";
-import type { TrpcContext } from "./server/api/trpc";
+import type { UserRole, WithdrawalPolicyRecord } from "@fiber-link/db";
+import { createDbAdminServices, type AdminScope } from "./server/services";
+import type { DashboardWithdrawalPolicy } from "./dashboard/dashboard-page-model";
 import { parseWithdrawalPolicyInput, type WithdrawalPolicyInput } from "./withdrawal-policy-input";
 
 type ListCommand = {
@@ -18,20 +18,40 @@ type UpsertCommand = {
 
 export type WithdrawalPolicyCommand = ListCommand | UpsertCommand;
 
+/** Actor identity the CLI passes to the services seam (mirrors {@link AdminScope}). */
+type WithdrawalPolicyActorContext = AdminScope;
+
 type WithdrawalPolicyOpsDependencies = {
-  createDb?: () => DbClient;
-  listPolicies: (input: { ctx: TrpcContext }) => Promise<WithdrawalPolicyRecord[]>;
+  listPolicies: (input: { ctx: WithdrawalPolicyActorContext }) => Promise<WithdrawalPolicyRecord[]>;
   upsertPolicy: (input: {
-    ctx: TrpcContext;
+    ctx: WithdrawalPolicyActorContext;
     input: UpsertCommand["input"];
   }) => Promise<WithdrawalPolicyRecord>;
 };
 
-const DEFAULT_DEPENDENCIES: WithdrawalPolicyOpsDependencies = {
-  createDb: () => createDbClient(),
-  listPolicies: async ({ ctx }) => withdrawalPolicyRouter.createCaller(ctx).list(),
-  upsertPolicy: async ({ ctx, input }) => withdrawalPolicyRouter.createCaller(ctx).upsert(input),
-};
+function toRecord(policy: DashboardWithdrawalPolicy): WithdrawalPolicyRecord {
+  return {
+    appId: policy.appId,
+    allowedAssets: policy.allowedAssets,
+    maxPerRequest: policy.maxPerRequest,
+    perUserDailyMax: policy.perUserDailyMax,
+    perAppDailyMax: policy.perAppDailyMax,
+    cooldownSeconds: policy.cooldownSeconds,
+    updatedBy: policy.updatedBy,
+    createdAt: new Date(policy.createdAt),
+    updatedAt: new Date(policy.updatedAt),
+  };
+}
+
+function createDefaultDependencies(): WithdrawalPolicyOpsDependencies {
+  // The CLI runs outside a request, so it talks to the real Postgres-backed
+  // services directly (no fixture, no tRPC handler).
+  const services = createDbAdminServices();
+  return {
+    listPolicies: async ({ ctx }) => (await services.listPolicies(ctx)).map(toRecord),
+    upsertPolicy: async ({ ctx, input }) => toRecord(await services.upsertPolicy(ctx, input)),
+  };
+}
 
 function parseRole(raw: string | undefined): UserRole {
   if (raw === "SUPER_ADMIN" || raw === "COMMUNITY_ADMIN") {
@@ -87,7 +107,7 @@ export function parseWithdrawalPolicyCommand(
 
 export async function runWithdrawalPolicyCommand(
   command: WithdrawalPolicyCommand,
-  deps: WithdrawalPolicyOpsDependencies = DEFAULT_DEPENDENCIES,
+  deps: WithdrawalPolicyOpsDependencies = createDefaultDependencies(),
 ): Promise<
   | {
       action: "list";
@@ -102,10 +122,9 @@ export async function runWithdrawalPolicyCommand(
       policy: WithdrawalPolicyRecord;
     }
 > {
-  const ctx: TrpcContext = {
+  const ctx: WithdrawalPolicyActorContext = {
     role: command.role,
     adminUserId: command.adminUserId,
-    db: deps.createDb ? deps.createDb() : undefined,
   };
   const actor = {
     role: command.role,

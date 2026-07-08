@@ -9,7 +9,12 @@ export default defineConfig({
         "**/*.test.ts",
         "**/*.test.tsx",
         "src/server/auth.ts",
-        "src/pages/index.tsx",
+        // Presentational / client-data layer is exercised by the Playwright
+        // acceptance harness, not vitest unit tests.
+        "src/pages/**",
+        "src/components/**",
+        "src/utils/trpc.ts",
+        "src/lib/format.ts",
       ],
     },
   },

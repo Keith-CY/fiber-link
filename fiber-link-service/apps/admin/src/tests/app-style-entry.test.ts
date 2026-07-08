@@ -6,20 +6,25 @@ import { fileURLToPath } from "node:url";
 const currentDir = dirname(fileURLToPath(import.meta.url));
 const pagesAppPath = resolve(currentDir, "../pages/_app.tsx");
 const globalsCssPath = resolve(currentDir, "../styles/globals.css");
+const postcssConfigPath = resolve(currentDir, "../../postcss.config.js");
 
 describe("admin style entrypoint", () => {
-  it("loads global stylesheet through the Next app shell", () => {
+  it("loads the global stylesheet through the Next app shell", () => {
     expect(existsSync(pagesAppPath)).toBe(true);
     expect(existsSync(globalsCssPath)).toBe(true);
 
     const appShellSource = readFileSync(pagesAppPath, "utf8");
-    const globalsCssSource = readFileSync(globalsCssPath, "utf8");
-
     expect(appShellSource).toContain('import "../styles/globals.css";');
-    expect(globalsCssSource).toContain(".dashboard-shell");
-    expect(globalsCssSource).toContain(".hero-panel");
-    expect(globalsCssSource).toContain('"Newsreader"');
+  });
+
+  it("uses the Tailwind v4 CSS-first pipeline with the console theme tokens", () => {
+    expect(existsSync(postcssConfigPath)).toBe(true);
+    const postcssSource = readFileSync(postcssConfigPath, "utf8");
+    expect(postcssSource).toContain("@tailwindcss/postcss");
+
+    const globalsCssSource = readFileSync(globalsCssPath, "utf8");
+    expect(globalsCssSource).toContain('@import "tailwindcss"');
+    expect(globalsCssSource).toContain("--color-primary");
     expect(globalsCssSource).toContain('"Manrope"');
-    expect(globalsCssSource).toContain("#f9f9f9");
   });
 });

@@ -1,703 +1,136 @@
-import type { ParsedUrlQuery } from "querystring";
-import React from "react";
-import {
-  buildDashboardViewModel,
-  type DashboardBackupBundle,
-  type DashboardPageState,
-  type DashboardRateLimitConfig,
-  type DashboardWithdrawal,
-  type DashboardWithdrawalPolicy,
-} from "../dashboard/dashboard-page-model";
-import {
-  readDashboardPolicyFlash,
-  type DashboardPolicyDraft,
-  type DashboardPolicyFlash,
-} from "../dashboard/dashboard-policy-form";
-import {
-  readDashboardOperationFlash,
-  type DashboardOperationFlash,
-  type DashboardRateLimitDraft,
-} from "../dashboard/dashboard-operation-form";
+import Link from "next/link";
+import { trpc } from "../utils/trpc";
+import { PageHeader, QueryBoundary, StatCard } from "../components/page";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
+import { Badge } from "../components/ui/badge";
+import { buildOpsTriageCards, type DashboardOpsTriageCard } from "../dashboard/dashboard-page-model";
 
-type HomePageProps = {
-  initialState?: DashboardPageState;
-  policyFlash?: DashboardPolicyFlash;
-  operationFlash?: DashboardOperationFlash;
+const TRIAGE_ROUTE: Record<string, string> = {
+  "settlement-backlog": "/settlements",
+  "withdrawal-backlog": "/withdrawals",
+  "liquidity-pending": "/withdrawals?state=LIQUIDITY_PENDING",
+  "failed-withdrawals": "/withdrawals?state=FAILED",
+  "ops-alerts": "/ops",
 };
 
-type HeaderValue = string | string[] | undefined;
-type RequestHeaders = Record<string, HeaderValue>;
-
-type PolicyCard = {
-  appId: string;
-  updatedBy: string | null;
-  updatedAt: string;
-  values: DashboardPolicyDraft;
+const TONE: Record<DashboardOpsTriageCard["severity"], "default" | "warning" | "danger"> = {
+  ok: "default",
+  watch: "warning",
+  alert: "danger",
 };
 
-export default function HomePage({
-  initialState = { status: "loading" },
-  policyFlash,
-  operationFlash,
-}: HomePageProps) {
-  const viewModel = buildDashboardViewModel(initialState);
+export default function OverviewPage() {
+  const session = trpc.session.me.useQuery();
+  const role = session.data?.role ?? null;
+  const isSuperAdmin = role === "SUPER_ADMIN";
 
-  if (viewModel.status === "loading") {
-    return (
-      <main className="dashboard-shell">
-        <div className="dashboard-page">
-          <section className="section-card">
-            <div className="section-header">
-              <h1 className="section-title">{viewModel.title}</h1>
-              <p className="section-caption">Loading dashboard data...</p>
-            </div>
-          </section>
-        </div>
-      </main>
-    );
-  }
+  const apps = trpc.apps.list.useQuery(undefined, { enabled: Boolean(role) });
+  // Server-side GROUP BY over the whole scope — the capped list query would
+  // undercount and would ship every row just to derive these numbers.
+  const stateSummary = trpc.withdrawals.stateSummary.useQuery(undefined, { enabled: Boolean(role) });
+  const monitoring = trpc.ops.monitoring.useQuery(undefined, { enabled: isSuperAdmin });
 
-  if (viewModel.status === "error") {
-    return (
-      <main className="dashboard-shell">
-        <div className="dashboard-page">
-          <section className="section-card">
-            <div className="section-header">
-              <h1 className="section-title">{viewModel.title}</h1>
-              <p className="notice notice--error" role="alert">
-                Failed to load dashboard data: {viewModel.message}
-              </p>
-            </div>
-          </section>
-        </div>
-      </main>
-    );
-  }
-
-  const rateLimitFormValues = buildRateLimitFormValues(viewModel.operations?.rateLimit, operationFlash);
-  const backupBundles = viewModel.operations?.backups.status === "ready" ? viewModel.operations.backups.bundles : [];
+  const summaries = stateSummary.data ?? [];
+  const openWithdrawals = stateSummary.data
+    ? summaries.filter((s) => s.state !== "COMPLETED" && s.state !== "FAILED").reduce((sum, s) => sum + s.count, 0)
+    : null;
+  const triageCards =
+    isSuperAdmin && stateSummary.data
+      ? buildOpsTriageCards({
+          statusSummaries: summaries,
+          operations: monitoring.data
+            ? {
+                monitoring: { status: "ready", summary: monitoring.data },
+                rateLimit: { status: "error", message: "n/a" },
+                backups: { status: "error", message: "n/a" },
+              }
+            : undefined,
+        })
+      : [];
 
   return (
-    <main className="dashboard-shell">
-      <div className="dashboard-page">
-        <section className="hero-panel">
-          <p className="hero-kicker">Fiber Link service operation admin</p>
-          <h1 className="hero-title">{viewModel.title}</h1>
-          <p className="hero-summary">{viewModel.roleVisibility.scopeDescription}</p>
+    <div>
+      <PageHeader
+        title="Operations overview"
+        description={session.data?.visibility?.scopeDescription ?? "Fiber Link service operations console"}
+        actions={role ? <Badge variant={isSuperAdmin ? "default" : "secondary"}>{role}</Badge> : null}
+      />
 
-          <div className="hero-meta-row">
-            <div className="hero-pill">
-              <p className="hero-pill-label">Role</p>
-              <p className="hero-pill-value">{viewModel.role}</p>
-            </div>
-            <div className="hero-pill">
-              <p className="hero-pill-label">Visible apps</p>
-              <p className="hero-pill-value">{viewModel.apps.length}</p>
-            </div>
-            <div className="hero-pill">
-              <p className="hero-pill-label">Policy surfaces</p>
-              <p className="hero-pill-value">{viewModel.roleVisibility.showGlobalControls ? "Global + app-scoped" : "App-scoped only"}</p>
-            </div>
-          </div>
-
-          {viewModel.roleVisibility.showGlobalControls ? (
-            <div className="hero-stat-grid">
-              <article className="metric-tile">
-                <p className="metric-label">Monitoring</p>
-                <p className="metric-value">{describeMonitoring(viewModel)}</p>
-              </article>
-              <article className="metric-tile">
-                <p className="metric-label">Rate limiting</p>
-                <p className="metric-value">{describeRateLimiting(viewModel)}</p>
-              </article>
-              <article className="metric-tile">
-                <p className="metric-label">Backups</p>
-                <p className="metric-value">{describeBackups(viewModel)}</p>
-              </article>
-            </div>
+      <QueryBoundary
+        isLoading={session.isLoading}
+        error={session.error}
+        isEmpty={!role}
+        emptyMessage="No admin role was supplied for this request."
+      >
+        <section className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
+          <StatCard label="Visible apps" value={apps.data?.length ?? "—"} />
+          <StatCard label="Open withdrawals" value={openWithdrawals ?? "—"} />
+          {isSuperAdmin ? (
+            <>
+              <StatCard
+                label="Unpaid settlements"
+                value={monitoring.data?.unpaidBacklog ?? "—"}
+                tone={(monitoring.data?.unpaidBacklog ?? 0) > 0 ? "warning" : "default"}
+              />
+              <StatCard
+                label="Ops alerts"
+                value={monitoring.data?.alertCount ?? "—"}
+                tone={(monitoring.data?.alertCount ?? 0) > 0 ? "danger" : "success"}
+                hint={monitoring.data ? `status: ${monitoring.data.status}` : undefined}
+              />
+            </>
           ) : null}
         </section>
 
-        {viewModel.roleVisibility.showGlobalControls ? (
-          <section className="section-card" id="operations-command-center" aria-labelledby="operations-command-center-title">
-            <div className="section-header">
-              <h2 className="section-title" id="operations-command-center-title">Operations command center</h2>
-              <p className="section-caption">
-                Dedicated admin-only triage cards for settlement backlog, withdrawal queues, liquidity blockers, and production alerts.
-              </p>
-            </div>
-            <div className="triage-grid">
-              {viewModel.opsTriageCards.map((card) => (
-                <a className={`triage-card triage-card--${card.severity}`} href={card.href} key={card.id} data-testid={`ops-triage-${card.id}`}>
-                  <span className="triage-label">{card.label}</span>
-                  <span className="triage-value">{card.value}</span>
-                  <span className="triage-description">{card.description}</span>
-                </a>
+        {triageCards.length > 0 ? (
+          <section className="mb-6">
+            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">Triage</h2>
+            <div className="grid gap-4 md:grid-cols-3">
+              {triageCards.map((card) => (
+                <Link key={card.id} href={TRIAGE_ROUTE[card.id] ?? "/"} data-testid={`triage-${card.id}`}>
+                  <Card className="h-full transition-colors hover:border-primary">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="flex items-center justify-between text-sm">
+                        {card.label}
+                        <StatBadge tone={TONE[card.severity]} />
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-semibold">{card.value}</div>
+                      <p className="mt-1 text-xs text-muted-foreground">{card.description}</p>
+                    </CardContent>
+                  </Card>
+                </Link>
               ))}
             </div>
           </section>
         ) : null}
 
-        <div className="card-grid">
-          {viewModel.roleVisibility.showGlobalControls ? (
-            <section className="section-card">
-              <div className="section-header">
-                <h2 className="section-title">Operations overview</h2>
-                <p className="section-caption">The standalone operation admin should surface monitoring, rate-limit posture, and backup readiness at a glance.</p>
-              </div>
-              <ul className="overview-list">
-                <li className="overview-item">
-                  <p className="overview-label">Monitoring</p>
-                  <p className="overview-value">{describeMonitoring(viewModel)}</p>
-                </li>
-                <li className="overview-item">
-                  <p className="overview-label">Rate limiting</p>
-                  <p className="overview-value">{describeRateLimiting(viewModel)}</p>
-                </li>
-                <li className="overview-item">
-                  <p className="overview-label">Backups</p>
-                  <p className="overview-value">{describeBackups(viewModel)}</p>
-                </li>
-              </ul>
-            </section>
-          ) : null}
-
-          <section className="section-card">
-            <div className="section-header">
-              <h2 className="section-title">Status summaries</h2>
-              <p className="section-caption">Current withdrawal pipeline counts for the apps visible to this operator.</p>
-            </div>
-            <ul className="summary-badges">
-              {viewModel.statusSummaries.map((summary) => (
-                <li className="summary-badge" key={summary.state}>
-                  <p className="summary-badge-label">{summary.state}</p>
-                  <p className="summary-badge-value">{summary.count}</p>
-                </li>
-              ))}
-            </ul>
-          </section>
-        </div>
-
-        <div className="card-grid">
-          <section className="section-card">
-            <div className="section-header">
-              <h2 className="section-title">App list</h2>
-              <p className="section-caption">Apps in the current operation-admin scope.</p>
-            </div>
-            {viewModel.apps.length === 0 ? (
-              <p className="empty-state">No apps found.</p>
-            ) : (
-              <div className="table-shell">
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>App ID</th>
-                      <th>Created At</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {viewModel.apps.map((app) => (
-                      <tr key={app.appId}>
-                        <td>{app.appId}</td>
-                        <td>{formatDate(app.createdAt)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </section>
-
-          <section className="section-card" id="withdrawals">
-            <div className="section-header">
-              <h2 className="section-title">Withdrawals</h2>
-              <p className="section-caption">Recent payout requests and their current state.</p>
-            </div>
-            {viewModel.withdrawals.length === 0 ? (
-              <p className="empty-state">No withdrawals found.</p>
-            ) : (
-              <div className="table-shell">
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      {viewModel.withdrawalColumns.map((column) => (
-                        <th key={column}>{toColumnLabel(column)}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {viewModel.withdrawals.map((withdrawal) => (
-                      <tr key={withdrawal.id}>
-                        {viewModel.withdrawalColumns.map((column) => (
-                          <td key={column}>{formatWithdrawalCell(withdrawal, column)}</td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </section>
-        </div>
-
-        {viewModel.roleVisibility.showGlobalControls ? (
-          <section className="section-card" id="monitoring">
-            <div className="section-header">
-              <h2 className="section-title">Monitoring</h2>
-              <p className="section-caption">Runtime health and ops-summary details for the Fiber Link deployment surface.</p>
-            </div>
-            {viewModel.operations?.monitoring.status === "ready" ? (
-              <>
-                <ul className="detail-list">
-                  <li className="detail-item">
-                    <p className="detail-label">Status</p>
-                    <p className="detail-value">{viewModel.operations.monitoring.summary.status}</p>
-                  </li>
-                  <li className="detail-item">
-                    <p className="detail-label">Generated at</p>
-                    <p className="detail-value">{formatDate(viewModel.operations.monitoring.summary.generatedAt)}</p>
-                  </li>
-                  <li className="detail-item">
-                    <p className="detail-label">Readiness</p>
-                    <p className="detail-value">{viewModel.operations.monitoring.summary.readinessStatus}</p>
-                  </li>
-                  <li className="detail-item">
-                    <p className="detail-label">Alerts</p>
-                    <p className="detail-value">{viewModel.operations.monitoring.summary.alertCount}</p>
-                  </li>
-                  <li className="detail-item">
-                    <p className="detail-label">Unpaid backlog</p>
-                    <p className="detail-value">{viewModel.operations.monitoring.summary.unpaidBacklog}</p>
-                  </li>
-                  <li className="detail-item">
-                    <p className="detail-label">Retry pending</p>
-                    <p className="detail-value">{viewModel.operations.monitoring.summary.retryPendingCount}</p>
-                  </li>
-                  <li className="detail-item">
-                    <p className="detail-label">Withdrawal parity issues</p>
-                    <p className="detail-value">{viewModel.operations.monitoring.summary.withdrawalParityIssueCount}</p>
-                  </li>
-                </ul>
-                {viewModel.operations.monitoring.summary.rawJson ? (
-                  <details className="raw-json">
-                    <summary>Raw ops summary JSON</summary>
-                    <pre className="code-block">{viewModel.operations.monitoring.summary.rawJson}</pre>
-                  </details>
-                ) : null}
-              </>
-            ) : (
-              <p className="notice notice--error" role="alert">
-                Monitoring unavailable: {viewModel.operations?.monitoring.message ?? "unknown error"}
-              </p>
-            )}
-          </section>
-        ) : null}
-
-        <section className="section-card">
-          <div className="section-header">
-            <h2 className="section-title">App policy controls</h2>
-            <p className="section-caption">Direct DB-backed withdrawal policy editing inside the standalone operation admin.</p>
-          </div>
-          {policyFlash?.savedAppId ? (
-            <p className="notice notice--status" role="status">
-              Policy saved for {policyFlash.savedAppId}
-            </p>
-          ) : null}
-          {policyFlash?.formError ? (
-            <p className="notice notice--error" role="alert">
-              {policyFlash.formError}
-            </p>
-          ) : null}
-          <div className="policy-grid">
-            {buildPolicyCards(viewModel.policies, viewModel.apps.map((app) => app.appId), policyFlash?.draft).map((card) => (
-              <article className="policy-card" key={card.appId}>
-                <div className="section-header">
-                  <h3 className="card-title">{card.appId}</h3>
-                  <p className="card-meta">
-                    Updated by {card.updatedBy ?? "N/A"} at {formatDate(card.updatedAt)}
-                  </p>
-                </div>
-                <form className="form-stack" method="post" action="/api/withdrawal-policies" data-testid={`policy-form-${card.appId}`}>
-                  <input type="hidden" name="appId" value={card.appId} />
-                  <fieldset className="checkbox-group">
-                    <legend>Allowed assets</legend>
-                    <div className="checkbox-row">
-                      <label className="checkbox-option">
-                        <input
-                          type="checkbox"
-                          name="allowedAssets"
-                          value="CKB"
-                          defaultChecked={card.values.allowedAssets.includes("CKB")}
-                        />
-                        CKB
-                      </label>
-                      <label className="checkbox-option">
-                        <input
-                          type="checkbox"
-                          name="allowedAssets"
-                          value="USDI"
-                          defaultChecked={card.values.allowedAssets.includes("USDI")}
-                        />
-                        USDI
-                      </label>
-                    </div>
-                  </fieldset>
-                  <div className="field-grid">
-                    <label className="field">
-                      <span className="field-label">Max Per Request</span>
-                      <input type="text" name="maxPerRequest" defaultValue={card.values.maxPerRequest} />
-                    </label>
-                    <label className="field">
-                      <span className="field-label">Per-User Daily Max</span>
-                      <input type="text" name="perUserDailyMax" defaultValue={card.values.perUserDailyMax} />
-                    </label>
-                    <label className="field">
-                      <span className="field-label">Per-App Daily Max</span>
-                      <input type="text" name="perAppDailyMax" defaultValue={card.values.perAppDailyMax} />
-                    </label>
-                    <label className="field">
-                      <span className="field-label">Cooldown Seconds</span>
-                      <input type="number" name="cooldownSeconds" min={0} step={1} defaultValue={card.values.cooldownSeconds} />
-                    </label>
+        <section>
+          <Card>
+            <CardHeader>
+              <CardTitle>Withdrawal pipeline</CardTitle>
+              <CardDescription>Current withdrawal counts for the apps visible to this operator.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-wrap gap-3">
+                {summaries.map((summary) => (
+                  <div key={summary.state} className="rounded-lg border px-4 py-2">
+                    <div className="text-xs uppercase tracking-wide text-muted-foreground">{summary.state}</div>
+                    <div className="text-lg font-semibold">{summary.count}</div>
                   </div>
-                  <div className="button-row">
-                    <button className="primary-button" type="submit">Save policy</button>
-                  </div>
-                </form>
-              </article>
-            ))}
-          </div>
-        </section>
-
-        {viewModel.roleVisibility.showGlobalControls ? (
-          <section className="section-card">
-            <div className="section-header">
-              <h2 className="section-title">Global rate limiting</h2>
-              <p className="section-caption">Generate a change set for runtime rate-limit controls without hot-editing deployment env files.</p>
-            </div>
-            {viewModel.operations?.rateLimit.status === "ready" ? (
-              <p className="card-meta">
-                Current source: <span className="inline-source">{viewModel.operations.rateLimit.config.sourceLabel}</span> | Redis backend:{" "}
-                {viewModel.operations.rateLimit.config.redisUrl ?? "unset"}
-              </p>
-            ) : (
-              <p className="notice notice--error" role="alert">
-                Rate limit configuration unavailable: {viewModel.operations?.rateLimit.message ?? "unknown error"}
-              </p>
-            )}
-            {operationFlash?.rateLimitError ? (
-              <p className="notice notice--error" role="alert">
-                {operationFlash.rateLimitError}
-              </p>
-            ) : null}
-            <form className="form-stack" method="post" action="/api/runtime-policies/rate-limit">
-              <div className="toggle-row">
-                <label className="toggle-option">
-                  <input
-                    type="checkbox"
-                    name="enabled"
-                    value="true"
-                    defaultChecked={rateLimitFormValues.enabled}
-                  />
-                  Enable rate limiting
-                </label>
-              </div>
-              <div className="field-grid">
-                <label className="field">
-                  <span className="field-label">Window (ms)</span>
-                  <input type="text" name="windowMs" defaultValue={rateLimitFormValues.windowMs} />
-                </label>
-                <label className="field">
-                  <span className="field-label">Max Requests</span>
-                  <input type="text" name="maxRequests" defaultValue={rateLimitFormValues.maxRequests} />
-                </label>
-              </div>
-              <div className="button-row">
-                <button className="primary-button" type="submit">Generate rate-limit change set</button>
-              </div>
-            </form>
-
-            {operationFlash?.rateLimitChangeSet ? (
-              <article className="change-set-card">
-                <h3 className="card-title">Generated change set</h3>
-                <p className="card-meta">
-                  Changed keys:{" "}
-                  {operationFlash.rateLimitChangeSet.changedKeys.length > 0
-                    ? operationFlash.rateLimitChangeSet.changedKeys.join(", ")
-                    : "No effective changes"}
-                </p>
-                <pre className="code-block">{operationFlash.rateLimitChangeSet.envSnippet}</pre>
-                <h3 className="card-title">Rollback snapshot</h3>
-                <pre className="code-block">{operationFlash.rateLimitChangeSet.rollbackSnippet}</pre>
-              </article>
-            ) : null}
-          </section>
-        ) : null}
-
-        {viewModel.roleVisibility.showGlobalControls ? (
-          <section className="section-card">
-            <div className="section-header">
-              <h2 className="section-title">Backups</h2>
-              <p className="section-caption">Capture backup bundles and generate restore plans without triggering destructive restore from the browser.</p>
-            </div>
-            {operationFlash?.backupCapture ? (
-              <p
-                className={`notice ${operationFlash.backupCapture.status === "error" ? "notice--error" : "notice--status"}`}
-                role={operationFlash.backupCapture.status === "error" ? "alert" : "status"}
-              >
-                {operationFlash.backupCapture.message}
-              </p>
-            ) : null}
-            <form className="form-stack" method="post" action="/api/backups/capture">
-              <div className="button-row">
-                <button className="primary-button" type="submit">Capture backup</button>
-              </div>
-            </form>
-
-            {viewModel.operations?.backups.status === "error" ? (
-              <p className="notice notice--error" role="alert">
-                Backups unavailable: {viewModel.operations.backups.message}
-              </p>
-            ) : backupBundles.length === 0 ? (
-              <p className="empty-state">No backup bundles found.</p>
-            ) : (
-              <div className="backup-grid">
-                {backupBundles.map((bundle) => (
-                  <article className="backup-card" key={bundle.id}>
-                    <div className="section-header">
-                      <h3 className="card-title">{bundle.id}</h3>
-                      <p className="card-meta">
-                        Generated at {bundle.generatedAt} | Status {bundle.overallStatus} | Retention {bundle.retentionDays} days
-                      </p>
-                    </div>
-                    <p className="card-meta">Source: {bundle.archiveFile ?? bundle.backupDir}</p>
-                    <form className="form-stack" method="post" action="/api/backups/restore-plan">
-                      <input type="hidden" name="backupId" value={bundle.id} />
-                      <div className="button-row">
-                        <button className="primary-button" type="submit">Generate restore plan</button>
-                      </div>
-                    </form>
-                  </article>
                 ))}
               </div>
-            )}
-
-            {operationFlash?.backupRestorePlan ? (
-              <article className="restore-plan-card">
-                <h3 className="card-title">Restore plan</h3>
-                <p className="card-meta">Selected backup: {operationFlash.backupRestorePlan.backupId}</p>
-                <pre className="code-block">{operationFlash.backupRestorePlan.command}</pre>
-                {(operationFlash.backupRestorePlan.warnings ?? []).length > 0 ? (
-                  <ul className="restore-warnings">
-                    {operationFlash.backupRestorePlan.warnings?.map((warning) => (
-                      <li key={warning}>{warning}</li>
-                    ))}
-                  </ul>
-                ) : null}
-              </article>
-            ) : null}
-          </section>
-        ) : null}
-      </div>
-    </main>
+            </CardContent>
+          </Card>
+        </section>
+      </QueryBoundary>
+    </div>
   );
 }
 
-export async function getServerSideProps(context: { req?: { headers?: RequestHeaders }; query?: ParsedUrlQuery }) {
-  const { loadDashboardState } = await import("../server/dashboard-data");
-  const headers = context.req?.headers ?? {};
-  const searchParams = toSearchParams(context.query ?? {});
-  const policyFlash = readDashboardPolicyFlash(searchParams);
-  const operationFlash = readDashboardOperationFlash(searchParams);
-  const initialState = await loadDashboardState({
-    roleHeader: getHeader(headers, "x-admin-role"),
-    adminUserIdHeader: getHeader(headers, "x-admin-user-id"),
-  });
-
-  return {
-    props: {
-      initialState,
-      ...(policyFlash ? { policyFlash } : {}),
-      ...(operationFlash ? { operationFlash } : {}),
-    },
-  };
-}
-
-function getHeader(headers: RequestHeaders, key: string): string | undefined {
-  const value = headers[key];
-  if (Array.isArray(value)) {
-    return value[0];
-  }
-  return value;
-}
-
-function formatDate(dateText: string | null | undefined): string {
-  return dateText ?? "N/A";
-}
-
-function formatAge(seconds: number): string {
-  if (seconds < 60) return `${seconds}s`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 48) return `${hours}h`;
-  return `${Math.floor(hours / 24)}d`;
-}
-
-function formatWithdrawalCell(withdrawal: DashboardWithdrawal, column: keyof DashboardWithdrawal): React.ReactNode {
-  switch (column) {
-    case "createdAt":
-      return formatDate(withdrawal.createdAt);
-    case "ageSeconds":
-      return formatAge(withdrawal.ageSeconds ?? 0);
-    case "nextRetryAt":
-    case "liquidityCheckedAt":
-      return formatDate(withdrawal[column]);
-    case "lastError":
-      return withdrawal.lastError ?? "N/A";
-    case "liquidityPendingReason":
-      return withdrawal.liquidityPendingReason ?? "N/A";
-    case "txHash":
-      return withdrawal.txHash && withdrawal.txExplorerUrl ? (
-        <a href={withdrawal.txExplorerUrl}>{withdrawal.txHash}</a>
-      ) : (
-        "N/A"
-      );
-    default:
-      return String(withdrawal[column as keyof DashboardWithdrawal] ?? "N/A");
-  }
-}
-
-function toSearchParams(query: ParsedUrlQuery): URLSearchParams {
-  const searchParams = new URLSearchParams();
-  for (const [key, value] of Object.entries(query)) {
-    if (Array.isArray(value)) {
-      for (const item of value) {
-        searchParams.append(key, item);
-      }
-      continue;
-    }
-
-    if (typeof value === "string") {
-      searchParams.set(key, value);
-    }
-  }
-  return searchParams;
-}
-
-function buildPolicyCards(
-  policies: DashboardWithdrawalPolicy[],
-  appIds: string[],
-  draft?: DashboardPolicyDraft,
-): PolicyCard[] {
-  const policyMap = new Map(policies.map((policy) => [policy.appId, policy]));
-  const orderedAppIds = Array.from(new Set([...appIds, ...policies.map((policy) => policy.appId)])).sort();
-
-  return orderedAppIds.map((appId) => {
-    const policy = policyMap.get(appId);
-    const values =
-      draft?.appId === appId
-        ? draft
-        : {
-            appId,
-            allowedAssets: policy?.allowedAssets ?? [],
-            maxPerRequest: policy?.maxPerRequest ?? "",
-            perUserDailyMax: policy?.perUserDailyMax ?? "",
-            perAppDailyMax: policy?.perAppDailyMax ?? "",
-            cooldownSeconds: String(policy?.cooldownSeconds ?? 0),
-          };
-
-    return {
-      appId,
-      updatedBy: policy?.updatedBy ?? null,
-      updatedAt: policy?.updatedAt ?? "Not yet configured",
-      values,
-    };
-  });
-}
-
-function buildRateLimitFormValues(
-  rateLimitState: DashboardPageState extends any ? any : never,
-  operationFlash?: DashboardOperationFlash,
-): DashboardRateLimitDraft {
-  if (operationFlash?.rateLimitDraft) {
-    return operationFlash.rateLimitDraft;
-  }
-
-  if (rateLimitState?.status === "ready") {
-    const config = rateLimitState.config as DashboardRateLimitConfig;
-    return {
-      enabled: config.enabled,
-      windowMs: config.windowMs,
-      maxRequests: config.maxRequests,
-    };
-  }
-
-  return {
-    enabled: true,
-    windowMs: "60000",
-    maxRequests: "300",
-  };
-}
-
-function describeMonitoring(viewModel: ReturnType<typeof buildDashboardViewModel>): string {
-  if (viewModel.status !== "ready" || !viewModel.operations) {
-    return "Unavailable";
-  }
-  if (viewModel.operations.monitoring.status !== "ready") {
-    return "Unavailable";
-  }
-  return `${viewModel.operations.monitoring.summary.status} (${viewModel.operations.monitoring.summary.alertCount} alerts)`;
-}
-
-function describeRateLimiting(viewModel: ReturnType<typeof buildDashboardViewModel>): string {
-  if (viewModel.status !== "ready" || !viewModel.operations) {
-    return "Unavailable";
-  }
-  if (viewModel.operations.rateLimit.status !== "ready") {
-    return "Unavailable";
-  }
-  return viewModel.operations.rateLimit.config.enabled
-    ? `${viewModel.operations.rateLimit.config.maxRequests} requests / ${viewModel.operations.rateLimit.config.windowMs}ms`
-    : "Disabled";
-}
-
-function describeBackups(viewModel: ReturnType<typeof buildDashboardViewModel>): string {
-  if (viewModel.status !== "ready" || !viewModel.operations) {
-    return "Unavailable";
-  }
-  if (viewModel.operations.backups.status !== "ready") {
-    return "Unavailable";
-  }
-
-  const bundles = viewModel.operations.backups.bundles as DashboardBackupBundle[];
-  if (bundles.length === 0) {
-    return "No bundles";
-  }
-  return `${bundles.length} bundle(s), latest ${bundles[0].id}`;
-}
-
-function toColumnLabel(column: string): string {
-  switch (column) {
-    case "appId":
-      return "App ID";
-    case "userId":
-      return "User ID";
-    case "createdAt":
-      return "Created At";
-    case "txHash":
-      return "Tx Hash";
-    case "ageSeconds":
-      return "Age";
-    case "retryCount":
-      return "Retries";
-    case "lastError":
-      return "Last Error";
-    case "liquidityPendingReason":
-      return "Liquidity Status";
-    case "liquidityCheckedAt":
-      return "Liquidity Checked";
-    default:
-      return column.toUpperCase();
-  }
+function StatBadge({ tone }: { tone: "default" | "warning" | "danger" }) {
+  const variant = tone === "danger" ? "destructive" : tone === "warning" ? "warning" : "secondary";
+  const label = tone === "danger" ? "alert" : tone === "warning" ? "watch" : "ok";
+  return <Badge variant={variant}>{label}</Badge>;
 }
