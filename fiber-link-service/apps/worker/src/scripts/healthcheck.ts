@@ -7,7 +7,7 @@ if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
   process.exit(1);
 }
 
-const fiberRpcUrl = process.env.FIBER_RPC_URL ?? "";
+const fiberRpcUrl = process.env.FIBER_RPC_URL?.trim() ?? "";
 if (!fiberRpcUrl) {
   console.error("[worker-healthcheck] FIBER_RPC_URL is required");
   process.exit(1);
