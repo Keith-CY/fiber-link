@@ -14,9 +14,10 @@ function readHeader(req: IncomingMessage, key: string): string | undefined {
 }
 
 function timingSafeEquals(a: string, b: string): boolean {
-  const left = Buffer.from(a);
-  const right = Buffer.from(b);
-  if (left.length !== right.length) return false;
+  // Hash both sides to fixed-length digests so the comparison cost does not
+  // depend on either string's length (avoids leaking the secret's length).
+  const left = crypto.createHash("sha256").update(a).digest();
+  const right = crypto.createHash("sha256").update(b).digest();
   return crypto.timingSafeEqual(left, right);
 }
 
