@@ -82,7 +82,7 @@ export function registerStreamRoute(
   const maxConnections = options.maxConnections ?? parsePositiveIntEnv("RPC_STREAM_MAX_CONNECTIONS", DEFAULT_MAX_CONNECTIONS);
   const maxConnectionsPerApp =
     options.maxConnectionsPerApp ?? parsePositiveIntEnv("RPC_STREAM_MAX_CONNECTIONS_PER_APP", DEFAULT_MAX_CONNECTIONS_PER_APP);
-  const corsOrigin = options.corsOrigin ?? process.env.RPC_STREAM_CORS_ORIGIN?.trim() ?? "*";
+  const corsOrigin = options.corsOrigin ?? (process.env.RPC_STREAM_CORS_ORIGIN?.trim() || "*");
 
   // Long-lived SSE connections pin a response, a channel listener, and (on the
   // fallback path) a poll timer for up to a minute each, so bound them globally
@@ -149,156 +149,157 @@ export function registerStreamRoute(
       return reply.status(429).send({ error: "Too many concurrent streams" });
     }
 
-    let intent: StreamInvoiceRecord | null;
+    // finally guarantees the slot is released on every path, including
+    // exceptions thrown during setup; the long-lived path only returns after
+    // the response closes, so release timing matches connection lifetime.
     try {
-      intent = await getInvoice(invoice);
-    } catch {
-      releaseSlot();
-      return reply.status(503).send({ error: "Stream temporarily unavailable" });
-    }
+      let intent: StreamInvoiceRecord | null;
+      try {
+        intent = await getInvoice(invoice);
+      } catch {
+        return reply.status(503).send({ error: "Stream temporarily unavailable" });
+      }
 
-    if (intent === null) {
-      releaseSlot();
-      return reply.status(404).send({ error: "Invoice not found" });
-    }
+      if (intent === null) {
+        return reply.status(404).send({ error: "Invoice not found" });
+      }
 
-    if (intent.appId !== requesterAppId) {
-      releaseSlot();
-      return reply.status(403).send({ error: "Invoice does not belong to this app" });
-    }
+      if (intent.appId !== requesterAppId) {
+        return reply.status(403).send({ error: "Invoice does not belong to this app" });
+      }
 
-    const currentState = intent.invoiceState;
+      const currentState = intent.invoiceState;
 
-    if (currentState === "SETTLED") {
+      if (currentState === "SETTLED") {
+        reply.raw.setHeader("Content-Type", "text/event-stream");
+        reply.raw.setHeader("Cache-Control", "no-cache");
+        reply.raw.setHeader("Connection", "keep-alive");
+        reply.raw.setHeader("Access-Control-Allow-Origin", corsOrigin);
+        reply.raw.write(`data: ${JSON.stringify({ invoice, status: "SETTLED" })}\n\n`);
+        reply.raw.end();
+        return;
+      }
+
+      const redisUrl = getRedisUrl();
+      if (!redisUrl && !options.createSubscriber) {
+        return reply.status(503).send({ error: "Stream unavailable: no Redis" });
+      }
+
       reply.raw.setHeader("Content-Type", "text/event-stream");
       reply.raw.setHeader("Cache-Control", "no-cache");
       reply.raw.setHeader("Connection", "keep-alive");
       reply.raw.setHeader("Access-Control-Allow-Origin", corsOrigin);
-      reply.raw.write(`data: ${JSON.stringify({ invoice, status: "SETTLED" })}\n\n`);
-      reply.raw.end();
-      releaseSlot();
-      return;
-    }
 
-    const redisUrl = getRedisUrl();
-    if (!redisUrl && !options.createSubscriber) {
-      releaseSlot();
-      return reply.status(503).send({ error: "Stream unavailable: no Redis" });
-    }
+      const channel = `fiber-link:settlement:${invoice}`;
 
-    reply.raw.setHeader("Content-Type", "text/event-stream");
-    reply.raw.setHeader("Cache-Control", "no-cache");
-    reply.raw.setHeader("Connection", "keep-alive");
-    reply.raw.setHeader("Access-Control-Allow-Origin", corsOrigin);
+      // Tests inject createSubscriber for a per-request mock; production uses the shared singleton.
+      const useShared = !options.createSubscriber;
+      const sub = useShared
+        ? getOrCreateSharedRedis(redisUrl ?? "")
+        : options.createSubscriber!(redisUrl ?? "");
 
-    const channel = `fiber-link:settlement:${invoice}`;
+      let finished = false;
+      let pollTimer: ReturnType<typeof setTimeout> | null = null;
 
-    // Tests inject createSubscriber for a per-request mock; production uses the shared singleton.
-    const useShared = !options.createSubscriber;
-    const sub = useShared
-      ? getOrCreateSharedRedis(redisUrl ?? "")
-      : options.createSubscriber!(redisUrl ?? "");
+      function messageHandler(raw: string) {
+        if (finished) return;
+        try {
+          const payload = JSON.parse(raw);
+          reply.raw.write(`data: ${JSON.stringify(payload)}\n\n`);
+          if (payload.status === "SETTLED") {
+            clearTimeout(timeout);
+            finish();
+          }
+        } catch {
+          // malformed message — ignore
+        }
+      }
 
-    let finished = false;
-    let pollTimer: ReturnType<typeof setTimeout> | null = null;
+      function finish() {
+        if (finished) return;
+        finished = true;
+        if (pollTimer) {
+          clearTimeout(pollTimer);
+          pollTimer = null;
+        }
+        if (useShared) {
+          removeChannelListener(sub, channel, messageHandler);
+        } else {
+          sub.unsubscribe(channel).catch(() => {});
+          sub.disconnect();
+        }
+        if (!reply.raw.writableEnded) reply.raw.end();
+      }
 
-    function messageHandler(raw: string) {
-      if (finished) return;
-      try {
-        const payload = JSON.parse(raw);
-        reply.raw.write(`data: ${JSON.stringify(payload)}\n\n`);
-        if (payload.status === "SETTLED") {
+      function schedulePoll() {
+        if (finished || !options.pollInvoiceStateFn) return;
+        const intervalMs = options.pollIntervalMs ?? POLL_INTERVAL_MS;
+        pollTimer = setTimeout(async () => {
+          if (finished) return;
+          try {
+            const state = await options.pollInvoiceStateFn!(invoice);
+            if (!finished && state === "SETTLED") {
+              clearTimeout(timeout);
+              reply.raw.write(`data: ${JSON.stringify({ invoice, status: "SETTLED" })}\n\n`);
+              finish();
+              return;
+            }
+          } catch {
+            // poll failure is non-fatal; Redis path remains active
+          }
+          schedulePoll();
+        }, intervalMs);
+      }
+
+      const timeout = setTimeout(() => {
+        if (!finished) {
+          reply.raw.write(`data: ${JSON.stringify({ invoice, status: "TIMEOUT" })}\n\n`);
+          finish();
+        }
+      }, options.timeoutMs ?? STREAM_TIMEOUT_MS);
+
+      reply.raw.on("close", () => {
+        clearTimeout(timeout);
+        finish();
+      });
+
+      if (useShared) {
+        try {
+          await addChannelListener(sub, channel, messageHandler);
+          reply.raw.write(`data: ${JSON.stringify({ invoice, status: "LISTENING" })}\n\n`);
+          schedulePoll();
+        } catch {
           clearTimeout(timeout);
           finish();
         }
-      } catch {
-        // malformed message — ignore
-      }
-    }
-
-    function finish() {
-      if (finished) return;
-      finished = true;
-      if (pollTimer) {
-        clearTimeout(pollTimer);
-        pollTimer = null;
-      }
-      if (useShared) {
-        removeChannelListener(sub, channel, messageHandler);
       } else {
-        sub.unsubscribe(channel).catch(() => {});
-        sub.disconnect();
-      }
-      if (!reply.raw.writableEnded) reply.raw.end();
-      releaseSlot();
-    }
+        sub.on("error", () => {
+          clearTimeout(timeout);
+          finish();
+        });
 
-    function schedulePoll() {
-      if (finished || !options.pollInvoiceStateFn) return;
-      const intervalMs = options.pollIntervalMs ?? POLL_INTERVAL_MS;
-      pollTimer = setTimeout(async () => {
-        if (finished) return;
-        try {
-          const state = await options.pollInvoiceStateFn!(invoice);
-          if (!finished && state === "SETTLED") {
+        sub.subscribe(channel, (err) => {
+          if (err) {
             clearTimeout(timeout);
-            reply.raw.write(`data: ${JSON.stringify({ invoice, status: "SETTLED" })}\n\n`);
             finish();
             return;
           }
-        } catch {
-          // poll failure is non-fatal; Redis path remains active
-        }
-        schedulePoll();
-      }, intervalMs);
-    }
+          reply.raw.write(`data: ${JSON.stringify({ invoice, status: "LISTENING" })}\n\n`);
+          schedulePoll();
+        });
 
-    const timeout = setTimeout(() => {
-      if (!finished) {
-        reply.raw.write(`data: ${JSON.stringify({ invoice, status: "TIMEOUT" })}\n\n`);
-        finish();
+        sub.on("message", (_ch: string, raw: string) => {
+          messageHandler(raw);
+        });
       }
-    }, options.timeoutMs ?? STREAM_TIMEOUT_MS);
 
-    reply.raw.on("close", () => {
-      clearTimeout(timeout);
-      finish();
-    });
-
-    if (useShared) {
-      try {
-        await addChannelListener(sub, channel, messageHandler);
-        reply.raw.write(`data: ${JSON.stringify({ invoice, status: "LISTENING" })}\n\n`);
-        schedulePoll();
-      } catch {
-        clearTimeout(timeout);
-        finish();
-      }
-    } else {
-      sub.on("error", () => {
-        clearTimeout(timeout);
-        finish();
+      await new Promise<void>((resolve) => {
+        reply.raw.on("finish", resolve);
+        reply.raw.on("error", resolve);
+        reply.raw.on("close", resolve);
       });
-
-      sub.subscribe(channel, (err) => {
-        if (err) {
-          clearTimeout(timeout);
-          finish();
-          return;
-        }
-        reply.raw.write(`data: ${JSON.stringify({ invoice, status: "LISTENING" })}\n\n`);
-        schedulePoll();
-      });
-
-      sub.on("message", (_ch: string, raw: string) => {
-        messageHandler(raw);
-      });
+    } finally {
+      releaseSlot();
     }
-
-    await new Promise<void>((resolve) => {
-      reply.raw.on("finish", resolve);
-      reply.raw.on("error", resolve);
-      reply.raw.on("close", resolve);
-    });
   });
 }
