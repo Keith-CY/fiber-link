@@ -94,3 +94,13 @@ withdrawal reaches `FAILED` due to transient chain/faucet conditions (exit code 
 `withdrawal <id> reached FAILED`). This is unrelated to the SSE settlement path — re-run
 the workflow when phases 1–4 pass and only the withdrawal gate fails.
 # Re-run trigger 20260611T021036Z
+
+## Connection limits and CORS
+
+`/rpc/stream` bounds concurrent SSE connections: `RPC_STREAM_MAX_CONNECTIONS`
+(default 200, global) and `RPC_STREAM_MAX_CONNECTIONS_PER_APP` (default 20).
+Requests over the cap receive `429 Too many concurrent streams`; clients fall
+back to bounded polling. `RPC_STREAM_CORS_ORIGIN` (default `*`) sets the
+`Access-Control-Allow-Origin` response header — set it to the forum origin when
+browser EventSource clients connect directly.
+

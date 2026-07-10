@@ -9,10 +9,7 @@ function ownedInvoice(invoiceState: string, appId = APP_ID): StreamInvoiceRecord
   return { invoiceState, appId };
 }
 
-function buildTestApp(options: {
-  getInvoice?: (invoice: string) => Promise<StreamInvoiceRecord | null>;
-  createSubscriber?: Parameters<typeof registerStreamRoute>[1]["createSubscriber"];
-}) {
+function buildTestApp(options: Parameters<typeof registerStreamRoute>[1]) {
   const app = Fastify({ logger: false });
   registerStreamRoute(app, options);
   return app;
@@ -199,5 +196,56 @@ describe("GET /rpc/stream", () => {
     expect(res.body).toContain('"status":"SETTLED"');
     expect(res.body).not.toContain('"status":"TIMEOUT"');
     expect(pollCount).toBeGreaterThanOrEqual(2);
+  });
+
+  it("returns 429 when the per-app concurrent stream cap is reached and frees the slot on settle", async () => {
+    const subscriber = makeMockSubscriber();
+    const app = buildTestApp({
+      getInvoice: async (invoice) => ownedInvoice(invoice === "inv-fast" ? "SETTLED" : "UNPAID"),
+      createSubscriber: () => subscriber as never,
+      maxConnectionsPerApp: 1,
+    });
+
+    const first = app.inject({ method: "GET", url: "/rpc/stream?invoice=inv-held", headers: APP_HEADERS });
+    await vi.waitFor(() => expect(subscriber.subscribe).toHaveBeenCalled());
+
+    const second = await app.inject({ method: "GET", url: "/rpc/stream?invoice=inv-blocked", headers: APP_HEADERS });
+    expect(second.statusCode).toBe(429);
+    expect(second.json()).toEqual({ error: "Too many concurrent streams" });
+
+    subscriber.emit("message", "fiber-link:settlement:inv-held", JSON.stringify({ invoice: "inv-held", status: "SETTLED" }));
+    const firstRes = await first;
+    expect(firstRes.statusCode).toBe(200);
+
+    const third = await app.inject({ method: "GET", url: "/rpc/stream?invoice=inv-fast", headers: APP_HEADERS });
+    expect(third.statusCode).toBe(200);
+  });
+
+  it("returns 429 when the global concurrent stream cap is reached across apps", async () => {
+    const subscriber = makeMockSubscriber();
+    const app = buildTestApp({
+      getInvoice: async () => ownedInvoice("UNPAID", "busy-app"),
+      createSubscriber: () => subscriber as never,
+      maxConnections: 1,
+    });
+
+    const first = app.inject({ method: "GET", url: "/rpc/stream?invoice=inv-1", headers: { "x-app-id": "busy-app" } });
+    await vi.waitFor(() => expect(subscriber.subscribe).toHaveBeenCalled());
+
+    const second = await app.inject({ method: "GET", url: "/rpc/stream?invoice=inv-2", headers: { "x-app-id": "other-app" } });
+    expect(second.statusCode).toBe(429);
+
+    subscriber.emit("message", "fiber-link:settlement:inv-1", JSON.stringify({ invoice: "inv-1", status: "SETTLED" }));
+    await first;
+  });
+
+  it("uses the configured CORS origin instead of the wildcard default", async () => {
+    const app = buildTestApp({
+      getInvoice: async () => ownedInvoice("SETTLED"),
+      corsOrigin: "https://forum.example.com",
+    });
+    const res = await app.inject({ method: "GET", url: "/rpc/stream?invoice=inv-cors", headers: APP_HEADERS });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["access-control-allow-origin"]).toBe("https://forum.example.com");
   });
 });
