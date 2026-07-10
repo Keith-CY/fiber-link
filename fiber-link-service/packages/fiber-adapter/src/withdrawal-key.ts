@@ -12,24 +12,32 @@ import { readFileSync } from "node:fs";
  * Returns null when neither source yields a non-empty value. File read
  * failures throw, with the underlying reason but never the file contents.
  */
-let cachedProcessEnvKey: string | null | undefined;
+// Cache file reads by path: the file variant is a static secret mount, and
+// readFileSync on the request path would block the event loop. Only the file
+// read is cached — inline env lookups stay live so tests (and operators) can
+// change FIBER_WITHDRAWAL_CKB_PRIVATE_KEY without stale results. Read
+// failures are not cached.
+const keyFileCache = new Map<string, string | null>();
 
-export function readWithdrawalPrivateKeyRaw(env: NodeJS.ProcessEnv = process.env): string | null {
-  // Cache the process.env resolution: the file variant is a static secret
-  // mount, and readFileSync on the request path would block the event loop.
-  // Explicit env objects (tests) bypass the cache.
-  if (env === process.env && cachedProcessEnvKey !== undefined) {
-    return cachedProcessEnvKey;
+function readKeyFile(filePath: string): string | null {
+  const cached = keyFileCache.get(filePath);
+  if (cached !== undefined) {
+    return cached;
   }
 
-  const resolved = resolveWithdrawalPrivateKeyRaw(env);
-  if (env === process.env) {
-    cachedProcessEnvKey = resolved;
+  let contents: string;
+  try {
+    contents = readFileSync(filePath, "utf8");
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new Error(`failed to read FIBER_WITHDRAWAL_CKB_PRIVATE_KEY_FILE: ${reason}`);
   }
-  return resolved;
+  const trimmed = contents.trim() || null;
+  keyFileCache.set(filePath, trimmed);
+  return trimmed;
 }
 
-function resolveWithdrawalPrivateKeyRaw(env: NodeJS.ProcessEnv): string | null {
+export function readWithdrawalPrivateKeyRaw(env: NodeJS.ProcessEnv = process.env): string | null {
   const inline = env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY?.trim();
   if (inline) {
     return inline;
@@ -40,14 +48,7 @@ function resolveWithdrawalPrivateKeyRaw(env: NodeJS.ProcessEnv): string | null {
     return null;
   }
 
-  let contents: string;
-  try {
-    contents = readFileSync(filePath, "utf8");
-  } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error);
-    throw new Error(`failed to read FIBER_WITHDRAWAL_CKB_PRIVATE_KEY_FILE: ${reason}`);
-  }
-  return contents.trim() || null;
+  return readKeyFile(filePath);
 }
 
 /** Presence probe used by capability checks; never throws. */
