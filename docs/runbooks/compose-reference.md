@@ -2,7 +2,8 @@
 
 ## Scope
 This reference deployment starts:
-- `postgres` (schema bootstrap via SQL init script)
+- `postgres` (init script only installs extensions; schema comes from migrations)
+- `migrate` (one-shot Drizzle migration runner; `rpc` waits for it to complete)
 - `redis` (nonce replay cache for RPC)
 - `fnn` (Hub Fiber Node from official release binary)
 - `rpc` (`/rpc` JSON-RPC service)
@@ -224,5 +225,4 @@ You can customize by editing `deploy/compose/fnn/config/testnet.yml` before buil
 
 ## Productionization Checklist (Next)
 - Replace default generated dev wallet key flow with managed key import workflow.
-- Add migration pipeline (`drizzle-kit`) instead of SQL bootstrap for schema evolution.
 - Pin base images by digest (`postgres`, `redis`, `oven/bun`, `debian`) for deterministic rebuilds.
