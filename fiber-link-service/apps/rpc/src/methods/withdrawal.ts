@@ -13,6 +13,7 @@ import {
 } from "@fiber-link/db";
 import {
   createDefaultHotWalletInventoryProvider,
+  hasWithdrawalPrivateKey,
   type HotWalletInventoryProvider,
   resolveCkbNetworkConfig,
   type WithdrawalDestination,
@@ -94,7 +95,7 @@ function getDefaultHotWalletInventoryProvider(): HotWalletInventoryProvider | nu
   if (defaultHotWalletInventoryProvider !== undefined) {
     return defaultHotWalletInventoryProvider;
   }
-  if (!process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY?.trim()) {
+  if (!hasWithdrawalPrivateKey()) {
     defaultHotWalletInventoryProvider = null;
     return defaultHotWalletInventoryProvider;
   }

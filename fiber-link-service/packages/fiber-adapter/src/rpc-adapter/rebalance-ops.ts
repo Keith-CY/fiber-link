@@ -6,6 +6,7 @@ import {
   resolveHotWalletAddress,
 } from "../ckb-onchain-withdrawal";
 import { ckbDecimalToHexQuantity, toHexQuantity } from "./normalize";
+import { hasWithdrawalPrivateKey } from "../withdrawal-key";
 import type {
   CkbNetwork,
   EnsureChainLiquidityArgs,
@@ -29,10 +30,7 @@ const localSweepRequests = new Map<string, LocalSweepTracking>();
 const MAX_UNKNOWN_STATUS_CHECKS = 3;
 
 export function hasLocalChainLiquiditySweepSupport(): boolean {
-  return Boolean(
-    process.env.FIBER_LIQUIDITY_CKB_SOURCE_PRIVATE_KEY?.trim() &&
-      process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY?.trim(),
-  );
+  return Boolean(process.env.FIBER_LIQUIDITY_CKB_SOURCE_PRIVATE_KEY?.trim()) && hasWithdrawalPrivateKey();
 }
 
 function resolveLocalChainLiquiditySourcePrivateKey(): string {

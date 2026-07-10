@@ -1,6 +1,7 @@
 import { BI, Indexer, RPC, commons, config, hd, helpers } from "@ckb-lumos/lumos";
 import type { Asset, CkbNetwork, ExecuteWithdrawalArgs, WithdrawalExecutionKind } from "./types";
 import { SHANNONS_PER_CKB, parseCkbDecimalToShannons } from "./rpc-adapter/normalize";
+import { readWithdrawalPrivateKeyRaw } from "./withdrawal-key";
 const DEFAULT_FEE_RATE_SHANNONS_PER_KB = 1_000n;
 const DEFAULT_TESTNET_CKB_RPC_URL = "https://testnet.ckb.dev/";
 
@@ -57,9 +58,18 @@ export function normalizeCkbPrivateKey(input: string, envName = "FIBER_WITHDRAWA
 }
 
 export function resolvePrivateKey(): string {
-  const raw = process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY?.trim();
+  let raw: string | null;
+  try {
+    raw = readWithdrawalPrivateKeyRaw();
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new WithdrawalExecutionError(reason, "permanent");
+  }
   if (!raw) {
-    throw new WithdrawalExecutionError("FIBER_WITHDRAWAL_CKB_PRIVATE_KEY is required for on-chain withdrawal", "permanent");
+    throw new WithdrawalExecutionError(
+      "FIBER_WITHDRAWAL_CKB_PRIVATE_KEY (or FIBER_WITHDRAWAL_CKB_PRIVATE_KEY_FILE) is required for on-chain withdrawal",
+      "permanent",
+    );
   }
   return normalizeCkbPrivateKey(raw);
 }
