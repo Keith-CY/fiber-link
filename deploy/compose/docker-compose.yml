@@ -80,6 +80,19 @@ services:
       retries: 12
       start_period: 20s
 
+  migrate:
+    container_name: fiber-link-migrate
+    build:
+      context: ../..
+      dockerfile: deploy/compose/service.Dockerfile
+      target: migrate
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-fiber}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-fiber_link}
+
   rpc:
     container_name: fiber-link-rpc
     build:
@@ -94,6 +107,8 @@ services:
         condition: service_healthy
       fnn:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-fiber}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-fiber_link}
       FIBER_LINK_NONCE_REDIS_URL: redis://redis:6379/0

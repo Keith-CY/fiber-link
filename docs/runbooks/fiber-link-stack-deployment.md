@@ -37,6 +37,7 @@ Recommended deployment model:
 Core services:
 
 - `postgres`
+- `migrate` (one-shot: applies Drizzle migrations, then exits)
 - `redis`
 - `fnn`
 - `rpc`
@@ -45,6 +46,8 @@ Core services:
 High-level relationship:
 
 ```text
+migrate -> postgres
+rpc -> migrate (waits for completion)
 rpc -> postgres
 rpc -> redis
 rpc -> fnn
@@ -197,6 +200,19 @@ Once Postgres, Redis, and FNN are stable:
 docker compose up -d rpc worker
 ```
 
+Starting `rpc` automatically runs the one-shot `migrate` service first, which applies
+the Drizzle migrations from `fiber-link-service/packages/db/drizzle` to Postgres and
+exits. `rpc` only starts after `migrate` completes successfully. To run or inspect the
+migration step on its own:
+
+```bash
+docker compose up migrate
+docker compose logs migrate
+```
+
+The migrations are idempotent, so re-running `migrate` against an existing database
+(including databases originally provisioned from the legacy SQL bootstrap) is safe.
+
 Or, if you want the full stack in one step after `.env` is ready:
 
 ```bash
@@ -213,6 +229,7 @@ docker compose logs --tail=200 rpc worker
 Minimum acceptance for this stage:
 
 - `postgres`, `redis`, `fnn`, `rpc`, `worker` are all running
+- `migrate` exited with code 0 (`docker compose ps -a migrate`)
 - no crash/restart storm in the first 10 minutes
 - RPC can reach Postgres/Redis/FNN
 - worker can reach Postgres/Redis/FNN

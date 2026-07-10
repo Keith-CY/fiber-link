@@ -102,7 +102,7 @@ fi
 "${OPS_TEST_SCRIPT}"
 "${VALIDATE_ENV_TEST_SCRIPT}"
 
-for service in rpc worker postgres redis fnn fnn2; do
+for service in migrate rpc worker postgres redis fnn fnn2; do
   if ! grep -Eq "^[[:space:]]{2}${service}:" "${COMPOSE_FILE}"; then
     echo "docker compose missing service: ${service}" >&2
     exit 1
