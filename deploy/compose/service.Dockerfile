@@ -23,7 +23,7 @@ RUN bun install --frozen-lockfile
 
 FROM base AS migrate
 WORKDIR /app/packages/db
-CMD ["bunx", "drizzle-kit", "migrate", "--config=drizzle.config.ts"]
+CMD ["bun", "run", "drizzle-kit", "migrate", "--config=drizzle.config.ts"]
 
 FROM base AS rpc
 EXPOSE 3000

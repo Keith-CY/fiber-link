@@ -259,4 +259,20 @@ CREATE INDEX IF NOT EXISTS "tip_intents_app_settled_at_idx" ON "tip_intents" USI
 CREATE UNIQUE INDEX IF NOT EXISTS "withdrawal_policies_app_id_unique" ON "withdrawal_policies" USING btree ("app_id");--> statement-breakpoint
 CREATE UNIQUE INDEX IF NOT EXISTS "withdrawals_app_user_client_request_unique" ON "withdrawals" USING btree ("app_id","user_id","client_request_id") WHERE "withdrawals"."client_request_id" IS NOT NULL;--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "withdrawals_state_next_retry_at_idx" ON "withdrawals" USING btree ("state","next_retry_at","created_at");--> statement-breakpoint
-CREATE INDEX IF NOT EXISTS "withdrawals_account_asset_state_idx" ON "withdrawals" USING btree ("app_id","user_id","asset","state");
+CREATE INDEX IF NOT EXISTS "withdrawals_account_asset_state_idx" ON "withdrawals" USING btree ("app_id","user_id","asset","state");DO $$
+BEGIN
+  -- drizzle-kit 0.23 does not emit check constraints from src/schema.ts, so this
+  -- one is maintained by hand; keep it in sync with withdrawals.liquidityPendingFieldsCheck.
+  ALTER TABLE "withdrawals"
+    ADD CONSTRAINT "withdrawals_liquidity_pending_fields_check"
+    CHECK (
+      "state" <> 'LIQUIDITY_PENDING'
+      OR (
+        "liquidity_request_id" IS NOT NULL
+        AND "liquidity_pending_reason" IS NOT NULL
+        AND "liquidity_checked_at" IS NOT NULL
+      )
+    );
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
