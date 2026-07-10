@@ -27,16 +27,17 @@ cd fiber-link-service
 bun install --frozen-lockfile
 ```
 
-Run tests per workspace (same layout CI uses):
+Run tests per workspace from the `fiber-link-service` root (same layout CI uses;
+the subshell keeps your working directory unchanged):
 
 ```bash
-cd apps/rpc && bun run test -- --run          # rpc
-cd apps/admin && bun run test -- --run        # admin
-cd apps/worker && bun run test -- --run       # worker
-cd packages/db && bun run test -- --run       # db
-cd packages/fiber-adapter && bun run test -- --run
-cd packages/notifications && bun run test -- --run
-cd packages/client && bun run test -- --run
+(cd apps/rpc && bun run test -- --run)          # rpc
+(cd apps/admin && bun run test -- --run)        # admin
+(cd apps/worker && bun run test -- --run)       # worker
+(cd packages/db && bun run test -- --run)       # db
+(cd packages/fiber-adapter && bun run test -- --run)
+(cd packages/notifications && bun run test -- --run)
+(cd packages/client && bun run test -- --run)
 ```
 
 Typecheck any workspace with:
@@ -49,7 +50,7 @@ Database migrations live in `fiber-link-service/packages/db/drizzle` and are
 generated from `src/schema.ts`:
 
 ```bash
-cd fiber-link-service/packages/db
+cd packages/db   # from fiber-link-service
 DATABASE_URL=... bun run db:generate   # generate a migration from schema changes
 DATABASE_URL=... bun run db:migrate    # apply migrations
 DATABASE_URL=... bun run db:validate   # drift check (also runs in CI)
