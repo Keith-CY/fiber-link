@@ -12,7 +12,24 @@ import { readFileSync } from "node:fs";
  * Returns null when neither source yields a non-empty value. File read
  * failures throw, with the underlying reason but never the file contents.
  */
+let cachedProcessEnvKey: string | null | undefined;
+
 export function readWithdrawalPrivateKeyRaw(env: NodeJS.ProcessEnv = process.env): string | null {
+  // Cache the process.env resolution: the file variant is a static secret
+  // mount, and readFileSync on the request path would block the event loop.
+  // Explicit env objects (tests) bypass the cache.
+  if (env === process.env && cachedProcessEnvKey !== undefined) {
+    return cachedProcessEnvKey;
+  }
+
+  const resolved = resolveWithdrawalPrivateKeyRaw(env);
+  if (env === process.env) {
+    cachedProcessEnvKey = resolved;
+  }
+  return resolved;
+}
+
+function resolveWithdrawalPrivateKeyRaw(env: NodeJS.ProcessEnv): string | null {
   const inline = env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY?.trim();
   if (inline) {
     return inline;
