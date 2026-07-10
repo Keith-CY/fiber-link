@@ -59,4 +59,47 @@ describe("createTrpcContext", () => {
     const ctx = createTrpcContext(reqWith({ "x-admin-role": "ROOT" }));
     expect(ctx.role).toBeUndefined();
   });
+
+  describe("with ADMIN_PROXY_SHARED_SECRET configured", () => {
+    beforeEach(() => {
+      process.env.ADMIN_PROXY_SHARED_SECRET = "proxy-secret";
+    });
+
+    it("honors identity headers when the proxy token matches", () => {
+      const ctx = createTrpcContext(
+        reqWith({
+          "x-admin-proxy-token": "proxy-secret",
+          "x-admin-role": "SUPER_ADMIN",
+          "x-admin-user-id": "ops-7",
+        }),
+      );
+      expect(ctx.role).toBe("SUPER_ADMIN");
+      expect(ctx.adminUserId).toBe("ops-7");
+    });
+
+    it("fails closed when the proxy token mismatches", () => {
+      const ctx = createTrpcContext(
+        reqWith({
+          "x-admin-proxy-token": "wrong",
+          "x-admin-role": "SUPER_ADMIN",
+          "x-admin-user-id": "ops-7",
+        }),
+      );
+      expect(ctx.role).toBeUndefined();
+      expect(ctx.adminUserId).toBeUndefined();
+    });
+
+    it("fails closed when the proxy token is absent", () => {
+      const ctx = createTrpcContext(reqWith({ "x-admin-role": "SUPER_ADMIN" }));
+      expect(ctx.role).toBeUndefined();
+    });
+
+    it("skips the dev env fallback identity on token mismatch", () => {
+      process.env.ADMIN_DASHBOARD_DEFAULT_ROLE = "SUPER_ADMIN";
+      process.env.ADMIN_DASHBOARD_DEFAULT_ADMIN_USER_ID = "default-admin";
+      const ctx = createTrpcContext(reqWith({ "x-admin-proxy-token": "wrong" }));
+      expect(ctx.role).toBeUndefined();
+      expect(ctx.adminUserId).toBeUndefined();
+    });
+  });
 });

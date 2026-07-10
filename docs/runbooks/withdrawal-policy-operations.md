@@ -29,7 +29,11 @@ cd fiber-link-service/apps/admin
 bun run dev -- --hostname 127.0.0.1 --port 4318
 ```
 
-By default the dashboard expects `x-admin-role` and `x-admin-user-id` to be injected by the caller or upstream proxy. For local proof/demo mode you can point it at the bundled fixture:
+By default the dashboard expects `x-admin-role` and `x-admin-user-id` to be injected by the caller or upstream proxy.
+
+For any deployment where the console port could be reached without going through the auth proxy, set `ADMIN_PROXY_SHARED_SECRET` on the console and configure the proxy to inject a matching `x-admin-proxy-token` header alongside the identity headers. When the shared secret is configured, requests without a matching token resolve to no role (fail closed), so a direct request cannot claim `SUPER_ADMIN` by setting `x-admin-role` itself. In production the console logs a startup warning if the shared secret is not configured.
+
+For local proof/demo mode you can point it at the bundled fixture:
 
 ```bash
 cd fiber-link-service/apps/admin
