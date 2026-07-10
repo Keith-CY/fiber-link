@@ -48,6 +48,14 @@ jobs:
       - name: Install dependencies
         working-directory: fiber-link-service
         run: bun install --frozen-lockfile
+      - name: Typecheck workspaces
+        working-directory: fiber-link-service
+        run: |
+          set -euo pipefail
+          for pkg in apps/admin apps/rpc apps/worker packages/db packages/fiber-adapter packages/notifications packages/client; do
+            echo "--- typecheck ${pkg} ---"
+            (cd "${pkg}" && bun run typecheck)
+          done
       - name: Check db migration drift
         working-directory: fiber-link-service/packages/db
         run: bun run db:validate
@@ -62,6 +70,15 @@ jobs:
         run: bun run test -- --run --silent
       - name: Test db
         working-directory: fiber-link-service/packages/db
+        run: bun run test -- --run --silent
+      - name: Test fiber-adapter
+        working-directory: fiber-link-service/packages/fiber-adapter
+        run: bun run test -- --run --silent
+      - name: Test notifications
+        working-directory: fiber-link-service/packages/notifications
+        run: bun run test -- --run --silent
+      - name: Test client SDK
+        working-directory: fiber-link-service/packages/client
         run: bun run test -- --run --silent
 
 

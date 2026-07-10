@@ -1,3 +1,4 @@
+import type { HashType } from "@ckb-lumos/lumos";
 export type Asset = "CKB" | "USDI";
 export type CkbNetwork = "AGGRON4" | "LINA";
 
@@ -11,7 +12,7 @@ export type WithdrawalDestination =
 
 export type UdtTypeScript = {
   codeHash: string;
-  hashType: string;
+  hashType: HashType;
   args: string;
 };
 

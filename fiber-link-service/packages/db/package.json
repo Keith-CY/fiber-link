@@ -8,7 +8,8 @@
     "db:migrate": "bunx drizzle-kit migrate --config=drizzle.config.ts",
     "db:migrate:local": "bash ./scripts/migrate-local-idempotent.sh",
     "db:drift:check": "bunx drizzle-kit check --dialect=postgresql --out=drizzle",
-    "db:validate": "bun run db:drift:check"
+    "db:validate": "bun run db:drift:check",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "drizzle-orm": "^0.32.0",

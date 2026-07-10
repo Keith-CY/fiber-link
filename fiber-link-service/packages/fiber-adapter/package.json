@@ -4,7 +4,8 @@
   "main": "src/index.ts",
   "scripts": {
     "test": "vitest",
-    "test:hot-wallet-inventory": "vitest --run src/hot-wallet-inventory.test.ts"
+    "test:hot-wallet-inventory": "vitest --run src/hot-wallet-inventory.test.ts",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@ckb-lumos/lumos": "^0.22.2"

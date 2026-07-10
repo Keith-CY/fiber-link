@@ -1,4 +1,5 @@
 import { Indexer, config, hd, helpers } from "@ckb-lumos/lumos";
+import type { HashType } from "@ckb-lumos/lumos";
 import { shannonsToCkbDecimal } from "./ckb-onchain-withdrawal";
 import type { CkbNetwork, GetHotWalletInventoryArgs, HotWalletInventory } from "./types";
 
@@ -9,7 +10,7 @@ export type HotWalletCell = {
 
 export type HotWalletLockScript = {
   codeHash: string;
-  hashType: string;
+  hashType: HashType;
   args: string;
 };
 
