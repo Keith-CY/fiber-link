@@ -155,3 +155,9 @@ Use the specific runbook for the workflow you are changing before relying on the
 ## Primary Reference
 
 - Nervos Talk proposal: <https://talk.nervos.org/t/dis-fiber-link-a-ckb-fiber-based-pay-layer-tipping-micropayments-for-communities/9845>
+
+---
+
+## License
+
+Fiber Link is released under the [MIT License](LICENSE).
