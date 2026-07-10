@@ -133,9 +133,16 @@ function pickPaymentHash(result: Record<string, unknown> | undefined): string | 
 export function toWithdrawalUdtTypeScript(script: RpcUdtTypeScript): UdtTypeScript {
   return {
     codeHash: script.code_hash,
-    hashType: script.hash_type,
+    hashType: parseScriptHashType(script.hash_type),
     args: script.args,
   };
+}
+
+function parseScriptHashType(value: string): UdtTypeScript["hashType"] {
+  if (value === "type" || value === "data" || value === "data1" || value === "data2") {
+    return value;
+  }
+  throw new Error(`unsupported hash_type in UDT type script: ${value}`);
 }
 
 export function toRpcUdtTypeScript(script: UdtTypeScript): RpcUdtTypeScript {

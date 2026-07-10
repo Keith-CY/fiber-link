@@ -13,8 +13,8 @@ import type { InvoiceState } from "@fiber-link/fiber-adapter";
 type SimpleLogger = { error: (obj: unknown, msg?: string) => void };
 
 let defaultTipIntentRepo: TipIntentRepo | null | undefined;
-let defaultLedgerRepo: LedgerRepo | null | undefined;
-let defaultAdapter: ReturnType<typeof createAdapterProvider> | null | undefined;
+let defaultLedgerRepo: LedgerRepo | undefined;
+let defaultAdapter: ReturnType<typeof createAdapterProvider> | undefined;
 let defaultTipIntentEventRepo: TipIntentEventRepo | null | undefined;
 
 function isInvoiceStateConflictError(error: unknown): boolean {

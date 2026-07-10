@@ -2,7 +2,8 @@
   "name": "@fiber-link/rpc",
   "private": true,
   "scripts": {
-    "test": "vitest"
+    "test": "vitest",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@fiber-link/db": "workspace:*",

@@ -11,6 +11,7 @@ import {
   type LumosConfig,
 } from "./ckb-onchain-withdrawal";
 import type { ExecuteWithdrawalArgs, UdtTypeScript } from "./types";
+import type { HashType } from "@ckb-lumos/lumos";
 
 function normalizeHexLike(input: string): string {
   const normalized = input.trim().toLowerCase();
@@ -38,9 +39,20 @@ function normalizeUdtTypeScript(value: unknown): UdtTypeScript {
 
   return {
     codeHash: normalizeHexLike(codeHash),
-    hashType: hashType.trim(),
+    hashType: parseHashType(hashType),
     args: normalizeHexLike(args),
   };
+}
+
+function parseHashType(value: string): HashType {
+  const trimmed = value.trim();
+  if (trimmed === "type" || trimmed === "data" || trimmed === "data1" || trimmed === "data2") {
+    return trimmed;
+  }
+  throw new WithdrawalExecutionError(
+    `unsupported hash_type in UDT type script: ${trimmed}`,
+    "permanent",
+  );
 }
 
 function resolveUsdiUdtTypeScript(args: ExecuteWithdrawalArgs): UdtTypeScript {
@@ -98,7 +110,7 @@ function parseAmountToUdtUnits(amount: string, decimals: number): bigint {
   return amountUnits;
 }
 
-function buildUsdiLumosConfig(baseCfg: LumosConfig, udtTypeScript: UdtTypeScript): LumosConfig {
+function buildUsdiLumosConfig(baseCfg: LumosConfig, udtTypeScript: UdtTypeScript): config.Config {
   const sudtScript = baseCfg.SCRIPTS.SUDT;
   if (!sudtScript) {
     throw new WithdrawalExecutionError("provided CKB network config does not define an SUDT script", "permanent");

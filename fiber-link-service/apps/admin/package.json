@@ -6,7 +6,8 @@
     "build": "next build",
     "start": "next start",
     "test": "vitest",
-    "policy:withdrawal": "bun run src/scripts/manage-withdrawal-policy.ts"
+    "policy:withdrawal": "bun run src/scripts/manage-withdrawal-policy.ts",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.4",
