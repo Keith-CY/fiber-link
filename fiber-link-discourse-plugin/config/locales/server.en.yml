@@ -1,0 +1,6 @@
+en:
+  site_settings:
+    fiber_link_enabled: "Enable the Fiber Link tipping plugin."
+    fiber_link_service_url: "Base URL of the Fiber Link backend service the plugin proxies RPC calls to (e.g. https://fiber-link.example.com)."
+    fiber_link_app_id: "App ID registered with the Fiber Link service for this forum."
+    fiber_link_app_secret: "HMAC secret used to sign RPC requests to the Fiber Link service. Keep this confidential."

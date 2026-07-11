@@ -1,0 +1,6 @@
+zh_CN:
+  site_settings:
+    fiber_link_enabled: "启用 Fiber Link 打赏插件。"
+    fiber_link_service_url: "插件代理 RPC 请求的 Fiber Link 后端服务地址(例如 https://fiber-link.example.com)。"
+    fiber_link_app_id: "本论坛在 Fiber Link 服务中注册的 App ID。"
+    fiber_link_app_secret: "用于对发往 Fiber Link 服务的 RPC 请求进行 HMAC 签名的密钥,请妥善保密。"
