@@ -142,7 +142,7 @@ describe("schema", () => {
 
     expect(openUnique).toBeDefined();
     expect(openUnique?.config.unique).toBe(true);
-    expect(openUnique?.config.columns.map((column) => column.name)).toEqual([
+    expect(openUnique?.config.columns.map((column) => (column as { name: string }).name)).toEqual([
       "app_id",
       "asset",
       "network",

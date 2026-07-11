@@ -43,7 +43,7 @@ describe("worker structured logging contract", () => {
       shutdownTimeoutMs: 100,
       runWithdrawalBatch: async () => undefined,
       exitFn: () => undefined,
-      setIntervalFn: () => 1 as unknown as ReturnType<typeof setInterval>,
+      setIntervalFn: (() => 1) as unknown as typeof setInterval,
       clearIntervalFn: () => undefined,
     });
     await runtime.start();
@@ -104,7 +104,7 @@ describe("worker structured logging contract", () => {
       ledgerRepo,
     });
 
-    await emit?.(intent.invoice);
+    await (emit as ((invoice: string) => void | Promise<void>) | null)?.(intent.invoice);
     await runner.close();
 
     const payload = logs.find(

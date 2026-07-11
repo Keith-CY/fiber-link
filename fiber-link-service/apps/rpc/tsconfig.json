@@ -10,9 +10,6 @@
     "src/**/*"
   ],
   "exclude": [
-    "node_modules",
-    "src/**/*.test.ts",
-    "src/**/*.e2e.test.ts",
-    "src/**/*.integration.test.ts"
+    "node_modules"
   ]
 }

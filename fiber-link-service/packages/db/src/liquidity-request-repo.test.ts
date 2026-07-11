@@ -6,9 +6,10 @@ import {
   LiquidityRequestStateTransitionError,
   createDbLiquidityRequestRepo,
   createInMemoryLiquidityRequestRepo,
+  type LiquidityRequestRecord,
 } from "./liquidity-request-repo";
 
-function mockRow(overrides: Record<string, unknown> = {}) {
+function mockRow(overrides: Partial<LiquidityRequestRecord> = {}): LiquidityRequestRecord {
   return {
     id: "liq1",
     appId: "app1",
@@ -30,7 +31,7 @@ function mockRow(overrides: Record<string, unknown> = {}) {
 function createDbMock() {
   const insertReturning = vi.fn();
   const insertOnConflictDoUpdate = vi.fn(() => ({ returning: insertReturning }));
-  const insertValues = vi.fn(() => ({ returning: insertReturning, onConflictDoUpdate: insertOnConflictDoUpdate }));
+  const insertValues = vi.fn((..._args: unknown[]) => ({ returning: insertReturning, onConflictDoUpdate: insertOnConflictDoUpdate }));
   const insert = vi.fn(() => ({ values: insertValues }));
 
   const selectLimit = vi.fn();

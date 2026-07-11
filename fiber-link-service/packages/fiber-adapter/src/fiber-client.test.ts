@@ -14,7 +14,7 @@ describe("rpcCall", () => {
       json: async () => {
         throw new SyntaxError("Unexpected token <");
       },
-    } as Response);
+    } as unknown as Response);
 
     await expect(rpcCall("http://localhost:8119", "health", {}, { retryCount: 0 })).rejects.toBeInstanceOf(FiberRpcError);
     await expect(rpcCall("http://localhost:8119", "health", {}, { retryCount: 0 })).rejects.toMatchObject({
@@ -28,7 +28,7 @@ describe("rpcCall", () => {
     const fetchFn = vi
       .fn()
       .mockResolvedValueOnce({ ok: false, status: 503 } as Response)
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ result: "ok" }) } as Response);
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ result: "ok" }) } as unknown as Response);
 
     const pending = rpcCall("http://localhost:8119", "health", {}, { fetchFn, retryCount: 1, retryDelayMs: 10 });
     await vi.advanceTimersByTimeAsync(10);
@@ -64,7 +64,7 @@ describe("rpcCall", () => {
           init?.signal?.addEventListener("abort", () => reject(init.signal?.reason));
         });
       })
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ result: "ok" }) } as Response);
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ result: "ok" }) } as unknown as Response);
 
     const pending = rpcCall("http://localhost:8119", "health", {}, { fetchFn, timeoutMs: 25, retryCount: 1, retryDelayMs: 10 });
     await vi.advanceTimersByTimeAsync(25);
@@ -94,7 +94,7 @@ describe("rpcCall", () => {
     const fetchFn = vi
       .fn()
       .mockRejectedValueOnce(new TypeError("socket hang up"))
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ result: "ok" }) } as Response);
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ result: "ok" }) } as unknown as Response);
 
     const pending = rpcCall("http://localhost:8119", "health", {}, { fetchFn, retryCount: 1, retryDelayMs: 10 });
     await vi.advanceTimersByTimeAsync(10);
@@ -107,7 +107,7 @@ describe("rpcCall", () => {
     const fetchFn = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ error: { code: -32602, message: "invalid params" } }),
-    } as Response);
+    } as unknown as Response);
 
     await expect(rpcCall("http://localhost:8119", "health", {}, { fetchFn, retryCount: 2 })).rejects.toMatchObject({
       name: "FiberRpcError",

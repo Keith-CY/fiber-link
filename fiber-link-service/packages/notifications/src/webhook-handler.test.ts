@@ -29,7 +29,7 @@ const COMPLETED_EVENT: WithdrawalCompletedNotificationEvent = {
 describe("createWebhookChannelHandler", () => {
   it("POSTs JSON payload to the target URL", async () => {
     const requests: Request[] = [];
-    const mockFetch = vi.fn(async (input: RequestInfo | URL) => {
+    const mockFetch = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
       requests.push(input as Request);
       return new Response(null, { status: 200 });
     });
@@ -51,7 +51,7 @@ describe("createWebhookChannelHandler", () => {
 
   it("adds HMAC-SHA256 signature header when channel has a secret", async () => {
     const secret = "super-secret";
-    const mockFetch = vi.fn(async () => new Response(null, { status: 200 }));
+    const mockFetch = vi.fn(async (_url: string, _init?: RequestInit) => new Response(null, { status: 200 }));
 
     const handler = createWebhookChannelHandler({ fetch: mockFetch as unknown as typeof fetch });
     await handler({
@@ -68,7 +68,7 @@ describe("createWebhookChannelHandler", () => {
   });
 
   it("omits signature header when channel has no secret", async () => {
-    const mockFetch = vi.fn(async () => new Response(null, { status: 200 }));
+    const mockFetch = vi.fn(async (_url: string, _init?: RequestInit) => new Response(null, { status: 200 }));
     const handler = createWebhookChannelHandler({ fetch: mockFetch as unknown as typeof fetch });
     await handler({ target: BASE_TARGET, event: COMPLETED_EVENT });
 
@@ -77,14 +77,14 @@ describe("createWebhookChannelHandler", () => {
   });
 
   it("throws when endpoint returns a non-2xx status", async () => {
-    const mockFetch = vi.fn(async () => new Response("Not Found", { status: 404 }));
+    const mockFetch = vi.fn(async (_url: string, _init?: RequestInit) => new Response("Not Found", { status: 404 }));
     const handler = createWebhookChannelHandler({ fetch: mockFetch as unknown as typeof fetch });
 
     await expect(handler({ target: BASE_TARGET, event: COMPLETED_EVENT })).rejects.toThrow("HTTP 404");
   });
 
   it("includes a response body snippet in the non-2xx error message", async () => {
-    const mockFetch = vi.fn(async () => new Response('{"error":"invalid_token"}', { status: 401 }));
+    const mockFetch = vi.fn(async (_url: string, _init?: RequestInit) => new Response('{"error":"invalid_token"}', { status: 401 }));
     const handler = createWebhookChannelHandler({ fetch: mockFetch as unknown as typeof fetch });
 
     await expect(handler({ target: BASE_TARGET, event: COMPLETED_EVENT })).rejects.toThrow(
@@ -94,7 +94,7 @@ describe("createWebhookChannelHandler", () => {
 
   it("truncates long response bodies to 200 characters in the error message", async () => {
     const longBody = "x".repeat(500);
-    const mockFetch = vi.fn(async () => new Response(longBody, { status: 500 }));
+    const mockFetch = vi.fn(async (_url: string, _init?: RequestInit) => new Response(longBody, { status: 500 }));
     const handler = createWebhookChannelHandler({ fetch: mockFetch as unknown as typeof fetch });
 
     await expect(handler({ target: BASE_TARGET, event: COMPLETED_EVENT })).rejects.toThrow(
@@ -103,7 +103,7 @@ describe("createWebhookChannelHandler", () => {
   });
 
   it("includes retry-pending fields for WITHDRAWAL_RETRY_PENDING events", async () => {
-    const mockFetch = vi.fn(async () => new Response(null, { status: 200 }));
+    const mockFetch = vi.fn(async (_url: string, _init?: RequestInit) => new Response(null, { status: 200 }));
     const handler = createWebhookChannelHandler({ fetch: mockFetch as unknown as typeof fetch });
 
     const event: WithdrawalRetryPendingNotificationEvent = {
@@ -129,7 +129,7 @@ describe("createWebhookChannelHandler", () => {
   });
 
   it("includes error and retryCount for WITHDRAWAL_FAILED events", async () => {
-    const mockFetch = vi.fn(async () => new Response(null, { status: 200 }));
+    const mockFetch = vi.fn(async (_url: string, _init?: RequestInit) => new Response(null, { status: 200 }));
     const handler = createWebhookChannelHandler({ fetch: mockFetch as unknown as typeof fetch });
 
     const event: WithdrawalFailedNotificationEvent = {

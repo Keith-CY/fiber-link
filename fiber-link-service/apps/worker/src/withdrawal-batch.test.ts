@@ -6,12 +6,16 @@ import {
 } from "@fiber-link/db";
 import { FiberRpcError, WithdrawalExecutionError } from "@fiber-link/fiber-adapter";
 import { runWithdrawalBatch } from "./withdrawal-batch";
+import type { NotificationDispatchSummary, WithdrawalNotificationEvent } from "@fiber-link/notifications";
+
+const dispatchTipSettledEvent = async (): Promise<NotificationDispatchSummary> =>
+  ({ matched: 0, attempted: 0, delivered: 0, failed: 0 });
 
 describe("runWithdrawalBatch", () => {
   const repo = createInMemoryWithdrawalRepo();
 
   beforeEach(() => {
-    repo.__resetForTests();
+    repo.__resetForTests!();
   });
 
   afterEach(() => {
@@ -322,7 +326,7 @@ describe("runWithdrawalBatch", () => {
       amount: "10",
       toAddress: "fiber:invoice:ok-notify",
     });
-    const dispatchWithdrawalEvent = vi.fn(async () => ({
+    const dispatchWithdrawalEvent = vi.fn(async (_event: WithdrawalNotificationEvent) => ({
       matched: 0,
       attempted: 0,
       delivered: 0,
@@ -334,7 +338,7 @@ describe("runWithdrawalBatch", () => {
       executeWithdrawal: async () => ({ ok: true, txHash: "0xnotifyok" }),
       repo,
       ledgerRepo: ledger,
-      notificationDispatcher: { dispatchWithdrawalEvent },
+      notificationDispatcher: { dispatchWithdrawalEvent, dispatchTipSettledEvent },
     });
 
     expect(res.completed).toBe(1);
@@ -358,7 +362,7 @@ describe("runWithdrawalBatch", () => {
       amount: "10",
       toAddress: "fiber:invoice:retry-notify",
     });
-    const dispatchWithdrawalEvent = vi.fn(async () => ({
+    const dispatchWithdrawalEvent = vi.fn(async (_event: WithdrawalNotificationEvent) => ({
       matched: 0,
       attempted: 0,
       delivered: 0,
@@ -374,13 +378,16 @@ describe("runWithdrawalBatch", () => {
         reason: "rpc overloaded",
       }),
       repo,
-      notificationDispatcher: { dispatchWithdrawalEvent },
+      notificationDispatcher: { dispatchWithdrawalEvent, dispatchTipSettledEvent },
     });
 
     expect(res.retryPending).toBe(1);
     expect(dispatchWithdrawalEvent).toHaveBeenCalledTimes(1);
-    const [event] = dispatchWithdrawalEvent.mock.calls[0];
+    const [event] = dispatchWithdrawalEvent.mock.calls[0]!;
     expect(event.type).toBe("WITHDRAWAL_RETRY_PENDING");
+    if (event.type !== "WITHDRAWAL_RETRY_PENDING") {
+      throw new Error("expected a WITHDRAWAL_RETRY_PENDING event");
+    }
     expect(event.error).toContain("rpc overloaded");
     expect(event.retryCount).toBe(1);
     expect(event.nextRetryAt?.toISOString()).toBe("2026-02-07T12:21:00.000Z");
@@ -394,7 +401,7 @@ describe("runWithdrawalBatch", () => {
       amount: "10",
       toAddress: "fiber:invoice:failed-notify",
     });
-    const dispatchWithdrawalEvent = vi.fn(async () => ({
+    const dispatchWithdrawalEvent = vi.fn(async (_event: WithdrawalNotificationEvent) => ({
       matched: 0,
       attempted: 0,
       delivered: 0,
@@ -409,7 +416,7 @@ describe("runWithdrawalBatch", () => {
         reason: "bad address format",
       }),
       repo,
-      notificationDispatcher: { dispatchWithdrawalEvent },
+      notificationDispatcher: { dispatchWithdrawalEvent, dispatchTipSettledEvent },
     });
 
     expect(res.failed).toBe(1);
@@ -442,6 +449,7 @@ describe("runWithdrawalBatch", () => {
         dispatchWithdrawalEvent: vi.fn(async () => {
           throw new Error("notification provider unavailable");
         }),
+        dispatchTipSettledEvent,
       },
     });
 

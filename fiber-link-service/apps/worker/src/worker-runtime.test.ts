@@ -33,10 +33,10 @@ describe("createWorkerRuntime", () => {
           await aborted;
         }
       },
-      setIntervalFn: (tick) => {
+      setIntervalFn: ((tick: () => void) => {
         ticks.push(tick);
         return 1 as unknown as ReturnType<typeof setInterval>;
-      },
+      }) as unknown as typeof setInterval,
       clearIntervalFn: () => {},
       exitFn: (code) => {
         exitCodes.push(code);
@@ -73,10 +73,10 @@ describe("createWorkerRuntime", () => {
           await deferred.promise;
         }
       },
-      setIntervalFn: (tick) => {
+      setIntervalFn: ((tick: () => void) => {
         ticks.push(tick);
         return 1 as unknown as ReturnType<typeof setInterval>;
-      },
+      }) as unknown as typeof setInterval,
       clearIntervalFn: () => {},
       exitFn: (code) => {
         exitCodes.push(code);
@@ -115,10 +115,10 @@ describe("createWorkerRuntime", () => {
           await deferred.promise;
         }
       },
-      setIntervalFn: (tick) => {
+      setIntervalFn: ((tick: () => void) => {
         ticks.push(tick);
         return 1 as unknown as ReturnType<typeof setInterval>;
-      },
+      }) as unknown as typeof setInterval,
       clearIntervalFn: () => {},
       exitFn: (code) => {
         exitCodes.push(code);
@@ -153,10 +153,10 @@ describe("createWorkerRuntime", () => {
       pollSettlements: async ({ limit }) => {
         pollCalls.push(limit);
       },
-      setIntervalFn: (tick) => {
+      setIntervalFn: ((tick: () => void) => {
         ticks.push(tick);
         return 1 as unknown as ReturnType<typeof setInterval>;
-      },
+      }) as unknown as typeof setInterval,
       clearIntervalFn: () => {},
       exitFn: () => {},
       logger: {
@@ -197,10 +197,10 @@ describe("createWorkerRuntime", () => {
           await deferred.promise;
         }
       },
-      setIntervalFn: (tick) => {
+      setIntervalFn: ((tick: () => void) => {
         ticks.push(tick);
         return 1 as unknown as ReturnType<typeof setInterval>;
-      },
+      }) as unknown as typeof setInterval,
       clearIntervalFn: () => {},
       exitFn: () => {},
       logger: {

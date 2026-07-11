@@ -69,8 +69,8 @@ describe("settlement subscription strategy integration", () => {
       },
     });
 
-    await emit?.(subscriptionIntent.invoice);
-    await emit?.(subscriptionIntent.invoice);
+    await (emit as ((invoice: string) => void | Promise<void>) | null)?.(subscriptionIntent.invoice);
+    await (emit as ((invoice: string) => void | Promise<void>) | null)?.(subscriptionIntent.invoice);
 
     const summary = await runSettlementDiscovery({
       limit: 10,
@@ -132,7 +132,7 @@ describe("settlement subscription strategy integration", () => {
       },
     });
 
-    await emit?.("missing-invoice");
+    await (emit as ((invoice: string) => void | Promise<void>) | null)?.("missing-invoice");
 
     const summary = await runSettlementDiscovery({
       limit: 10,
@@ -217,7 +217,7 @@ describe("settlement subscription strategy integration", () => {
       },
     });
 
-    emitBurst?.([first.invoice, second.invoice, third.invoice]);
+    (emitBurst as ((invoices: string[]) => void) | null)?.([first.invoice, second.invoice, third.invoice]);
     await runner.close();
 
     expect(overflowed).toHaveLength(2);

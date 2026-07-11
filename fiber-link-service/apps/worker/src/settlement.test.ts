@@ -30,7 +30,7 @@ describe("settlement worker", () => {
     const res = await markSettled({ invoice: "inv-1" }, { tipIntentRepo, ledgerRepo });
     expect(res.credited).toBe(true);
 
-    const ledgerEntries = ledgerRepo.__listForTests();
+    const ledgerEntries = ledgerRepo.__listForTests!();
     expect(ledgerEntries).toHaveLength(1);
     expect(ledgerEntries[0].idempotencyKey).toBe(settlementCreditIdempotencyKey(intent.id));
   });
@@ -72,7 +72,7 @@ describe("settlement worker", () => {
     const second = await markSettled({ invoice: "inv-2" }, { tipIntentRepo, ledgerRepo });
     expect(first.credited).toBe(true);
     expect(second.credited).toBe(false);
-    expect(ledgerRepo.__listForTests()).toHaveLength(1);
+    expect(ledgerRepo.__listForTests!()).toHaveLength(1);
   });
 
   it("marks invoice SETTLED even when credit already exists from previous attempt", async () => {

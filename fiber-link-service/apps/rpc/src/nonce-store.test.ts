@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import Redis from "ioredis-mock";
+import type { Redis as RedisClient } from "ioredis";
 import { InMemoryNonceStore, RedisNonceStore, FaultTolerantRedisNonceStore } from "./nonce-store";
 
 describe("nonce store", () => {
@@ -49,7 +50,7 @@ describe("nonce store", () => {
       const failingRedis = {
         set: async () => { throw new Error("Redis connection refused"); },
         quit: async () => {},
-      } as unknown as Redis;
+      } as unknown as RedisClient;
 
       const primary = new RedisNonceStore(failingRedis);
       const store = new FaultTolerantRedisNonceStore(primary, {
@@ -70,7 +71,7 @@ describe("nonce store", () => {
       const failingRedis = {
         set: async () => { throw new Error("Redis unavailable"); },
         quit: async () => {},
-      } as unknown as Redis;
+      } as unknown as RedisClient;
 
       const primary = new RedisNonceStore(failingRedis);
       const store = new FaultTolerantRedisNonceStore(primary, {
@@ -89,7 +90,7 @@ describe("nonce store", () => {
       const failingRedis = {
         set: async () => { throw new Error("Redis unavailable"); },
         quit: async () => {},
-      } as unknown as Redis;
+      } as unknown as RedisClient;
 
       const primary = new RedisNonceStore(failingRedis);
       const store = new FaultTolerantRedisNonceStore(primary);

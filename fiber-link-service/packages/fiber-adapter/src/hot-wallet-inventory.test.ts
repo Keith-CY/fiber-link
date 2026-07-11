@@ -15,6 +15,13 @@ function encodeUdtAmount(amount: bigint): string {
   return `0x${Buffer.from(bytes).toString("hex")}`;
 }
 
+function expectUsdi(inventory: { availableAmount: string }): { availableAmount: string; supportingCkbAmount: string } {
+  if (!("supportingCkbAmount" in inventory)) {
+    throw new Error("expected a USDI inventory with supportingCkbAmount");
+  }
+  return inventory as { availableAmount: string; supportingCkbAmount: string };
+}
+
 describe("getHotWalletInventory", () => {
   const deps = {
     getNativeCells: async () => [{ capacity: ckbToHexShannons(120n) }, { capacity: ckbToHexShannons(80n) }],
@@ -34,7 +41,7 @@ describe("getHotWalletInventory", () => {
   it("returns USDI liquidity plus required CKB support capacity", async () => {
     const inventory = await getHotWalletInventory({ asset: "USDI", network: "AGGRON4" }, deps);
     expect(inventory.availableAmount).toBe("500");
-    expect(inventory.supportingCkbAmount).toBe("120");
+    expect(expectUsdi(inventory).supportingCkbAmount).toBe("120");
   });
 
   it("formats USDI availableAmount as a canonical decimal asset-unit string when decimals are configured", async () => {
@@ -48,7 +55,7 @@ describe("getHotWalletInventory", () => {
     );
 
     expect(inventory.availableAmount).toBe("5.5");
-    expect(inventory.supportingCkbAmount).toBe("62");
+    expect(expectUsdi(inventory).supportingCkbAmount).toBe("62");
   });
 
   it("uses zero supporting fee when estimateUsdiFeeShannons is omitted", async () => {
@@ -56,7 +63,7 @@ describe("getHotWalletInventory", () => {
     const inventory = await getHotWalletInventory({ asset: "USDI", network: "AGGRON4" }, depsWithoutFee);
 
     expect(inventory.availableAmount).toBe("500");
-    expect(inventory.supportingCkbAmount).toBe("119");
+    expect(expectUsdi(inventory).supportingCkbAmount).toBe("119");
   });
 
   it("throws when USDI decimals dependency is missing", async () => {
@@ -65,7 +72,7 @@ describe("getHotWalletInventory", () => {
     await expect(
       getHotWalletInventory(
         { asset: "USDI", network: "AGGRON4" },
-        depsWithoutDecimals as Parameters<typeof getHotWalletInventory>[1],
+        depsWithoutDecimals as unknown as Parameters<typeof getHotWalletInventory>[1],
       ),
     ).rejects.toThrow("getUsdiDecimals is required for USDI inventory");
   });
