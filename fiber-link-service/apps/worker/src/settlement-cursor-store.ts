@@ -121,7 +121,7 @@ export function createDbSettlementCursorStore(
   repo: WorkerStateRepo,
   options: CreateDbSettlementCursorStoreOptions = {},
 ): SettlementCursorStore {
-  return {
+  const store: SettlementCursorStore = {
     async load() {
       const stored = await repo.get(SETTLEMENT_CURSOR_STATE_KEY);
       if (stored) {
@@ -134,7 +134,7 @@ export function createDbSettlementCursorStore(
       if (options.legacyFileStore) {
         const adopted = await options.legacyFileStore.load().catch(() => undefined);
         if (adopted) {
-          await this.save(adopted);
+          await store.save(adopted);
           return adopted;
         }
       }
@@ -154,6 +154,8 @@ export function createDbSettlementCursorStore(
       });
     },
   };
+
+  return store;
 }
 
 export type { SettlementCursorStore };
