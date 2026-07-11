@@ -16,6 +16,7 @@ export {
 } from "./hot-wallet-inventory";
 
 export { createAdapter } from "./rpc-adapter/index";
+export { hasWithdrawalPrivateKey, readWithdrawalPrivateKeyRaw } from "./withdrawal-key";
 export { createAdapterProvider } from "./provider";
 export { createSimulationAdapter } from "./simulation-adapter";
 export {

@@ -9,6 +9,7 @@ import {
 } from "@fiber-link/db";
 import {
   getCkbAddressMinCellCapacityShannons,
+  hasWithdrawalPrivateKey,
   shannonsToCkbDecimal,
   WithdrawalExecutionError,
   type WithdrawalDestination,
@@ -128,7 +129,7 @@ export function assertOnChainWithdrawalReady(
     return;
   }
 
-  if (process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY?.trim()) {
+  if (hasWithdrawalPrivateKey()) {
     return;
   }
 

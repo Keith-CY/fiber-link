@@ -257,7 +257,12 @@ export function registerRpc(
             envSecretMap: secretMap,
             envFallbackSecret: getFallbackSecret(),
             onResolve: ({ source }) => {
-              if (source !== "db") {
+              if (source === "env_fallback") {
+                // The shared fallback secret cannot distinguish apps: any holder can
+                // sign requests for any appId. Warn so operators migrate to per-app
+                // secrets (DB or FIBER_LINK_HMAC_SECRET_MAP).
+                req.log.warn({ appId, source }, "RPC request authenticated with shared fallback HMAC secret");
+              } else if (source !== "db") {
                 req.log.info({ appId, source }, "RPC secret resolved by fallback source");
               }
             },
@@ -268,7 +273,11 @@ export function registerRpc(
         secret = fromMap ?? fallback;
 
         const source = fromMap ? "env_map" : fallback ? "env_fallback" : "missing";
-        req.log.info({ appId, source }, "RPC secret resolved by fallback source");
+        if (source === "env_fallback") {
+          req.log.warn({ appId, source }, "RPC request authenticated with shared fallback HMAC secret");
+        } else {
+          req.log.info({ appId, source }, "RPC secret resolved by fallback source");
+        }
       }
 
       if (!appId || !ts || !nonce || !signature || !secret) {

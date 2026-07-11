@@ -2,6 +2,7 @@ import { Indexer, config, hd, helpers } from "@ckb-lumos/lumos";
 import type { HashType } from "@ckb-lumos/lumos";
 import { shannonsToCkbDecimal } from "./ckb-onchain-withdrawal";
 import type { CkbNetwork, GetHotWalletInventoryArgs, HotWalletInventory } from "./types";
+import { readWithdrawalPrivateKeyRaw } from "./withdrawal-key";
 
 export type HotWalletCell = {
   capacity: string;
@@ -24,9 +25,11 @@ export type GetHotWalletInventoryDeps = {
 const DEFAULT_TESTNET_CKB_RPC_URL = "https://testnet.ckb.dev/";
 
 function resolveWithdrawalPrivateKey(): string {
-  const raw = process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY?.trim();
+  const raw = readWithdrawalPrivateKeyRaw();
   if (!raw) {
-    throw new Error("FIBER_WITHDRAWAL_CKB_PRIVATE_KEY is required for hot wallet inventory");
+    throw new Error(
+      "FIBER_WITHDRAWAL_CKB_PRIVATE_KEY (or FIBER_WITHDRAWAL_CKB_PRIVATE_KEY_FILE) is required for hot wallet inventory",
+    );
   }
   const normalized = raw.startsWith("0x") || raw.startsWith("0X") ? `0x${raw.slice(2)}` : `0x${raw}`;
   if (!/^0x[0-9a-fA-F]{64}$/.test(normalized)) {
