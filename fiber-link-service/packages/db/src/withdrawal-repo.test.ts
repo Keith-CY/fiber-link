@@ -196,8 +196,8 @@ describe("createDbWithdrawalRepo", () => {
       ),
     ).rejects.toBeInstanceOf(InsufficientFundsError);
 
-    expect((db as unknown as { transaction: ReturnType<typeof vi.fn> }).transaction).toHaveBeenCalledTimes(1);
-    expect((tx as unknown as { execute: ReturnType<typeof vi.fn> }).execute).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(db.transaction)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(tx.execute)).toHaveBeenCalledTimes(1);
   });
 
   it("infers destination kind from CKB address in create()", async () => {
@@ -338,7 +338,7 @@ describe("createDbWithdrawalRepo", () => {
     );
 
     expect(created.state).toBe("LIQUIDITY_PENDING");
-    expect((tx as unknown as { execute: ReturnType<typeof vi.fn> }).execute).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(tx.execute)).toHaveBeenCalledTimes(1);
     const valuesArg = txInsertValues.mock.calls[0]?.[0] as Record<string, unknown>;
     expect(valuesArg.state).toBe("LIQUIDITY_PENDING");
     expect(valuesArg.liquidityRequestId).toBe("liq1");
@@ -433,7 +433,7 @@ describe("createDbWithdrawalRepo", () => {
     );
 
     expect(created.id).toBe("w2");
-    expect((tx as unknown as { execute: ReturnType<typeof vi.fn> }).execute).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(tx.execute)).toHaveBeenCalledTimes(1);
     expect(txInsert).toHaveBeenCalledTimes(1);
   });
 
