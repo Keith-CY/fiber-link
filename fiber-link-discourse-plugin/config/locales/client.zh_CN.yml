@@ -1,0 +1,13 @@
+zh_CN:
+  js:
+    notifications:
+      alt:
+        fiber_link:
+          tip_received_notification: "收到打赏"
+    fiber_link:
+      dashboard:
+        user_menu_link: "Fiber Link 面板"
+      tip_received_notification: "<p><span>%{username}</span> 打赏了你 <span>%{amount} %{asset}</span>。</p>"
+      tip_nudge_text: "发个小额打赏"
+      notification:
+        title: "你收到了一笔打赏"
