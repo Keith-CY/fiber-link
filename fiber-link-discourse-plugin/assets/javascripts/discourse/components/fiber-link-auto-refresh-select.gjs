@@ -36,6 +36,7 @@ export default class FiberLinkAutoRefreshSelect extends Component {
       <span>Auto-refresh</span>
       <select
         aria-label="Auto-refresh interval"
+        name="fiber-link-auto-refresh-interval"
         {{on "change" this.updatePollInterval}}
       >
         <option value="10000" selected={{this.isTenSeconds}}>10s</option>

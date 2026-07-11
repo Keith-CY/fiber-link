@@ -209,7 +209,7 @@ export default class FiberLinkWithdrawalPanel extends Component {
   }
 
   get submitLabel() {
-    return this.isSubmitting ? "Requesting..." : "Request withdrawal →";
+    return this.isSubmitting ? "Requesting…" : "Request withdrawal →";
   }
 
   get minimumWithdrawalAmount() {
@@ -439,6 +439,9 @@ export default class FiberLinkWithdrawalPanel extends Component {
             <input
               class="fiber-link-tip-input fiber-link-dashboard__withdrawal-input is-amount"
               data-fiber-link-withdrawal-input="amount"
+              id="fiber-link-withdrawal-amount"
+              name="fiber-link-withdrawal-amount"
+              autocomplete="off"
               inputmode="decimal"
               min={{this.minimumWithdrawalAmount}}
               type="text"
@@ -473,7 +476,10 @@ export default class FiberLinkWithdrawalPanel extends Component {
             class="fiber-link-tip-input fiber-link-dashboard__withdrawal-input is-address"
             aria-label="Destination Address"
             data-fiber-link-withdrawal-input="address"
-            placeholder="ckb1q..."
+            id="fiber-link-withdrawal-address"
+            name="fiber-link-withdrawal-address"
+            autocomplete="off"
+            placeholder="ckb1q…"
             spellcheck="false"
             type="text"
             value={{this.destinationAddress}}
