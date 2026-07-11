@@ -13,6 +13,7 @@ export type WorkerConfig = {
   shutdownTimeoutMs: number;
   settlementStrategy: WorkerSettlementStrategy;
   settlementCursorFile: string;
+  settlementCursorStore: "db" | "file";
   fiberRpcUrl: string;
   channelAcceptRpcUrl: string;
   subscriptionConcurrency: number;
@@ -98,6 +99,11 @@ export function parseWorkerConfig(env: NodeJS.ProcessEnv = process.env): WorkerC
   const settlementStrategy = parseStrategy(env);
   const settlementCursorFile = (env.WORKER_SETTLEMENT_CURSOR_FILE ?? "/var/lib/fiber-link/settlement-cursor.json")
     .trim();
+  const settlementCursorStoreRaw = (env.WORKER_SETTLEMENT_CURSOR_STORE ?? "db").trim().toLowerCase();
+  if (settlementCursorStoreRaw !== "db" && settlementCursorStoreRaw !== "file") {
+    throw new Error("WORKER_SETTLEMENT_CURSOR_STORE must be 'db' or 'file'");
+  }
+  const settlementCursorStore = settlementCursorStoreRaw as "db" | "file";
   const fiberRpcUrl = (env.FIBER_RPC_URL ?? "").trim();
   const channelAcceptRpcUrl = (env.FIBER_CHANNEL_ACCEPT_RPC_URL ?? fiberRpcUrl).trim() || fiberRpcUrl;
   const subscriptionConcurrency = parseInteger(
@@ -155,6 +161,7 @@ export function parseWorkerConfig(env: NodeJS.ProcessEnv = process.env): WorkerC
     shutdownTimeoutMs,
     settlementStrategy,
     settlementCursorFile,
+    settlementCursorStore,
     fiberRpcUrl,
     channelAcceptRpcUrl,
     subscriptionConcurrency,
