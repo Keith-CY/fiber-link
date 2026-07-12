@@ -1,6 +1,6 @@
 # Fiber Link Current Status
 
-_Last updated: 2026-05-08_
+_Last updated: 2026-07-12_
 
 ---
 
@@ -46,9 +46,22 @@ The repository has completed the current Milestone 1–3 acceptance checkpoints.
 ### Deployment and Operations
 
 - Docker Compose reference stack for service, worker, Postgres, Redis, and Fiber nodes.
+- Database schema is owned by Drizzle migrations (single source of truth), applied by a one-shot `migrate` compose service that `rpc` waits on; both fresh and existing deployments converge automatically.
 - Discourse plugin installation and smoke-test guides.
 - Monitoring summary, backup capture, restore-plan, and deployment-evidence runbooks.
+- Prometheus `/metrics` endpoint on the RPC service (process metrics plus per-method request and HMAC-secret-source counters).
 - Mainnet deployment checklist and security-control evidence map.
+
+### Recent Hardening
+
+Operational and safety improvements layered on top of the milestone deliverables:
+
+- **Schema/migrations**: regenerated Drizzle baseline with a working journal; the compose stack runs migrations automatically.
+- **Secrets**: the hot-wallet withdrawal key can be supplied via a mounted file (`FIBER_WITHDRAWAL_CKB_PRIVATE_KEY_FILE`) instead of the environment; requests authenticated through the shared HMAC fallback are logged as a warning.
+- **Admin console**: an optional proxy shared secret (`ADMIN_PROXY_SHARED_SECRET` + `x-admin-proxy-token`) makes identity-header trust fail closed when the console port is reachable without the proxy.
+- **Real-time settlement**: `/rpc/stream` bounds concurrent SSE connections (global and per app), makes the CORS origin configurable, and sends periodic heartbeats to survive proxy idle timeouts.
+- **Worker durability**: the settlement discovery cursor persists in the database by default, surviving container replacement without a host volume.
+- **Engineering hygiene**: strict typechecking and a Next.js build gate in CI across all workspaces, coverage reporting for every package, and structured logging on the worker's long-running paths.
 
 ### Acceptance Evidence
 
@@ -63,7 +76,7 @@ The repository has completed the current Milestone 1–3 acceptance checkpoints.
 | Surface | What It Provides |
 |---|---|
 | Discourse Plugin | Tip action, payment modal, creator dashboard, withdrawal request UI. |
-| Fiber Link RPC Service | Signed backend methods for tips, dashboard data, withdrawal requests, and health checks. |
+| Fiber Link RPC Service | Signed backend methods for tips, dashboard data, withdrawal requests, plus `/healthz/*` and Prometheus `/metrics`. |
 | Worker Runtime | Settlement discovery, withdrawal execution, liquidity handling, reconciliation, and scheduled processing. |
 | Admin Dashboard | App list, withdrawal list, state summaries, policy forms, monitoring, rate-limit controls, and backup controls. |
 | Runbooks and Scripts | Deployment, smoke tests, evidence capture, backup/restore, reconciliation, and mainnet readiness. |
