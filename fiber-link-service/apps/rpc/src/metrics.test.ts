@@ -7,6 +7,8 @@ describe("normalizeMethodLabel", () => {
   it("passes through known methods", () => {
     expect(normalizeMethodLabel("tip.create")).toBe("tip.create");
     expect(normalizeMethodLabel("withdrawal.request")).toBe("withdrawal.request");
+    expect(normalizeMethodLabel("tip.settled_feed")).toBe("tip.settled_feed");
+    expect(normalizeMethodLabel("withdrawal.quote")).toBe("withdrawal.quote");
   });
 
   it("buckets unknown or non-string methods as 'unknown'", () => {

@@ -6,12 +6,13 @@ import { Counter, Registry, collectDefaultMetrics } from "prom-client";
 export const metricsRegistry = new Registry();
 
 let defaultMetricsStarted = false;
-function ensureDefaultMetrics() {
+// Called lazily from the /metrics handler so importing this module (e.g. from
+// unit tests) doesn't start collectDefaultMetrics' background timers.
+export function ensureDefaultMetrics() {
   if (defaultMetricsStarted) return;
   defaultMetricsStarted = true;
   collectDefaultMetrics({ register: metricsRegistry });
 }
-ensureDefaultMetrics();
 
 // Known RPC method names, so the `method` label has bounded cardinality even if
 // a client sends an unrecognized method (bucketed as "unknown").
@@ -19,14 +20,14 @@ const KNOWN_RPC_METHODS = new Set<string>([
   "health.ping",
   "tip.create",
   "tip.status",
+  "tip.get",
+  "tip.settled_feed",
   "dashboard.summary",
   "dashboard.analytics",
+  "withdrawal.quote",
   "withdrawal.request",
-  "withdrawal.status",
   "notification.channel.create",
   "notification.channel.list",
-  "notification.channel.delete",
-  "liquidity.status",
 ]);
 
 export function normalizeMethodLabel(method: unknown): string {

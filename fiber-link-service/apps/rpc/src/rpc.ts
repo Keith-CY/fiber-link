@@ -42,7 +42,7 @@ import {
 import { type AppRepo, createDbAppRepo } from "./repositories/app-repo";
 import { rpcErrorResponse, rpcResultResponse } from "./rpc-error";
 import { loadSecretMap, resolveSecretForApp } from "./secret-map";
-import { hmacSecretSourceTotal, metricsRegistry, normalizeMethodLabel, rpcRequestsTotal } from "./metrics";
+import { ensureDefaultMetrics, hmacSecretSourceTotal, metricsRegistry, normalizeMethodLabel, rpcRequestsTotal } from "./metrics";
 
 const NONCE_TTL_MS = 5 * 60 * 1000;
 const nonceStore = createNonceStore();
@@ -201,6 +201,7 @@ export function registerRpc(
   });
 
   app.get("/metrics", async (_req, reply) => {
+    ensureDefaultMetrics();
     reply.header("Content-Type", metricsRegistry.contentType);
     return reply.send(await metricsRegistry.metrics());
   });
