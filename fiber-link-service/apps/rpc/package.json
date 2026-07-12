@@ -11,6 +11,7 @@
     "@fiber-link/notifications": "workspace:*",
     "fastify": "^4.27.0",
     "ioredis": "^5.4.1",
+    "prom-client": "^15.1.3",
     "zod": "^3.23.8"
   },
   "devDependencies": {
