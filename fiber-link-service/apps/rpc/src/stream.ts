@@ -220,9 +220,16 @@ export function registerStreamRoute(
       function startHeartbeat() {
         if (finished || heartbeatIntervalMs <= 0) return;
         heartbeatTimer = setInterval(() => {
-          if (finished || reply.raw.writableEnded) return;
-          // SSE comment line: ignored by clients, but resets proxy idle timers.
-          reply.raw.write(`: heartbeat\n\n`);
+          if (finished || reply.raw.writableEnded || reply.raw.destroyed) return;
+          // The timer fires outside Fastify's request lifecycle, so a synchronous
+          // write() throw (e.g. ERR_STREAM_DESTROYED on an abruptly closed socket)
+          // would become an uncaught exception. Guard and finish() instead.
+          try {
+            // SSE comment line: ignored by clients, but resets proxy idle timers.
+            reply.raw.write(`: heartbeat\n\n`);
+          } catch {
+            finish();
+          }
         }, heartbeatIntervalMs);
       }
 
