@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import Redis from "ioredis-mock";
+import type { Redis as RedisClient } from "ioredis";
 import {
   InMemoryRateLimitStore,
   RedisRateLimitStore,
@@ -88,12 +89,12 @@ describe("rpc rate limit", () => {
 
     // Seed a key with no TTL directly via the mock client.
     const rawKey = `rate:${rateLimitKey("recover", "tip.create")}`;
-    await (client as unknown as Redis).set(rawKey, "5");
+    await (client as unknown as RedisClient).set(rawKey, "5");
 
     const result = await store.consume({ key: rateLimitKey("recover", "tip.create"), limit: 100, windowMs: 60_000 });
 
     // After the consume the key must have a TTL so it will eventually expire.
-    const pttl = await (client as unknown as Redis).pttl(rawKey);
+    const pttl = await (client as unknown as RedisClient).pttl(rawKey);
     expect(pttl).toBeGreaterThan(0);
     expect(result.allowed).toBe(true);
     expect(result.remaining).toBe(94); // 100 - 6

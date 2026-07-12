@@ -12,13 +12,7 @@ import {
   createInMemoryWithdrawalRepo,
 } from "./withdrawal-repo";
 
-type DbMock = {
-  db: DbClient;
-  updateSet: ReturnType<typeof vi.fn>;
-  updateReturning: ReturnType<typeof vi.fn>;
-  selectLimit: ReturnType<typeof vi.fn>;
-  selectWhere: ReturnType<typeof vi.fn>;
-};
+type DbMock = ReturnType<typeof createDbMock>;
 
 function mockRow(overrides: Record<string, unknown> = {}) {
   return {
@@ -44,19 +38,19 @@ function mockRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function createDbMock(): DbMock {
+function createDbMock() {
   const insertReturning = vi.fn();
-  const insertValues = vi.fn(() => ({ returning: insertReturning }));
+  const insertValues = vi.fn((..._args: unknown[]) => ({ returning: insertReturning }));
   const insert = vi.fn(() => ({ values: insertValues }));
 
-  const selectLimit = vi.fn();
-  const selectWhere = vi.fn(() => ({ limit: selectLimit }));
+  const selectLimit = vi.fn<unknown[], unknown>();
+  const selectWhere = vi.fn((..._args: unknown[]): unknown => ({ limit: selectLimit }));
   const selectFrom = vi.fn(() => ({ where: selectWhere }));
   const select = vi.fn(() => ({ from: selectFrom }));
 
   const updateReturning = vi.fn();
   const updateWhere = vi.fn(() => ({ returning: updateReturning }));
-  const updateSet = vi.fn(() => ({ where: updateWhere }));
+  const updateSet = vi.fn((..._args: unknown[]) => ({ where: updateWhere }));
   const update = vi.fn(() => ({ set: updateSet }));
 
   const db = {
@@ -202,8 +196,8 @@ describe("createDbWithdrawalRepo", () => {
       ),
     ).rejects.toBeInstanceOf(InsufficientFundsError);
 
-    expect((db as { transaction: ReturnType<typeof vi.fn> }).transaction).toHaveBeenCalledTimes(1);
-    expect((tx as { execute: ReturnType<typeof vi.fn> }).execute).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(db.transaction)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(tx.execute)).toHaveBeenCalledTimes(1);
   });
 
   it("infers destination kind from CKB address in create()", async () => {
@@ -213,7 +207,7 @@ describe("createDbWithdrawalRepo", () => {
         toAddress: "ckt1qyqfth8m4fevfzh5hhd088s78qcdjjp8cehs7z8jhw",
       }),
     ]);
-    const insertValues = vi.fn(() => ({ returning: insertReturning }));
+    const insertValues = vi.fn((..._args: unknown[]) => ({ returning: insertReturning }));
     const insert = vi.fn(() => ({ values: insertValues }));
     const db = { insert } as unknown as DbClient;
     const repo = createDbWithdrawalRepo(db);
@@ -238,7 +232,7 @@ describe("createDbWithdrawalRepo", () => {
         toAddress: "fiber:invoice:abc",
       }),
     ]);
-    const insertValues = vi.fn(() => ({ returning: insertReturning }));
+    const insertValues = vi.fn((..._args: unknown[]) => ({ returning: insertReturning }));
     const insert = vi.fn(() => ({ values: insertValues }));
     const db = { insert } as unknown as DbClient;
     const repo = createDbWithdrawalRepo(db);
@@ -270,7 +264,7 @@ describe("createDbWithdrawalRepo", () => {
         liquidityCheckedAt: new Date("2026-03-07T00:00:00.000Z"),
       }),
     ]);
-    const insertValues = vi.fn(() => ({ returning: insertReturning }));
+    const insertValues = vi.fn((..._args: unknown[]) => ({ returning: insertReturning }));
     const insert = vi.fn(() => ({ values: insertValues }));
     const db = { insert } as unknown as DbClient;
     const repo = createDbWithdrawalRepo(db);
@@ -316,7 +310,7 @@ describe("createDbWithdrawalRepo", () => {
         liquidityCheckedAt: new Date("2026-03-07T00:00:00.000Z"),
       }),
     ]);
-    const txInsertValues = vi.fn(() => ({ returning: txInsertReturning }));
+    const txInsertValues = vi.fn((..._args: unknown[]) => ({ returning: txInsertReturning }));
     const txInsert = vi.fn(() => ({ values: txInsertValues }));
 
     const tx = {
@@ -344,7 +338,7 @@ describe("createDbWithdrawalRepo", () => {
     );
 
     expect(created.state).toBe("LIQUIDITY_PENDING");
-    expect((tx as { execute: ReturnType<typeof vi.fn> }).execute).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(tx.execute)).toHaveBeenCalledTimes(1);
     const valuesArg = txInsertValues.mock.calls[0]?.[0] as Record<string, unknown>;
     expect(valuesArg.state).toBe("LIQUIDITY_PENDING");
     expect(valuesArg.liquidityRequestId).toBe("liq1");
@@ -413,7 +407,7 @@ describe("createDbWithdrawalRepo", () => {
         toAddress: "fiber:invoice:new",
       }),
     ]);
-    const txInsertValues = vi.fn(() => ({ returning: txInsertReturning }));
+    const txInsertValues = vi.fn((..._args: unknown[]) => ({ returning: txInsertReturning }));
     const txInsert = vi.fn(() => ({ values: txInsertValues }));
 
     const tx = {
@@ -439,7 +433,7 @@ describe("createDbWithdrawalRepo", () => {
     );
 
     expect(created.id).toBe("w2");
-    expect((tx as { execute: ReturnType<typeof vi.fn> }).execute).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(tx.execute)).toHaveBeenCalledTimes(1);
     expect(txInsert).toHaveBeenCalledTimes(1);
   });
 

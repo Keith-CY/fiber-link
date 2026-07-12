@@ -49,9 +49,9 @@ describe("startSettlementSubscriptionRunner", () => {
       },
     });
 
-    await onSettled?.("inv-1");
-    await onSettled?.("inv-2");
-    await onSettled?.("inv-3");
+    await (onSettled as ((invoice: string) => void | Promise<void>) | null)?.("inv-1");
+    await (onSettled as ((invoice: string) => void | Promise<void>) | null)?.("inv-2");
+    await (onSettled as ((invoice: string) => void | Promise<void>) | null)?.("inv-3");
     await Promise.resolve();
 
     expect(settleMock).toHaveBeenCalledTimes(1);
@@ -91,9 +91,9 @@ describe("startSettlementSubscriptionRunner", () => {
       },
     });
 
-    await onSettled?.("inv-dup");
-    await onSettled?.("inv-dup");
-    await onSettled?.("inv-dup");
+    await (onSettled as ((invoice: string) => void | Promise<void>) | null)?.("inv-dup");
+    await (onSettled as ((invoice: string) => void | Promise<void>) | null)?.("inv-dup");
+    await (onSettled as ((invoice: string) => void | Promise<void>) | null)?.("inv-dup");
     await runner.close();
 
     expect(settleMock).toHaveBeenCalledTimes(1);
@@ -127,7 +127,7 @@ describe("startSettlementSubscriptionRunner", () => {
       },
     });
 
-    await onSettled?.("inv-close");
+    await (onSettled as ((invoice: string) => void | Promise<void>) | null)?.("inv-close");
     await Promise.resolve();
 
     let closed = false;

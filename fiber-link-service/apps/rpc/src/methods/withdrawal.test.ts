@@ -273,7 +273,7 @@ describe("requestWithdrawal", () => {
         },
         { repo, ledgerRepo: ledger, policyRepo },
       ),
-    ).rejects.toMatchObject<Partial<WithdrawalPolicyViolationError>>({
+    ).rejects.toMatchObject({
       name: "WithdrawalPolicyViolationError",
       reason: "MAX_PER_REQUEST_EXCEEDED",
     });
@@ -329,7 +329,7 @@ describe("requestWithdrawal", () => {
         },
         { repo, ledgerRepo: ledger, policyRepo, now },
       ),
-    ).rejects.toMatchObject<Partial<WithdrawalPolicyViolationError>>({
+    ).rejects.toMatchObject({
       name: "WithdrawalPolicyViolationError",
       reason: "COOLDOWN_ACTIVE",
     });
@@ -360,7 +360,7 @@ describe("requestWithdrawal", () => {
         },
         { repo, ledgerRepo: ledger },
       ),
-    ).rejects.toMatchObject<Partial<WithdrawalPolicyViolationError>>({
+    ).rejects.toMatchObject({
       name: "WithdrawalPolicyViolationError",
       reason: "AMOUNT_BELOW_MIN_CAPACITY",
     });
@@ -401,7 +401,7 @@ describe("requestWithdrawal", () => {
         },
         { repo, ledgerRepo: ledger, policyRepo },
       ),
-    ).rejects.toMatchObject<Partial<WithdrawalPolicyViolationError>>({
+    ).rejects.toMatchObject({
       name: "WithdrawalPolicyViolationError",
       reason: "ASSET_NOT_ALLOWED",
     });
@@ -456,7 +456,7 @@ describe("requestWithdrawal", () => {
         },
         { repo, ledgerRepo: ledger, policyRepo, now: new Date("2026-02-27T12:00:00.000Z") },
       ),
-    ).rejects.toMatchObject<Partial<WithdrawalPolicyViolationError>>({
+    ).rejects.toMatchObject({
       name: "WithdrawalPolicyViolationError",
       reason: "PER_USER_DAILY_LIMIT_EXCEEDED",
     });
@@ -511,7 +511,7 @@ describe("requestWithdrawal", () => {
         },
         { repo, ledgerRepo: ledger, policyRepo, now: new Date("2026-02-27T12:00:00.000Z") },
       ),
-    ).rejects.toMatchObject<Partial<WithdrawalPolicyViolationError>>({
+    ).rejects.toMatchObject({
       name: "WithdrawalPolicyViolationError",
       reason: "PER_APP_DAILY_LIMIT_EXCEEDED",
     });
@@ -542,7 +542,7 @@ describe("requestWithdrawal", () => {
         },
         { repo, ledgerRepo: ledger },
       ),
-    ).rejects.toMatchObject<Partial<WithdrawalPolicyViolationError>>({
+    ).rejects.toMatchObject({
       name: "WithdrawalPolicyViolationError",
       reason: "INVALID_DESTINATION_ADDRESS",
     });
@@ -573,7 +573,7 @@ describe("requestWithdrawal", () => {
         },
         { repo, ledgerRepo: ledger },
       ),
-    ).rejects.toMatchObject<Partial<WithdrawalPolicyViolationError>>({
+    ).rejects.toMatchObject({
       name: "WithdrawalPolicyViolationError",
       reason: "INVALID_DESTINATION_ADDRESS",
     });
@@ -636,7 +636,7 @@ describe("requestWithdrawal", () => {
         },
         { repo, ledgerRepo: ledger },
       ),
-    ).rejects.toMatchObject<Partial<WithdrawalPolicyViolationError>>({
+    ).rejects.toMatchObject({
       name: "WithdrawalPolicyViolationError",
       reason: "WITHDRAWAL_SIGNER_UNAVAILABLE",
       message: expect.stringContaining("withdrawal signer"),
@@ -1097,7 +1097,7 @@ describe("requestWithdrawal", () => {
       await vi.waitFor(() => {
         expect(hotWalletInventoryProvider).toHaveBeenCalledTimes(1);
       });
-      releaseFirstInventoryCall?.();
+      (releaseFirstInventoryCall as (() => void) | null)?.();
 
       const [firstResult, secondResult] = await Promise.all([firstRequest, secondRequest]);
       expect([firstResult.state, secondResult.state].sort()).toEqual([

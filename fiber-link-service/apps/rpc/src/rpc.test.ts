@@ -16,6 +16,8 @@ import * as tipMethods from "./methods/tip";
 import * as dashboardMethods from "./methods/dashboard";
 import * as withdrawalMethods from "./methods/withdrawal";
 
+declare const Bun: unknown;
+
 function ensureBunInjectHeaderCompat() {
   if (typeof Bun === "undefined") {
     return;
@@ -527,6 +529,11 @@ describe("json-rpc", () => {
           createdAt: "2026-02-16T00:00:00.000Z",
           message: null,
           settledAt: null,
+          activityType: "TIP" as const,
+          txHash: null,
+          explorerUrl: null,
+          destinationKind: null,
+          destination: null,
         },
       ],
       admin: {
@@ -622,6 +629,11 @@ describe("json-rpc", () => {
               createdAt: "2026-02-16T00:00:00.000Z",
               message: null,
               settledAt: null,
+              activityType: "TIP",
+              txHash: null,
+              explorerUrl: null,
+              destinationKind: null,
+              destination: null,
             },
           ],
           admin: {

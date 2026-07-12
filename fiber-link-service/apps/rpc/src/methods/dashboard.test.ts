@@ -11,9 +11,17 @@ function createMockDb(selectQueue: MockSelectQueue) {
     return next;
   };
 
+  type QueryChain = {
+    from: (...args: unknown[]) => QueryChain;
+    where: (...args: unknown[]) => QueryChain;
+    orderBy: (...args: unknown[]) => QueryChain;
+    limit: (...args: unknown[]) => Promise<unknown>;
+    groupBy: (...args: unknown[]) => Promise<unknown>;
+    then: (resolve: (value: unknown) => unknown) => Promise<unknown>;
+  };
   return {
     select: vi.fn(() => {
-      const chain = {
+      const chain: QueryChain = {
         from: vi.fn(() => chain),
         where: vi.fn(() => chain),
         orderBy: vi.fn(() => chain),
