@@ -140,6 +140,11 @@ services:
       FIBER_CHANNEL_ROTATION_BOOTSTRAP_RESERVE: ${FIBER_CHANNEL_ROTATION_BOOTSTRAP_RESERVE:-61}
       FIBER_CHANNEL_ROTATION_MIN_RECOVERABLE_AMOUNT: ${FIBER_CHANNEL_ROTATION_MIN_RECOVERABLE_AMOUNT:-61}
       FIBER_CHANNEL_ROTATION_MAX_CONCURRENT: ${FIBER_CHANNEL_ROTATION_MAX_CONCURRENT:-1}
+    # To supply the withdrawal key as a mounted file instead of an env var, set
+    # FIBER_WITHDRAWAL_CKB_PRIVATE_KEY_FILE=/run/secrets/fiber_withdrawal_key and
+    # mount the host secret read-only (keeps the key out of `docker inspect`):
+    # volumes:
+    #   - /path/on/host/withdrawal-key:/run/secrets/fiber_withdrawal_key:ro
     ports:
       - "${RPC_PORT:-3000}:3000"
     healthcheck:
@@ -201,6 +206,9 @@ services:
       WORKER_OPS_WITHDRAWAL_SAMPLE_LIMIT: ${WORKER_OPS_WITHDRAWAL_SAMPLE_LIMIT:-500}
     volumes:
       - worker-data:/var/lib/fiber-link
+      # To supply the withdrawal key as a mounted file (set
+      # FIBER_WITHDRAWAL_CKB_PRIVATE_KEY_FILE=/run/secrets/fiber_withdrawal_key):
+      # - /path/on/host/withdrawal-key:/run/secrets/fiber_withdrawal_key:ro
     healthcheck:
       test: ["CMD", "bun", "run", "apps/worker/src/scripts/healthcheck.ts"]
       interval: 15s
