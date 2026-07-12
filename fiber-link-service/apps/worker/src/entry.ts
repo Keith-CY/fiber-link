@@ -1,9 +1,9 @@
 import { createAdapterProvider, createDefaultHotWalletInventoryProvider } from "@fiber-link/fiber-adapter";
-import type { TipIntentListCursor } from "@fiber-link/db";
+import { createDbClient, createDbWorkerStateRepo, type TipIntentListCursor } from "@fiber-link/db";
 import { parseWorkerConfig } from "./config";
 import { runLiquidityBatch } from "./liquidity-batch";
 import { runSettlementDiscovery } from "./settlement-discovery";
-import { createFileSettlementCursorStore } from "./settlement-cursor-store";
+import { createDbSettlementCursorStore, createFileSettlementCursorStore } from "./settlement-cursor-store";
 import {
   startSettlementSubscriptionRunner,
   type SettlementSubscriptionRunner,
@@ -37,7 +37,13 @@ async function main() {
         });
   const fiberAdapter = createFiberAdapter();
   const settlementPublisher = createSettlementPublisher();
-  const cursorStore = createFileSettlementCursorStore(config.settlementCursorFile);
+  const fileCursorStore = createFileSettlementCursorStore(config.settlementCursorFile);
+  const cursorStore =
+    config.settlementCursorStore === "file"
+      ? fileCursorStore
+      : createDbSettlementCursorStore(createDbWorkerStateRepo(createDbClient()), {
+          legacyFileStore: fileCursorStore,
+        });
   const inventoryProvider = createDefaultHotWalletInventoryProvider();
   let settlementCursor: TipIntentListCursor | undefined = await cursorStore.load();
   let subscriptionRunner: SettlementSubscriptionRunner | null = null;

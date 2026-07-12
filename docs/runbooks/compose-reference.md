@@ -53,7 +53,8 @@ Edit `.env` minimally:
   - `WORKER_SETTLEMENT_MAX_RETRIES`
   - `WORKER_SETTLEMENT_RETRY_DELAY_MS`
   - `WORKER_SETTLEMENT_PENDING_TIMEOUT_MS`
-  - `WORKER_SETTLEMENT_CURSOR_FILE` (default `/var/lib/fiber-link/settlement-cursor.json`, persisted via compose `worker-data` volume)
+  - `WORKER_SETTLEMENT_CURSOR_STORE` (default `db`: cursor persists in the `worker_state` table and survives container replacement; set `file` for the legacy file store)
+  - `WORKER_SETTLEMENT_CURSOR_FILE` (default `/var/lib/fiber-link/settlement-cursor.json`; in `db` mode read once to adopt a pre-existing legacy cursor)
 - Optional: tune readiness probe timeouts:
   - `RPC_HEALTHCHECK_TIMEOUT_MS`
   - `WORKER_READINESS_TIMEOUT_MS`

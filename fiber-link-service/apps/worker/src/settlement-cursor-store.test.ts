@@ -2,7 +2,8 @@ import { mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
-import { createFileSettlementCursorStore } from "./settlement-cursor-store";
+import { createInMemoryWorkerStateRepo } from "@fiber-link/db";
+import { createDbSettlementCursorStore, createFileSettlementCursorStore } from "./settlement-cursor-store";
 
 describe("createFileSettlementCursorStore", () => {
   async function expectInvalidBackupPreservesPayload(root: string, originalPayload: string) {
@@ -82,5 +83,72 @@ describe("createFileSettlementCursorStore", () => {
     expect(content).toContain('"id": "tip-xyz"');
     expect(content).toContain('"createdAt": "2026-02-16T00:00:00.000Z"');
     expect(content).toContain('"updatedAt"');
+  });
+});
+
+describe("createDbSettlementCursorStore", () => {
+  const CURSOR = { id: "tip-42", createdAt: new Date("2026-02-16T00:00:00.000Z") };
+
+  it("round-trips a cursor through the worker state repo", async () => {
+    const repo = createInMemoryWorkerStateRepo();
+    const store = createDbSettlementCursorStore(repo);
+
+    expect(await store.load()).toBeUndefined();
+
+    await store.save(CURSOR);
+    expect(await store.load()).toEqual(CURSOR);
+
+    await store.save(undefined);
+    expect(await store.load()).toBeUndefined();
+  });
+
+  it("treats an unparsable stored value as no cursor", async () => {
+    const repo = createInMemoryWorkerStateRepo({ "settlement-cursor": { id: "", createdAt: "not-a-date" } });
+    const store = createDbSettlementCursorStore(repo);
+    expect(await store.load()).toBeUndefined();
+  });
+
+  it("adopts the legacy file cursor once when the database is empty", async () => {
+    const repo = createInMemoryWorkerStateRepo();
+    let fileLoads = 0;
+    const legacyFileStore = {
+      load: async () => {
+        fileLoads += 1;
+        return CURSOR;
+      },
+      save: async () => {},
+    };
+    const store = createDbSettlementCursorStore(repo, { legacyFileStore });
+
+    expect(await store.load()).toEqual(CURSOR);
+    expect(fileLoads).toBe(1);
+
+    // Second load is served from the database, not the file.
+    expect(await store.load()).toEqual(CURSOR);
+    expect(fileLoads).toBe(1);
+  });
+
+  it("prefers the database value over the legacy file", async () => {
+    const repo = createInMemoryWorkerStateRepo({
+      "settlement-cursor": { id: "tip-db", createdAt: "2026-02-17T00:00:00.000Z" },
+    });
+    const legacyFileStore = {
+      load: async () => CURSOR,
+      save: async () => {},
+    };
+    const store = createDbSettlementCursorStore(repo, { legacyFileStore });
+    expect(await store.load()).toEqual({ id: "tip-db", createdAt: new Date("2026-02-17T00:00:00.000Z") });
+  });
+
+  it("ignores legacy file read errors during adoption", async () => {
+    const repo = createInMemoryWorkerStateRepo();
+    const legacyFileStore = {
+      load: async () => {
+        throw new Error("volume unavailable");
+      },
+      save: async () => {},
+    };
+    const store = createDbSettlementCursorStore(repo, { legacyFileStore });
+    expect(await store.load()).toBeUndefined();
   });
 });

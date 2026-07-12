@@ -8,7 +8,8 @@ Use this runbook when settlement credits are delayed or missed (for example work
 - You have:
   - `DATABASE_URL` pointing to target environment
   - `FIBER_RPC_URL` for the Fiber node RPC endpoint
-  - `WORKER_SETTLEMENT_CURSOR_FILE` pointing to persistent storage (compose default: `/var/lib/fiber-link/settlement-cursor.json`)
+  - `WORKER_SETTLEMENT_CURSOR_STORE=db` (default): cursor persists in the `worker_state` table
+  - `WORKER_SETTLEMENT_CURSOR_FILE` (legacy `file` mode, or one-time adoption source in `db` mode)
   - (subscription mode) queue knobs:
     - `WORKER_SETTLEMENT_SUBSCRIPTION_CONCURRENCY` (default `1`)
     - `WORKER_SETTLEMENT_SUBSCRIPTION_MAX_PENDING_EVENTS` (default `1000`)
@@ -16,7 +17,7 @@ Use this runbook when settlement credits are delayed or missed (for example work
 
 ## Worker restart cursor behavior
 
-- Worker polling stores and reloads the settlement cursor using `WORKER_SETTLEMENT_CURSOR_FILE`.
+- Worker polling stores and reloads the settlement cursor from the `worker_state` table by default (`WORKER_SETTLEMENT_CURSOR_STORE=db`), falling back to the legacy file only when explicitly configured.
 - Cursor writes are atomic (`.tmp` + rename) to avoid partial state on crash.
 - If cursor points past the newest `UNPAID` record, polling wraps once to the oldest matching window (catch-up mode), so long outages do not permanently skip windows.
 

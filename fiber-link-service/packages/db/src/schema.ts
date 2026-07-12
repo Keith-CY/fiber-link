@@ -344,3 +344,9 @@ export const notificationRules = pgTable(
     byChannelEnabled: index("notification_rules_channel_enabled_idx").on(table.channelId, table.enabled, table.id),
   }),
 );
+
+export const workerState = pgTable("worker_state", {
+  key: text("key").primaryKey(),
+  value: jsonb("value").$type<Record<string, unknown>>().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});

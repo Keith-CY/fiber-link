@@ -10,3 +10,4 @@ export * from "./ledger-repo";
 export * from "./amount";
 export * from "./retry";
 export * from "./analytics-repo";
+export * from "./worker-state-repo";

@@ -1,6 +1,6 @@
 import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import type { TipIntentListCursor } from "@fiber-link/db";
+import type { TipIntentListCursor, WorkerStateRepo } from "@fiber-link/db";
 
 type SettlementCursorStore = {
   load: () => Promise<TipIntentListCursor | undefined>;
@@ -91,6 +91,71 @@ export function createFileSettlementCursorStore(filePath: string): SettlementCur
       await rename(tmpPath, normalizedPath);
     },
   };
+}
+
+const SETTLEMENT_CURSOR_STATE_KEY = "settlement-cursor";
+
+function parseCursorValue(value: Record<string, unknown>): TipIntentListCursor | undefined {
+  const id = value.id;
+  const createdAtRaw = value.createdAt;
+  if (typeof id !== "string" || !id.trim() || typeof createdAtRaw !== "string") {
+    return undefined;
+  }
+  const createdAt = new Date(createdAtRaw);
+  if (Number.isNaN(createdAt.getTime())) {
+    return undefined;
+  }
+  return { id, createdAt };
+}
+
+export type CreateDbSettlementCursorStoreOptions = {
+  /**
+   * One-time adoption source: when the database holds no cursor yet, the
+   * legacy file store is consulted so an upgraded deployment resumes where
+   * the file-based cursor left off instead of rescanning from the start.
+   */
+  legacyFileStore?: SettlementCursorStore;
+};
+
+export function createDbSettlementCursorStore(
+  repo: WorkerStateRepo,
+  options: CreateDbSettlementCursorStoreOptions = {},
+): SettlementCursorStore {
+  const store: SettlementCursorStore = {
+    async load() {
+      const stored = await repo.get(SETTLEMENT_CURSOR_STATE_KEY);
+      if (stored) {
+        // An unparsable value is treated like the file store treats a corrupt
+        // file: start over rather than crash the worker; discovery crediting
+        // is idempotent, so a rescan is safe.
+        return parseCursorValue(stored);
+      }
+
+      if (options.legacyFileStore) {
+        const adopted = await options.legacyFileStore.load().catch(() => undefined);
+        if (adopted) {
+          await store.save(adopted);
+          return adopted;
+        }
+      }
+
+      return undefined;
+    },
+
+    async save(cursor) {
+      if (!cursor) {
+        await repo.delete(SETTLEMENT_CURSOR_STATE_KEY);
+        return;
+      }
+      await repo.set(SETTLEMENT_CURSOR_STATE_KEY, {
+        id: cursor.id,
+        createdAt: cursor.createdAt.toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+    },
+  };
+
+  return store;
 }
 
 export type { SettlementCursorStore };
