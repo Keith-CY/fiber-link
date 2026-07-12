@@ -15,6 +15,21 @@ import { createWorkerRuntime } from "./worker-runtime";
 
 const logger = createComponentLogger("worker");
 
+// RPC URLs may carry userinfo (user:pass@host); strip credentials before logging.
+function redactUrlForLog(url: string): string {
+  try {
+    const u = new URL(url);
+    if (u.username || u.password) {
+      u.username = "";
+      u.password = "";
+      return `${u.origin}${u.pathname}`;
+    }
+    return url;
+  } catch {
+    return url;
+  }
+}
+
 async function main() {
   const config = parseWorkerConfig(process.env);
   const settlementSubscriptionUrl = (process.env.FIBER_SETTLEMENT_SUBSCRIPTION_URL ?? "").trim();
@@ -56,6 +71,10 @@ async function main() {
     channelRotationBootstrapReserve: config.channelRotationBootstrapReserve,
     channelRotationMinRecoverableAmount: config.channelRotationMinRecoverableAmount,
     channelRotationMaxConcurrent: config.channelRotationMaxConcurrent,
+  };
+  const liquidityFallbackForLog = {
+    ...liquidityFallback,
+    channelAcceptRpcUrl: redactUrlForLog(liquidityFallback.channelAcceptRpcUrl),
   };
 
   const runtime = createWorkerRuntime({
@@ -147,7 +166,7 @@ async function main() {
         subscriptionConcurrency: config.subscriptionConcurrency,
         maxPendingEvents: config.subscriptionMaxPendingEvents,
         recentInvoiceDedupeSize: config.subscriptionRecentInvoiceDedupeSize,
-        liquidityFallback,
+        liquidityFallback: liquidityFallbackForLog,
       });
     } catch (error) {
       logger.error("worker.settlement_subscription_startup_failed", { error, fallback: "polling" });
@@ -156,7 +175,7 @@ async function main() {
     logger.info("worker.settlement_strategy_enabled", {
       strategy: "polling",
       pollingFallback: false,
-      liquidityFallback,
+      liquidityFallback: liquidityFallbackForLog,
     });
   }
 
