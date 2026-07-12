@@ -143,6 +143,9 @@ jobs:
           run_pkg apps/admin admin
           run_pkg apps/worker worker
           run_pkg packages/db db
+          run_pkg packages/fiber-adapter fiber-adapter
+          run_pkg packages/notifications notifications
+          run_pkg packages/client client
 
       - name: Collect base branch coverage
         working-directory: fiber-link-service
@@ -187,9 +190,12 @@ jobs:
           run_base_pkg apps/admin admin
           run_base_pkg apps/worker worker
           run_base_pkg packages/db db
+          run_base_pkg packages/fiber-adapter fiber-adapter
+          run_base_pkg packages/notifications notifications
+          run_base_pkg packages/client client
           mkdir -p ../base-coverage-reports
           cp -R "$base_dir/base-coverage-reports/." ../base-coverage-reports/
-          for module in rpc admin worker db; do
+          for module in rpc admin worker db fiber-adapter notifications client; do
             if [ ! -f "../base-coverage-reports/${module}/coverage-summary.json" ] && [ ! -f "../base-coverage-reports/${module}/.status" ]; then
               echo "::error title=base-coverage-layout-mismatch::Expected base coverage outputs for ${module} were not copied to ../base-coverage-reports."
               exit 1
@@ -304,6 +310,9 @@ jobs:
             ['admin','Admin'],
             ['worker','Worker'],
             ['db','DB'],
+            ['fiber-adapter','Fiber Adapter'],
+            ['notifications','Notifications'],
+            ['client','Client SDK'],
           ];
 
           let rows = [];
