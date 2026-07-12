@@ -1,6 +1,7 @@
 import { createAdapterProvider, createDefaultHotWalletInventoryProvider } from "@fiber-link/fiber-adapter";
 import { createDbClient, createDbWorkerStateRepo, type TipIntentListCursor } from "@fiber-link/db";
 import { parseWorkerConfig } from "./config";
+import { createComponentLogger } from "./logger";
 import { runLiquidityBatch } from "./liquidity-batch";
 import { runSettlementDiscovery } from "./settlement-discovery";
 import { createDbSettlementCursorStore, createFileSettlementCursorStore } from "./settlement-cursor-store";
@@ -11,6 +12,8 @@ import {
 import { runWithdrawalBatch } from "./withdrawal-batch";
 import { createSettlementPublisher } from "./settlement-publisher";
 import { createWorkerRuntime } from "./worker-runtime";
+
+const logger = createComponentLogger("worker");
 
 async function main() {
   const config = parseWorkerConfig(process.env);
@@ -124,9 +127,7 @@ async function main() {
 
   if (config.settlementStrategy === "subscription") {
     if (!hasSettlementSubscriptionUrl) {
-      console.warn(
-        "[worker] settlement subscription strategy requested but FIBER_SETTLEMENT_SUBSCRIPTION_URL is not set; using polling fallback only",
-      );
+      logger.warn("worker.settlement_subscription_url_missing", { fallback: "polling" });
     }
 
     try {
@@ -139,7 +140,7 @@ async function main() {
           publisher: settlementPublisher,
         });
       }
-      console.info("[worker] settlement strategy enabled", {
+      logger.info("worker.settlement_strategy_enabled", {
         strategy: "subscription",
         pollingFallback: true,
         subscriptionUrlConfigured: hasSettlementSubscriptionUrl,
@@ -149,10 +150,10 @@ async function main() {
         liquidityFallback,
       });
     } catch (error) {
-      console.error("[worker] settlement subscription startup failed; continuing with polling fallback", error);
+      logger.error("worker.settlement_subscription_startup_failed", { error, fallback: "polling" });
     }
   } else {
-    console.info("[worker] settlement strategy enabled", {
+    logger.info("worker.settlement_strategy_enabled", {
       strategy: "polling",
       pollingFallback: false,
       liquidityFallback,
@@ -162,7 +163,7 @@ async function main() {
   async function shutdown(signal: NodeJS.Signals) {
     await subscriptionRunner?.close();
     await settlementPublisher.close().catch((error) => {
-      console.warn("[worker] settlement publisher close failed", error);
+      logger.warn("worker.settlement_publisher_close_failed", { error });
     });
     await runtime.shutdown(signal);
   }
@@ -178,6 +179,6 @@ async function main() {
 }
 
 void main().catch((error) => {
-  console.error("[worker] startup failed", error);
+  logger.error("worker.startup_failed", { error });
   process.exit(1);
 });

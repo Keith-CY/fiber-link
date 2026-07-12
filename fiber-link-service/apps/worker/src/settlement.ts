@@ -9,6 +9,9 @@ import {
 } from "@fiber-link/db";
 import type { NotificationDispatcher } from "@fiber-link/notifications";
 import { type SettlementPublisher } from "./settlement-publisher";
+import { createComponentLogger } from "./logger";
+
+const logger = createComponentLogger("settlement");
 
 let defaultDb: DbClient | null = null;
 let defaultTipIntentRepo: TipIntentRepo | null = null;
@@ -79,13 +82,13 @@ export async function markSettled(
         asset: tipIntent.asset,
         amount: String(tipIntent.amount),
       })
-      .catch((e) => console.warn("TIP_SETTLED notification dispatch failed:", e));
+      .catch((e) => logger.warn("settlement.tip_settled_notification_failed", { invoice, error: e }));
   }
 
   // Publish settlement event for real-time SSE subscribers. Failure is non-blocking.
   if (options.publisher) {
     await options.publisher.publish(invoice, { settledAt }).catch((err) => {
-      console.warn("settlement-publisher: publish failed", err);
+      logger.warn("settlement.publisher_publish_failed", { invoice, error: err });
     });
   }
 
