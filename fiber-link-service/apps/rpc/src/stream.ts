@@ -55,12 +55,22 @@ const POLL_INTERVAL_MS = 800;
 
 const DEFAULT_MAX_CONNECTIONS = 200;
 const DEFAULT_MAX_CONNECTIONS_PER_APP = 20;
+const DEFAULT_HEARTBEAT_INTERVAL_MS = 15_000;
 
 function parsePositiveIntEnv(name: string, fallback: number): number {
   const raw = process.env[name];
   if (typeof raw !== "string" || raw.trim() === "") return fallback;
   const parsed = Number(raw.trim());
   if (!Number.isInteger(parsed) || parsed <= 0) return fallback;
+  return parsed;
+}
+
+// Like parsePositiveIntEnv but allows 0 (used to disable the heartbeat).
+function parseNonNegativeIntEnv(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (typeof raw !== "string" || raw.trim() === "") return fallback;
+  const parsed = Number(raw.trim());
+  if (!Number.isInteger(parsed) || parsed < 0) return fallback;
   return parsed;
 }
 
@@ -77,12 +87,17 @@ export function registerStreamRoute(
     maxConnections?: number;
     maxConnectionsPerApp?: number;
     corsOrigin?: string;
+    heartbeatIntervalMs?: number;
   } = {},
 ) {
   const maxConnections = options.maxConnections ?? parsePositiveIntEnv("RPC_STREAM_MAX_CONNECTIONS", DEFAULT_MAX_CONNECTIONS);
   const maxConnectionsPerApp =
     options.maxConnectionsPerApp ?? parsePositiveIntEnv("RPC_STREAM_MAX_CONNECTIONS_PER_APP", DEFAULT_MAX_CONNECTIONS_PER_APP);
   const corsOrigin = options.corsOrigin ?? (process.env.RPC_STREAM_CORS_ORIGIN?.trim() || "*");
+  // Periodic SSE comment lines keep the connection alive through reverse
+  // proxies / load balancers that close idle connections; 0 disables it.
+  const heartbeatIntervalMs =
+    options.heartbeatIntervalMs ?? parseNonNegativeIntEnv("RPC_STREAM_HEARTBEAT_INTERVAL_MS", DEFAULT_HEARTBEAT_INTERVAL_MS);
 
   // Long-lived SSE connections pin a response, a channel listener, and (on the
   // fallback path) a poll timer for up to a minute each, so bound them globally
@@ -200,6 +215,16 @@ export function registerStreamRoute(
 
       let finished = false;
       let pollTimer: ReturnType<typeof setTimeout> | null = null;
+      let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+
+      function startHeartbeat() {
+        if (finished || heartbeatIntervalMs <= 0) return;
+        heartbeatTimer = setInterval(() => {
+          if (finished || reply.raw.writableEnded) return;
+          // SSE comment line: ignored by clients, but resets proxy idle timers.
+          reply.raw.write(`: heartbeat\n\n`);
+        }, heartbeatIntervalMs);
+      }
 
       function messageHandler(raw: string) {
         if (finished) return;
@@ -221,6 +246,10 @@ export function registerStreamRoute(
         if (pollTimer) {
           clearTimeout(pollTimer);
           pollTimer = null;
+        }
+        if (heartbeatTimer) {
+          clearInterval(heartbeatTimer);
+          heartbeatTimer = null;
         }
         if (useShared) {
           removeChannelListener(sub, channel, messageHandler);
@@ -268,6 +297,7 @@ export function registerStreamRoute(
           await addChannelListener(sub, channel, messageHandler);
           reply.raw.write(`data: ${JSON.stringify({ invoice, status: "LISTENING" })}\n\n`);
           schedulePoll();
+          startHeartbeat();
         } catch {
           clearTimeout(timeout);
           finish();
@@ -286,6 +316,7 @@ export function registerStreamRoute(
           }
           reply.raw.write(`data: ${JSON.stringify({ invoice, status: "LISTENING" })}\n\n`);
           schedulePoll();
+          startHeartbeat();
         });
 
         sub.on("message", (_ch: string, raw: string) => {
