@@ -65,6 +65,9 @@ jobs:
       - name: Test admin
         working-directory: fiber-link-service/apps/admin
         run: bun run test -- --run --silent
+      - name: Build admin
+        working-directory: fiber-link-service/apps/admin
+        run: bun run build
       - name: Test worker
         working-directory: fiber-link-service/apps/worker
         run: bun run test -- --run --silent
