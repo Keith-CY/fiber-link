@@ -84,13 +84,11 @@ export async function waitForSeededLegacyChannelReady(
   const acceptRetryInterval = input.acceptRetryInterval ?? DEFAULT_ACCEPT_RETRY_INTERVAL;
   const acceptFundingAmount = input.acceptFundingAmount ?? "0";
   let attempt = 0;
-  let lastObserved:
-    | {
-        channelId: string;
-        state: string;
-        localBalance: string;
-      }
-    | null = null;
+  let lastObserved: {
+    channelId: string;
+    state: string;
+    localBalance: string;
+  } | null = null;
 
   while (Date.now() < deadline) {
     attempt += 1;

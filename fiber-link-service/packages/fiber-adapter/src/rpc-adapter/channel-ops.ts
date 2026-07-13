@@ -1,7 +1,4 @@
-import { FiberRpcError, rpcCall, type FiberRpcEndpoint } from "../fiber-client";
-import { hasLocalChainLiquiditySweepSupport } from "./rebalance-ops";
-import { normalizeRpcAmount, normalizeRpcInteger, pickRequiredAmount, pickStringCandidate, pickTxEvidence, toHexQuantity } from "./normalize";
-import { rpcCallWithoutParams, toRpcUdtTypeScript } from "./invoice-ops";
+import { type FiberRpcEndpoint, FiberRpcError, rpcCall } from "../fiber-client";
 import type {
   AcceptChannelArgs,
   AcceptChannelResult,
@@ -15,6 +12,16 @@ import type {
   ShutdownChannelArgs,
   ShutdownChannelResult,
 } from "../types";
+import { rpcCallWithoutParams, toRpcUdtTypeScript } from "./invoice-ops";
+import {
+  normalizeRpcAmount,
+  normalizeRpcInteger,
+  pickRequiredAmount,
+  pickStringCandidate,
+  pickTxEvidence,
+  toHexQuantity,
+} from "./normalize";
+import { hasLocalChainLiquiditySweepSupport } from "./rebalance-ops";
 
 function normalizeRpcChannelState(value: unknown): string {
   const candidate =
@@ -163,9 +170,7 @@ export async function acceptChannel(
   return newChannelId ? { newChannelId } : {};
 }
 
-export async function getCkbChannelAcceptancePolicy(
-  endpoint: FiberRpcEndpoint,
-): Promise<CkbChannelAcceptancePolicy> {
+export async function getCkbChannelAcceptancePolicy(endpoint: FiberRpcEndpoint): Promise<CkbChannelAcceptancePolicy> {
   const result = (await rpcCallWithoutParams(endpoint, "node_info")) as Record<string, unknown> | undefined;
   return parseCkbChannelAcceptancePolicy(result);
 }

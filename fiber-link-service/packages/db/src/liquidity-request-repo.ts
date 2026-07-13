@@ -1,13 +1,8 @@
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
-import type { DbClient } from "./client";
 import { assertPositiveAmount, compareDecimalStrings, formatDecimal, parseDecimal } from "./amount";
-import {
-  liquidityRequests,
-  type Asset,
-  type LiquidityRequestSourceKind,
-  type LiquidityRequestState,
-} from "./schema";
+import type { DbClient } from "./client";
+import { type Asset, type LiquidityRequestSourceKind, type LiquidityRequestState, liquidityRequests } from "./schema";
 
 export type LiquidityRequestMetadata = Record<string, unknown>;
 
@@ -122,10 +117,7 @@ const OPEN_LIQUIDITY_REQUEST_KEY_CONFLICT_TARGET = [
   liquidityRequests.network,
   liquidityRequests.sourceKind,
 ] as const;
-const OPEN_LIQUIDITY_REQUEST_KEY_CONFLICT_WHERE = inArray(
-  liquidityRequests.state,
-  [...OPEN_LIQUIDITY_REQUEST_STATES],
-);
+const OPEN_LIQUIDITY_REQUEST_KEY_CONFLICT_WHERE = inArray(liquidityRequests.state, [...OPEN_LIQUIDITY_REQUEST_STATES]);
 
 function normalizeMetadata(metadata: unknown): LiquidityRequestMetadata | null {
   if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
@@ -302,9 +294,10 @@ export function createDbLiquidityRequestRepo(db: DbClient): LiquidityRequestRepo
       };
 
       if (input.metadata !== undefined) {
-        conflictSet.metadata = input.metadata === null
-          ? null
-          : sql`COALESCE(${liquidityRequests.metadata}, '{}'::jsonb) || EXCLUDED.metadata`;
+        conflictSet.metadata =
+          input.metadata === null
+            ? null
+            : sql`COALESCE(${liquidityRequests.metadata}, '{}'::jsonb) || EXCLUDED.metadata`;
       }
 
       const [row] = await db
@@ -358,12 +351,7 @@ export function createDbLiquidityRequestRepo(db: DbClient): LiquidityRequestRepo
           lastError: null,
           updatedAt: now,
         })
-        .where(
-          and(
-            eq(liquidityRequests.id, liquidityRequestId),
-            eq(liquidityRequests.state, "REQUESTED"),
-          ),
-        )
+        .where(and(eq(liquidityRequests.id, liquidityRequestId), eq(liquidityRequests.state, "REQUESTED")))
         .returning();
 
       if (!row) {
@@ -452,9 +440,7 @@ export function createDbLiquidityRequestRepo(db: DbClient): LiquidityRequestRepo
   };
 }
 
-export function createInMemoryLiquidityRequestRepo(
-  initial: LiquidityRequestRecord[] = [],
-): LiquidityRequestRepo {
+export function createInMemoryLiquidityRequestRepo(initial: LiquidityRequestRecord[] = []): LiquidityRequestRepo {
   const records = initial.map((record) => cloneRecord(record));
 
   function findIndexById(liquidityRequestId: string): number {
@@ -479,7 +465,9 @@ export function createInMemoryLiquidityRequestRepo(
           record.sourceKind === input.sourceKind &&
           isOpenState(record.state),
       )
-      .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime() || left.id.localeCompare(right.id))[0];
+      .sort(
+        (left, right) => left.createdAt.getTime() - right.createdAt.getTime() || left.id.localeCompare(right.id),
+      )[0];
     return match ? cloneRecord(match) : null;
   }
 

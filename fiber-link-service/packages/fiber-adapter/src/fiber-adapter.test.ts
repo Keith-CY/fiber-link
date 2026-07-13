@@ -67,17 +67,17 @@ describe("fiber adapter", () => {
       expect.objectContaining({
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: expect.stringContaining("\"method\":\"new_invoice\""),
+        body: expect.stringContaining('"method":"new_invoice"'),
       }),
     );
     expect(fetchSpy.mock.calls[1]?.[1]).toEqual(
       expect.objectContaining({
-        body: expect.stringContaining("\"currency\":\"Fibt\""),
+        body: expect.stringContaining('"currency":"Fibt"'),
       }),
     );
     expect(fetchSpy.mock.calls[1]?.[1]).toEqual(
       expect.objectContaining({
-        body: expect.stringContaining("\"udt_type_script\""),
+        body: expect.stringContaining('"udt_type_script"'),
       }),
     );
   });
@@ -94,14 +94,13 @@ describe("fiber adapter", () => {
     expect(result.invoice).toBe("fiber:CKB:10:real");
     expect(fetchSpy.mock.calls[0]?.[1]).toEqual(
       expect.objectContaining({
-        body: expect.stringContaining("\"currency\":\"Fibt\""),
+        body: expect.stringContaining('"currency":"Fibt"'),
       }),
     );
   });
 
   it("createInvoice throws when invoice is missing in rpc result", async () => {
-    vi
-      .spyOn(globalThis, "fetch")
+    vi.spyOn(globalThis, "fetch")
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({
@@ -282,12 +281,12 @@ describe("fiber adapter", () => {
     expect(fetchSpy).toHaveBeenCalledTimes(2);
     expect(fetchSpy.mock.calls[1]?.[1]).toEqual(
       expect.objectContaining({
-        body: expect.stringContaining("\"payment_hash\":\"0xparsed-payment\""),
+        body: expect.stringContaining('"payment_hash":"0xparsed-payment"'),
       }),
     );
     expect(fetchSpy.mock.calls[1]?.[1]).toEqual(
       expect.objectContaining({
-        body: expect.stringContaining("\"currency\":\"Fibt\""),
+        body: expect.stringContaining('"currency":"Fibt"'),
       }),
     );
   });
@@ -368,7 +367,7 @@ describe("fiber adapter", () => {
     });
     expect(fetchSpy.mock.calls[0]?.[1]).toEqual(
       expect.objectContaining({
-        body: expect.stringContaining("\"required_amount\":\"0x1faa3f4e4\""),
+        body: expect.stringContaining('"required_amount":"0x1faa3f4e4"'),
       }),
     );
   });
@@ -393,7 +392,7 @@ describe("fiber adapter", () => {
     });
     expect(fetchSpy.mock.calls[0]?.[1]).toEqual(
       expect.objectContaining({
-        body: expect.stringContaining("\"method\":\"get_rebalance_status\""),
+        body: expect.stringContaining('"method":"get_rebalance_status"'),
       }),
     );
   });
@@ -431,7 +430,7 @@ describe("fiber adapter", () => {
     });
     expect(fetchSpy.mock.calls[0]?.[1]).toEqual(
       expect.objectContaining({
-        body: expect.stringContaining("\"method\":\"list_channels\""),
+        body: expect.stringContaining('"method":"list_channels"'),
       }),
     );
   });
@@ -457,12 +456,12 @@ describe("fiber adapter", () => {
     expect(result).toEqual({ newChannelId: "0xaccepted" });
     expect(fetchSpy.mock.calls[0]?.[1]).toEqual(
       expect.objectContaining({
-        body: expect.stringContaining("\"method\":\"accept_channel\""),
+        body: expect.stringContaining('"method":"accept_channel"'),
       }),
     );
     expect(fetchSpy.mock.calls[0]?.[1]).toEqual(
       expect.objectContaining({
-        body: expect.stringContaining("\"temporary_channel_id\":\"0xtemp\""),
+        body: expect.stringContaining('"temporary_channel_id":"0xtemp"'),
       }),
     );
   });
@@ -489,7 +488,7 @@ describe("fiber adapter", () => {
     });
     expect(fetchSpy.mock.calls[0]?.[1]).toEqual(
       expect.objectContaining({
-        body: expect.stringContaining("\"method\":\"node_info\""),
+        body: expect.stringContaining('"method":"node_info"'),
       }),
     );
   });
@@ -526,8 +525,7 @@ describe("fiber adapter", () => {
   it("reports local CKB liquidity sweep support separately when configured", async () => {
     process.env.FIBER_LIQUIDITY_CKB_SOURCE_PRIVATE_KEY =
       "0x2222222222222222222222222222222222222222222222222222222222222222";
-    process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY =
-      "0x1111111111111111111111111111111111111111111111111111111111111111";
+    process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY = "0x1111111111111111111111111111111111111111111111111111111111111111";
 
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
@@ -586,7 +584,7 @@ describe("fiber adapter", () => {
 
     expect(fetchSpy.mock.calls[1]?.[1]).toEqual(
       expect.objectContaining({
-        body: expect.stringContaining("\"request_id\":\"w-1\""),
+        body: expect.stringContaining('"request_id":"w-1"'),
       }),
     );
   });
@@ -651,10 +649,8 @@ describe("fiber adapter", () => {
     expect(second.params[0].request_id).toBe(first.params[0].request_id);
   });
 
-
   it("executeWithdrawal throws when rpc result has no transaction evidence", async () => {
-    vi
-      .spyOn(globalThis, "fetch")
+    vi.spyOn(globalThis, "fetch")
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({

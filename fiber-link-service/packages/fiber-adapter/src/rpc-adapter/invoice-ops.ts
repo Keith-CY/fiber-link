@@ -1,11 +1,6 @@
-import { FiberRpcError, rpcCall, type FiberRpcEndpoint } from "../fiber-client";
-import { toHexQuantity, normalizeOptionalName } from "./normalize";
-import type {
-  Asset,
-  CreateInvoiceArgs,
-  InvoiceState,
-  UdtTypeScript,
-} from "../types";
+import { type FiberRpcEndpoint, FiberRpcError, rpcCall } from "../fiber-client";
+import type { Asset, CreateInvoiceArgs, InvoiceState, UdtTypeScript } from "../types";
+import { normalizeOptionalName, toHexQuantity } from "./normalize";
 
 type RpcUdtTypeScript = {
   code_hash: string;
@@ -65,7 +60,6 @@ function isUdtTypeScript(value: unknown): value is RpcUdtTypeScript {
 async function rpcCallWithoutParams(endpoint: FiberRpcEndpoint, method: string): Promise<unknown> {
   return rpcCall(endpoint, method, undefined, { omitParams: true });
 }
-
 
 function pickUsdiUdtScript(nodeInfo: unknown): RpcUdtTypeScript | null {
   if (!nodeInfo || typeof nodeInfo !== "object") {

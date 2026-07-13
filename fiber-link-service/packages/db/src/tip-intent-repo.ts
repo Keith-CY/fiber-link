@@ -1,8 +1,8 @@
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
 import { and, asc, eq, gt, gte, lte, or, sql } from "drizzle-orm";
-import type { DbClient } from "./client";
 import { assertPositiveAmount } from "./amount";
-import { tipIntents, type Asset, type InvoiceState } from "./schema";
+import type { DbClient } from "./client";
+import { type Asset, type InvoiceState, tipIntents } from "./schema";
 
 export type TipAsset = Asset;
 export type SettlementFailureReason =
@@ -330,7 +330,11 @@ export function createDbTipIntentRepo(db: DbClient): TipIntentRepo {
     },
 
     async listSettled(options) {
-      const filters = [eq(tipIntents.appId, options.appId), eq(tipIntents.invoiceState, "SETTLED"), sql`${tipIntents.settledAt} IS NOT NULL`];
+      const filters = [
+        eq(tipIntents.appId, options.appId),
+        eq(tipIntents.invoiceState, "SETTLED"),
+        sql`${tipIntents.settledAt} IS NOT NULL`,
+      ];
       if (options.after) {
         filters.push(
           or(
@@ -352,13 +356,19 @@ export function createDbTipIntentRepo(db: DbClient): TipIntentRepo {
 
     async countByInvoiceState(state, options = {}) {
       const filters = buildStateFilters(state, options);
-      const [row] = await db.select({ count: sql<number>`count(*)` }).from(tipIntents).where(and(...filters));
+      const [row] = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(tipIntents)
+        .where(and(...filters));
       return Number(row?.count ?? 0);
     },
 
     async countSettlementRetryPending(options = {}) {
       const filters = [...buildStateFilters("UNPAID", options), sql`${tipIntents.settlementNextRetryAt} IS NOT NULL`];
-      const [row] = await db.select({ count: sql<number>`count(*)` }).from(tipIntents).where(and(...filters));
+      const [row] = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(tipIntents)
+        .where(and(...filters));
       return Number(row?.count ?? 0);
     },
   };
@@ -515,7 +525,9 @@ export function createInMemoryTipIntentRepo(): TipIntentRepo {
     },
 
     async listSettled(options) {
-      let items = records.filter((item) => item.appId === options.appId && item.invoiceState === "SETTLED" && item.settledAt);
+      let items = records.filter(
+        (item) => item.appId === options.appId && item.invoiceState === "SETTLED" && item.settledAt,
+      );
       if (options.after) {
         const after = options.after;
         const cursorTime = after.settledAt.getTime();

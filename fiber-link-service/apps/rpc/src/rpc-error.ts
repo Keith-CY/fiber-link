@@ -1,4 +1,4 @@
-import { type RpcErrorCode, type RpcId } from "./contracts";
+import type { RpcErrorCode, RpcId } from "./contracts";
 
 export class RpcMethodError extends Error {
   constructor(

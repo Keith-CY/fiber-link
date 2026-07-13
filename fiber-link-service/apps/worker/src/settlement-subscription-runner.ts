@@ -1,7 +1,7 @@
-import { toErrorMessage, type LedgerRepo, type TipIntentRepo } from "@fiber-link/db";
-import { createComponentLogger, type WorkerLogContext } from "./logger";
+import { type LedgerRepo, type TipIntentRepo, toErrorMessage } from "@fiber-link/db";
+import { type WorkerLogContext, createComponentLogger } from "./logger";
 import { markSettled } from "./settlement";
-import { type SettlementPublisher } from "./settlement-publisher";
+import type { SettlementPublisher } from "./settlement-publisher";
 
 type QueueOverflowInfo = {
   invoice: string;

@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
 import type { WithdrawalPolicyRecord } from "@fiber-link/db";
+import { describe, expect, it } from "vitest";
 import { parseWithdrawalPolicyCommand, runWithdrawalPolicyCommand } from "./withdrawal-policy-ops";
 
 function createPolicyRecord(overrides: Partial<WithdrawalPolicyRecord> = {}): WithdrawalPolicyRecord {

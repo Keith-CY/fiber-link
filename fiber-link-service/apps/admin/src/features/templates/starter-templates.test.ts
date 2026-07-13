@@ -8,9 +8,9 @@ describe("starter templates", () => {
   });
 
   it("never silently overwrites custom config", () => {
-    expect(() =>
-      applyTemplate({ MODE: "custom" }, TEMPLATE_CATALOG[0]!, false),
-    ).toThrow(/explicit confirmation required/);
+    expect(() => applyTemplate({ MODE: "custom" }, TEMPLATE_CATALOG[0]!, false)).toThrow(
+      /explicit confirmation required/,
+    );
   });
 
   it("supports deterministic apply and rollback", () => {

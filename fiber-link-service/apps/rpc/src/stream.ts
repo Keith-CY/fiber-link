@@ -1,6 +1,6 @@
+import { TipIntentNotFoundError, createDbClient, createDbTipIntentRepo } from "@fiber-link/db";
 import type { FastifyInstance } from "fastify";
 import Redis from "ioredis";
-import { createDbClient, createDbTipIntentRepo, TipIntentNotFoundError } from "@fiber-link/db";
 
 const STREAM_TIMEOUT_MS = 60_000;
 
@@ -29,7 +29,12 @@ function getOrCreateSharedRedis(redisUrl: string): Redis {
   if (!sharedRedis) {
     sharedRedis = new Redis(redisUrl, { lazyConnect: false });
     sharedRedis.on("message", (ch: string, msg: string) => {
-      channelListeners.get(ch)?.forEach((fn) => fn(msg));
+      const listeners = channelListeners.get(ch);
+      if (listeners) {
+        for (const fn of listeners) {
+          fn(msg);
+        }
+      }
     });
     sharedRedis.on("error", () => {}); // ioredis reconnects automatically; avoid crash on transient errors
   }
@@ -138,14 +143,17 @@ export function registerStreamRoute(
     }
   });
 
-  const maxConnections = options.maxConnections ?? parsePositiveIntEnv("RPC_STREAM_MAX_CONNECTIONS", DEFAULT_MAX_CONNECTIONS);
+  const maxConnections =
+    options.maxConnections ?? parsePositiveIntEnv("RPC_STREAM_MAX_CONNECTIONS", DEFAULT_MAX_CONNECTIONS);
   const maxConnectionsPerApp =
-    options.maxConnectionsPerApp ?? parsePositiveIntEnv("RPC_STREAM_MAX_CONNECTIONS_PER_APP", DEFAULT_MAX_CONNECTIONS_PER_APP);
+    options.maxConnectionsPerApp ??
+    parsePositiveIntEnv("RPC_STREAM_MAX_CONNECTIONS_PER_APP", DEFAULT_MAX_CONNECTIONS_PER_APP);
   const corsOrigin = options.corsOrigin ?? (process.env.RPC_STREAM_CORS_ORIGIN?.trim() || "*");
   // Periodic SSE comment lines keep the connection alive through reverse
   // proxies / load balancers that close idle connections; 0 disables it.
   const heartbeatIntervalMs =
-    options.heartbeatIntervalMs ?? parseNonNegativeIntEnv("RPC_STREAM_HEARTBEAT_INTERVAL_MS", DEFAULT_HEARTBEAT_INTERVAL_MS);
+    options.heartbeatIntervalMs ??
+    parseNonNegativeIntEnv("RPC_STREAM_HEARTBEAT_INTERVAL_MS", DEFAULT_HEARTBEAT_INTERVAL_MS);
 
   // Long-lived SSE connections pin a response, a channel listener, and (on the
   // fallback path) a poll timer for up to a minute each, so bound them globally
@@ -200,9 +208,7 @@ export function registerStreamRoute(
 
     // Server-side proxies identify via the x-app-id header; browser EventSource
     // clients cannot set headers, so the appId query param is the fallback.
-    const requesterAppId = (
-      firstValue(req.headers["x-app-id"]) || firstValue(query.appId)
-    ).trim();
+    const requesterAppId = (firstValue(req.headers["x-app-id"]) || firstValue(query.appId)).trim();
     if (!requesterAppId) {
       return reply.status(401).send({ error: "Missing app id" });
     }
@@ -257,9 +263,7 @@ export function registerStreamRoute(
 
       // Tests inject createSubscriber for a per-request mock; production uses the shared singleton.
       const useShared = !options.createSubscriber;
-      const sub = useShared
-        ? getOrCreateSharedRedis(redisUrl ?? "")
-        : options.createSubscriber!(redisUrl ?? "");
+      const sub = useShared ? getOrCreateSharedRedis(redisUrl ?? "") : options.createSubscriber!(redisUrl ?? "");
 
       let finished = false;
       let pollTimer: ReturnType<typeof setTimeout> | null = null;
@@ -274,7 +278,7 @@ export function registerStreamRoute(
           // would become an uncaught exception. Guard and finish() instead.
           try {
             // SSE comment line: ignored by clients, but resets proxy idle timers.
-            reply.raw.write(`: heartbeat\n\n`);
+            reply.raw.write(": heartbeat\n\n");
           } catch {
             finish();
           }

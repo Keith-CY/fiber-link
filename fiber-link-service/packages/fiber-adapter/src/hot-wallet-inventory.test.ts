@@ -142,8 +142,7 @@ describe("resolveHotWalletLockScript", () => {
   });
 
   it("derives the secp256k1 lock script for the configured hot wallet", () => {
-    process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY =
-      "0x1111111111111111111111111111111111111111111111111111111111111111";
+    process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY = "0x1111111111111111111111111111111111111111111111111111111111111111";
 
     const lock = resolveHotWalletLockScript("AGGRON4");
     expect(lock).toMatchObject({
@@ -154,8 +153,7 @@ describe("resolveHotWalletLockScript", () => {
   });
 
   it("accepts a private key supplied without a 0x prefix", () => {
-    process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY =
-      "2222222222222222222222222222222222222222222222222222222222222222";
+    process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY = "2222222222222222222222222222222222222222222222222222222222222222";
 
     const lock = resolveHotWalletLockScript("LINA");
     expect(typeof lock.codeHash).toBe("string");

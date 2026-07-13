@@ -1,9 +1,17 @@
-import { and, desc, eq, or, sql } from "drizzle-orm";
-import { apps, createDbClient, createDbLedgerRepo, createDbWithdrawalRepo, getCreatorAnalytics, tipIntents, withdrawals } from "@fiber-link/db";
+import {
+  apps,
+  createDbClient,
+  createDbLedgerRepo,
+  createDbWithdrawalRepo,
+  getCreatorAnalytics,
+  tipIntents,
+  withdrawals,
+} from "@fiber-link/db";
 import type { AnalyticsRange } from "@fiber-link/db";
+import { and, desc, eq, or, sql } from "drizzle-orm";
 import type {
-  DashboardSummaryResult,
   DashboardSettlementStateFilterSchema,
+  DashboardSummaryResult,
   DashboardWithdrawalStateFilterSchema,
 } from "../contracts";
 
@@ -18,8 +26,7 @@ const ADMIN_PIPELINE_INVOICE_ROWS_LIMIT = 40;
 const PIPELINE_STAGES = ["UNPAID", "SETTLED", "FAILED"] as const;
 type DashboardPipelineStage = (typeof PIPELINE_STAGES)[number];
 const CKB_EXPLORER_TX_URL_TEMPLATE =
-  process.env.FIBER_LINK_CKB_EXPLORER_TX_URL_TEMPLATE ??
-  "https://pudge.explorer.nervos.org/transaction/{txHash}";
+  process.env.FIBER_LINK_CKB_EXPLORER_TX_URL_TEMPLATE ?? "https://pudge.explorer.nervos.org/transaction/{txHash}";
 
 function buildCkbExplorerTxUrl(txHash: string | null | undefined) {
   if (!txHash) {
@@ -56,79 +63,64 @@ export async function handleDashboardSummary(input: HandleDashboardSummaryInput)
 
   const SUPPORTED_ASSETS = ["CKB", "USDI"] as const;
 
-  const [balance, lockedBalance, usdiBalance, usdiLockedBalance, recentTips, recentWithdrawals, tipSummary] = await Promise.all([
-    ledgerRepo.getBalance({
-      appId: input.appId,
-      userId: input.userId,
-      asset: "CKB",
-    }),
-    withdrawalRepo.getPendingTotal({
-      appId: input.appId,
-      userId: input.userId,
-      asset: "CKB",
-    }),
-    ledgerRepo.getBalance({
-      appId: input.appId,
-      userId: input.userId,
-      asset: "USDI",
-    }),
-    withdrawalRepo.getPendingTotal({
-      appId: input.appId,
-      userId: input.userId,
-      asset: "USDI",
-    }),
-    db
-      .select()
-      .from(tipIntents)
-      .where(
-        and(
-          eq(tipIntents.appId, input.appId),
-          eq(tipIntents.toUserId, input.userId),
-        ),
-      )
-      .orderBy(desc(tipIntents.createdAt), desc(tipIntents.id))
-      .limit(limit),
-    db
-      .select({
-        id: withdrawals.id,
-        amount: withdrawals.amount,
-        asset: withdrawals.asset,
-        state: withdrawals.state,
-        destinationKind: withdrawals.destinationKind,
-        toAddress: withdrawals.toAddress,
-        txHash: withdrawals.txHash,
-        createdAt: withdrawals.createdAt,
-        updatedAt: withdrawals.updatedAt,
-        completedAt: withdrawals.completedAt,
-      })
-      .from(withdrawals)
-      .where(
-        and(
-          eq(withdrawals.appId, input.appId),
-          eq(withdrawals.userId, input.userId),
-        ),
-      )
-      .orderBy(desc(withdrawals.updatedAt), desc(withdrawals.id))
-      .limit(limit),
-    (async () => {
-      const [row] = await db
-        .select({
-          pendingAmount:
-            sql<string>`COALESCE(SUM(CASE WHEN ${tipIntents.toUserId} = ${input.userId} AND ${tipIntents.invoiceState} = 'UNPAID' THEN ${tipIntents.amount} ELSE 0 END), 0)`,
-          pendingCount: sql<number>`COALESCE(SUM(CASE WHEN ${tipIntents.toUserId} = ${input.userId} AND ${tipIntents.invoiceState} = 'UNPAID' THEN 1 ELSE 0 END), 0)::int`,
-          completedCount: sql<number>`COALESCE(SUM(CASE WHEN ${tipIntents.toUserId} = ${input.userId} AND ${tipIntents.invoiceState} = 'SETTLED' THEN 1 ELSE 0 END), 0)::int`,
-          failedCount: sql<number>`COALESCE(SUM(CASE WHEN ${tipIntents.toUserId} = ${input.userId} AND ${tipIntents.invoiceState} = 'FAILED' THEN 1 ELSE 0 END), 0)::int`,
-        })
+  const [balance, lockedBalance, usdiBalance, usdiLockedBalance, recentTips, recentWithdrawals, tipSummary] =
+    await Promise.all([
+      ledgerRepo.getBalance({
+        appId: input.appId,
+        userId: input.userId,
+        asset: "CKB",
+      }),
+      withdrawalRepo.getPendingTotal({
+        appId: input.appId,
+        userId: input.userId,
+        asset: "CKB",
+      }),
+      ledgerRepo.getBalance({
+        appId: input.appId,
+        userId: input.userId,
+        asset: "USDI",
+      }),
+      withdrawalRepo.getPendingTotal({
+        appId: input.appId,
+        userId: input.userId,
+        asset: "USDI",
+      }),
+      db
+        .select()
         .from(tipIntents)
-        .where(
-          and(
-            eq(tipIntents.appId, input.appId),
-            eq(tipIntents.toUserId, input.userId),
-          ),
-        );
-      return row ?? null;
-    })(),
-  ]);
+        .where(and(eq(tipIntents.appId, input.appId), eq(tipIntents.toUserId, input.userId)))
+        .orderBy(desc(tipIntents.createdAt), desc(tipIntents.id))
+        .limit(limit),
+      db
+        .select({
+          id: withdrawals.id,
+          amount: withdrawals.amount,
+          asset: withdrawals.asset,
+          state: withdrawals.state,
+          destinationKind: withdrawals.destinationKind,
+          toAddress: withdrawals.toAddress,
+          txHash: withdrawals.txHash,
+          createdAt: withdrawals.createdAt,
+          updatedAt: withdrawals.updatedAt,
+          completedAt: withdrawals.completedAt,
+        })
+        .from(withdrawals)
+        .where(and(eq(withdrawals.appId, input.appId), eq(withdrawals.userId, input.userId)))
+        .orderBy(desc(withdrawals.updatedAt), desc(withdrawals.id))
+        .limit(limit),
+      (async () => {
+        const [row] = await db
+          .select({
+            pendingAmount: sql<string>`COALESCE(SUM(CASE WHEN ${tipIntents.toUserId} = ${input.userId} AND ${tipIntents.invoiceState} = 'UNPAID' THEN ${tipIntents.amount} ELSE 0 END), 0)`,
+            pendingCount: sql<number>`COALESCE(SUM(CASE WHEN ${tipIntents.toUserId} = ${input.userId} AND ${tipIntents.invoiceState} = 'UNPAID' THEN 1 ELSE 0 END), 0)::int`,
+            completedCount: sql<number>`COALESCE(SUM(CASE WHEN ${tipIntents.toUserId} = ${input.userId} AND ${tipIntents.invoiceState} = 'SETTLED' THEN 1 ELSE 0 END), 0)::int`,
+            failedCount: sql<number>`COALESCE(SUM(CASE WHEN ${tipIntents.toUserId} = ${input.userId} AND ${tipIntents.invoiceState} = 'FAILED' THEN 1 ELSE 0 END), 0)::int`,
+          })
+          .from(tipIntents)
+          .where(and(eq(tipIntents.appId, input.appId), eq(tipIntents.toUserId, input.userId)));
+        return row ?? null;
+      })(),
+    ]);
 
   let admin: DashboardAdminResult | undefined;
 

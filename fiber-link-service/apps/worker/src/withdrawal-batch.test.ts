@@ -1,15 +1,19 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   WithdrawalTransitionConflictError,
   createInMemoryLedgerRepo,
   createInMemoryWithdrawalRepo,
 } from "@fiber-link/db";
 import { FiberRpcError, WithdrawalExecutionError } from "@fiber-link/fiber-adapter";
-import { runWithdrawalBatch } from "./withdrawal-batch";
 import type { NotificationDispatchSummary, WithdrawalNotificationEvent } from "@fiber-link/notifications";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { runWithdrawalBatch } from "./withdrawal-batch";
 
-const dispatchTipSettledEvent = async (): Promise<NotificationDispatchSummary> =>
-  ({ matched: 0, attempted: 0, delivered: 0, failed: 0 });
+const dispatchTipSettledEvent = async (): Promise<NotificationDispatchSummary> => ({
+  matched: 0,
+  attempted: 0,
+  delivered: 0,
+  failed: 0,
+});
 
 describe("runWithdrawalBatch", () => {
   const repo = createInMemoryWithdrawalRepo();
@@ -530,68 +534,59 @@ describe("runWithdrawalBatch", () => {
     expect(saved.lastError).toContain("invalid params");
   });
 
-  it.each([-32700, -32600, -32601, -32602])(
-    "maps Fiber JSON-RPC code %i to permanent failure",
-    async (code) => {
-      const created = await createPendingWithdrawal(`jsonrpc-perm-${code}`);
+  it.each([-32700, -32600, -32601, -32602])("maps Fiber JSON-RPC code %i to permanent failure", async (code) => {
+    const created = await createPendingWithdrawal(`jsonrpc-perm-${code}`);
 
-      const res = await runWithdrawalBatch({
-        now: new Date("2026-02-07T12:41:00.000Z"),
-        executeWithdrawal: async () => {
-          throw new FiberRpcError(`rpc error ${code}`, code);
-        },
-        repo,
-      });
+    const res = await runWithdrawalBatch({
+      now: new Date("2026-02-07T12:41:00.000Z"),
+      executeWithdrawal: async () => {
+        throw new FiberRpcError(`rpc error ${code}`, code);
+      },
+      repo,
+    });
 
-      expect(res.failed).toBe(1);
-      const saved = await repo.findByIdOrThrow(created.id);
-      expect(saved.state).toBe("FAILED");
-      expect(saved.retryCount).toBe(0);
-      expect(saved.nextRetryAt).toBeNull();
-    },
-  );
+    expect(res.failed).toBe(1);
+    const saved = await repo.findByIdOrThrow(created.id);
+    expect(saved.state).toBe("FAILED");
+    expect(saved.retryCount).toBe(0);
+    expect(saved.nextRetryAt).toBeNull();
+  });
 
-  it.each([-32603, -32000, -32042, -32099])(
-    "maps Fiber retryable code %i to transient failure",
-    async (code) => {
-      const created = await createPendingWithdrawal(`jsonrpc-transient-${code}`);
+  it.each([-32603, -32000, -32042, -32099])("maps Fiber retryable code %i to transient failure", async (code) => {
+    const created = await createPendingWithdrawal(`jsonrpc-transient-${code}`);
 
-      const res = await runWithdrawalBatch({
-        now: new Date("2026-02-07T12:42:00.000Z"),
-        retryDelayMs: 60_000,
-        executeWithdrawal: async () => {
-          throw new FiberRpcError(`rpc error ${code}`, code);
-        },
-        repo,
-      });
+    const res = await runWithdrawalBatch({
+      now: new Date("2026-02-07T12:42:00.000Z"),
+      retryDelayMs: 60_000,
+      executeWithdrawal: async () => {
+        throw new FiberRpcError(`rpc error ${code}`, code);
+      },
+      repo,
+    });
 
-      expect(res.retryPending).toBe(1);
-      const saved = await repo.findByIdOrThrow(created.id);
-      expect(saved.state).toBe("RETRY_PENDING");
-      expect(saved.retryCount).toBe(1);
-    },
-  );
+    expect(res.retryPending).toBe(1);
+    const saved = await repo.findByIdOrThrow(created.id);
+    expect(saved.state).toBe("RETRY_PENDING");
+    expect(saved.retryCount).toBe(1);
+  });
 
-  it.each([408, 425, 429, 500, 502, 503, 504])(
-    "maps Fiber RPC HTTP %i to transient failure",
-    async (status) => {
-      const created = await createPendingWithdrawal(`http-transient-${status}`);
+  it.each([408, 425, 429, 500, 502, 503, 504])("maps Fiber RPC HTTP %i to transient failure", async (status) => {
+    const created = await createPendingWithdrawal(`http-transient-${status}`);
 
-      const res = await runWithdrawalBatch({
-        now: new Date("2026-02-07T12:43:00.000Z"),
-        retryDelayMs: 60_000,
-        executeWithdrawal: async () => {
-          throw new FiberRpcError(`Fiber RPC HTTP ${status}`);
-        },
-        repo,
-      });
+    const res = await runWithdrawalBatch({
+      now: new Date("2026-02-07T12:43:00.000Z"),
+      retryDelayMs: 60_000,
+      executeWithdrawal: async () => {
+        throw new FiberRpcError(`Fiber RPC HTTP ${status}`);
+      },
+      repo,
+    });
 
-      expect(res.retryPending).toBe(1);
-      const saved = await repo.findByIdOrThrow(created.id);
-      expect(saved.state).toBe("RETRY_PENDING");
-      expect(saved.retryCount).toBe(1);
-    },
-  );
+    expect(res.retryPending).toBe(1);
+    const saved = await repo.findByIdOrThrow(created.id);
+    expect(saved.state).toBe("RETRY_PENDING");
+    expect(saved.retryCount).toBe(1);
+  });
 
   it.each([400, 401, 403, 404, 422])("maps Fiber RPC HTTP %i to permanent failure", async (status) => {
     const created = await createPendingWithdrawal(`http-perm-${status}`);

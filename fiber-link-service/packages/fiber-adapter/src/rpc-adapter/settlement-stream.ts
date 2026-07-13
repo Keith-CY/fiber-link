@@ -1,10 +1,6 @@
+import type { SettlementSubscriptionConfig, SettlementSubscriptionHandle, SubscribeSettlementsArgs } from "../types";
 import { mapInvoiceState } from "./invoice-ops";
-import { pickStringCandidate, parseBoolean, parsePositiveInteger } from "./normalize";
-import type {
-  SettlementSubscriptionConfig,
-  SettlementSubscriptionHandle,
-  SubscribeSettlementsArgs,
-} from "../types";
+import { parseBoolean, parsePositiveInteger, pickStringCandidate } from "./normalize";
 
 const DEFAULT_SETTLEMENT_SUBSCRIPTION_RECONNECT_DELAY_MS = 3_000;
 
@@ -102,10 +98,7 @@ function collectSettledInvoices(value: unknown): string[] {
   return Array.from(new Set(invoices));
 }
 
-async function dispatchSettledInvoices(
-  payload: string,
-  args: SubscribeSettlementsArgs,
-): Promise<void> {
+async function dispatchSettledInvoices(payload: string, args: SubscribeSettlementsArgs): Promise<void> {
   const trimmed = payload.trim();
   if (!trimmed || trimmed === "[DONE]") {
     return;

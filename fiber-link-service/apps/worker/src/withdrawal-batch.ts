@@ -1,28 +1,28 @@
 import {
+  type LedgerRepo,
   WithdrawalNotFoundError,
+  type WithdrawalRecord,
+  type WithdrawalRepo,
   WithdrawalTransitionConflictError,
   computeRetryDelay,
   createDbClient,
   createDbLedgerRepo,
   createDbWithdrawalRepo,
   toErrorMessage,
-  type LedgerRepo,
-  type WithdrawalRecord,
-  type WithdrawalRepo,
 } from "@fiber-link/db";
 import {
+  type CkbNetwork,
   FiberRpcError,
   WithdrawalExecutionError,
   createAdapter,
   getCkbTransactionStatus,
-  type CkbNetwork,
 } from "@fiber-link/fiber-adapter";
 import {
+  type NotificationDispatcher,
+  type WithdrawalNotificationEvent,
   createDbNotificationRepo,
   createNoopNotificationDispatcher,
   createNotificationDispatcher,
-  type NotificationDispatcher,
-  type WithdrawalNotificationEvent,
 } from "@fiber-link/notifications";
 
 export type WithdrawalExecutionResult =
@@ -93,9 +93,7 @@ async function defaultConfirmWithdrawal(withdrawal: WithdrawalRecord): Promise<W
 
 let defaultRepo: WithdrawalRepo | null = null;
 let defaultLedgerRepo: LedgerRepo | null = null;
-let defaultFiberAdapter:
-  | ReturnType<typeof createAdapter>
-  | null = null;
+let defaultFiberAdapter: ReturnType<typeof createAdapter> | null = null;
 let defaultNotificationDispatcher: NotificationDispatcher | null = null;
 
 function getDefaultRepo(): WithdrawalRepo {
@@ -301,7 +299,11 @@ export async function runWithdrawalBatch(options: RunWithdrawalBatchOptions = {}
         await repo.markBroadcastedWithDebit(item.id, { now, txHash: result.txHash }, { ledgerRepo });
         broadcasted += 1;
       } else {
-        const completedRecord = await repo.markCompletedWithDebit(item.id, { now, txHash: result.txHash }, { ledgerRepo });
+        const completedRecord = await repo.markCompletedWithDebit(
+          item.id,
+          { now, txHash: result.txHash },
+          { ledgerRepo },
+        );
         completed += 1;
         await dispatchWithdrawalEvent(notificationDispatcher, {
           type: "WITHDRAWAL_COMPLETED",

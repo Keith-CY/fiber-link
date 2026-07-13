@@ -1,6 +1,6 @@
 import { TRPCError } from "@trpc/server";
-import { router, superAdminProcedure } from "../trpc";
 import type { DashboardRateLimitDraft } from "../../dashboard-rate-limit";
+import { router, superAdminProcedure } from "../trpc";
 
 function parseRateLimitDraft(input: unknown): DashboardRateLimitDraft {
   if (typeof input !== "object" || input === null) {
@@ -39,18 +39,16 @@ export const opsRouter = router({
     return ctx.services.loadRateLimitConfig();
   }),
 
-  createRateLimitChangeSet: superAdminProcedure
-    .input(parseRateLimitDraft)
-    .mutation(async ({ ctx, input }) => {
-      try {
-        return await ctx.services.createRateLimitChangeSet(input);
-      } catch (error) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: error instanceof Error ? error.message : "failed to build rate-limit change set",
-        });
-      }
-    }),
+  createRateLimitChangeSet: superAdminProcedure.input(parseRateLimitDraft).mutation(async ({ ctx, input }) => {
+    try {
+      return await ctx.services.createRateLimitChangeSet(input);
+    } catch (error) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: error instanceof Error ? error.message : "failed to build rate-limit change set",
+      });
+    }
+  }),
 
   listBackups: superAdminProcedure.query(async ({ ctx }) => {
     return ctx.services.listBackupBundles();

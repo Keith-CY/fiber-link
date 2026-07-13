@@ -1,18 +1,18 @@
 import {
+  type Asset,
+  type WithdrawalPolicyRecord,
+  type WithdrawalPolicyUsage,
   addDecimalStrings,
   compareDecimalStrings,
   formatDecimal,
   parseDecimal,
-  type Asset,
-  type WithdrawalPolicyRecord,
-  type WithdrawalPolicyUsage,
 } from "@fiber-link/db";
 import {
+  type WithdrawalDestination,
+  WithdrawalExecutionError,
   getCkbAddressMinCellCapacityShannons,
   hasWithdrawalPrivateKey,
   shannonsToCkbDecimal,
-  WithdrawalExecutionError,
-  type WithdrawalDestination,
 } from "@fiber-link/fiber-adapter";
 
 export type RequestWithdrawalInput = {
@@ -98,15 +98,9 @@ export function defaultPolicyForApp(appId: string): WithdrawalPolicyRecord {
     appId,
     allowedAssets: parseAllowedAssetsFromEnv(process.env.FIBER_WITHDRAWAL_POLICY_ALLOWED_ASSETS),
     maxPerRequest: parsePositiveAmountEnv("FIBER_WITHDRAWAL_POLICY_MAX_PER_REQUEST", DEFAULT_MAX_PER_REQUEST),
-    perUserDailyMax: parsePositiveAmountEnv(
-      "FIBER_WITHDRAWAL_POLICY_PER_USER_DAILY_MAX",
-      DEFAULT_PER_USER_DAILY_MAX,
-    ),
+    perUserDailyMax: parsePositiveAmountEnv("FIBER_WITHDRAWAL_POLICY_PER_USER_DAILY_MAX", DEFAULT_PER_USER_DAILY_MAX),
     perAppDailyMax: parsePositiveAmountEnv("FIBER_WITHDRAWAL_POLICY_PER_APP_DAILY_MAX", DEFAULT_PER_APP_DAILY_MAX),
-    cooldownSeconds: parseNonNegativeIntegerEnv(
-      "FIBER_WITHDRAWAL_POLICY_COOLDOWN_SECONDS",
-      DEFAULT_COOLDOWN_SECONDS,
-    ),
+    cooldownSeconds: parseNonNegativeIntegerEnv("FIBER_WITHDRAWAL_POLICY_COOLDOWN_SECONDS", DEFAULT_COOLDOWN_SECONDS),
     updatedBy: null,
     createdAt: new Date(0),
     updatedAt: new Date(0),
@@ -133,10 +127,7 @@ export function assertOnChainWithdrawalReady(
     return;
   }
 
-  throw new WithdrawalPolicyViolationError(
-    "WITHDRAWAL_SIGNER_UNAVAILABLE",
-    WITHDRAWAL_SIGNER_UNAVAILABLE_MESSAGE,
-  );
+  throw new WithdrawalPolicyViolationError("WITHDRAWAL_SIGNER_UNAVAILABLE", WITHDRAWAL_SIGNER_UNAVAILABLE_MESSAGE);
 }
 
 export function assertWithdrawalPolicy(
@@ -188,10 +179,7 @@ export function assertWithdrawalPolicy(
     const cooldownMs = policy.cooldownSeconds * 1000;
     if (elapsedMs >= 0 && elapsedMs < cooldownMs) {
       const remaining = Math.ceil((cooldownMs - elapsedMs) / 1000);
-      throw new WithdrawalPolicyViolationError(
-        "COOLDOWN_ACTIVE",
-        `withdrawal cooldown active, retry in ${remaining}s`,
-      );
+      throw new WithdrawalPolicyViolationError("COOLDOWN_ACTIVE", `withdrawal cooldown active, retry in ${remaining}s`);
     }
   }
 }

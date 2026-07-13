@@ -1,7 +1,7 @@
 import { TRPCError } from "@trpc/server";
-import { adminProcedure, router } from "../trpc";
-import { parseWithdrawalPolicyInput, type WithdrawalPolicyInput } from "../../../withdrawal-policy-input";
+import { type WithdrawalPolicyInput, parseWithdrawalPolicyInput } from "../../../withdrawal-policy-input";
 import { PolicyScopeError, UnknownAppError } from "../../services/errors";
+import { adminProcedure, router } from "../trpc";
 
 function parsePolicyInput(input: unknown): WithdrawalPolicyInput {
   try {

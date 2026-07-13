@@ -10,6 +10,7 @@
     "@fiber-link/db": "workspace:*",
     "@fiber-link/fiber-adapter": "workspace:*",
     "@fiber-link/notifications": "workspace:*",
+    "drizzle-orm": "^0.32.0",
     "fastify": "^4.27.0",
     "ioredis": "^5.4.1",
     "prom-client": "^15.1.3",

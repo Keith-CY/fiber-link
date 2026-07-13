@@ -1,9 +1,5 @@
+import { createInMemoryLedgerRepo, createInMemoryTipIntentRepo, settlementCreditIdempotencyKey } from "@fiber-link/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  createInMemoryLedgerRepo,
-  createInMemoryTipIntentRepo,
-  settlementCreditIdempotencyKey,
-} from "@fiber-link/db";
 import { markSettled } from "./settlement";
 import { RedisSettlementPublisher, type SettlementPublisher } from "./settlement-publisher";
 
@@ -194,9 +190,7 @@ describe("settlement worker", () => {
         invoice: "inv-no-pub",
       });
 
-      await expect(
-        markSettled({ invoice: "inv-no-pub" }, { tipIntentRepo, ledgerRepo }),
-      ).resolves.not.toThrow();
+      await expect(markSettled({ invoice: "inv-no-pub" }, { tipIntentRepo, ledgerRepo })).resolves.not.toThrow();
     });
   });
 });

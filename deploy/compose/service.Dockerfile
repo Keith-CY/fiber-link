@@ -17,6 +17,7 @@ RUN apt-get update \
 
 COPY fiber-link-service/package.json ./package.json
 COPY fiber-link-service/bun.lockb ./bun.lockb
+COPY fiber-link-service/bunfig.toml ./bunfig.toml
 COPY fiber-link-service/tsconfig.base.json ./tsconfig.base.json
 COPY fiber-link-service/pnpm-workspace.yaml ./pnpm-workspace.yaml
 COPY fiber-link-service/apps ./apps

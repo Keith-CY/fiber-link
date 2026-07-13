@@ -1,13 +1,13 @@
-import { createAdapter, createAdapterProvider } from "@fiber-link/fiber-adapter";
 import {
+  type LedgerRepo,
+  type TipIntentEventRepo,
+  type TipIntentRepo,
   createDbClient,
   createDbLedgerRepo,
   createDbTipIntentEventRepo,
   createDbTipIntentRepo,
-  type LedgerRepo,
-  type TipIntentEventRepo,
-  type TipIntentRepo,
 } from "@fiber-link/db";
+import { createAdapter, createAdapterProvider } from "@fiber-link/fiber-adapter";
 import type { InvoiceState } from "@fiber-link/fiber-adapter";
 
 type SimpleLogger = { error: (obj: unknown, msg?: string) => void };
@@ -137,7 +137,9 @@ type HandleTipCreateOptions = {
   };
 };
 
-function statusStateToTimelineType(state: InvoiceState): "TIP_STATUS_UNPAID_OBSERVED" | "TIP_STATUS_SETTLED" | "TIP_STATUS_FAILED" {
+function statusStateToTimelineType(
+  state: InvoiceState,
+): "TIP_STATUS_UNPAID_OBSERVED" | "TIP_STATUS_SETTLED" | "TIP_STATUS_FAILED" {
   if (state === "SETTLED") {
     return "TIP_STATUS_SETTLED";
   }
@@ -162,21 +164,18 @@ async function appendTipTimelineEvent(
       log.error(error, "Failed to append tip intent timeline event");
     } else {
       process.stderr.write(
-        JSON.stringify({
+        `${JSON.stringify({
           level: "error",
           event: "tip_timeline_append_failed",
           message: "Failed to append tip intent timeline event",
           error: error instanceof Error ? error.message : String(error),
-        }) + "\n",
+        })}\n`,
       );
     }
   }
 }
 
-export async function handleTipCreate(
-  input: HandleTipCreateInput,
-  options: HandleTipCreateOptions = {},
-) {
+export async function handleTipCreate(input: HandleTipCreateInput, options: HandleTipCreateOptions = {}) {
   const adapter = options.adapter ?? getDefaultAdapter();
   const invoice = await adapter.createInvoice({ amount: input.amount, asset: input.asset });
   const repo = options.tipIntentRepo ?? getDefaultTipIntentRepo();
@@ -191,25 +190,26 @@ export async function handleTipCreate(
     invoice: invoice.invoice,
     message: input.message ?? null,
   });
-  await appendTipTimelineEvent(eventRepo, {
-    tipIntentId: tipIntent.id,
-    invoice: tipIntent.invoice,
-    source: "TIP_CREATE",
-    type: "TIP_CREATED",
-    previousInvoiceState: null,
-    nextInvoiceState: tipIntent.invoiceState,
-    metadata: {
-      appId: tipIntent.appId,
-      postId: tipIntent.postId,
+  await appendTipTimelineEvent(
+    eventRepo,
+    {
+      tipIntentId: tipIntent.id,
+      invoice: tipIntent.invoice,
+      source: "TIP_CREATE",
+      type: "TIP_CREATED",
+      previousInvoiceState: null,
+      nextInvoiceState: tipIntent.invoiceState,
+      metadata: {
+        appId: tipIntent.appId,
+        postId: tipIntent.postId,
+      },
     },
-  }, options.log);
+    options.log,
+  );
   return { invoice: invoice.invoice };
 }
 
-export async function handleTipStatus(
-  input: HandleTipStatusInput,
-  options: HandleTipStatusOptions = {},
-) {
+export async function handleTipStatus(input: HandleTipStatusInput, options: HandleTipStatusOptions = {}) {
   const tipIntentRepo = options.tipIntentRepo ?? getDefaultTipIntentRepo();
   const ledgerRepo = options.ledgerRepo ?? getDefaultLedgerRepo();
   const eventRepo = options.tipIntentEventRepo ?? getDefaultTipIntentEventRepo();
@@ -217,18 +217,22 @@ export async function handleTipStatus(
   const tipIntent = await tipIntentRepo.findByInvoiceOrThrow(input.invoice);
 
   if (tipIntent.invoiceState !== "UNPAID") {
-    await appendTipTimelineEvent(eventRepo, {
-      tipIntentId: tipIntent.id,
-      invoice: tipIntent.invoice,
-      source: "TIP_STATUS",
-      type: statusStateToTimelineType(tipIntent.invoiceState),
-      previousInvoiceState: tipIntent.invoiceState,
-      nextInvoiceState: tipIntent.invoiceState,
-      metadata: {
-        observedState: tipIntent.invoiceState,
-        skippedUpstreamCheck: true,
+    await appendTipTimelineEvent(
+      eventRepo,
+      {
+        tipIntentId: tipIntent.id,
+        invoice: tipIntent.invoice,
+        source: "TIP_STATUS",
+        type: statusStateToTimelineType(tipIntent.invoiceState),
+        previousInvoiceState: tipIntent.invoiceState,
+        nextInvoiceState: tipIntent.invoiceState,
+        metadata: {
+          observedState: tipIntent.invoiceState,
+          skippedUpstreamCheck: true,
+        },
       },
-    }, options.log);
+      options.log,
+    );
     return { state: tipIntent.invoiceState };
   }
 
@@ -254,17 +258,21 @@ export async function handleTipStatus(
         throw error;
       }
     }
-    await appendTipTimelineEvent(eventRepo, {
-      tipIntentId: tipIntent.id,
-      invoice: tipIntent.invoice,
-      source: "TIP_STATUS",
-      type: statusStateToTimelineType(nextState),
-      previousInvoiceState: tipIntent.invoiceState,
-      nextInvoiceState: nextState,
-      metadata: {
-        observedState: "SETTLED",
+    await appendTipTimelineEvent(
+      eventRepo,
+      {
+        tipIntentId: tipIntent.id,
+        invoice: tipIntent.invoice,
+        source: "TIP_STATUS",
+        type: statusStateToTimelineType(nextState),
+        previousInvoiceState: tipIntent.invoiceState,
+        nextInvoiceState: nextState,
+        metadata: {
+          observedState: "SETTLED",
+        },
       },
-    }, options.log);
+      options.log,
+    );
     return { state: nextState };
   }
 
@@ -281,31 +289,39 @@ export async function handleTipStatus(
         throw error;
       }
     }
-    await appendTipTimelineEvent(eventRepo, {
-      tipIntentId: tipIntent.id,
-      invoice: tipIntent.invoice,
-      source: "TIP_STATUS",
-      type: statusStateToTimelineType(nextState),
-      previousInvoiceState: tipIntent.invoiceState,
-      nextInvoiceState: nextState,
-      metadata: {
-        observedState: "FAILED",
+    await appendTipTimelineEvent(
+      eventRepo,
+      {
+        tipIntentId: tipIntent.id,
+        invoice: tipIntent.invoice,
+        source: "TIP_STATUS",
+        type: statusStateToTimelineType(nextState),
+        previousInvoiceState: tipIntent.invoiceState,
+        nextInvoiceState: nextState,
+        metadata: {
+          observedState: "FAILED",
+        },
       },
-    }, options.log);
+      options.log,
+    );
     return { state: nextState };
   }
 
-  await appendTipTimelineEvent(eventRepo, {
-    tipIntentId: tipIntent.id,
-    invoice: tipIntent.invoice,
-    source: "TIP_STATUS",
-    type: "TIP_STATUS_UNPAID_OBSERVED",
-    previousInvoiceState: tipIntent.invoiceState,
-    nextInvoiceState: tipIntent.invoiceState,
-    metadata: {
-      observedState: "UNPAID",
+  await appendTipTimelineEvent(
+    eventRepo,
+    {
+      tipIntentId: tipIntent.id,
+      invoice: tipIntent.invoice,
+      source: "TIP_STATUS",
+      type: "TIP_STATUS_UNPAID_OBSERVED",
+      previousInvoiceState: tipIntent.invoiceState,
+      nextInvoiceState: tipIntent.invoiceState,
+      metadata: {
+        observedState: "UNPAID",
+      },
     },
-  }, options.log);
+    options.log,
+  );
   return { state: tipIntent.invoiceState };
 }
 

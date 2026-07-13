@@ -133,9 +133,7 @@ describe("adapter provider", () => {
     process.env.NODE_ENV = "production";
     delete process.env.FIBER_SIMULATION_ALLOW_IN_PRODUCTION;
 
-    expect(() => createAdapterProvider()).toThrow(
-      "Simulation adapter is blocked in production-like environments.",
-    );
+    expect(() => createAdapterProvider()).toThrow("Simulation adapter is blocked in production-like environments.");
   });
 
   it("allows simulation mode in production-like environments when explicitly overridden", async () => {

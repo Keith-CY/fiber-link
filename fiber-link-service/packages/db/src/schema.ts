@@ -1,5 +1,18 @@
 import { sql } from "drizzle-orm";
-import { boolean, check, index, integer, jsonb, numeric, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import {
+  boolean,
+  check,
+  index,
+  integer,
+  jsonb,
+  numeric,
+  pgEnum,
+  pgTable,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+} from "drizzle-orm/pg-core";
 
 export const userRoleEnum = pgEnum("user_role", ["SUPER_ADMIN", "COMMUNITY_ADMIN"]);
 export type UserRole = (typeof userRoleEnum.enumValues)[number];
@@ -55,15 +68,10 @@ export const liquidityRequestStateEnum = pgEnum("liquidity_request_state", [
 ]);
 export type LiquidityRequestState = (typeof liquidityRequestStateEnum.enumValues)[number];
 
-export const liquidityRequestSourceKindEnum = pgEnum("liquidity_request_source_kind", [
-  "FIBER_TO_CKB_CHAIN",
-]);
+export const liquidityRequestSourceKindEnum = pgEnum("liquidity_request_source_kind", ["FIBER_TO_CKB_CHAIN"]);
 export type LiquidityRequestSourceKind = (typeof liquidityRequestSourceKindEnum.enumValues)[number];
 
-export const withdrawalDestinationKindEnum = pgEnum("withdrawal_destination_kind", [
-  "CKB_ADDRESS",
-  "PAYMENT_REQUEST",
-]);
+export const withdrawalDestinationKindEnum = pgEnum("withdrawal_destination_kind", ["CKB_ADDRESS", "PAYMENT_REQUEST"]);
 export type WithdrawalDestinationKind = (typeof withdrawalDestinationKindEnum.enumValues)[number];
 
 export const notificationChannelKindEnum = pgEnum("notification_channel_kind", ["WEBHOOK"]);
@@ -204,7 +212,11 @@ export const tipIntentEvents = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => ({
-    byTipIntentCreatedAt: index("tip_intent_events_tip_intent_created_at_idx").on(table.tipIntentId, table.createdAt, table.id),
+    byTipIntentCreatedAt: index("tip_intent_events_tip_intent_created_at_idx").on(
+      table.tipIntentId,
+      table.createdAt,
+      table.id,
+    ),
     byInvoiceCreatedAt: index("tip_intent_events_invoice_created_at_idx").on(table.invoice, table.createdAt, table.id),
     bySourceCreatedAt: index("tip_intent_events_source_created_at_idx").on(table.source, table.createdAt, table.id),
   }),
@@ -263,7 +275,12 @@ export const withdrawals = pgTable(
       .on(table.appId, table.userId, table.clientRequestId)
       .where(sql`${table.clientRequestId} IS NOT NULL`),
     byStateRetryAt: index("withdrawals_state_next_retry_at_idx").on(table.state, table.nextRetryAt, table.createdAt),
-    byAccountAssetState: index("withdrawals_account_asset_state_idx").on(table.appId, table.userId, table.asset, table.state),
+    byAccountAssetState: index("withdrawals_account_asset_state_idx").on(
+      table.appId,
+      table.userId,
+      table.asset,
+      table.state,
+    ),
     liquidityPendingFieldsCheck: check(
       "withdrawals_liquidity_pending_fields_check",
       sql`${table.state} <> 'LIQUIDITY_PENDING'
@@ -342,7 +359,12 @@ export const notificationRules = pgTable(
   },
   (table) => ({
     channelEventUnique: uniqueIndex("notification_rules_channel_event_unique").on(table.channelId, table.event),
-    byAppEventEnabled: index("notification_rules_app_event_enabled_idx").on(table.appId, table.event, table.enabled, table.id),
+    byAppEventEnabled: index("notification_rules_app_event_enabled_idx").on(
+      table.appId,
+      table.event,
+      table.enabled,
+      table.id,
+    ),
     byChannelEnabled: index("notification_rules_channel_enabled_idx").on(table.channelId, table.enabled, table.id),
   }),
 );

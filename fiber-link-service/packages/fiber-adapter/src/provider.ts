@@ -1,5 +1,5 @@
 import { createAdapter } from "./rpc-adapter";
-import { createSimulationAdapter, type CreateSimulationAdapterArgs } from "./simulation-adapter";
+import { type CreateSimulationAdapterArgs, createSimulationAdapter } from "./simulation-adapter";
 import type { CreateAdapterArgs, FiberAdapter } from "./types";
 
 export type AdapterProviderMode = "rpc" | "simulation";

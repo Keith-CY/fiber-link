@@ -1,13 +1,9 @@
+import { type InvoiceState, createInMemoryLedgerRepo, createInMemoryTipIntentRepo } from "@fiber-link/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  createInMemoryLedgerRepo,
-  createInMemoryTipIntentRepo,
-  type InvoiceState,
-} from "@fiber-link/db";
+import { createComponentLogger } from "./logger";
 import { runSettlementDiscovery } from "./settlement-discovery";
 import { startSettlementSubscriptionRunner } from "./settlement-subscription-runner";
 import { createWorkerRuntime } from "./worker-runtime";
-import { createComponentLogger } from "./logger";
 
 describe("worker structured logging contract", () => {
   const tipIntentRepo = createInMemoryTipIntentRepo();

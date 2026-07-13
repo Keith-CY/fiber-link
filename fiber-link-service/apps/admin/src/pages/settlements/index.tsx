@@ -1,6 +1,6 @@
-import { trpc } from "../../utils/trpc";
 import { PageHeader, QueryBoundary, RoleGate, StatCard } from "../../components/page";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
+import { trpc } from "../../utils/trpc";
 
 export default function SettlementsPage() {
   const session = trpc.session.me.useQuery();

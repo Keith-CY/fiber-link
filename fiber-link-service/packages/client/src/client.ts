@@ -37,11 +37,7 @@ function buildRequestId(): string {
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-async function buildSignedHeaders(
-  appId: string,
-  secret: string,
-  payload: string,
-): Promise<Record<string, string>> {
+async function buildSignedHeaders(appId: string, secret: string, payload: string): Promise<Record<string, string>> {
   const ts = String(Math.floor(Date.now() / 1000));
   const nonce = buildRequestId().replace(/-/g, "").slice(0, 16);
   const message = `${ts}.${nonce}.${payload}`;

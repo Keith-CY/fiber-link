@@ -62,6 +62,7 @@ function delay(ms: number, signal?: AbortSignal) {
     return Promise.resolve();
   }
   return new Promise<void>((resolve, reject) => {
+    // biome-ignore lint/style/useConst: assigned after onAbort, which closes over it, is defined.
     let timeout: ReturnType<typeof setTimeout>;
     const onAbort = () => {
       clearTimeout(timeout);
@@ -75,7 +76,11 @@ function delay(ms: number, signal?: AbortSignal) {
   });
 }
 
-async function fetchWithTimeout(endpoint: string, init: RequestInit, options: Required<Pick<FiberRpcCallOptions, "timeoutMs">> & Pick<FiberRpcCallOptions, "fetchFn" | "signal">) {
+async function fetchWithTimeout(
+  endpoint: string,
+  init: RequestInit,
+  options: Required<Pick<FiberRpcCallOptions, "timeoutMs">> & Pick<FiberRpcCallOptions, "fetchFn" | "signal">,
+) {
   const fetchFn = options.fetchFn ?? fetch;
   const controller = new AbortController();
   let timedOut = false;
@@ -113,7 +118,12 @@ async function fetchWithTimeout(endpoint: string, init: RequestInit, options: Re
   }
 }
 
-export async function rpcCall(endpoint: FiberRpcEndpoint, method: string, params: unknown, callOptions: FiberRpcCallOptions = {}) {
+export async function rpcCall(
+  endpoint: FiberRpcEndpoint,
+  method: string,
+  params: unknown,
+  callOptions: FiberRpcCallOptions = {},
+) {
   const { endpoint: resolvedEndpoint, options } = resolveEndpointOptions(endpoint, callOptions);
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const retryCount = options.retryCount ?? DEFAULT_RETRY_COUNT;

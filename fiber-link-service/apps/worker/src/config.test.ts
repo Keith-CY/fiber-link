@@ -60,19 +60,17 @@ describe("parseWorkerConfig", () => {
       name: "invalid fallback mode",
       env: { ...baseEnv, FIBER_LIQUIDITY_FALLBACK_MODE: "rotate" },
       expectedMessage:
-        "Invalid FIBER_LIQUIDITY_FALLBACK_MODE: expected one of none, channel_rotation, received \"rotate\"",
+        'Invalid FIBER_LIQUIDITY_FALLBACK_MODE: expected one of none, channel_rotation, received "rotate"',
     },
     {
       name: "invalid channel rotation bootstrap reserve",
       env: { ...baseEnv, FIBER_CHANNEL_ROTATION_BOOTSTRAP_RESERVE: "-1" },
-      expectedMessage:
-        "Invalid FIBER_CHANNEL_ROTATION_BOOTSTRAP_RESERVE: expected non-negative decimal string",
+      expectedMessage: "Invalid FIBER_CHANNEL_ROTATION_BOOTSTRAP_RESERVE: expected non-negative decimal string",
     },
     {
       name: "invalid channel rotation min recoverable amount",
       env: { ...baseEnv, FIBER_CHANNEL_ROTATION_MIN_RECOVERABLE_AMOUNT: "abc" },
-      expectedMessage:
-        "Invalid FIBER_CHANNEL_ROTATION_MIN_RECOVERABLE_AMOUNT: expected non-negative decimal string",
+      expectedMessage: "Invalid FIBER_CHANNEL_ROTATION_MIN_RECOVERABLE_AMOUNT: expected non-negative decimal string",
     },
     {
       name: "invalid channel rotation concurrency",
@@ -92,8 +90,7 @@ describe("parseWorkerConfig", () => {
     {
       name: "invalid settlement strategy enum",
       env: { ...baseEnv, WORKER_SETTLEMENT_STRATEGY: "stream" },
-      expectedMessage:
-        "Invalid WORKER_SETTLEMENT_STRATEGY: expected one of polling, subscription, received \"stream\"",
+      expectedMessage: 'Invalid WORKER_SETTLEMENT_STRATEGY: expected one of polling, subscription, received "stream"',
     },
     {
       name: "missing rpc endpoint",
@@ -118,8 +115,7 @@ describe("parseWorkerConfig", () => {
     {
       name: "invalid dedupe window size",
       env: { ...baseEnv, WORKER_SETTLEMENT_SUBSCRIPTION_RECENT_INVOICE_DEDUPE_SIZE: "-1" },
-      expectedMessage:
-        "Invalid WORKER_SETTLEMENT_SUBSCRIPTION_RECENT_INVOICE_DEDUPE_SIZE: expected integer >= 0",
+      expectedMessage: "Invalid WORKER_SETTLEMENT_SUBSCRIPTION_RECENT_INVOICE_DEDUPE_SIZE: expected integer >= 0",
     },
   ])("$name", ({ env, expectedMessage }) => {
     expect(() => parseWorkerConfig(env)).toThrow(expectedMessage);

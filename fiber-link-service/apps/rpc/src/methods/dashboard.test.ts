@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi, afterEach } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 type MockSelectQueue = unknown[][];
 
@@ -25,9 +25,9 @@ function createMockDb(selectQueue: MockSelectQueue) {
         from: vi.fn(() => chain),
         where: vi.fn(() => chain),
         orderBy: vi.fn(() => chain),
-        limit: vi.fn(async () => resolveNext('limit()')),
-        groupBy: vi.fn(async () => resolveNext('groupBy()')),
-        then: (resolve) => Promise.resolve(resolveNext('await query')).then(resolve),
+        limit: vi.fn(async () => resolveNext("limit()")),
+        groupBy: vi.fn(async () => resolveNext("groupBy()")),
+        then: (resolve) => Promise.resolve(resolveNext("await query")).then(resolve),
       };
       return chain;
     }),
@@ -54,34 +54,35 @@ describe("handleDashboardSummary", () => {
     const { handleDashboardSummary } = await import("./dashboard");
 
     const firstTipCreatedAt = new Date("2026-02-27T10:00:00.000Z");
-    selectQueue.push([
-      {
-        id: "tip-in",
-        invoice: "inv-in",
-        postId: "post-1",
-        amount: "12.5",
-        asset: "CKB",
-        invoiceState: "SETTLED",
-        fromUserId: "u-alice",
-        toUserId: "u-bob",
-        message: "Great post",
-        createdAt: firstTipCreatedAt,
-        settledAt: new Date("2026-02-27T10:01:00.000Z"),
-      },
-      {
-        id: "tip-out",
-        invoice: "inv-out",
-        postId: "post-2",
-        amount: "3",
-        asset: "USDI",
-        invoiceState: "UNPAID",
-        fromUserId: "u-bob",
-        toUserId: "u-charlie",
-        message: null,
-        createdAt: new Date("2026-02-27T09:00:00.000Z"),
-        settledAt: null,
-      },
-    ],
+    selectQueue.push(
+      [
+        {
+          id: "tip-in",
+          invoice: "inv-in",
+          postId: "post-1",
+          amount: "12.5",
+          asset: "CKB",
+          invoiceState: "SETTLED",
+          fromUserId: "u-alice",
+          toUserId: "u-bob",
+          message: "Great post",
+          createdAt: firstTipCreatedAt,
+          settledAt: new Date("2026-02-27T10:01:00.000Z"),
+        },
+        {
+          id: "tip-out",
+          invoice: "inv-out",
+          postId: "post-2",
+          amount: "3",
+          asset: "USDI",
+          invoiceState: "UNPAID",
+          fromUserId: "u-bob",
+          toUserId: "u-charlie",
+          message: null,
+          createdAt: new Date("2026-02-27T09:00:00.000Z"),
+          settledAt: null,
+        },
+      ],
       [
         {
           id: "wd-completed",
@@ -96,12 +97,12 @@ describe("handleDashboardSummary", () => {
           completedAt: new Date("2026-02-27T10:36:00.000Z"),
         },
       ],
-      [{ pendingAmount: '0', pendingCount: 0, completedCount: 1, failedCount: 0 }],
+      [{ pendingAmount: "0", pendingCount: 0, completedCount: 1, failedCount: 0 }],
     );
     getBalance.mockResolvedValueOnce(88n); // CKB
-    getPendingTotal.mockResolvedValueOnce('0'); // CKB locked
+    getPendingTotal.mockResolvedValueOnce("0"); // CKB locked
     getBalance.mockResolvedValueOnce("0"); // USDI
-    getPendingTotal.mockResolvedValueOnce('0'); // USDI locked
+    getPendingTotal.mockResolvedValueOnce("0"); // USDI locked
 
     const userOnly = await handleDashboardSummary({
       appId: "app-1",
@@ -184,7 +185,7 @@ describe("handleDashboardSummary", () => {
         },
       ],
       [],
-      [{ pendingAmount: '0', pendingCount: 0, completedCount: 0, failedCount: 1 }],
+      [{ pendingAmount: "0", pendingCount: 0, completedCount: 0, failedCount: 1 }],
       [{ appId: "app-1", createdAt: new Date("2026-01-01T00:00:00.000Z") }],
       [
         {
@@ -236,9 +237,9 @@ describe("handleDashboardSummary", () => {
       ],
     );
     getBalance.mockResolvedValueOnce("91.2"); // CKB
-    getPendingTotal.mockResolvedValueOnce('5'); // CKB locked
+    getPendingTotal.mockResolvedValueOnce("5"); // CKB locked
     getBalance.mockResolvedValueOnce("10"); // USDI
-    getPendingTotal.mockResolvedValueOnce('0'); // USDI locked
+    getPendingTotal.mockResolvedValueOnce("0"); // USDI locked
 
     const withAdmin = await handleDashboardSummary({
       appId: "app-1",

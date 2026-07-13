@@ -1,4 +1,8 @@
 import {
+  type LiquidityRequestRecord,
+  type LiquidityRequestRepo,
+  type WithdrawalRecord,
+  type WithdrawalRepo,
   addDecimalStrings,
   compareDecimalStrings,
   createDbClient,
@@ -6,16 +10,12 @@ import {
   createDbWithdrawalRepo,
   subtractDecimalStrings,
   toErrorMessage,
-  type LiquidityRequestRecord,
-  type LiquidityRequestRepo,
-  type WithdrawalRecord,
-  type WithdrawalRepo,
 } from "@fiber-link/db";
 import {
   type AcceptChannelArgs,
   type AcceptChannelResult,
-  type CkbNetwork,
   type CkbChannelAcceptancePolicy,
+  type CkbNetwork,
   type EnsureChainLiquidityArgs,
   type EnsureChainLiquidityResult,
   type GetRebalanceStatusArgs,
@@ -26,9 +26,9 @@ import {
   type ListChannelsResult,
   type OpenChannelArgs,
   type OpenChannelResult,
-  resolveHotWalletLockScript,
   type ShutdownChannelArgs,
   type ShutdownChannelResult,
+  resolveHotWalletLockScript,
 } from "@fiber-link/fiber-adapter";
 import { executeChannelRotation, selectLegacyChannel } from "./channel-rotation";
 
@@ -94,9 +94,7 @@ async function promoteCoveredWithdrawals(
     inventoryProvider: HotWalletInventoryProvider;
   },
 ) {
-  const pending = (await options.repo.listLiquidityPending()).filter(
-    (item) => item.liquidityRequestId === request.id,
-  );
+  const pending = (await options.repo.listLiquidityPending()).filter((item) => item.liquidityRequestId === request.id);
   if (pending.length === 0) {
     return 0;
   }
@@ -150,12 +148,15 @@ export async function runLiquidityBatch(options: RunLiquidityBatchOptions) {
     });
 
     if (compareDecimalStrings(inventory.availableAmount, targetAvailableAmount) < 0) {
-      const canUseDirectLiquidityPath = capabilities.directRebalance || (request.asset === "CKB" && capabilities.localCkbSweep);
+      const canUseDirectLiquidityPath =
+        capabilities.directRebalance || (request.asset === "CKB" && capabilities.localCkbSweep);
       if (canUseDirectLiquidityPath) {
         const status = await options.liquidityProvider.getRebalanceStatus({
           requestId: request.id,
           txHash:
-            typeof request.metadata?.localLiquidityTxHash === "string" ? request.metadata.localLiquidityTxHash : undefined,
+            typeof request.metadata?.localLiquidityTxHash === "string"
+              ? request.metadata.localLiquidityTxHash
+              : undefined,
           network:
             request.metadata?.localLiquidityNetwork === "AGGRON4" || request.metadata?.localLiquidityNetwork === "LINA"
               ? (request.metadata.localLiquidityNetwork as CkbNetwork)
@@ -172,13 +173,14 @@ export async function runLiquidityBatch(options: RunLiquidityBatchOptions) {
           });
           if (ensureResult.started) {
             rebalanceStarted += 1;
-            const sweepMetadata = ensureResult.recoveryStrategy === "LOCAL_CKB_SWEEP"
-              ? {
-                  recoveryStrategy: ensureResult.recoveryStrategy,
-                  localLiquidityTxHash: ensureResult.txHash,
-                  localLiquidityNetwork: ensureResult.trackingNetwork,
-                }
-              : {};
+            const sweepMetadata =
+              ensureResult.recoveryStrategy === "LOCAL_CKB_SWEEP"
+                ? {
+                    recoveryStrategy: ensureResult.recoveryStrategy,
+                    localLiquidityTxHash: ensureResult.txHash,
+                    localLiquidityNetwork: ensureResult.trackingNetwork,
+                  }
+                : {};
             await liquidityRequestRepo.markRebalancing(request.id, {
               now,
               metadata: {
@@ -211,18 +213,18 @@ export async function runLiquidityBatch(options: RunLiquidityBatchOptions) {
         }
 
         if (fallbackError) {
-            await liquidityRequestRepo.ensureOpen({
-              appId: request.appId,
-              asset: request.asset,
-              network: request.network,
-              sourceKind: request.sourceKind,
-              requiredAmount: request.requiredAmount,
-              metadata: {
-                ...(request.metadata ?? {}),
-                recoveryStrategy: "CHANNEL_ROTATION",
-                lastRotationError: fallbackError,
-              },
-            });
+          await liquidityRequestRepo.ensureOpen({
+            appId: request.appId,
+            asset: request.asset,
+            network: request.network,
+            sourceKind: request.sourceKind,
+            requiredAmount: request.requiredAmount,
+            metadata: {
+              ...(request.metadata ?? {}),
+              recoveryStrategy: "CHANNEL_ROTATION",
+              lastRotationError: fallbackError,
+            },
+          });
         } else {
           channelRotationStarted += 1;
           try {

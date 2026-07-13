@@ -1,6 +1,6 @@
 import { and, eq, gte, ne, sql } from "drizzle-orm";
-import type { DbClient } from "./client";
 import { assertPositiveAmount, compareDecimalStrings, formatDecimal, parseDecimal } from "./amount";
+import type { DbClient } from "./client";
 import { type Asset, withdrawalPolicies, withdrawals } from "./schema";
 
 export type WithdrawalPolicyRecord = {
@@ -86,11 +86,7 @@ function usageWindowStart(now: Date): Date {
 export function createDbWithdrawalPolicyRepo(db: DbClient): WithdrawalPolicyRepo {
   return {
     async getByAppId(appId) {
-      const [row] = await db
-        .select()
-        .from(withdrawalPolicies)
-        .where(eq(withdrawalPolicies.appId, appId))
-        .limit(1);
+      const [row] = await db.select().from(withdrawalPolicies).where(eq(withdrawalPolicies.appId, appId)).limit(1);
       if (!row) {
         return null;
       }
@@ -196,9 +192,7 @@ function normalizeUsage(usage: WithdrawalPolicyUsage): WithdrawalPolicyUsage {
   };
 }
 
-export function createInMemoryWithdrawalPolicyRepo(
-  initial: WithdrawalPolicyRecord[] = [],
-): WithdrawalPolicyRepo {
+export function createInMemoryWithdrawalPolicyRepo(initial: WithdrawalPolicyRecord[] = []): WithdrawalPolicyRepo {
   const byAppId = new Map<string, WithdrawalPolicyRecord>();
   for (const item of initial) {
     byAppId.set(item.appId, {

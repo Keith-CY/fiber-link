@@ -159,13 +159,8 @@ function findConflictKeys(
   return conflicts;
 }
 
-export function previewConfigProfileDiff(
-  current: Record<string, string>,
-  profile: ConfigProfile,
-): string[] {
-  return PROFILE_CONFIG_KEYS.map(
-    (key) => `${key}: ${current[key] ?? "<unset>"} -> ${profile.config[key]}`,
-  );
+export function previewConfigProfileDiff(current: Record<string, string>, profile: ConfigProfile): string[] {
+  return PROFILE_CONFIG_KEYS.map((key) => `${key}: ${current[key] ?? "<unset>"} -> ${profile.config[key]}`);
 }
 
 export function applyConfigProfile(
@@ -179,9 +174,7 @@ export function applyConfigProfile(
 ): ProfileApplyResult {
   const conflicts = findConflictKeys(current, input.profile, input.previousProfileId);
   if (conflicts.length > 0 && !input.allowOverwrite) {
-    throw new Error(
-      `Conflict on ${conflicts.join(", ")}; explicit confirmation required`,
-    );
+    throw new Error(`Conflict on ${conflicts.join(", ")}; explicit confirmation required`);
   }
 
   const nextConfig = {

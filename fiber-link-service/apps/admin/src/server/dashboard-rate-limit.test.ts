@@ -1,6 +1,6 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   buildDashboardRateLimitChangeSet,
@@ -54,7 +54,9 @@ describe("dashboard rate limit", () => {
       ].join("\n"),
     );
 
-    expect(loadDashboardRateLimitConfig({ env: { COMPOSE_ENV_FILE: envPath } as unknown as NodeJS.ProcessEnv })).toEqual({
+    expect(
+      loadDashboardRateLimitConfig({ env: { COMPOSE_ENV_FILE: envPath } as unknown as NodeJS.ProcessEnv }),
+    ).toEqual({
       enabled: true,
       windowMs: "120000",
       maxRequests: "777",

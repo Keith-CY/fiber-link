@@ -1,10 +1,6 @@
-import { describe, expect, it, vi } from "vitest";
 import type { ChannelRecord } from "@fiber-link/fiber-adapter";
-import {
-  computeRequiredOpenFundingAmount,
-  executeChannelRotation,
-  selectLegacyChannel,
-} from "./channel-rotation";
+import { describe, expect, it, vi } from "vitest";
+import { computeRequiredOpenFundingAmount, executeChannelRotation, selectLegacyChannel } from "./channel-rotation";
 
 describe("channel rotation", () => {
   it("selects the largest eligible ready channel by local balance", () => {
@@ -93,27 +89,26 @@ describe("channel rotation", () => {
       acceptChannelFundingAmount: "9900000000",
     }));
     const shutdownChannel = vi.fn(async () => ({}));
-    const listChannels = vi
-      .fn(async () => ({
-        channels: [
-          {
-            channelId: "0xlegacy",
-            state: "CHANNEL_READY" as const,
-            localBalance: "15000000000",
-            remoteBalance: "0",
-            remotePubkey: "0xpeer",
-            pendingTlcCount: 0,
-          },
-          {
-            channelId: "0xreplacement-ready",
-            state: "CHANNEL_READY" as const,
-            localBalance: "10000000000",
-            remoteBalance: "0",
-            remotePubkey: "0xpeer",
-            pendingTlcCount: 0,
-          },
-        ],
-      }));
+    const listChannels = vi.fn(async () => ({
+      channels: [
+        {
+          channelId: "0xlegacy",
+          state: "CHANNEL_READY" as const,
+          localBalance: "15000000000",
+          remoteBalance: "0",
+          remotePubkey: "0xpeer",
+          pendingTlcCount: 0,
+        },
+        {
+          channelId: "0xreplacement-ready",
+          state: "CHANNEL_READY" as const,
+          localBalance: "10000000000",
+          remoteBalance: "0",
+          remotePubkey: "0xpeer",
+          pendingTlcCount: 0,
+        },
+      ],
+    }));
     const channels: ChannelRecord[] = [
       {
         channelId: "0xlegacy",

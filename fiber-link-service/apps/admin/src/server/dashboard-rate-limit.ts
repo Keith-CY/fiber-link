@@ -64,7 +64,10 @@ function parseEnvFile(filePath: string): Record<string, string> {
     }
 
     const key = line.slice(0, separator).trim();
-    const value = line.slice(separator + 1).trim().replace(/^"(.*)"$/, "$1");
+    const value = line
+      .slice(separator + 1)
+      .trim()
+      .replace(/^"(.*)"$/, "$1");
     parsed[key] = value;
   }
   return parsed;
@@ -85,7 +88,10 @@ export function resolveAdminRepoRoot(cwd: string = process.cwd()): string {
   return resolve(cwd, "../../..");
 }
 
-export function resolveComposeEnvPath(repoRoot: string = resolveAdminRepoRoot(), env: NodeJS.ProcessEnv = process.env): string {
+export function resolveComposeEnvPath(
+  repoRoot: string = resolveAdminRepoRoot(),
+  env: NodeJS.ProcessEnv = process.env,
+): string {
   const runtimeEnvPath = resolveRuntimeComposeEnvPath(env);
   if (runtimeEnvPath) {
     return runtimeEnvPath;
@@ -93,10 +99,12 @@ export function resolveComposeEnvPath(repoRoot: string = resolveAdminRepoRoot(),
   return resolve(repoRoot, "deploy/compose/.env");
 }
 
-export function loadDashboardRateLimitConfig(input: {
-  env?: NodeJS.ProcessEnv;
-  envFilePath?: string;
-} = {}): DashboardRateLimitConfig {
+export function loadDashboardRateLimitConfig(
+  input: {
+    env?: NodeJS.ProcessEnv;
+    envFilePath?: string;
+  } = {},
+): DashboardRateLimitConfig {
   const env = input.env ?? process.env;
   const envFilePath = input.envFilePath ?? resolveComposeEnvPath(resolveAdminRepoRoot(), env);
   const envFileValues = existsSync(envFilePath) ? parseEnvFile(envFilePath) : undefined;
@@ -104,7 +112,8 @@ export function loadDashboardRateLimitConfig(input: {
   const enabled = parseBoolean(envFileValues?.RPC_RATE_LIMIT_ENABLED ?? env.RPC_RATE_LIMIT_ENABLED, true);
   const windowMs = String(envFileValues?.RPC_RATE_LIMIT_WINDOW_MS ?? env.RPC_RATE_LIMIT_WINDOW_MS ?? "60000");
   const maxRequests = String(envFileValues?.RPC_RATE_LIMIT_MAX_REQUESTS ?? env.RPC_RATE_LIMIT_MAX_REQUESTS ?? "300");
-  const redisUrl = envFileValues?.FIBER_LINK_RATE_LIMIT_REDIS_URL ?? env.FIBER_LINK_RATE_LIMIT_REDIS_URL ?? "redis://redis:6379/1";
+  const redisUrl =
+    envFileValues?.FIBER_LINK_RATE_LIMIT_REDIS_URL ?? env.FIBER_LINK_RATE_LIMIT_REDIS_URL ?? "redis://redis:6379/1";
 
   return {
     enabled,

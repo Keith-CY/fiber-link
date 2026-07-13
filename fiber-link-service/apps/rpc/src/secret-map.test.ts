@@ -29,9 +29,7 @@ describe("loadSecretMap", () => {
   });
 
   it("uses DB secret when app record exists", async () => {
-    const appRepo = createInMemoryAppRepo([
-      { appId: "app1", hmacSecret: "db-secret" },
-    ]);
+    const appRepo = createInMemoryAppRepo([{ appId: "app1", hmacSecret: "db-secret" }]);
 
     const secret = await resolveSecretForApp("app1", {
       appRepo,

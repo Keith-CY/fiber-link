@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  SHANNONS_PER_CKB,
   ckbDecimalToHexQuantity,
   normalizeOptionalName,
   normalizeRpcAmount,
@@ -10,7 +11,6 @@ import {
   pickRequiredAmount,
   pickStringCandidate,
   pickTxEvidence,
-  SHANNONS_PER_CKB,
   toHexQuantity,
 } from "./normalize";
 

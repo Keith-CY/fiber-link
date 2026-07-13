@@ -1,6 +1,6 @@
 import { and, desc, eq, gte, sql } from "drizzle-orm";
-import { tipIntents, withdrawals } from "./schema";
 import type { DbClient } from "./client";
+import { tipIntents, withdrawals } from "./schema";
 
 export type AnalyticsRange = "7d" | "30d" | "all";
 

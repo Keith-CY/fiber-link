@@ -58,10 +58,7 @@ function timingSafeEquals(a: string, b: string): boolean {
 // hashing work so a hostile client cannot burn CPU with megabyte credentials.
 const MAX_AUTHORIZATION_HEADER_LENGTH = 500;
 
-export function isMetricsRequestAuthorized(
-  authorizationHeader: string | undefined,
-  token: string | null,
-): boolean {
+export function isMetricsRequestAuthorized(authorizationHeader: string | undefined, token: string | null): boolean {
   if (!token) return true;
   if (typeof authorizationHeader !== "string" || authorizationHeader.length > MAX_AUTHORIZATION_HEADER_LENGTH) {
     return false;

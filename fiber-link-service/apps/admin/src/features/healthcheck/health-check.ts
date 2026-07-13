@@ -47,7 +47,12 @@ export function runHealthCheck(input: HealthCheckInput): HealthCheckResult {
     finding("dependencies", input.dependenciesReady, "Runtime dependencies", "Install required runtime packages"),
     finding("config", input.configValid, "Configuration validity", "Review and fix invalid config values"),
     finding("permissions", input.permissionsOk, "Path and permission access", "Adjust file and runtime permissions"),
-    finding("connectivity", input.endpointReachable, "Critical endpoint connectivity", "Verify network and endpoint URL"),
+    finding(
+      "connectivity",
+      input.endpointReachable,
+      "Critical endpoint connectivity",
+      "Verify network and endpoint URL",
+    ),
   ];
 
   const hasFailure = findings.some((f) => !f.ok);

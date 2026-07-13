@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { compareDecimalStrings, formatDecimal, parseDecimal, pow10, toErrorMessage } from "@fiber-link/db";
-import { createAdapter, type ChannelRecord } from "@fiber-link/fiber-adapter";
+import { type ChannelRecord, createAdapter } from "@fiber-link/fiber-adapter";
 import { computeRequiredOpenFundingAmount } from "../channel-rotation";
 import {
   isIgnorableAcceptChannelError,
@@ -27,7 +27,11 @@ type Options = {
 };
 
 class RpcError extends Error {
-  constructor(message: string, readonly code?: number, readonly data?: unknown) {
+  constructor(
+    message: string,
+    readonly code?: number,
+    readonly data?: unknown,
+  ) {
     super(message);
     this.name = "RpcError";
   }

@@ -3,10 +3,10 @@ import type { DbClient } from "./client";
 import {
   LiquidityRequestFundingAmountError,
   LiquidityRequestNotFoundError,
+  type LiquidityRequestRecord,
   LiquidityRequestStateTransitionError,
   createDbLiquidityRequestRepo,
   createInMemoryLiquidityRequestRepo,
-  type LiquidityRequestRecord,
 } from "./liquidity-request-repo";
 
 function mockRow(overrides: Partial<LiquidityRequestRecord> = {}): LiquidityRequestRecord {
@@ -31,7 +31,10 @@ function mockRow(overrides: Partial<LiquidityRequestRecord> = {}): LiquidityRequ
 function createDbMock() {
   const insertReturning = vi.fn();
   const insertOnConflictDoUpdate = vi.fn(() => ({ returning: insertReturning }));
-  const insertValues = vi.fn((..._args: unknown[]) => ({ returning: insertReturning, onConflictDoUpdate: insertOnConflictDoUpdate }));
+  const insertValues = vi.fn((..._args: unknown[]) => ({
+    returning: insertReturning,
+    onConflictDoUpdate: insertOnConflictDoUpdate,
+  }));
   const insert = vi.fn(() => ({ values: insertValues }));
 
   const selectLimit = vi.fn();

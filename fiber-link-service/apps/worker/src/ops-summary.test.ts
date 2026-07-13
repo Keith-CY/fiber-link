@@ -1,13 +1,13 @@
-import { describe, expect, it } from "vitest";
 import type { TipIntentRepo } from "@fiber-link/db";
+import { describe, expect, it } from "vitest";
 import {
+  type WorkerOpsConfig,
   collectSettlementOpsSnapshot,
   evaluateWorkerOpsSummary,
   parseWorkerOpsConfig,
-  type WorkerOpsConfig,
 } from "./ops-summary";
-import type { WorkerReadinessResult } from "./worker-readiness";
 import type { WithdrawalParityReport } from "./withdrawal-reconciliation";
+import type { WorkerReadinessResult } from "./worker-readiness";
 
 function createHealthyReadiness(): WorkerReadinessResult {
   return {

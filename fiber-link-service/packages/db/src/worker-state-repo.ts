@@ -36,9 +36,7 @@ export function createDbWorkerStateRepo(db: DbClient): WorkerStateRepo {
   };
 }
 
-export function createInMemoryWorkerStateRepo(
-  seed: Record<string, Record<string, unknown>> = {},
-): WorkerStateRepo {
+export function createInMemoryWorkerStateRepo(seed: Record<string, Record<string, unknown>> = {}): WorkerStateRepo {
   const store = new Map<string, Record<string, unknown>>(Object.entries(seed));
   return {
     async get(key) {

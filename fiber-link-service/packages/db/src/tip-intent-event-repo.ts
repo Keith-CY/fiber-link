@@ -1,7 +1,7 @@
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
 import { asc, eq } from "drizzle-orm";
 import type { DbClient } from "./client";
-import { tipIntentEvents, type InvoiceState, type TipIntentEventSource, type TipIntentEventType } from "./schema";
+import { type InvoiceState, type TipIntentEventSource, type TipIntentEventType, tipIntentEvents } from "./schema";
 
 export type TipIntentEventMetadata = Record<string, unknown>;
 

@@ -1,9 +1,5 @@
+import { type InvoiceState, createInMemoryLedgerRepo, createInMemoryTipIntentRepo } from "@fiber-link/db";
 import { beforeEach, describe, expect, it } from "vitest";
-import {
-  createInMemoryLedgerRepo,
-  createInMemoryTipIntentRepo,
-  type InvoiceState,
-} from "@fiber-link/db";
 import { runSettlementDiscovery } from "./settlement-discovery";
 import { startSettlementSubscriptionRunner } from "./settlement-subscription-runner";
 

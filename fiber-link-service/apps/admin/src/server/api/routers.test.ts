@@ -1,8 +1,8 @@
-import { describe, expect, it } from "vitest";
 import { TRPCError } from "@trpc/server";
+import { describe, expect, it } from "vitest";
+import { type DashboardFixture, createFixtureAdminServices } from "../services/fixture-services";
 import { appRouter } from "./root";
 import { createCallerFactory } from "./trpc";
-import { createFixtureAdminServices, type DashboardFixture } from "../services/fixture-services";
 import type { TrpcContext } from "./trpc";
 
 const createCaller = createCallerFactory(appRouter);
@@ -14,12 +14,29 @@ function fixture(): DashboardFixture {
       { appId: "app-beta", createdAt: "2026-03-18T00:00:00.000Z" },
     ],
     withdrawals: [
-      { id: "w-1", appId: "app-alpha", userId: "u1", asset: "CKB", amount: "1", state: "FAILED", createdAt: "2026-03-18T00:00:00.000Z", txHash: null },
+      {
+        id: "w-1",
+        appId: "app-alpha",
+        userId: "u1",
+        asset: "CKB",
+        amount: "1",
+        state: "FAILED",
+        createdAt: "2026-03-18T00:00:00.000Z",
+        txHash: null,
+      },
     ],
     policies: [],
     communityAdminAppIds: ["app-alpha"],
     backupBundles: [
-      { id: "b-1", generatedAt: "b-1", overallStatus: "PASS", retentionDays: 30, dryRun: true, backupDir: "/tmp/b-1", archiveFile: null },
+      {
+        id: "b-1",
+        generatedAt: "b-1",
+        overallStatus: "PASS",
+        retentionDays: 30,
+        dryRun: true,
+        backupDir: "/tmp/b-1",
+        archiveFile: null,
+      },
     ],
   };
 }
@@ -60,7 +77,9 @@ describe("admin tRPC routers", () => {
     // the count survives; an unassigned role gets FORBIDDEN via adminProcedure.
     const scoped = await createCaller(ctxFor("COMMUNITY_ADMIN", "c1")).withdrawals.stateSummary();
     expect(scoped.find((s) => s.state === "FAILED")?.count).toBe(1);
-    await expect(createCaller(ctxFor(undefined)).withdrawals.stateSummary()).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(createCaller(ctxFor(undefined)).withdrawals.stateSummary()).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
   });
 
   it("rejects invalid withdrawal-policy input with BAD_REQUEST", async () => {
@@ -83,7 +102,9 @@ describe("admin tRPC routers", () => {
   });
 
   it("scopes ops procedures to SUPER_ADMIN", async () => {
-    await expect(createCaller(ctxFor("COMMUNITY_ADMIN", "c")).ops.monitoring()).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(createCaller(ctxFor("COMMUNITY_ADMIN", "c")).ops.monitoring()).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
     const summary = await createCaller(ctxFor("SUPER_ADMIN", "ops")).ops.monitoring();
     expect(summary.status).toBeDefined();
   });

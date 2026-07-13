@@ -1,5 +1,10 @@
 .worktrees
 node_modules
+
+# bun 1.3+ writes a text bun.lock on install; this repo's canonical lockfile is
+# the binary bun.lockb (referenced by CI cache keys and the service Dockerfile).
+# Ignore the text variant so it is never committed alongside the binary one.
+fiber-link-service/bun.lock
 /tmp/
 .tmp/
 .playwright-cli/

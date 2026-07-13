@@ -1,12 +1,10 @@
-import { FiberRpcError, rpcCall, type FiberRpcEndpoint } from "../fiber-client";
 import {
   executeCkbOnchainTransfer,
   getCkbTransactionStatus,
   normalizeCkbPrivateKey,
   resolveHotWalletAddress,
 } from "../ckb-onchain-withdrawal";
-import { ckbDecimalToHexQuantity, toHexQuantity } from "./normalize";
-import { hasWithdrawalPrivateKey } from "../withdrawal-key";
+import { type FiberRpcEndpoint, FiberRpcError, rpcCall } from "../fiber-client";
 import type {
   CkbNetwork,
   EnsureChainLiquidityArgs,
@@ -15,6 +13,8 @@ import type {
   GetRebalanceStatusResult,
   RebalanceStatusState,
 } from "../types";
+import { hasWithdrawalPrivateKey } from "../withdrawal-key";
+import { ckbDecimalToHexQuantity, toHexQuantity } from "./normalize";
 
 type LocalSweepState = Exclude<RebalanceStatusState, "IDLE">;
 
@@ -45,19 +45,18 @@ function isUnsupportedRebalanceRpcError(error: unknown): boolean {
   if (error instanceof FiberRpcError && error.code === -32601) {
     return true;
   }
-  if (
-    typeof error === "object"
-    && error !== null
-    && "code" in error
-    && (error as { code?: unknown }).code === -32601
-  ) {
+  if (typeof error === "object" && error !== null && "code" in error && (error as { code?: unknown }).code === -32601) {
     return true;
   }
-  const message = error instanceof Error
-    ? error.message
-    : typeof error === "object" && error !== null && "message" in error && typeof (error as { message?: unknown }).message === "string"
-      ? (error as { message: string }).message
-      : String(error);
+  const message =
+    error instanceof Error
+      ? error.message
+      : typeof error === "object" &&
+          error !== null &&
+          "message" in error &&
+          typeof (error as { message?: unknown }).message === "string"
+        ? (error as { message: string }).message
+        : String(error);
   const normalized = message.trim().toLowerCase();
   // Fiber nodes have been observed to use these message variants when the rebalance RPC is absent.
   return normalized.includes("method not found") || normalized.includes("unknown method");
@@ -148,8 +147,9 @@ async function getOrRefreshLocalSweepTracking(args: GetRebalanceStatusArgs): Pro
     return cached;
   }
 
-  const tracking = cached
-    ?? (args.txHash && args.network
+  const tracking =
+    cached ??
+    (args.txHash && args.network
       ? {
           txHash: args.txHash,
           network: args.network,
@@ -189,19 +189,20 @@ async function getOrRefreshLocalSweepTracking(args: GetRebalanceStatusArgs): Pro
 
   if (status === "UNKNOWN") {
     const unknownStatusChecks = tracking.unknownStatusChecks + 1;
-    const next: LocalSweepTracking = unknownStatusChecks >= MAX_UNKNOWN_STATUS_CHECKS
-      ? {
-          ...tracking,
-          state: "FAILED",
-          error: `local liquidity sweep transaction ${tracking.txHash} stayed unknown for ${unknownStatusChecks} consecutive status checks`,
-          unknownStatusChecks,
-        }
-      : {
-          ...tracking,
-          state: "PENDING",
-          error: undefined,
-          unknownStatusChecks,
-        };
+    const next: LocalSweepTracking =
+      unknownStatusChecks >= MAX_UNKNOWN_STATUS_CHECKS
+        ? {
+            ...tracking,
+            state: "FAILED",
+            error: `local liquidity sweep transaction ${tracking.txHash} stayed unknown for ${unknownStatusChecks} consecutive status checks`,
+            unknownStatusChecks,
+          }
+        : {
+            ...tracking,
+            state: "PENDING",
+            error: undefined,
+            unknownStatusChecks,
+          };
     localSweepRequests.set(args.requestId, next);
     return next;
   }
@@ -231,10 +232,7 @@ async function getLocalChainLiquidityStatus(args: GetRebalanceStatusArgs): Promi
   return toStatusResult(tracking);
 }
 
-export async function ensureChainLiquidity(
-  endpoint: FiberRpcEndpoint,
-  args: EnsureChainLiquidityArgs,
-) {
+export async function ensureChainLiquidity(endpoint: FiberRpcEndpoint, args: EnsureChainLiquidityArgs) {
   const tracked = await getOrRefreshLocalSweepTracking({ requestId: args.requestId });
   if (tracked) {
     return toEnsureResult(tracked, false);
@@ -260,10 +258,7 @@ export async function ensureChainLiquidity(
   }
 }
 
-export async function getRebalanceStatus(
-  endpoint: FiberRpcEndpoint,
-  args: GetRebalanceStatusArgs,
-) {
+export async function getRebalanceStatus(endpoint: FiberRpcEndpoint, args: GetRebalanceStatusArgs) {
   const localStatus = await getLocalChainLiquidityStatus(args);
   if (localStatus) {
     return localStatus;

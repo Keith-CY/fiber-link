@@ -1,7 +1,7 @@
-import { describe, expect, it } from "vitest";
 import Fastify from "fastify";
-import { registerRpc } from "./rpc";
+import { describe, expect, it } from "vitest";
 import { isMetricsRequestAuthorized, normalizeMethodLabel, parseMetricsToken } from "./metrics";
+import { registerRpc } from "./rpc";
 
 describe("normalizeMethodLabel", () => {
   it("passes through known methods", () => {

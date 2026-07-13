@@ -72,11 +72,9 @@ export function resolveHotWalletLockScript(network: CkbNetwork): HotWalletLockSc
   const cfg = resolveNetworkConfig(network);
   config.initializeConfig(cfg);
   const privateKey = resolveWithdrawalPrivateKey();
-  const address = helpers.encodeToConfigAddress(
-    hd.key.privateKeyToBlake160(privateKey),
-    "SECP256K1_BLAKE160",
-    { config: cfg },
-  );
+  const address = helpers.encodeToConfigAddress(hd.key.privateKeyToBlake160(privateKey), "SECP256K1_BLAKE160", {
+    config: cfg,
+  });
   const lock = helpers.parseAddress(address, { config: cfg });
   return {
     codeHash: lock.codeHash,

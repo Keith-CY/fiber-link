@@ -1,20 +1,20 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
-import Fastify from "fastify";
+import { ServerResponse } from "node:http";
 import {
   TipIntentNotFoundError,
   createInMemoryLedgerRepo,
   createInMemoryLiquidityRequestRepo,
   createInMemoryWithdrawalRepo,
 } from "@fiber-link/db";
-import { ServerResponse } from "node:http";
-import { buildServer } from "./server";
+import Fastify from "fastify";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { verifyHmac } from "./auth/hmac";
+import * as dashboardMethods from "./methods/dashboard";
+import * as tipMethods from "./methods/tip";
+import * as withdrawalMethods from "./methods/withdrawal";
+import { InMemoryRateLimitStore } from "./rate-limit";
 import { createInMemoryAppRepo } from "./repositories/app-repo";
 import { registerRpc } from "./rpc";
-import { InMemoryRateLimitStore } from "./rate-limit";
-import * as tipMethods from "./methods/tip";
-import * as dashboardMethods from "./methods/dashboard";
-import * as withdrawalMethods from "./methods/withdrawal";
+import { buildServer } from "./server";
 
 declare const Bun: unknown;
 
@@ -390,7 +390,10 @@ describe("json-rpc", () => {
 
       expect(res.statusCode).toBe(200);
       expect(res.json()).toEqual({ jsonrpc: "2.0", id: "s1", result: { state: "UNPAID" } });
-      expect(tipStatusSpy).toHaveBeenCalledWith({ invoice: "inv-1" }, expect.objectContaining({ log: expect.anything() }));
+      expect(tipStatusSpy).toHaveBeenCalledWith(
+        { invoice: "inv-1" },
+        expect.objectContaining({ log: expect.anything() }),
+      );
     } finally {
       tipStatusSpy.mockRestore();
     }
@@ -425,7 +428,10 @@ describe("json-rpc", () => {
 
       expect(res.statusCode).toBe(200);
       expect(res.json()).toEqual({ jsonrpc: "2.0", id: "g1", result: { state: "UNPAID" } });
-      expect(tipStatusSpy).toHaveBeenCalledWith({ invoice: "inv-1" }, expect.objectContaining({ log: expect.anything() }));
+      expect(tipStatusSpy).toHaveBeenCalledWith(
+        { invoice: "inv-1" },
+        expect.objectContaining({ log: expect.anything() }),
+      );
     } finally {
       tipStatusSpy.mockRestore();
     }
@@ -1121,7 +1127,10 @@ describe("json-rpc", () => {
         id: "get-1",
         result: { state: "UNPAID" },
       });
-      expect(tipStatusSpy).toHaveBeenCalledWith({ invoice: "inv-happy-1" }, expect.objectContaining({ log: expect.anything() }));
+      expect(tipStatusSpy).toHaveBeenCalledWith(
+        { invoice: "inv-happy-1" },
+        expect.objectContaining({ log: expect.anything() }),
+      );
     } finally {
       tipCreateSpy.mockRestore();
       tipStatusSpy.mockRestore();
@@ -1296,5 +1305,4 @@ describe("json-rpc", () => {
       }
     }
   });
-
 });

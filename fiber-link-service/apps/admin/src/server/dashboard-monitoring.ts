@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import { resolve } from "node:path";
+import { promisify } from "node:util";
 import type { DashboardMonitoringSummary } from "../dashboard/dashboard-page-model";
 import { resolveAdminRepoRoot } from "./dashboard-rate-limit";
 
@@ -40,10 +40,12 @@ export function buildDashboardMonitoringSummary(raw: Record<string, any>, rawJso
   };
 }
 
-export async function loadDashboardMonitoringSummary(input: {
-  runner?: MonitoringCommandRunner;
-  repoRoot?: string;
-} = {}): Promise<DashboardMonitoringSummary> {
+export async function loadDashboardMonitoringSummary(
+  input: {
+    runner?: MonitoringCommandRunner;
+    repoRoot?: string;
+  } = {},
+): Promise<DashboardMonitoringSummary> {
   const repoRoot = input.repoRoot ?? resolveAdminRepoRoot();
   const runner = input.runner ?? defaultRunner;
   const scriptPath = resolve(repoRoot, "deploy/compose/compose-ops-summary.sh");

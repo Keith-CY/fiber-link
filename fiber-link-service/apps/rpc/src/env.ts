@@ -31,9 +31,7 @@ export function validateRpcEnv(env: NodeJS.ProcessEnv = process.env): RpcEnvRepo
   }
 
   if (isBlank(env.FIBER_LINK_HMAC_SECRET)) {
-    warnings.push(
-      "FIBER_LINK_HMAC_SECRET is unset: only per-app secrets from the database can authenticate requests",
-    );
+    warnings.push("FIBER_LINK_HMAC_SECRET is unset: only per-app secrets from the database can authenticate requests");
   }
 
   if (isBlank(env.FIBER_LINK_NONCE_REDIS_URL) && isBlank(env.REDIS_URL)) {

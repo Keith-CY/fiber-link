@@ -1,12 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, eq } from "drizzle-orm";
 import {
-  notificationChannels,
-  notificationRules,
   type DbClient,
   type NotificationChannelKind,
   type NotificationEvent,
+  notificationChannels,
+  notificationRules,
 } from "@fiber-link/db";
+import { and, asc, eq } from "drizzle-orm";
 
 export type CreateNotificationChannelInput = {
   appId: string;

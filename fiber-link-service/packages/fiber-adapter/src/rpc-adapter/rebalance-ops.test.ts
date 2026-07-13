@@ -57,8 +57,7 @@ describe("rebalance-ops local CKB liquidity fallback", () => {
   it("reports local direct rebalance support when source and hot-wallet keys are configured", async () => {
     process.env.FIBER_LIQUIDITY_CKB_SOURCE_PRIVATE_KEY =
       "0x2222222222222222222222222222222222222222222222222222222222222222";
-    process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY =
-      "0x1111111111111111111111111111111111111111111111111111111111111111";
+    process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY = "0x1111111111111111111111111111111111111111111111111111111111111111";
 
     const mod = await import("./rebalance-ops");
 
@@ -94,8 +93,7 @@ describe("rebalance-ops local CKB liquidity fallback", () => {
   it("falls back to a local sweep into the hot wallet when rebalance rpc is unsupported", async () => {
     process.env.FIBER_LIQUIDITY_CKB_SOURCE_PRIVATE_KEY =
       "0x2222222222222222222222222222222222222222222222222222222222222222";
-    process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY =
-      "0x1111111111111111111111111111111111111111111111111111111111111111";
+    process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY = "0x1111111111111111111111111111111111111111111111111111111111111111";
 
     rpcCallMock.mockRejectedValueOnce({ code: -32601, message: "Method not found" });
     resolveHotWalletAddressMock.mockReturnValue("ckt1qhotwallet");
@@ -130,8 +128,7 @@ describe("rebalance-ops local CKB liquidity fallback", () => {
   it("does not fall back to a local sweep for invalid amount errors", async () => {
     process.env.FIBER_LIQUIDITY_CKB_SOURCE_PRIVATE_KEY =
       "0x2222222222222222222222222222222222222222222222222222222222222222";
-    process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY =
-      "0x1111111111111111111111111111111111111111111111111111111111111111";
+    process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY = "0x1111111111111111111111111111111111111111111111111111111111111111";
 
     rpcCallMock.mockRejectedValueOnce(new Error("invalid amount: below channel minimum"));
 
@@ -152,8 +149,7 @@ describe("rebalance-ops local CKB liquidity fallback", () => {
   it("does not hide unauthorized rebalance status errors as unsupported rpc", async () => {
     process.env.FIBER_LIQUIDITY_CKB_SOURCE_PRIVATE_KEY =
       "0x2222222222222222222222222222222222222222222222222222222222222222";
-    process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY =
-      "0x1111111111111111111111111111111111111111111111111111111111111111";
+    process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY = "0x1111111111111111111111111111111111111111111111111111111111111111";
 
     rpcCallMock.mockRejectedValueOnce(new Error("unauthorized"));
 
@@ -165,8 +161,7 @@ describe("rebalance-ops local CKB liquidity fallback", () => {
   it("reuses an in-flight local sweep instead of submitting a duplicate transfer", async () => {
     process.env.FIBER_LIQUIDITY_CKB_SOURCE_PRIVATE_KEY =
       "0x2222222222222222222222222222222222222222222222222222222222222222";
-    process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY =
-      "0x1111111111111111111111111111111111111111111111111111111111111111";
+    process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY = "0x1111111111111111111111111111111111111111111111111111111111111111";
 
     rpcCallMock.mockRejectedValueOnce({ code: -32601, message: "Method not found" });
     resolveHotWalletAddressMock.mockReturnValue("ckt1qhotwallet");
@@ -213,8 +208,7 @@ describe("rebalance-ops local CKB liquidity fallback", () => {
   it("tracks local sweep transaction status by request id", async () => {
     process.env.FIBER_LIQUIDITY_CKB_SOURCE_PRIVATE_KEY =
       "0x2222222222222222222222222222222222222222222222222222222222222222";
-    process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY =
-      "0x1111111111111111111111111111111111111111111111111111111111111111";
+    process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY = "0x1111111111111111111111111111111111111111111111111111111111111111";
 
     rpcCallMock.mockRejectedValueOnce({ code: -32601, message: "Method not found" });
     resolveHotWalletAddressMock.mockReturnValue("ckt1qhotwallet");
@@ -241,8 +235,7 @@ describe("rebalance-ops local CKB liquidity fallback", () => {
   it("can resume local sweep status tracking from persisted tx metadata", async () => {
     process.env.FIBER_LIQUIDITY_CKB_SOURCE_PRIVATE_KEY =
       "0x2222222222222222222222222222222222222222222222222222222222222222";
-    process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY =
-      "0x1111111111111111111111111111111111111111111111111111111111111111";
+    process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY = "0x1111111111111111111111111111111111111111111111111111111111111111";
 
     getTransactionStatusMock.mockResolvedValueOnce("COMMITTED");
 
@@ -264,8 +257,7 @@ describe("rebalance-ops local CKB liquidity fallback", () => {
   it("fails a local sweep after repeated unknown transaction status checks", async () => {
     process.env.FIBER_LIQUIDITY_CKB_SOURCE_PRIVATE_KEY =
       "0x2222222222222222222222222222222222222222222222222222222222222222";
-    process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY =
-      "0x1111111111111111111111111111111111111111111111111111111111111111";
+    process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY = "0x1111111111111111111111111111111111111111111111111111111111111111";
 
     rpcCallMock.mockRejectedValueOnce({ code: -32601, message: "Method not found" });
     resolveHotWalletAddressMock.mockReturnValue("ckt1qhotwallet");
@@ -300,8 +292,7 @@ describe("rebalance-ops local CKB liquidity fallback", () => {
   it("keeps terminal local sweep status visible for repeated polls in the same process", async () => {
     process.env.FIBER_LIQUIDITY_CKB_SOURCE_PRIVATE_KEY =
       "0x2222222222222222222222222222222222222222222222222222222222222222";
-    process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY =
-      "0x1111111111111111111111111111111111111111111111111111111111111111";
+    process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY = "0x1111111111111111111111111111111111111111111111111111111111111111";
 
     rpcCallMock.mockRejectedValueOnce({ code: -32601, message: "Method not found" });
     resolveHotWalletAddressMock.mockReturnValue("ckt1qhotwallet");
@@ -329,8 +320,7 @@ describe("rebalance-ops local CKB liquidity fallback", () => {
   it("recognizes a FiberRpcError instance with code -32601 as unsupported", async () => {
     process.env.FIBER_LIQUIDITY_CKB_SOURCE_PRIVATE_KEY =
       "0x2222222222222222222222222222222222222222222222222222222222222222";
-    process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY =
-      "0x1111111111111111111111111111111111111111111111111111111111111111";
+    process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY = "0x1111111111111111111111111111111111111111111111111111111111111111";
 
     rpcCallMock.mockRejectedValueOnce(new MockFiberRpcError(-32601, "rpc method missing"));
     resolveHotWalletAddressMock.mockReturnValue("ckt1qhotwallet");
@@ -351,8 +341,7 @@ describe("rebalance-ops local CKB liquidity fallback", () => {
   it("recognizes an unsupported rpc from a message-only error object", async () => {
     process.env.FIBER_LIQUIDITY_CKB_SOURCE_PRIVATE_KEY =
       "0x2222222222222222222222222222222222222222222222222222222222222222";
-    process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY =
-      "0x1111111111111111111111111111111111111111111111111111111111111111";
+    process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY = "0x1111111111111111111111111111111111111111111111111111111111111111";
 
     // Plain object without a `code`, exercising the message-extraction branch.
     rpcCallMock.mockRejectedValueOnce({ message: "unknown method: rebalance_to_ckb_chain" });
@@ -419,8 +408,7 @@ describe("rebalance-ops local CKB liquidity fallback", () => {
   it("rethrows a non-Error, non-object rpc rejection unchanged", async () => {
     process.env.FIBER_LIQUIDITY_CKB_SOURCE_PRIVATE_KEY =
       "0x2222222222222222222222222222222222222222222222222222222222222222";
-    process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY =
-      "0x1111111111111111111111111111111111111111111111111111111111111111";
+    process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY = "0x1111111111111111111111111111111111111111111111111111111111111111";
 
     // A primitive rejection exercises the String(error) normalization fallback.
     rpcCallMock.mockRejectedValueOnce("boom");
@@ -466,22 +454,20 @@ describe("rebalance-ops local CKB liquidity fallback", () => {
   it("reports IDLE from get_rebalance_status when the rpc is unsupported and local sweep is available", async () => {
     process.env.FIBER_LIQUIDITY_CKB_SOURCE_PRIVATE_KEY =
       "0x2222222222222222222222222222222222222222222222222222222222222222";
-    process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY =
-      "0x1111111111111111111111111111111111111111111111111111111111111111";
+    process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY = "0x1111111111111111111111111111111111111111111111111111111111111111";
 
     rpcCallMock.mockRejectedValueOnce({ code: -32601, message: "Method not found" });
 
     const { getRebalanceStatus } = await import("./rebalance-ops");
-    await expect(
-      getRebalanceStatus("http://fnn:8227", { requestId: "liq-no-local-tracking" }),
-    ).resolves.toEqual({ state: "IDLE" });
+    await expect(getRebalanceStatus("http://fnn:8227", { requestId: "liq-no-local-tracking" })).resolves.toEqual({
+      state: "IDLE",
+    });
   });
 
   it("marks a local sweep failed when its transaction is rejected on chain", async () => {
     process.env.FIBER_LIQUIDITY_CKB_SOURCE_PRIVATE_KEY =
       "0x2222222222222222222222222222222222222222222222222222222222222222";
-    process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY =
-      "0x1111111111111111111111111111111111111111111111111111111111111111";
+    process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY = "0x1111111111111111111111111111111111111111111111111111111111111111";
 
     rpcCallMock.mockRejectedValueOnce({ code: -32601, message: "Method not found" });
     resolveHotWalletAddressMock.mockReturnValue("ckt1qhotwallet");

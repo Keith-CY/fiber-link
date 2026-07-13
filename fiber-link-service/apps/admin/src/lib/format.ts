@@ -7,7 +7,10 @@ export function formatDateTime(value: string | null | undefined): string {
   if (Number.isNaN(date.getTime())) {
     return value;
   }
-  return date.toISOString().replace("T", " ").replace(/\.\d+Z$/, "Z");
+  return date
+    .toISOString()
+    .replace("T", " ")
+    .replace(/\.\d+Z$/, "Z");
 }
 
 /** Truncate long identifiers / hashes for table cells while keeping a title. */

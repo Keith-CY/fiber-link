@@ -1,4 +1,4 @@
-import { compareDecimalStrings, type Asset, type InvoiceState } from "@fiber-link/db";
+import { type Asset, type InvoiceState, compareDecimalStrings } from "@fiber-link/db";
 
 const SETTLEMENT_CREDIT_PREFIX = "settlement:tip_intent:";
 

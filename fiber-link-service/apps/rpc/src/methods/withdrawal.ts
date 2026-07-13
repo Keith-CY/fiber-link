@@ -1,39 +1,39 @@
 import {
+  type CreateWithdrawalInput,
+  type LedgerRepo,
+  type LiquidityRequestRepo,
+  type WithdrawalPolicyRepo,
+  type WithdrawalRepo,
   compareDecimalStrings,
   createDbClient,
   createDbLedgerRepo,
   createDbLiquidityRequestRepo,
   createDbWithdrawalPolicyRepo,
   createDbWithdrawalRepo,
-  type CreateWithdrawalInput,
-  type LedgerRepo,
-  type LiquidityRequestRepo,
-  type WithdrawalPolicyRepo,
-  type WithdrawalRepo,
 } from "@fiber-link/db";
 import {
+  type HotWalletInventoryProvider,
+  type WithdrawalDestination,
   createDefaultHotWalletInventoryProvider,
   hasWithdrawalPrivateKey,
-  type HotWalletInventoryProvider,
   resolveCkbNetworkConfig,
-  type WithdrawalDestination,
 } from "@fiber-link/fiber-adapter";
 import { MissingLiquidityRequestRepoError, decideWithdrawalRequestLiquidity } from "./liquidity";
-import {
-  assertOnChainWithdrawalReady,
-  assertWithdrawalPolicy,
-  defaultPolicyForApp,
-  resolveMinimumRequiredAmount,
-  usageFallback,
-  WithdrawalPolicyViolationError,
-  type RequestWithdrawalInput,
-} from "./withdrawal-policy";
 import {
   assertSufficientCreatorBalance,
   computeReceiveAmount,
   computeSpendableBalance,
   estimateNetworkFee,
 } from "./withdrawal-balance";
+import {
+  type RequestWithdrawalInput,
+  WithdrawalPolicyViolationError,
+  assertOnChainWithdrawalReady,
+  assertWithdrawalPolicy,
+  defaultPolicyForApp,
+  resolveMinimumRequiredAmount,
+  usageFallback,
+} from "./withdrawal-policy";
 
 export { WithdrawalPolicyViolationError, type RequestWithdrawalInput } from "./withdrawal-policy";
 
@@ -109,7 +109,10 @@ async function withHotWalletReservationLock<T>(key: string, work: () => Promise<
   const current = new Promise<void>((resolve) => {
     releaseCurrent = resolve;
   });
-  const tail = previous.then(() => current, () => current);
+  const tail = previous.then(
+    () => current,
+    () => current,
+  );
   hotWalletReservationLocks.set(key, tail);
 
   await previous;
@@ -123,7 +126,9 @@ async function withHotWalletReservationLock<T>(key: string, work: () => Promise<
   }
 }
 
-function mapDestinationForStorage(destination: WithdrawalDestination): Pick<CreateWithdrawalInput, "toAddress" | "destinationKind"> {
+function mapDestinationForStorage(
+  destination: WithdrawalDestination,
+): Pick<CreateWithdrawalInput, "toAddress" | "destinationKind"> {
   if (destination.kind === "CKB_ADDRESS") {
     return {
       toAddress: destination.address,
@@ -258,7 +263,7 @@ export async function requestWithdrawal(input: RequestWithdrawalInput, options: 
       : options.hotWalletInventoryProvider;
   assertOnChainWithdrawalReady(input, options.hotWalletInventoryProvider === undefined);
   const runCreate = async () => {
-    let liquidityDecision;
+    let liquidityDecision: Awaited<ReturnType<typeof decideWithdrawalRequestLiquidity>>;
     try {
       liquidityDecision = await decideWithdrawalRequestLiquidity(input, {
         repo,
@@ -282,18 +287,18 @@ export async function requestWithdrawal(input: RequestWithdrawalInput, options: 
     }
 
     if (liquidityDecision.state === "LIQUIDITY_PENDING") {
-      const record = await repo.createLiquidityPendingWithBalanceCheck({
-        ...createInput,
-        liquidityRequestId: liquidityDecision.liquidityRequestId,
-        liquidityPendingReason: liquidityDecision.liquidityPendingReason,
-      }, { ledgerRepo });
+      const record = await repo.createLiquidityPendingWithBalanceCheck(
+        {
+          ...createInput,
+          liquidityRequestId: liquidityDecision.liquidityRequestId,
+          liquidityPendingReason: liquidityDecision.liquidityPendingReason,
+        },
+        { ledgerRepo },
+      );
       return { id: record.id, state: record.state };
     }
 
-    const record = await repo.createWithBalanceCheck(
-      createInput,
-      { ledgerRepo },
-    );
+    const record = await repo.createWithBalanceCheck(createInput, { ledgerRepo });
     return { id: record.id, state: record.state };
   };
 

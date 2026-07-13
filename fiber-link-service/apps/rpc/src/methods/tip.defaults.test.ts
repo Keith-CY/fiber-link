@@ -46,9 +46,7 @@ async function setupTipModule(options: SetupOptions = {}) {
     }
     return eventRepo as never;
   });
-  const createAdapterProvider = vi
-    .spyOn(adapterPkg, "createAdapterProvider")
-    .mockReturnValue(adapter as never);
+  const createAdapterProvider = vi.spyOn(adapterPkg, "createAdapterProvider").mockReturnValue(adapter as never);
 
   const tipModule = await import("./tip");
 
@@ -179,14 +177,11 @@ describe("tip defaults", () => {
     };
 
     await expect(handleTipCreate(request)).rejects.toThrow("tip repo init failed");
-    await expect(handleTipCreate(request)).rejects.toThrow(
-      "TipIntentRepo is not available (DATABASE_URL missing).",
-    );
+    await expect(handleTipCreate(request)).rejects.toThrow("TipIntentRepo is not available (DATABASE_URL missing).");
     expect(
       consoleError.mock.calls.some(
         (call) =>
-          call[0] === "Failed to initialize default TipIntentRepo." &&
-          String(call[1]).includes("tip repo init failed"),
+          call[0] === "Failed to initialize default TipIntentRepo." && String(call[1]).includes("tip repo init failed"),
       ),
     ).toBe(true);
   });

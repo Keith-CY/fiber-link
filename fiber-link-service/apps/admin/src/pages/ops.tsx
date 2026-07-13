@@ -1,13 +1,13 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { trpc } from "../utils/trpc";
 import { PageHeader, QueryBoundary, RoleGate } from "../components/page";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
+import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
-import { Badge } from "../components/ui/badge";
 import { formatDateTime } from "../lib/format";
+import { trpc } from "../utils/trpc";
 
 export default function OpsPage() {
   const session = trpc.session.me.useQuery();
@@ -108,7 +108,9 @@ function RateLimitCard() {
 function BackupsCard() {
   const utils = trpc.useUtils();
   const bundles = trpc.ops.listBackups.useQuery();
-  const [restorePlan, setRestorePlan] = useState<{ backupId: string; command: string; warnings: string[] } | null>(null);
+  const [restorePlan, setRestorePlan] = useState<{ backupId: string; command: string; warnings: string[] } | null>(
+    null,
+  );
 
   const capture = trpc.ops.captureBackup.useMutation({
     onSuccess: async (result) => {
@@ -130,7 +132,12 @@ function BackupsCard() {
         <CardDescription>Capture backup bundles and prepare a (non-destructive) restore plan.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <Button type="button" onClick={() => capture.mutate()} disabled={capture.isPending} data-testid="capture-backup">
+        <Button
+          type="button"
+          onClick={() => capture.mutate()}
+          disabled={capture.isPending}
+          data-testid="capture-backup"
+        >
           {capture.isPending ? "Capturing…" : "Capture backup"}
         </Button>
         {capture.data ? (
@@ -147,7 +154,10 @@ function BackupsCard() {
         >
           <ul className="space-y-2">
             {(bundles.data ?? []).map((bundle) => (
-              <li key={bundle.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2">
+              <li
+                key={bundle.id}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2"
+              >
                 <div>
                   <div className="text-sm font-medium">{bundle.id}</div>
                   <div className="text-xs text-muted-foreground">
@@ -155,7 +165,9 @@ function BackupsCard() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Badge variant={bundle.overallStatus === "PASS" ? "success" : "warning"}>{bundle.overallStatus}</Badge>
+                  <Badge variant={bundle.overallStatus === "PASS" ? "success" : "warning"}>
+                    {bundle.overallStatus}
+                  </Badge>
                   <Button
                     type="button"
                     variant="outline"

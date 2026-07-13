@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createFixtureAdminServices, type DashboardFixture } from "./fixture-services";
+import { type DashboardFixture, createFixtureAdminServices } from "./fixture-services";
 import type { AdminScope } from "./types";
 
 const SUPER: AdminScope = { role: "SUPER_ADMIN", adminUserId: "ops-1" };
@@ -159,7 +159,9 @@ describe("fixture admin services", () => {
   });
 
   it("falls back to default monitoring + rate-limit config when omitted", async () => {
-    const services = createFixtureAdminServices(buildFixture({ monitoringSummary: undefined, rateLimitConfig: undefined }));
+    const services = createFixtureAdminServices(
+      buildFixture({ monitoringSummary: undefined, rateLimitConfig: undefined }),
+    );
     expect((await services.loadMonitoringSummary()).status).toBe("ok");
     expect((await services.loadRateLimitConfig()).sourceLabel).toBe("fixture");
   });

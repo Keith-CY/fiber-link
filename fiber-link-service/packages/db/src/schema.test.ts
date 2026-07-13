@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
 import { getTableConfig } from "drizzle-orm/pg-core";
+import { describe, expect, it } from "vitest";
 import {
   assetEnum,
   invoiceStateEnum,
@@ -136,9 +136,7 @@ describe("schema", () => {
 
   it("defines a partial unique index for one open liquidity request per key", () => {
     const config = getTableConfig(liquidityRequests);
-    const openUnique = config.indexes.find(
-      (index) => index.config.name === "liquidity_requests_open_key_unique",
-    );
+    const openUnique = config.indexes.find((index) => index.config.name === "liquidity_requests_open_key_unique");
 
     expect(openUnique).toBeDefined();
     expect(openUnique?.config.unique).toBe(true);
