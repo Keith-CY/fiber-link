@@ -26,7 +26,7 @@
     "build": "tsup",
     "test": "vitest",
     "typecheck": "tsc --noEmit",
-    "prepublishOnly": "tsup"
+    "prepack": "tsc --noEmit && tsup"
   },
   "publishConfig": {
     "access": "public"
