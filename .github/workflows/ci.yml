@@ -83,6 +83,9 @@ jobs:
       - name: Test client SDK
         working-directory: fiber-link-service/packages/client
         run: bun run test -- --run --silent
+      - name: Build client SDK
+        working-directory: fiber-link-service/packages/client
+        run: bun run build
 
 
   coverage-comment:
