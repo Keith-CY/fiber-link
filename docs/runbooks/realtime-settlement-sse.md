@@ -102,5 +102,7 @@ the workflow when phases 1–4 pass and only the withdrawal gate fails.
 Requests over the cap receive `429 Too many concurrent streams`; clients fall
 back to bounded polling. `RPC_STREAM_CORS_ORIGIN` (default `*`) sets the
 `Access-Control-Allow-Origin` response header — set it to the forum origin when
-browser EventSource clients connect directly.
+browser EventSource clients connect directly. `RPC_STREAM_HEARTBEAT_INTERVAL_MS`
+(default 15000) controls how often the server sends an SSE comment line to keep
+the connection alive through proxies that close idle connections; set 0 to disable.
 

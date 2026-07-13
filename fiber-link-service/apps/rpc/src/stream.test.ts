@@ -248,4 +248,35 @@ describe("GET /rpc/stream", () => {
     expect(res.statusCode).toBe(200);
     expect(res.headers["access-control-allow-origin"]).toBe("https://forum.example.com");
   });
+
+  it("emits heartbeat comment lines while the stream is open", async () => {
+    const subscriber = makeMockSubscriber();
+    const app = Fastify({ logger: false });
+    registerStreamRoute(app, {
+      getInvoice: async () => ownedInvoice("UNPAID"),
+      createSubscriber: () => subscriber as unknown as InstanceType<typeof import("ioredis").default>,
+      timeoutMs: 80,
+      heartbeatIntervalMs: 10,
+    });
+
+    const res = await app.inject({ method: "GET", url: "/rpc/stream?invoice=inv-hb", headers: APP_HEADERS });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toContain(": heartbeat");
+    expect(res.body).toContain('"status":"TIMEOUT"');
+  });
+
+  it("omits heartbeats when the interval is disabled (0)", async () => {
+    const subscriber = makeMockSubscriber();
+    const app = Fastify({ logger: false });
+    registerStreamRoute(app, {
+      getInvoice: async () => ownedInvoice("UNPAID"),
+      createSubscriber: () => subscriber as unknown as InstanceType<typeof import("ioredis").default>,
+      timeoutMs: 40,
+      heartbeatIntervalMs: 0,
+    });
+
+    const res = await app.inject({ method: "GET", url: "/rpc/stream?invoice=inv-nohb", headers: APP_HEADERS });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).not.toContain(": heartbeat");
+  });
 });
