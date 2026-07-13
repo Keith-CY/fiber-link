@@ -42,6 +42,10 @@ describe("isMetricsRequestAuthorized", () => {
     expect(isMetricsRequestAuthorized("Bearer wrong", "s3cret")).toBe(false);
   });
 
+  it("rejects oversized authorization headers before matching", () => {
+    expect(isMetricsRequestAuthorized(`Bearer ${"a".repeat(600)}`, "s3cret")).toBe(false);
+  });
+
   it("accepts a matching bearer token with a case-insensitive scheme", () => {
     expect(isMetricsRequestAuthorized("Bearer s3cret", "s3cret")).toBe(true);
     expect(isMetricsRequestAuthorized("bearer s3cret", "s3cret")).toBe(true);

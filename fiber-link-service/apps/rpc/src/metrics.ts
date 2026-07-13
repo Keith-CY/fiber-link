@@ -54,12 +54,18 @@ function timingSafeEquals(a: string, b: string): boolean {
   return crypto.timingSafeEqual(left, right);
 }
 
+// Valid bearer tokens are short; reject oversized headers before the regex and
+// hashing work so a hostile client cannot burn CPU with megabyte credentials.
+const MAX_AUTHORIZATION_HEADER_LENGTH = 500;
+
 export function isMetricsRequestAuthorized(
   authorizationHeader: string | undefined,
   token: string | null,
 ): boolean {
   if (!token) return true;
-  if (typeof authorizationHeader !== "string") return false;
+  if (typeof authorizationHeader !== "string" || authorizationHeader.length > MAX_AUTHORIZATION_HEADER_LENGTH) {
+    return false;
+  }
   const match = /^Bearer\s+(.+)$/i.exec(authorizationHeader.trim());
   if (!match) return false;
   return timingSafeEquals(match[1], token);
