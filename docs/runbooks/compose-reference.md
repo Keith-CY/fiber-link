@@ -78,6 +78,10 @@ Edit `.env` minimally:
 - `FIBER_RPC_URL` is the compose-network endpoint used by `rpc` and `worker`; default is `http://fnn:8227`.
 - `FIBER_LINK_RATE_LIMIT_REDIS_URL` defaults to a dedicated Redis DB (`redis://redis:6379/1`) so rate limiting stays shared across RPC instances instead of falling back to in-process memory.
 - Worker cursor persistence uses `worker-data` volume mounted at `/var/lib/fiber-link`.
+- The service containers (`rpc`, `worker`, `migrate`) run as the non-root `node` user (uid/gid 1000). A `worker-data` volume created by an image from before this change is owned by root; if the worker needs the legacy file cursor (`WORKER_SETTLEMENT_CURSOR_STORE=file`), run a one-time
+  `docker compose run --rm --user root worker chown -R node:node /var/lib/fiber-link`
+  after upgrading. Fresh volumes inherit `node` ownership automatically. The default `db` cursor store is unaffected.
+- Likewise, any file mounted into the containers (e.g. a withdrawal key supplied via `FIBER_WITHDRAWAL_CKB_PRIVATE_KEY_FILE`) must be readable by uid 1000 — a root-owned `600` host file will fail with `EACCES` now that the services no longer run as root.
 - Compose startup order is `postgres/redis/fnn` -> `rpc` -> `worker` (current dependency wiring in `docker-compose.yml`).
 
 Start:
