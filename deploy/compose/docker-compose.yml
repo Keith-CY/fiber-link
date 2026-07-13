@@ -145,6 +145,7 @@ services:
       FIBER_CHANNEL_ROTATION_BOOTSTRAP_RESERVE: ${FIBER_CHANNEL_ROTATION_BOOTSTRAP_RESERVE:-61}
       FIBER_CHANNEL_ROTATION_MIN_RECOVERABLE_AMOUNT: ${FIBER_CHANNEL_ROTATION_MIN_RECOVERABLE_AMOUNT:-61}
       FIBER_CHANNEL_ROTATION_MAX_CONCURRENT: ${FIBER_CHANNEL_ROTATION_MAX_CONCURRENT:-1}
+      RPC_SHUTDOWN_TIMEOUT_MS: ${RPC_SHUTDOWN_TIMEOUT_MS:-10000}
     # To supply the withdrawal key as a file instead of an env var, set
     # FIBER_WITHDRAWAL_CKB_PRIVATE_KEY_FILE=/run/secrets/fiber_withdrawal_key and
     # attach it as a native Docker secret. Compose mounts the secret read-only at
