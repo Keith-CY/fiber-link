@@ -26,6 +26,12 @@ describe("rpc schema document", () => {
     }
   });
 
+  it("contains no uninhabited { not: {} } alternatives", () => {
+    // zod-to-json-schema artifacts from optional/effect wrappers; they match
+    // nothing and break automated client generators, so the builder strips them.
+    expect(JSON.stringify(buildRpcSchemaDocument())).not.toContain('{"not":{}}');
+  });
+
   it("marks tip.get as an alias of tip.status", () => {
     const doc = buildRpcSchemaDocument();
     expect((doc.methods["tip.get"] as { aliasOf?: string }).aliasOf).toBe("tip.status");

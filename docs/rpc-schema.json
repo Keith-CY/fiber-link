@@ -86,15 +86,8 @@
               "message": {
                 "anyOf": [
                   {
-                    "anyOf": [
-                      {
-                        "not": {}
-                      },
-                      {
-                        "type": "string",
-                        "maxLength": 280
-                      }
-                    ]
+                    "type": "string",
+                    "maxLength": 280
                   },
                   {
                     "type": "null"
@@ -1489,16 +1482,9 @@
               "secret": {
                 "anyOf": [
                   {
-                    "anyOf": [
-                      {
-                        "not": {}
-                      },
-                      {
-                        "type": "string",
-                        "minLength": 8,
-                        "maxLength": 256
-                      }
-                    ]
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 256
                   },
                   {
                     "type": "null"
@@ -1581,16 +1567,9 @@
         "$ref": "#/definitions/notification.channel.list.params",
         "definitions": {
           "notification.channel.list.params": {
-            "anyOf": [
-              {
-                "not": {}
-              },
-              {
-                "type": "object",
-                "properties": {},
-                "additionalProperties": false
-              }
-            ]
+            "type": "object",
+            "properties": {},
+            "additionalProperties": false
           }
         },
         "$schema": "http://json-schema.org/draft-07/schema#"

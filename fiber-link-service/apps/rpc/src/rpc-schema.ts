@@ -94,10 +94,47 @@ const METHOD_SCHEMAS: Record<string, MethodSchemaEntry> = {
   },
 };
 
+// zod-to-json-schema renders some optional/effect wrappers (e.g. `.trim()`)
+// as an `anyOf` containing `{ "not": {} }` — an uninhabited alternative that
+// matches nothing and confuses automated client generators.
+function isUninhabited(value: unknown): boolean {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const keys = Object.keys(value);
+  const not = (value as { not?: unknown }).not;
+  return keys.length === 1 && typeof not === "object" && not !== null && Object.keys(not).length === 0;
+}
+
+function cleanSchema(node: unknown): unknown {
+  if (Array.isArray(node)) {
+    return node.map(cleanSchema);
+  }
+  if (typeof node !== "object" || node === null) {
+    return node;
+  }
+  const cleaned: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(node)) {
+    cleaned[key] = cleanSchema(value);
+  }
+  if (Array.isArray(cleaned.anyOf)) {
+    const filtered = (cleaned.anyOf as unknown[]).filter((entry) => !isUninhabited(entry));
+    // Collapse a single surviving alternative only when anyOf is the node's
+    // sole key, so sibling annotations are never silently dropped.
+    if (filtered.length === 1 && Object.keys(cleaned).length === 1) {
+      return filtered[0];
+    }
+    if (filtered.length > 0) {
+      cleaned.anyOf = filtered;
+    }
+  }
+  return cleaned;
+}
+
 function toJsonSchema(schema: ZodTypeAny, name: string): unknown {
   // $refStrategy none inlines shared schemas so each method document is
   // self-contained for integrators.
-  return zodToJsonSchema(schema, { name, $refStrategy: "none" });
+  return cleanSchema(zodToJsonSchema(schema, { name, $refStrategy: "none" }));
 }
 
 /**
