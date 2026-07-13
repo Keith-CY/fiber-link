@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { Counter, Registry, collectDefaultMetrics } from "prom-client";
 
 // A dedicated registry (rather than the global default) keeps metrics isolated
@@ -32,6 +33,42 @@ const KNOWN_RPC_METHODS = new Set<string>([
 
 export function normalizeMethodLabel(method: unknown): string {
   return typeof method === "string" && KNOWN_RPC_METHODS.has(method) ? method : "unknown";
+}
+
+/**
+ * Optional bearer token protecting GET /metrics. When RPC_METRICS_TOKEN is
+ * unset or blank the endpoint stays open (backward compatible for deployments
+ * where the port is network-isolated); when set, scrapes must send
+ * `Authorization: Bearer <token>`.
+ */
+export function parseMetricsToken(env: NodeJS.ProcessEnv = process.env): string | null {
+  const raw = env.RPC_METRICS_TOKEN?.trim();
+  return raw ? raw : null;
+}
+
+// Hash both sides to fixed-length digests so the comparison cost does not
+// depend on either string's length (same pattern as the admin proxy token).
+function timingSafeEquals(a: string, b: string): boolean {
+  const left = crypto.createHash("sha256").update(a).digest();
+  const right = crypto.createHash("sha256").update(b).digest();
+  return crypto.timingSafeEqual(left, right);
+}
+
+// Valid bearer tokens are short; reject oversized headers before the regex and
+// hashing work so a hostile client cannot burn CPU with megabyte credentials.
+const MAX_AUTHORIZATION_HEADER_LENGTH = 500;
+
+export function isMetricsRequestAuthorized(
+  authorizationHeader: string | undefined,
+  token: string | null,
+): boolean {
+  if (!token) return true;
+  if (typeof authorizationHeader !== "string" || authorizationHeader.length > MAX_AUTHORIZATION_HEADER_LENGTH) {
+    return false;
+  }
+  const match = /^Bearer\s+(.+)$/i.exec(authorizationHeader.trim());
+  if (!match) return false;
+  return timingSafeEquals(match[1], token);
 }
 
 export const rpcRequestsTotal = new Counter({

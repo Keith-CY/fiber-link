@@ -42,7 +42,15 @@ import {
 import { type AppRepo, createDbAppRepo } from "./repositories/app-repo";
 import { rpcErrorResponse, rpcResultResponse } from "./rpc-error";
 import { loadSecretMap, resolveSecretForApp } from "./secret-map";
-import { ensureDefaultMetrics, hmacSecretSourceTotal, metricsRegistry, normalizeMethodLabel, rpcRequestsTotal } from "./metrics";
+import {
+  ensureDefaultMetrics,
+  hmacSecretSourceTotal,
+  isMetricsRequestAuthorized,
+  metricsRegistry,
+  normalizeMethodLabel,
+  parseMetricsToken,
+  rpcRequestsTotal,
+} from "./metrics";
 
 const NONCE_TTL_MS = 5 * 60 * 1000;
 const nonceStore = createNonceStore();
@@ -178,10 +186,13 @@ export function registerRpc(
     readinessProbe?: ReadinessProbeFn;
     rateLimitStore?: RateLimitStore;
     rateLimitConfig?: RpcRateLimitConfig;
+    /** Bearer token for GET /metrics; null disables the check. Defaults to RPC_METRICS_TOKEN. */
+    metricsToken?: string | null;
   } = {},
 ) {
   const rateLimitStore = options.rateLimitStore ?? createRateLimitStore();
   const rateLimitConfig = options.rateLimitConfig ?? parseRpcRateLimitConfig();
+  const metricsToken = options.metricsToken !== undefined ? options.metricsToken : parseMetricsToken();
 
   registerStreamRoute(app, {
     pollInvoiceStateFn: async (invoice: string) => {
@@ -200,7 +211,10 @@ export function registerRpc(
     return { status: "alive" as const };
   });
 
-  app.get("/metrics", async (_req, reply) => {
+  app.get("/metrics", async (req, reply) => {
+    if (!isMetricsRequestAuthorized(req.headers.authorization, metricsToken)) {
+      return reply.status(401).send({ error: "Unauthorized" });
+    }
     ensureDefaultMetrics();
     reply.header("Content-Type", metricsRegistry.contentType);
     return reply.send(await metricsRegistry.metrics());
