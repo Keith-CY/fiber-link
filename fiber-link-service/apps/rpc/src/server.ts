@@ -28,7 +28,9 @@ function parsePositiveInt(raw: string | undefined, fallback: number): number {
 /**
  * RPC_TRUST_PROXY accepts fastify's trustProxy shapes: "true"/"false" style
  * booleans, a bare integer hop count, or an address/CIDR list passed through
- * verbatim. Unset keeps the current behavior (proxies not trusted).
+ * verbatim — fastify itself splits comma-separated lists before handing them
+ * to proxy-addr (lib/request.js getTrustProxyFn). Unset keeps the current
+ * behavior (proxies not trusted).
  */
 export function parseTrustProxy(raw: string | undefined): boolean | string | number {
   const trimmed = raw?.trim();

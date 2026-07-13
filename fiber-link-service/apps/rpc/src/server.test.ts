@@ -122,6 +122,17 @@ describe("buildServer", () => {
     expect(untrusted.json().ip).not.toBe("203.0.113.9");
   });
 
+  it("accepts a comma-separated trust list (fastify splits it before proxy-addr)", async () => {
+    const app = buildServer({ ...testConfig, trustProxy: "127.0.0.1,10.0.0.0/8" });
+    app.get("/__test/ip", (req) => ({ ip: req.ip }));
+    const res = await app.inject({
+      method: "GET",
+      url: "/__test/ip",
+      headers: { "x-forwarded-for": "203.0.113.9" },
+    });
+    expect(res.json()).toEqual({ ip: "203.0.113.9" });
+  });
+
   it("still accepts normal-sized rpc requests", async () => {
     const app = buildServer(testConfig);
     const res = await app.inject({
