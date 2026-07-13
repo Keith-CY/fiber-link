@@ -25,7 +25,10 @@ export class InMemoryNonceStore implements NonceStore {
 }
 
 export class RedisNonceStore implements NonceStore {
-  constructor(private client: Redis, private owned = false) {}
+  constructor(
+    private client: Redis,
+    private owned = false,
+  ) {}
 
   async isReplay(appId: string, nonce: string, ttlMs: number) {
     const key = `nonce:${appId}:${nonce}`;

@@ -1,5 +1,5 @@
+import { type DbClient, apps } from "@fiber-link/db";
 import { eq } from "drizzle-orm";
-import { apps, type DbClient } from "@fiber-link/db";
 
 export type AppSecretRecord = {
   appId: string;

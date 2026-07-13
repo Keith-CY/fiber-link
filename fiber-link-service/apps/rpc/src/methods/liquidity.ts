@@ -1,20 +1,20 @@
 import {
+  type Asset,
+  type LiquidityRequestMetadata,
+  type LiquidityRequestRepo,
+  type WithdrawalRepo,
   addDecimalStrings,
   compareDecimalStrings,
   formatDecimal,
   parseDecimal,
   subtractDecimalStrings,
-  type LiquidityRequestMetadata,
-  type Asset,
-  type LiquidityRequestRepo,
-  type WithdrawalRepo,
 } from "@fiber-link/db";
 import {
+  type HotWalletInventoryProvider,
+  type WithdrawalDestination,
   getDefaultCkbChangeCellCapacityShannons,
   resolveCkbNetworkConfig,
   shannonsToCkbDecimal,
-  type HotWalletInventoryProvider,
-  type WithdrawalDestination,
 } from "@fiber-link/fiber-adapter";
 
 export type WithdrawalLiquidityDecision =
@@ -99,9 +99,7 @@ function resolveCkbHotWalletTarget(requiredAmount: string, network: "AGGRON4" | 
   );
   const changeReserveAmount = shannonsToCkbDecimal(getDefaultCkbChangeCellCapacityShannons(network));
   const effectivePostTxReserveAmount =
-    compareDecimalStrings(postTxReserveAmount, changeReserveAmount) >= 0
-      ? postTxReserveAmount
-      : changeReserveAmount;
+    compareDecimalStrings(postTxReserveAmount, changeReserveAmount) >= 0 ? postTxReserveAmount : changeReserveAmount;
 
   let targetAvailableAmount = requiredAmount;
   targetAvailableAmount = addDecimalStrings(targetAvailableAmount, feeBufferAmount);

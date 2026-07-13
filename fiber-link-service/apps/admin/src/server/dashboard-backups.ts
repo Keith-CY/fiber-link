@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import { promisify } from "node:util";
 import type { DashboardBackupBundle } from "../dashboard/dashboard-page-model";
@@ -55,9 +55,11 @@ function parseManifestBundle(backupRoot: string, id: string): DashboardBackupBun
   };
 }
 
-export function listDashboardBackupBundles(input: {
-  backupRoot?: string;
-} = {}): DashboardBackupBundle[] {
+export function listDashboardBackupBundles(
+  input: {
+    backupRoot?: string;
+  } = {},
+): DashboardBackupBundle[] {
   const backupRoot = input.backupRoot ?? resolveBackupRoot();
   if (!existsSync(backupRoot)) {
     return [];
@@ -85,10 +87,12 @@ function parseCaptureResult(stdout: string): DashboardBackupCaptureResult {
   };
 }
 
-export async function captureDashboardBackup(input: {
-  runner?: BackupCommandRunner;
-  repoRoot?: string;
-} = {}): Promise<DashboardBackupCaptureResult> {
+export async function captureDashboardBackup(
+  input: {
+    runner?: BackupCommandRunner;
+    repoRoot?: string;
+  } = {},
+): Promise<DashboardBackupCaptureResult> {
   const repoRoot = input.repoRoot ?? resolveAdminRepoRoot();
   const runner = input.runner ?? defaultRunner;
   const scriptPath = resolve(repoRoot, "scripts/capture-compose-backup.sh");

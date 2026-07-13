@@ -16,7 +16,9 @@ describe("rpcCall", () => {
       },
     } as unknown as Response);
 
-    await expect(rpcCall("http://localhost:8119", "health", {}, { retryCount: 0 })).rejects.toBeInstanceOf(FiberRpcError);
+    await expect(rpcCall("http://localhost:8119", "health", {}, { retryCount: 0 })).rejects.toBeInstanceOf(
+      FiberRpcError,
+    );
     await expect(rpcCall("http://localhost:8119", "health", {}, { retryCount: 0 })).rejects.toMatchObject({
       code: 502,
       message: "Fiber RPC HTTP 502",
@@ -66,7 +68,12 @@ describe("rpcCall", () => {
       })
       .mockResolvedValueOnce({ ok: true, json: async () => ({ result: "ok" }) } as unknown as Response);
 
-    const pending = rpcCall("http://localhost:8119", "health", {}, { fetchFn, timeoutMs: 25, retryCount: 1, retryDelayMs: 10 });
+    const pending = rpcCall(
+      "http://localhost:8119",
+      "health",
+      {},
+      { fetchFn, timeoutMs: 25, retryCount: 1, retryDelayMs: 10 },
+    );
     await vi.advanceTimersByTimeAsync(25);
     await vi.advanceTimersByTimeAsync(10);
 

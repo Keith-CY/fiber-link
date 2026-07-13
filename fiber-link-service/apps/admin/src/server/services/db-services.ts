@@ -1,38 +1,38 @@
+import { type DbClient, type WithdrawalState, createDbClient, withdrawalPolicies, withdrawals } from "@fiber-link/db";
 import { inArray, sql } from "drizzle-orm";
-import { createDbClient, withdrawalPolicies, withdrawals, type DbClient, type WithdrawalState } from "@fiber-link/db";
 import {
-  WITHDRAWAL_STATE_ORDER,
   type DashboardApp,
-  type DashboardStatusSummary,
-  type DashboardWithdrawalPolicy,
+  type DashboardBackupBundle,
   type DashboardMonitoringSummary,
   type DashboardRateLimitConfig,
-  type DashboardBackupBundle,
+  type DashboardStatusSummary,
+  type DashboardWithdrawalPolicy,
+  WITHDRAWAL_STATE_ORDER,
 } from "../../dashboard/dashboard-page-model";
-import { loadDashboardMonitoringSummary } from "../dashboard-monitoring";
+import type { WithdrawalPolicyInput } from "../../withdrawal-policy-input";
 import {
-  buildDashboardRateLimitChangeSet,
-  loadDashboardRateLimitConfig,
-  parseDashboardRateLimitInput,
-  type DashboardRateLimitChangeSet,
-  type DashboardRateLimitDraft,
-} from "../dashboard-rate-limit";
-import {
+  type DashboardBackupCaptureResult,
+  type DashboardBackupRestorePlan,
   buildDashboardBackupRestorePlan,
   captureDashboardBackup,
   listDashboardBackupBundles,
-  type DashboardBackupCaptureResult,
-  type DashboardBackupRestorePlan,
 } from "../dashboard-backups";
-import type { WithdrawalPolicyInput } from "../../withdrawal-policy-input";
+import { loadDashboardMonitoringSummary } from "../dashboard-monitoring";
 import {
-  WITHDRAWAL_LIST_LIMIT,
+  type DashboardRateLimitChangeSet,
+  type DashboardRateLimitDraft,
+  buildDashboardRateLimitChangeSet,
+  loadDashboardRateLimitConfig,
+  parseDashboardRateLimitInput,
+} from "../dashboard-rate-limit";
+import { PolicyScopeError, UnknownAppError } from "./errors";
+import {
   type AdminScope,
   type AdminServices,
   type AdminWithdrawal,
   type AdminWithdrawalFilters,
+  WITHDRAWAL_LIST_LIMIT,
 } from "./types";
-import { PolicyScopeError, UnknownAppError } from "./errors";
 
 const APP_COLUMNS = { appId: true, createdAt: true } as const;
 
@@ -142,7 +142,7 @@ export function createDbAdminServices(db: DbClient = createDbClient()): AdminSer
         userId: redactPii ? "" : row.userId,
         asset: row.asset,
         amount: row.amount,
-        toAddress: redactPii ? null : row.toAddress ?? null,
+        toAddress: redactPii ? null : (row.toAddress ?? null),
         state: row.state,
         retryCount: row.retryCount ?? 0,
         nextRetryAt: isoOrNull(row.nextRetryAt),

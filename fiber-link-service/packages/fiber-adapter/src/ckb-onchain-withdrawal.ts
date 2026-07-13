@@ -1,6 +1,6 @@
 import { BI, Indexer, RPC, commons, config, hd, helpers } from "@ckb-lumos/lumos";
-import type { Asset, CkbNetwork, ExecuteWithdrawalArgs, WithdrawalExecutionKind } from "./types";
 import { SHANNONS_PER_CKB, parseCkbDecimalToShannons } from "./rpc-adapter/normalize";
+import type { Asset, CkbNetwork, ExecuteWithdrawalArgs, WithdrawalExecutionKind } from "./types";
 import { readWithdrawalPrivateKeyRaw } from "./withdrawal-key";
 const DEFAULT_FEE_RATE_SHANNONS_PER_KB = 1_000n;
 const DEFAULT_TESTNET_CKB_RPC_URL = "https://testnet.ckb.dev/";
@@ -30,11 +30,9 @@ function parseCkbAmountToShannons(amount: string): bigint {
   try {
     return parseCkbDecimalToShannons(amount);
   } catch (error) {
-    throw new WithdrawalExecutionError(
-      error instanceof Error ? error.message : String(error),
-      "permanent",
-      { cause: error instanceof Error ? error : undefined },
-    );
+    throw new WithdrawalExecutionError(error instanceof Error ? error.message : String(error), "permanent", {
+      cause: error instanceof Error ? error : undefined,
+    });
   }
 }
 
@@ -83,10 +81,7 @@ export function resolveCkbNetworkConfig(toAddress: string): CkbNetworkConfig {
     return { cfg: config.predefined.LINA, isTestnet: false };
   }
 
-  throw new WithdrawalExecutionError(
-    "withdrawal destination must be a CKB address (ckt1... or ckb1...)",
-    "permanent",
-  );
+  throw new WithdrawalExecutionError("withdrawal destination must be a CKB address (ckt1... or ckb1...)", "permanent");
 }
 
 export function resolveCkbRpcUrl(isTestnet: boolean): string {
@@ -285,11 +280,7 @@ export function getDefaultCkbChangeCellCapacityShannons(network: CkbNetwork): bi
 
 export function resolveAddressFromPrivateKey(privateKey: string, network: CkbNetwork): string {
   const cfg = network === "AGGRON4" ? config.predefined.AGGRON4 : config.predefined.LINA;
-  return helpers.encodeToConfigAddress(
-    hd.key.privateKeyToBlake160(privateKey),
-    "SECP256K1_BLAKE160",
-    { config: cfg },
-  );
+  return helpers.encodeToConfigAddress(hd.key.privateKeyToBlake160(privateKey), "SECP256K1_BLAKE160", { config: cfg });
 }
 
 export function resolveHotWalletAddress(network: CkbNetwork): string {
@@ -304,9 +295,7 @@ export type ExecuteCkbOnchainTransferArgs = {
   requestId: string;
 };
 
-async function submitCkbTransfer(
-  args: ExecuteCkbOnchainTransferArgs,
-): Promise<{ txHash: string }> {
+async function submitCkbTransfer(args: ExecuteCkbOnchainTransferArgs): Promise<{ txHash: string }> {
   const toAddress = args.destination.address;
   const { cfg, isTestnet } = resolveCkbNetworkConfig(toAddress);
   const amountShannons = parseCkbAmountToShannons(args.amount);
@@ -341,11 +330,7 @@ async function submitCkbTransfer(
     BI.from(amountShannons),
     fromAddress,
   );
-  txSkeleton = await commons.common.payFeeByFeeRate(
-    txSkeleton,
-    [fromAddress],
-    BI.from(feeRateShannonsPerKb),
-  );
+  txSkeleton = await commons.common.payFeeByFeeRate(txSkeleton, [fromAddress], BI.from(feeRateShannonsPerKb));
   txSkeleton = commons.common.prepareSigningEntries(txSkeleton);
 
   const signingEntries = txSkeleton.get("signingEntries").toArray();
@@ -390,9 +375,7 @@ export async function getCkbTransactionStatus(args: {
   return "UNKNOWN";
 }
 
-export async function executeCkbOnchainTransfer(
-  args: ExecuteCkbOnchainTransferArgs,
-): Promise<{ txHash: string }> {
+export async function executeCkbOnchainTransfer(args: ExecuteCkbOnchainTransferArgs): Promise<{ txHash: string }> {
   try {
     return await submitCkbTransfer({
       ...args,
@@ -411,17 +394,11 @@ export async function executeCkbOnchainTransfer(
 
 export async function executeCkbOnchainWithdrawal(args: ExecuteWithdrawalArgs): Promise<{ txHash: string }> {
   if (args.asset !== "CKB") {
-    throw new WithdrawalExecutionError(
-      "on-chain withdrawal supports only CKB asset currently",
-      "permanent",
-    );
+    throw new WithdrawalExecutionError("on-chain withdrawal supports only CKB asset currently", "permanent");
   }
 
   if (args.destination.kind !== "CKB_ADDRESS") {
-    throw new WithdrawalExecutionError(
-      "on-chain withdrawal requires CKB_ADDRESS destination kind",
-      "permanent",
-    );
+    throw new WithdrawalExecutionError("on-chain withdrawal requires CKB_ADDRESS destination kind", "permanent");
   }
 
   return executeCkbOnchainTransfer({

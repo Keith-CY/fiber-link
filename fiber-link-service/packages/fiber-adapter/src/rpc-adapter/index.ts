@@ -1,18 +1,26 @@
-import { createInvoice, getInvoiceStatus } from "./invoice-ops";
-import { executeWithdrawal } from "./withdrawal-ops";
+import type { CreateAdapterArgs, FiberAdapter } from "../types";
 import {
-  listChannels,
-  openChannel,
   acceptChannel,
   getCkbChannelAcceptancePolicy,
-  shutdownChannel,
   getLiquidityCapabilities,
+  listChannels,
+  openChannel,
+  shutdownChannel,
 } from "./channel-ops";
+import { createInvoice, getInvoiceStatus } from "./invoice-ops";
 import { ensureChainLiquidity, getRebalanceStatus } from "./rebalance-ops";
 import { createSettlementSubscriber } from "./settlement-stream";
-import type { CreateAdapterArgs, FiberAdapter } from "../types";
+import { executeWithdrawal } from "./withdrawal-ops";
 
-export function createAdapter({ endpoint, settlementSubscription, fetchFn, timeoutMs, retryCount, retryDelayMs, signal }: CreateAdapterArgs): FiberAdapter {
+export function createAdapter({
+  endpoint,
+  settlementSubscription,
+  fetchFn,
+  timeoutMs,
+  retryCount,
+  retryDelayMs,
+  signal,
+}: CreateAdapterArgs): FiberAdapter {
   const rpcEndpoint = { endpoint, fetchFn, timeoutMs, retryCount, retryDelayMs, signal };
   const subscribeSettlements = createSettlementSubscriber(settlementSubscription, fetchFn ?? fetch);
 

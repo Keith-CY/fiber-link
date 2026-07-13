@@ -1,7 +1,7 @@
-import * as React from "react";
+import type * as React from "react";
+import { cn } from "../lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Skeleton } from "./ui/skeleton";
-import { cn } from "../lib/utils";
 
 export function PageHeader({
   title,
@@ -115,9 +115,7 @@ export function RoleGate({
     return (
       <Card>
         <CardContent className="py-6">
-          <p className="text-sm text-muted-foreground">
-            This surface is restricted to SUPER_ADMIN operators.
-          </p>
+          <p className="text-sm text-muted-foreground">This surface is restricted to SUPER_ADMIN operators.</p>
         </CardContent>
       </Card>
     );

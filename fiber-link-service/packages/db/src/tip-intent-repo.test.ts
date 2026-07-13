@@ -760,7 +760,14 @@ describe("tipIntentRepo (db error branches)", () => {
     const updateSet = vi.fn(() => ({ where: updateWhere }));
     const update = vi.fn(() => ({ set: updateSet }));
 
-    const row = { ...createDbRow({ invoice: "inv-failed", invoiceState: "FAILED", settlementFailureReason: "FAILED_UPSTREAM_REPORTED" }), settledAt: null };
+    const row = {
+      ...createDbRow({
+        invoice: "inv-failed",
+        invoiceState: "FAILED",
+        settlementFailureReason: "FAILED_UPSTREAM_REPORTED",
+      }),
+      settledAt: null,
+    };
     const selectLimit = vi.fn(async () => [row]);
     const selectWhere = vi.fn(() => ({ limit: selectLimit }));
     const selectFrom = vi.fn(() => ({ where: selectWhere }));

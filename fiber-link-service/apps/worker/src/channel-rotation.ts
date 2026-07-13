@@ -2,8 +2,8 @@ import { compareDecimalStrings, formatDecimal, parseDecimal, pow10 } from "@fibe
 import type {
   AcceptChannelArgs,
   AcceptChannelResult,
-  CkbChannelAcceptancePolicy,
   ChannelRecord,
+  CkbChannelAcceptancePolicy,
   ListChannelsArgs,
   ListChannelsResult,
   OpenChannelArgs,
@@ -11,7 +11,7 @@ import type {
   ShutdownChannelArgs,
   ShutdownChannelResult,
 } from "@fiber-link/fiber-adapter";
-import { createLiquidityChannelRotationEvent, type LiquidityChannelRotationEvent } from "./contracts";
+import { type LiquidityChannelRotationEvent, createLiquidityChannelRotationEvent } from "./contracts";
 
 export type SelectLegacyChannelInput = {
   minRecoverableAmount: string;

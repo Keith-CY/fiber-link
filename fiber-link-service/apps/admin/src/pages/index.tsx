@@ -1,9 +1,9 @@
 import Link from "next/link";
-import { trpc } from "../utils/trpc";
 import { PageHeader, QueryBoundary, StatCard } from "../components/page";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
 import { Badge } from "../components/ui/badge";
-import { buildOpsTriageCards, type DashboardOpsTriageCard } from "../dashboard/dashboard-page-model";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
+import { type DashboardOpsTriageCard, buildOpsTriageCards } from "../dashboard/dashboard-page-model";
+import { trpc } from "../utils/trpc";
 
 const TRIAGE_ROUTE: Record<string, string> = {
   "settlement-backlog": "/settlements",

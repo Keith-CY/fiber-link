@@ -1,22 +1,22 @@
-import { FiberRpcError, createAdapter } from "@fiber-link/fiber-adapter";
 import {
-  computeRetryDelay,
-  createDbClient,
-  createDbLedgerRepo,
-  createDbTipIntentEventRepo,
-  createDbTipIntentRepo,
-  toErrorMessage,
   type DbClient,
   type LedgerRepo,
   type SettlementFailureReason,
   type TipIntentEventRepo,
   type TipIntentListCursor,
   type TipIntentRepo,
+  computeRetryDelay,
+  createDbClient,
+  createDbLedgerRepo,
+  createDbTipIntentEventRepo,
+  createDbTipIntentRepo,
+  toErrorMessage,
 } from "@fiber-link/db";
-import { createSettlementUpdateEvent, type SettlementUpdateEvent, type SettlementUpdateOutcome } from "./contracts";
-import { createComponentLogger, type WorkerLogContext } from "./logger";
+import { FiberRpcError, createAdapter } from "@fiber-link/fiber-adapter";
+import { type SettlementUpdateEvent, type SettlementUpdateOutcome, createSettlementUpdateEvent } from "./contracts";
+import { type WorkerLogContext, createComponentLogger } from "./logger";
 import { markSettled } from "./settlement";
-import { type SettlementPublisher } from "./settlement-publisher";
+import type { SettlementPublisher } from "./settlement-publisher";
 
 type SettlementAdapter = {
   getInvoiceStatus: (input: { invoice: string }) => Promise<{ state: unknown }>;
@@ -227,8 +227,7 @@ function classifySettlementError(error: unknown): SettlementErrorDecision {
   }
 
   const fiberRpcCtor: unknown = FiberRpcError;
-  const isFiberRpcError =
-    typeof fiberRpcCtor === "function" && error instanceof (fiberRpcCtor as typeof FiberRpcError);
+  const isFiberRpcError = typeof fiberRpcCtor === "function" && error instanceof (fiberRpcCtor as typeof FiberRpcError);
 
   if (isFiberRpcError) {
     const rpcError = error as FiberRpcError;

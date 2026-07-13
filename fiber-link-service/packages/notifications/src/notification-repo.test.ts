@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DbClient } from "@fiber-link/db";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDbNotificationRepo, createInMemoryNotificationRepo } from "./notification-repo";
 
 // Minimal chainable stand-in for the drizzle query builder. Every builder method
@@ -265,9 +265,9 @@ describe("createDbNotificationRepo", () => {
     queueSelect([]);
     const repo = createDbNotificationRepo(db);
 
-    await expect(
-      repo.createRule({ appId: "app-1", channelId: "missing", event: "WITHDRAWAL_FAILED" }),
-    ).rejects.toThrow("notification channel not found");
+    await expect(repo.createRule({ appId: "app-1", channelId: "missing", event: "WITHDRAWAL_FAILED" })).rejects.toThrow(
+      "notification channel not found",
+    );
   });
 
   it("throws when the channel belongs to a different app", async () => {
@@ -275,9 +275,9 @@ describe("createDbNotificationRepo", () => {
     queueSelect([{ id: "ch-db-1", appId: "other-app" }]);
     const repo = createDbNotificationRepo(db);
 
-    await expect(
-      repo.createRule({ appId: "app-1", channelId: "ch-db-1", event: "WITHDRAWAL_FAILED" }),
-    ).rejects.toThrow("notification channel not found");
+    await expect(repo.createRule({ appId: "app-1", channelId: "ch-db-1", event: "WITHDRAWAL_FAILED" })).rejects.toThrow(
+      "notification channel not found",
+    );
   });
 
   it("maps joined rule+channel rows to dispatch targets", async () => {

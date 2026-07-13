@@ -1,5 +1,5 @@
-import { and, desc, eq, gte, like, lte, sql } from "drizzle-orm";
 import { createDbClient, ledgerEntries, withdrawals } from "@fiber-link/db";
+import { and, desc, eq, gte, like, lte, sql } from "drizzle-orm";
 import { buildWithdrawalParityReport } from "../withdrawal-reconciliation";
 
 type ReconcileArgs = {
@@ -67,7 +67,11 @@ async function main() {
     withdrawalPredicates.push(lte(withdrawals.createdAt, to));
   }
 
-  const debitPredicates = [sql`TRUE`, eq(ledgerEntries.type, "debit"), like(ledgerEntries.idempotencyKey, "withdrawal:debit:%")];
+  const debitPredicates = [
+    sql`TRUE`,
+    eq(ledgerEntries.type, "debit"),
+    like(ledgerEntries.idempotencyKey, "withdrawal:debit:%"),
+  ];
   if (appId) {
     debitPredicates.push(eq(ledgerEntries.appId, appId));
   }

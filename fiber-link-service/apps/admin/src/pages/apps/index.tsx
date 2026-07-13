@@ -1,9 +1,9 @@
 import Link from "next/link";
-import { trpc } from "../../utils/trpc";
 import { PageHeader, QueryBoundary } from "../../components/page";
 import { Card, CardContent } from "../../components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../components/ui/table";
 import { formatDateTime } from "../../lib/format";
+import { trpc } from "../../utils/trpc";
 
 export default function AppsPage() {
   const session = trpc.session.me.useQuery();

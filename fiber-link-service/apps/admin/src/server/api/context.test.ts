@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { CreateNextContextOptions } from "@trpc/server/adapters/next";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createTrpcContext } from "./context";
 
 function reqWith(headers: Record<string, string | string[] | undefined>): CreateNextContextOptions {

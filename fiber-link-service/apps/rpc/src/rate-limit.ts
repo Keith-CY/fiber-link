@@ -80,14 +80,14 @@ return {count, pttl}
 `.trim();
 
 export class RedisRateLimitStore implements RateLimitStore {
-  constructor(private client: RedisLike, private owned = false) {}
+  constructor(
+    private client: RedisLike,
+    private owned = false,
+  ) {}
 
   async consume(input: { key: string; limit: number; windowMs: number }): Promise<RateLimitDecision> {
     const redisKey = `rate:${input.key}`;
-    const result = (await this.client.eval(RATE_LIMIT_LUA, 1, redisKey, String(input.windowMs))) as [
-      number,
-      number,
-    ];
+    const result = (await this.client.eval(RATE_LIMIT_LUA, 1, redisKey, String(input.windowMs))) as [number, number];
     const count = result[0];
     const ttlMs = result[1] > 0 ? result[1] : input.windowMs;
 

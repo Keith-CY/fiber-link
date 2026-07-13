@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { resolveSimulationScenario, type SimulationScenario } from "./simulation-scenarios";
+import { type SimulationScenario, resolveSimulationScenario } from "./simulation-scenarios";
 import type {
   AcceptChannelArgs,
   ChannelRecord,
@@ -14,8 +14,8 @@ import type {
   LiquidityCapabilities,
   ListChannelsArgs,
   OpenChannelArgs,
-  ShutdownChannelArgs,
   SettlementSubscriptionHandle,
+  ShutdownChannelArgs,
   SubscribeSettlementsArgs,
 } from "./types";
 
@@ -170,9 +170,7 @@ export function createSimulationAdapter(args: CreateSimulationAdapterArgs = {}):
       return { ...liquidityCapabilities };
     },
     async listChannels({ includeClosed = false }: ListChannelsArgs) {
-      const visible = includeClosed
-        ? channels
-        : channels.filter((channel) => channel.state !== "CLOSED");
+      const visible = includeClosed ? channels : channels.filter((channel) => channel.state !== "CLOSED");
       return {
         channels: visible.map((channel) => ({ ...channel })),
       };

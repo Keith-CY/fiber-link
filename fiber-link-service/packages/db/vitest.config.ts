@@ -4,12 +4,7 @@ export default defineConfig({
   test: {
     coverage: {
       reporter: ["text", "json-summary"],
-      exclude: [
-        "**/*.test.ts",
-        "**/*.test.tsx",
-        "drizzle.config.ts",
-        "src/index.ts",
-      ],
+      exclude: ["**/*.test.ts", "**/*.test.tsx", "drizzle.config.ts", "src/index.ts"],
     },
   },
 });

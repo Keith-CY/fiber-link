@@ -1,9 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  NoopSettlementPublisher,
-  RedisSettlementPublisher,
-  createSettlementPublisher,
-} from "./settlement-publisher";
+import { NoopSettlementPublisher, RedisSettlementPublisher, createSettlementPublisher } from "./settlement-publisher";
 
 describe("RedisSettlementPublisher", () => {
   it("publishes the SETTLED payload to the per-invoice channel", async () => {

@@ -1,15 +1,15 @@
 import {
+  type DbClient,
+  type LedgerRepo,
+  type TipIntentRepo,
   createDbClient,
   createDbLedgerRepo,
   createDbTipIntentRepo,
   settlementCreditIdempotencyKey,
-  type DbClient,
-  type LedgerRepo,
-  type TipIntentRepo,
 } from "@fiber-link/db";
 import type { NotificationDispatcher } from "@fiber-link/notifications";
-import { type SettlementPublisher } from "./settlement-publisher";
 import { createComponentLogger } from "./logger";
+import type { SettlementPublisher } from "./settlement-publisher";
 
 const logger = createComponentLogger("settlement");
 

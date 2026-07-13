@@ -32,9 +32,7 @@ export async function dispatchMethod<P, R>(
 ): Promise<void> {
   const parsed = def.paramsSchema.safeParse(rawParams);
   if (!parsed.success) {
-    reply.send(
-      rpcErrorResponse(rpcId, RpcErrorCode.INVALID_PARAMS, "Invalid params", parsed.error.issues),
-    );
+    reply.send(rpcErrorResponse(rpcId, RpcErrorCode.INVALID_PARAMS, "Invalid params", parsed.error.issues));
     return;
   }
   try {

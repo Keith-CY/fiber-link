@@ -32,9 +32,7 @@ describe("executeCkbOnchainWithdrawal", () => {
     };
 
     vi.doMock("@ckb-lumos/lumos", () => {
-      class MockIndexer {
-        constructor(_indexerUrl: string, _rpcUrl: string) {}
-      }
+      class MockIndexer {}
 
       class MockRPC {
         sendTransaction = mocks.sendTransaction;

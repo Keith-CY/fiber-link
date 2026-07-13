@@ -14,7 +14,7 @@ export type WebhookDeliveryOptions = {
  * in the `X-Fiber-Link-Signature` header as `sha256=<hex>`.
  */
 function signPayload(secret: string, body: string): string {
-  return "sha256=" + crypto.createHmac("sha256", secret).update(body).digest("hex");
+  return `sha256=${crypto.createHmac("sha256", secret).update(body).digest("hex")}`;
 }
 
 /**
@@ -85,7 +85,10 @@ export function createWebhookChannelHandler(options: WebhookDeliveryOptions = {}
       });
 
       if (!response.ok) {
-        const snippet = await response.text().then((t) => t.slice(0, 200)).catch(() => "");
+        const snippet = await response
+          .text()
+          .then((t) => t.slice(0, 200))
+          .catch(() => "");
         throw new Error(
           `Webhook delivery failed: HTTP ${response.status} from ${target.target}${snippet ? ` — ${snippet}` : ""}`,
         );

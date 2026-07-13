@@ -1,11 +1,11 @@
-import { beforeEach, expect, it } from "vitest";
-import { handleTipCreate, handleTipStatus } from "./tip";
 import {
+  type LedgerWriteInput,
   createInMemoryLedgerRepo,
   createInMemoryTipIntentEventRepo,
   createInMemoryTipIntentRepo,
-  type LedgerWriteInput,
 } from "@fiber-link/db";
+import { beforeEach, expect, it } from "vitest";
+import { handleTipCreate, handleTipStatus } from "./tip";
 
 let invoiceStatusByInvoice: Record<string, "UNPAID" | "SETTLED" | "FAILED"> = {};
 
@@ -30,15 +30,18 @@ beforeEach(() => {
 });
 
 it("creates a tip intent with invoice and optional message", async () => {
-  const res = await handleTipCreate({
-    appId: "app1",
-    postId: "p1",
-    fromUserId: "u1",
-    toUserId: "u2",
-    asset: "USDI",
-    amount: "10",
-    message: "Great post",
-  }, { tipIntentRepo, tipIntentEventRepo, adapter });
+  const res = await handleTipCreate(
+    {
+      appId: "app1",
+      postId: "p1",
+      fromUserId: "u1",
+      toUserId: "u2",
+      asset: "USDI",
+      amount: "10",
+      message: "Great post",
+    },
+    { tipIntentRepo, tipIntentEventRepo, adapter },
+  );
 
   expect(res.invoice).toBe("inv-tip-1");
   const saved = await tipIntentRepo.findByInvoiceOrThrow("inv-tip-1");
@@ -58,18 +61,24 @@ it("creates a tip intent with invoice and optional message", async () => {
 });
 
 it("returns current tip status for UNPAID intent", async () => {
-  const response = await handleTipCreate({
-    appId: "app1",
-    postId: "p1",
-    fromUserId: "u1",
-    toUserId: "u2",
-    asset: "USDI",
-    amount: "10",
-  }, { tipIntentRepo, tipIntentEventRepo, adapter });
+  const response = await handleTipCreate(
+    {
+      appId: "app1",
+      postId: "p1",
+      fromUserId: "u1",
+      toUserId: "u2",
+      asset: "USDI",
+      amount: "10",
+    },
+    { tipIntentRepo, tipIntentEventRepo, adapter },
+  );
 
-  const status = await handleTipStatus({
-    invoice: response.invoice,
-  }, { tipIntentRepo, ledgerRepo, tipIntentEventRepo, adapter });
+  const status = await handleTipStatus(
+    {
+      invoice: response.invoice,
+    },
+    { tipIntentRepo, ledgerRepo, tipIntentEventRepo, adapter },
+  );
   expect(status.state).toBe("UNPAID");
   expect(ledgerRepo.__listForTests?.()).toHaveLength(0);
   const tipIntent = await tipIntentRepo.findByInvoiceOrThrow(response.invoice);
@@ -82,17 +91,23 @@ it("returns current tip status for UNPAID intent", async () => {
 });
 
 it("marks intent as SETTLED when upstream invoice is settled", async () => {
-  const response = await handleTipCreate({
-    appId: "app1",
-    postId: "p1",
-    fromUserId: "u1",
-    toUserId: "u2",
-    asset: "USDI",
-    amount: "10",
-  }, { tipIntentRepo, tipIntentEventRepo, adapter });
+  const response = await handleTipCreate(
+    {
+      appId: "app1",
+      postId: "p1",
+      fromUserId: "u1",
+      toUserId: "u2",
+      asset: "USDI",
+      amount: "10",
+    },
+    { tipIntentRepo, tipIntentEventRepo, adapter },
+  );
   invoiceStatusByInvoice[response.invoice] = "SETTLED";
 
-  const status = await handleTipStatus({ invoice: response.invoice }, { tipIntentRepo, ledgerRepo, tipIntentEventRepo, adapter });
+  const status = await handleTipStatus(
+    { invoice: response.invoice },
+    { tipIntentRepo, ledgerRepo, tipIntentEventRepo, adapter },
+  );
 
   const saved = await tipIntentRepo.findByInvoiceOrThrow(response.invoice);
   expect(status.state).toBe("SETTLED");
@@ -106,17 +121,23 @@ it("marks intent as SETTLED when upstream invoice is settled", async () => {
 });
 
 it("marks intent as FAILED when upstream invoice is failed", async () => {
-  const response = await handleTipCreate({
-    appId: "app1",
-    postId: "p1",
-    fromUserId: "u1",
-    toUserId: "u2",
-    asset: "USDI",
-    amount: "10",
-  }, { tipIntentRepo, tipIntentEventRepo, adapter });
+  const response = await handleTipCreate(
+    {
+      appId: "app1",
+      postId: "p1",
+      fromUserId: "u1",
+      toUserId: "u2",
+      asset: "USDI",
+      amount: "10",
+    },
+    { tipIntentRepo, tipIntentEventRepo, adapter },
+  );
   invoiceStatusByInvoice[response.invoice] = "FAILED";
 
-  const status = await handleTipStatus({ invoice: response.invoice }, { tipIntentRepo, ledgerRepo, tipIntentEventRepo, adapter });
+  const status = await handleTipStatus(
+    { invoice: response.invoice },
+    { tipIntentRepo, ledgerRepo, tipIntentEventRepo, adapter },
+  );
 
   const saved = await tipIntentRepo.findByInvoiceOrThrow(response.invoice);
   expect(status.state).toBe("FAILED");
@@ -128,22 +149,31 @@ it("marks intent as FAILED when upstream invoice is failed", async () => {
 });
 
 it("keeps FAILED state bounded when upstream later reports SETTLED", async () => {
-  const response = await handleTipCreate({
-    appId: "app1",
-    postId: "p1",
-    fromUserId: "u1",
-    toUserId: "u2",
-    asset: "USDI",
-    amount: "10",
-  }, { tipIntentRepo, tipIntentEventRepo, adapter });
+  const response = await handleTipCreate(
+    {
+      appId: "app1",
+      postId: "p1",
+      fromUserId: "u1",
+      toUserId: "u2",
+      asset: "USDI",
+      amount: "10",
+    },
+    { tipIntentRepo, tipIntentEventRepo, adapter },
+  );
   invoiceStatusByInvoice[response.invoice] = "FAILED";
 
-  const failed = await handleTipStatus({ invoice: response.invoice }, { tipIntentRepo, ledgerRepo, tipIntentEventRepo, adapter });
+  const failed = await handleTipStatus(
+    { invoice: response.invoice },
+    { tipIntentRepo, ledgerRepo, tipIntentEventRepo, adapter },
+  );
   expect(failed.state).toBe("FAILED");
   expect(ledgerRepo.__listForTests?.()).toHaveLength(0);
 
   invoiceStatusByInvoice[response.invoice] = "SETTLED";
-  const bounded = await handleTipStatus({ invoice: response.invoice }, { tipIntentRepo, ledgerRepo, tipIntentEventRepo, adapter });
+  const bounded = await handleTipStatus(
+    { invoice: response.invoice },
+    { tipIntentRepo, ledgerRepo, tipIntentEventRepo, adapter },
+  );
 
   const saved = await tipIntentRepo.findByInvoiceOrThrow(response.invoice);
   expect(bounded.state).toBe("FAILED");
@@ -152,14 +182,17 @@ it("keeps FAILED state bounded when upstream later reports SETTLED", async () =>
 });
 
 it("supports retry-safe settlement after transient ledger credit failure", async () => {
-  const response = await handleTipCreate({
-    appId: "app1",
-    postId: "p1",
-    fromUserId: "u1",
-    toUserId: "u2",
-    asset: "USDI",
-    amount: "10",
-  }, { tipIntentRepo, tipIntentEventRepo, adapter });
+  const response = await handleTipCreate(
+    {
+      appId: "app1",
+      postId: "p1",
+      fromUserId: "u1",
+      toUserId: "u2",
+      asset: "USDI",
+      amount: "10",
+    },
+    { tipIntentRepo, tipIntentEventRepo, adapter },
+  );
   invoiceStatusByInvoice[response.invoice] = "SETTLED";
 
   const retryLedgerRepo = createInMemoryLedgerRepo();
@@ -176,7 +209,10 @@ it("supports retry-safe settlement after transient ledger credit failure", async
   };
 
   await expect(
-    handleTipStatus({ invoice: response.invoice }, { tipIntentRepo, ledgerRepo: flakyLedgerRepo, tipIntentEventRepo, adapter }),
+    handleTipStatus(
+      { invoice: response.invoice },
+      { tipIntentRepo, ledgerRepo: flakyLedgerRepo, tipIntentEventRepo, adapter },
+    ),
   ).rejects.toThrow("transient ledger credit failure");
 
   const afterFailure = await tipIntentRepo.findByInvoiceOrThrow(response.invoice);
@@ -268,29 +304,35 @@ it("lists newly settled tip notifications with a stable cursor", async () => {
     },
   };
 
-  const first = await handleTipCreate({
-    appId: "app1",
-    postId: "post-1",
-    fromUserId: "u1",
-    toUserId: "u2",
-    asset: "CKB",
-    amount: "31",
-    message: "Great post",
-  }, { tipIntentRepo, tipIntentEventRepo, adapter: feedAdapter });
+  const first = await handleTipCreate(
+    {
+      appId: "app1",
+      postId: "post-1",
+      fromUserId: "u1",
+      toUserId: "u2",
+      asset: "CKB",
+      amount: "31",
+      message: "Great post",
+    },
+    { tipIntentRepo, tipIntentEventRepo, adapter: feedAdapter },
+  );
   invoiceStatusByInvoice[first.invoice] = "SETTLED";
   await handleTipStatus({ invoice: first.invoice }, { tipIntentRepo, ledgerRepo, tipIntentEventRepo, adapter });
 
   await new Promise((resolve) => setTimeout(resolve, 5));
 
-  const second = await handleTipCreate({
-    appId: "app1",
-    postId: "post-2",
-    fromUserId: "u3",
-    toUserId: "u2",
-    asset: "CKB",
-    amount: "15",
-    message: "Second",
-  }, { tipIntentRepo, tipIntentEventRepo, adapter: feedAdapter });
+  const second = await handleTipCreate(
+    {
+      appId: "app1",
+      postId: "post-2",
+      fromUserId: "u3",
+      toUserId: "u2",
+      asset: "CKB",
+      amount: "15",
+      message: "Second",
+    },
+    { tipIntentRepo, tipIntentEventRepo, adapter: feedAdapter },
+  );
   invoiceStatusByInvoice[second.invoice] = "SETTLED";
   await handleTipStatus({ invoice: second.invoice }, { tipIntentRepo, ledgerRepo, tipIntentEventRepo, adapter });
 
@@ -303,22 +345,25 @@ it("lists newly settled tip notifications with a stable cursor", async () => {
     message: "Great post",
   });
 
-  const afterFirst = await handleTipSettledFeed({
-    appId: "app1",
-    after: {
-      settledAt: fullFeed.items[0].settledAt,
-      id: fullFeed.items[0].tipIntentId,
+  const afterFirst = await handleTipSettledFeed(
+    {
+      appId: "app1",
+      after: {
+        settledAt: fullFeed.items[0].settledAt,
+        id: fullFeed.items[0].tipIntentId,
+      },
+      limit: 10,
     },
-    limit: 10,
-  }, { tipIntentRepo });
+    { tipIntentRepo },
+  );
   expect(afterFirst.items).toHaveLength(1);
   expect(afterFirst.items[0]).toMatchObject({ postId: "post-2", message: "Second" });
 });
 
 it("fails status when invoice is unknown", async () => {
-  await expect(handleTipStatus({ invoice: "missing-invoice" }, { tipIntentRepo, ledgerRepo, tipIntentEventRepo, adapter })).rejects.toThrow(
-    "tip intent not found",
-  );
+  await expect(
+    handleTipStatus({ invoice: "missing-invoice" }, { tipIntentRepo, ledgerRepo, tipIntentEventRepo, adapter }),
+  ).rejects.toThrow("tip intent not found");
 });
 
 it("rethrows non-conflict errors while settling", async () => {

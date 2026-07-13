@@ -1,6 +1,6 @@
-import type { AdminServices } from "./types";
 import { createDbAdminServices } from "./db-services";
 import { loadFixtureAdminServices } from "./fixture-services";
+import type { AdminServices } from "./types";
 
 export * from "./types";
 export * from "./errors";

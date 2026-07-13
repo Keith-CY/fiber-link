@@ -1,8 +1,8 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { buildRpcSchemaDocument, knownSchemaMethods } from "./rpc-schema";
 import { KNOWN_RPC_METHODS } from "./metrics";
+import { buildRpcSchemaDocument, knownSchemaMethods } from "./rpc-schema";
 
 const COMMITTED_PATH = resolve(__dirname, "../../../..", "docs/rpc-schema.json");
 

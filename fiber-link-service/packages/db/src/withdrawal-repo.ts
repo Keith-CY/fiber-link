@@ -1,11 +1,11 @@
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
 import { and, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
-import type { DbClient } from "./client";
 import { assertPositiveAmount, formatDecimal, parseDecimal, pow10 } from "./amount";
+import type { DbClient } from "./client";
 import { withdrawalDebitIdempotencyKey } from "./idempotency";
-import { createDbLedgerRepo, type LedgerRepo } from "./ledger-repo";
+import { type LedgerRepo, createDbLedgerRepo } from "./ledger-repo";
 import { computeRetryDelay } from "./retry";
-import { withdrawals, type Asset, type WithdrawalDestinationKind, type WithdrawalState } from "./schema";
+import { type Asset, type WithdrawalDestinationKind, type WithdrawalState, withdrawals } from "./schema";
 
 export type WithdrawalAsset = Asset;
 
@@ -140,12 +140,23 @@ export type WithdrawalRepo = {
   reapStaleProcessing(input: ReapStaleProcessingInput): Promise<WithdrawalRecord[]>;
   markPendingFromLiquidity(id: string, now: Date): Promise<WithdrawalRecord>;
   markProcessing(id: string, now: Date): Promise<WithdrawalRecord>;
-  markBroadcastedWithDebit(id: string, params: { now: Date; txHash: string }, deps: CompletionDeps): Promise<WithdrawalRecord>;
+  markBroadcastedWithDebit(
+    id: string,
+    params: { now: Date; txHash: string },
+    deps: CompletionDeps,
+  ): Promise<WithdrawalRecord>;
   markCompleted(id: string, params: { now: Date; txHash?: string }): Promise<WithdrawalRecord>;
-  markCompletedWithDebit(id: string, params: { now: Date; txHash: string }, deps: CompletionDeps): Promise<WithdrawalRecord>;
+  markCompletedWithDebit(
+    id: string,
+    params: { now: Date; txHash: string },
+    deps: CompletionDeps,
+  ): Promise<WithdrawalRecord>;
   markRetryPending(id: string, params: { now: Date; nextRetryAt: Date; error: string }): Promise<WithdrawalRecord>;
   markFailedFromBroadcasted(id: string, params: { now: Date; error: string }): Promise<WithdrawalRecord>;
-  markFailed(id: string, params: { now: Date; error: string; incrementRetryCount?: boolean }): Promise<WithdrawalRecord>;
+  markFailed(
+    id: string,
+    params: { now: Date; error: string; incrementRetryCount?: boolean },
+  ): Promise<WithdrawalRecord>;
   /**
    * Operator interventions. These are guarded state transitions (never raw
    * SQL) so the admin console inherits the same invariants and tests as the
@@ -158,7 +169,13 @@ export type WithdrawalRepo = {
 };
 
 type WithdrawalRow = typeof withdrawals.$inferSelect;
-const reservedWithdrawalStates: WithdrawalState[] = ["LIQUIDITY_PENDING", "PENDING", "PROCESSING", "BROADCASTED", "RETRY_PENDING"];
+const reservedWithdrawalStates: WithdrawalState[] = [
+  "LIQUIDITY_PENDING",
+  "PENDING",
+  "PROCESSING",
+  "BROADCASTED",
+  "RETRY_PENDING",
+];
 
 function toRecord(row: WithdrawalRow): WithdrawalRecord {
   return {
@@ -193,12 +210,7 @@ function inferDestinationKind(toAddress: string): WithdrawalDestinationKind {
 }
 
 function isUniqueViolation(err: unknown): boolean {
-  return Boolean(
-    err &&
-      typeof err === "object" &&
-      "code" in err &&
-      (err as { code?: unknown }).code === "23505",
-  );
+  return Boolean(err && typeof err === "object" && "code" in err && (err as { code?: unknown }).code === "23505");
 }
 
 async function findByClientRequestIdWithClient(
@@ -256,8 +268,7 @@ function isInsufficient(balance: string, pending: string, amount: string): boole
   const parsedAmount = parseDecimal(amount);
   const scale = Math.max(parsedBalance.scale, parsedPending.scale, parsedAmount.scale);
   const available =
-    parsedBalance.value * pow10(scale - parsedBalance.scale) -
-    parsedPending.value * pow10(scale - parsedPending.scale);
+    parsedBalance.value * pow10(scale - parsedBalance.scale) - parsedPending.value * pow10(scale - parsedPending.scale);
   const required = parsedAmount.value * pow10(scale - parsedAmount.scale);
   return available < required;
 }
@@ -555,10 +566,7 @@ export function createDbWithdrawalRepo(db: DbClient): WithdrawalRepo {
     },
 
     async listBroadcastedForConfirmation() {
-      const rows = await db
-        .select()
-        .from(withdrawals)
-        .where(eq(withdrawals.state, "BROADCASTED"));
+      const rows = await db.select().from(withdrawals).where(eq(withdrawals.state, "BROADCASTED"));
       return rows.map(toRecord);
     },
 
@@ -598,10 +606,7 @@ export function createDbWithdrawalRepo(db: DbClient): WithdrawalRepo {
         .update(withdrawals)
         .set({ state: "PROCESSING", updatedAt: now })
         .where(
-          and(
-            eq(withdrawals.id, id),
-            or(eq(withdrawals.state, "PENDING"), eq(withdrawals.state, "RETRY_PENDING")),
-          ),
+          and(eq(withdrawals.id, id), or(eq(withdrawals.state, "PENDING"), eq(withdrawals.state, "RETRY_PENDING"))),
         )
         .returning();
       if (!row) {
@@ -808,10 +813,7 @@ export function createDbWithdrawalRepo(db: DbClient): WithdrawalRepo {
         .update(withdrawals)
         .set({ state: "FAILED", nextRetryAt: null, lastError: params.reason, updatedAt: params.now })
         .where(
-          and(
-            eq(withdrawals.id, id),
-            inArray(withdrawals.state, ["LIQUIDITY_PENDING", "PENDING", "RETRY_PENDING"]),
-          ),
+          and(eq(withdrawals.id, id), inArray(withdrawals.state, ["LIQUIDITY_PENDING", "PENDING", "RETRY_PENDING"])),
         )
         .returning();
       if (!row) {
@@ -846,9 +848,7 @@ export function createInMemoryWithdrawalRepo(): WithdrawalRepo {
 
     const record = records.find(
       (item) =>
-        item.appId === input.appId &&
-        item.userId === input.userId &&
-        item.clientRequestId === input.clientRequestId,
+        item.appId === input.appId && item.userId === input.userId && item.clientRequestId === input.clientRequestId,
     );
     return record ? clone(record) : null;
   }

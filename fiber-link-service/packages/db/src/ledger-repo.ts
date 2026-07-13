@@ -1,8 +1,8 @@
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
-import type { DbClient } from "./client";
 import { assertPositiveAmount, formatDecimal, parseDecimal, pow10 } from "./amount";
-import { ledgerEntries, type Asset } from "./schema";
+import type { DbClient } from "./client";
+import { type Asset, ledgerEntries } from "./schema";
 
 export type LedgerAsset = Asset;
 
@@ -128,7 +128,13 @@ export function createDbLedgerRepo(db: DbClient): LedgerRepo {
           balance: sql<string>`COALESCE(SUM(CASE WHEN ${ledgerEntries.type} = 'credit' THEN ${ledgerEntries.amount} ELSE -${ledgerEntries.amount} END), 0)`,
         })
         .from(ledgerEntries)
-        .where(and(eq(ledgerEntries.appId, input.appId), eq(ledgerEntries.userId, input.userId), eq(ledgerEntries.asset, input.asset)));
+        .where(
+          and(
+            eq(ledgerEntries.appId, input.appId),
+            eq(ledgerEntries.userId, input.userId),
+            eq(ledgerEntries.asset, input.asset),
+          ),
+        );
 
       return row ? String(row.balance) : "0";
     },

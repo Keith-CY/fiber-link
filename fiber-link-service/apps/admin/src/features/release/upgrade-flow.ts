@@ -45,7 +45,13 @@ export function runUpgradeFlow(input: {
     return { records, finalVersion: input.fromVersion };
   }
 
-  records.push({ action: "upgrade", fromVersion: input.fromVersion, toVersion: input.toVersion, success: true, message: "upgrade applied" });
+  records.push({
+    action: "upgrade",
+    fromVersion: input.fromVersion,
+    toVersion: input.toVersion,
+    success: true,
+    message: "upgrade applied",
+  });
 
   const postOk = input.postchecks.runtimeHealthy && input.postchecks.firstPathValidated;
   if (postOk) return { records, finalVersion: input.toVersion };

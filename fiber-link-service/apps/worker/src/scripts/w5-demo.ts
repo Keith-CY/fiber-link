@@ -2,8 +2,10 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
-import { createAdapter, type InvoiceState } from "@fiber-link/fiber-adapter";
 import {
+  type LedgerRepo,
+  type TipIntentRepo,
+  type WithdrawalRepo,
   createDbClient,
   createDbLedgerRepo,
   createDbTipIntentRepo,
@@ -12,11 +14,9 @@ import {
   createInMemoryTipIntentRepo,
   createInMemoryWithdrawalRepo,
   toErrorMessage,
-  type LedgerRepo,
-  type TipIntentRepo,
-  type WithdrawalRepo,
 } from "@fiber-link/db";
-import { runSettlementDiscovery, type SettlementDiscoverySummary } from "../settlement-discovery";
+import { type InvoiceState, createAdapter } from "@fiber-link/fiber-adapter";
+import { type SettlementDiscoverySummary, runSettlementDiscovery } from "../settlement-discovery";
 import { runWithdrawalBatch } from "../withdrawal-batch";
 
 type Asset = "CKB" | "USDI";
@@ -659,8 +659,7 @@ function createDryRunAdapter(options: DemoOptions): DemoAdapter {
         `${options.dryRunSeed}|payment|${paymentCounter}|${requestId}|${asset}|${amount}|${destinationTag}`,
         64,
       )}`;
-      const invoiceRecord =
-        destination.kind === "PAYMENT_REQUEST" ? states.get(destination.paymentRequest) : undefined;
+      const invoiceRecord = destination.kind === "PAYMENT_REQUEST" ? states.get(destination.paymentRequest) : undefined;
       if (invoiceRecord) {
         invoiceRecord.paid = true;
       }

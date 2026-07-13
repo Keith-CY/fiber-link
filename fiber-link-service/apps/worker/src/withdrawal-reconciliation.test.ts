@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  buildWithdrawalParityReport,
-  parseWithdrawalIdFromDebitIdempotencyKey,
-} from "./withdrawal-reconciliation";
+import { buildWithdrawalParityReport, parseWithdrawalIdFromDebitIdempotencyKey } from "./withdrawal-reconciliation";
 
 describe("withdrawal reconciliation report", () => {
   it("returns healthy report when parity is complete for completed withdrawals", () => {

@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
-import Redis from "ioredis-mock";
 import type { Redis as RedisClient } from "ioredis";
+import Redis from "ioredis-mock";
+import { describe, expect, it } from "vitest";
 import {
   InMemoryRateLimitStore,
   RedisRateLimitStore,

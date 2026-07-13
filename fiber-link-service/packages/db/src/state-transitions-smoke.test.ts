@@ -1,10 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { createInMemoryLedgerRepo } from "./ledger-repo";
-import {
-  WithdrawalTransitionConflictError,
-  createInMemoryWithdrawalRepo,
-} from "./withdrawal-repo";
 import { createInMemoryTipIntentRepo } from "./tip-intent-repo";
+import { WithdrawalTransitionConflictError, createInMemoryWithdrawalRepo } from "./withdrawal-repo";
 
 describe("db state transitions smoke", () => {
   const tipIntentRepo = createInMemoryTipIntentRepo();

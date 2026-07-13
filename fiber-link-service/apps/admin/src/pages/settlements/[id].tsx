@@ -1,8 +1,8 @@
-import { useRouter } from "next/router";
 import Link from "next/link";
-import { trpc } from "../../utils/trpc";
+import { useRouter } from "next/router";
 import { PageHeader, QueryBoundary, RoleGate } from "../../components/page";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
+import { trpc } from "../../utils/trpc";
 
 export default function SettlementDetailPage() {
   const router = useRouter();

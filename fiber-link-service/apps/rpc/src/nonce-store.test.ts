@@ -1,7 +1,7 @@
-import { describe, it, expect } from "vitest";
-import Redis from "ioredis-mock";
 import type { Redis as RedisClient } from "ioredis";
-import { InMemoryNonceStore, RedisNonceStore, FaultTolerantRedisNonceStore } from "./nonce-store";
+import Redis from "ioredis-mock";
+import { describe, expect, it } from "vitest";
+import { FaultTolerantRedisNonceStore, InMemoryNonceStore, RedisNonceStore } from "./nonce-store";
 
 describe("nonce store", () => {
   it("InMemoryNonceStore marks a repeated nonce as replay", async () => {
@@ -48,7 +48,9 @@ describe("nonce store", () => {
     it("falls back to in-memory store when Redis throws and calls onFallback", async () => {
       const errors: unknown[] = [];
       const failingRedis = {
-        set: async () => { throw new Error("Redis connection refused"); },
+        set: async () => {
+          throw new Error("Redis connection refused");
+        },
         quit: async () => {},
       } as unknown as RedisClient;
 
@@ -69,13 +71,17 @@ describe("nonce store", () => {
 
     it("still reaches the in-memory fallback when onFallback observer throws", async () => {
       const failingRedis = {
-        set: async () => { throw new Error("Redis unavailable"); },
+        set: async () => {
+          throw new Error("Redis unavailable");
+        },
         quit: async () => {},
       } as unknown as RedisClient;
 
       const primary = new RedisNonceStore(failingRedis);
       const store = new FaultTolerantRedisNonceStore(primary, {
-        onFallback: () => { throw new Error("metrics pipeline exploded"); },
+        onFallback: () => {
+          throw new Error("metrics pipeline exploded");
+        },
       });
 
       const first = await store.isReplay("app1", "nonce-obs-throw", 1_000);
@@ -88,7 +94,9 @@ describe("nonce store", () => {
 
     it("treats different nonces independently when falling back", async () => {
       const failingRedis = {
-        set: async () => { throw new Error("Redis unavailable"); },
+        set: async () => {
+          throw new Error("Redis unavailable");
+        },
         quit: async () => {},
       } as unknown as RedisClient;
 

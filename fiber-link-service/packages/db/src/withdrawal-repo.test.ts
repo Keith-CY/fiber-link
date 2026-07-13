@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import type { DbClient } from "./client";
 import { InvalidAmountError } from "./amount";
+import type { DbClient } from "./client";
 import { withdrawalDebitIdempotencyKey } from "./idempotency";
 import { createInMemoryLedgerRepo } from "./ledger-repo";
 import { withdrawals } from "./schema";
@@ -175,7 +175,8 @@ describe("createDbWithdrawalRepo", () => {
   });
 
   it("acquires advisory lock and rejects when balance is insufficient", async () => {
-    const selectWhere = vi.fn()
+    const selectWhere = vi
+      .fn()
       .mockResolvedValueOnce([{ balance: "1" }])
       .mockResolvedValueOnce([{ total: "0" }]);
     const selectFrom = vi.fn(() => ({ where: selectWhere }));
@@ -438,7 +439,10 @@ describe("createDbWithdrawalRepo", () => {
   });
 
   it("returns pending total and defaults to 0 when query is empty", async () => {
-    const selectWhere = vi.fn().mockResolvedValueOnce([{ total: "12.5" }]).mockResolvedValueOnce([]);
+    const selectWhere = vi
+      .fn()
+      .mockResolvedValueOnce([{ total: "12.5" }])
+      .mockResolvedValueOnce([]);
     const selectFrom = vi.fn(() => ({ where: selectWhere }));
     const select = vi.fn(() => ({ from: selectFrom }));
     const db = { select } as unknown as DbClient;

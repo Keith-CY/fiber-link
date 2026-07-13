@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { startSettlementSubscriptionRunner } from "./settlement-subscription-runner";
 import { markSettled } from "./settlement";
+import { startSettlementSubscriptionRunner } from "./settlement-subscription-runner";
 
 vi.mock("./settlement", () => ({
   markSettled: vi.fn(),
@@ -97,10 +97,7 @@ describe("startSettlementSubscriptionRunner", () => {
     await runner.close();
 
     expect(settleMock).toHaveBeenCalledTimes(1);
-    expect(settleMock).toHaveBeenCalledWith(
-      { invoice: "inv-dup" },
-      expect.any(Object),
-    );
+    expect(settleMock).toHaveBeenCalledWith({ invoice: "inv-dup" }, expect.any(Object));
   });
 
   it("drains queued work before shutdown resolves", async () => {

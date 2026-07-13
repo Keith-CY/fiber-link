@@ -11,9 +11,7 @@ export type SimulationInvoiceLifecycle =
   | { kind: "always"; state: InvoiceState }
   | { kind: "settle-after-polls"; settleAfterPolls: number };
 
-export type SimulationWithdrawalBehavior =
-  | { kind: "success" }
-  | { kind: "error"; message: string };
+export type SimulationWithdrawalBehavior = { kind: "success" } | { kind: "error"; message: string };
 
 export type SimulationScenario = {
   name: SimulationScenarioName;

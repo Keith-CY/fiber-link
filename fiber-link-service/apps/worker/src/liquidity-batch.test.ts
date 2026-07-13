@@ -1,10 +1,7 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  createInMemoryLiquidityRequestRepo,
-  createInMemoryWithdrawalRepo,
-} from "@fiber-link/db";
-import { runLiquidityBatch } from "./liquidity-batch";
+import { createInMemoryLiquidityRequestRepo, createInMemoryWithdrawalRepo } from "@fiber-link/db";
 import type { EnsureChainLiquidityResult, GetRebalanceStatusResult } from "@fiber-link/fiber-adapter";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { runLiquidityBatch } from "./liquidity-batch";
 
 const originalWithdrawalPrivateKey = process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY;
 
@@ -36,16 +33,20 @@ describe("runLiquidityBatch", () => {
       liquidityRequestId: liquidityRequest.id,
       liquidityPendingReason: "hot wallet underfunded",
     });
-    const ensureChainLiquidity = vi.fn(async (..._args: unknown[]): Promise<EnsureChainLiquidityResult> => ({
-      state: "PENDING" as const,
-      started: true,
-      recoveryStrategy: "LOCAL_CKB_SWEEP" as const,
-      txHash: "0xsweep",
-      trackingNetwork: "AGGRON4" as const,
-    }));
-    const getRebalanceStatus = vi.fn(async (..._args: unknown[]): Promise<GetRebalanceStatusResult> => ({
-      state: "IDLE" as const,
-    }));
+    const ensureChainLiquidity = vi.fn(
+      async (..._args: unknown[]): Promise<EnsureChainLiquidityResult> => ({
+        state: "PENDING" as const,
+        started: true,
+        recoveryStrategy: "LOCAL_CKB_SWEEP" as const,
+        txHash: "0xsweep",
+        trackingNetwork: "AGGRON4" as const,
+      }),
+    );
+    const getRebalanceStatus = vi.fn(
+      async (..._args: unknown[]): Promise<GetRebalanceStatusResult> => ({
+        state: "IDLE" as const,
+      }),
+    );
     const getLiquidityCapabilities = vi.fn(async () => ({
       directRebalance: false,
       channelLifecycle: true,
@@ -112,13 +113,17 @@ describe("runLiquidityBatch", () => {
       liquidityPendingReason: "hot wallet underfunded",
     });
 
-    const ensureChainLiquidity = vi.fn(async (..._args: unknown[]): Promise<EnsureChainLiquidityResult> => ({
-      state: "PENDING" as const,
-      started: true,
-    }));
-    const getRebalanceStatus = vi.fn(async (..._args: unknown[]): Promise<GetRebalanceStatusResult> => ({
-      state: "IDLE" as const,
-    }));
+    const ensureChainLiquidity = vi.fn(
+      async (..._args: unknown[]): Promise<EnsureChainLiquidityResult> => ({
+        state: "PENDING" as const,
+        started: true,
+      }),
+    );
+    const getRebalanceStatus = vi.fn(
+      async (..._args: unknown[]): Promise<GetRebalanceStatusResult> => ({
+        state: "IDLE" as const,
+      }),
+    );
 
     await runLiquidityBatch({
       now: new Date("2026-03-07T00:02:00.000Z"),
@@ -188,13 +193,17 @@ describe("runLiquidityBatch", () => {
       liquidityRequestId: liquidityRequest.id,
       liquidityPendingReason: "hot wallet underfunded",
     });
-    const ensureChainLiquidity = vi.fn(async (..._args: unknown[]): Promise<EnsureChainLiquidityResult> => ({
-      state: "FUNDED" as const,
-      started: false,
-    }));
-    const getRebalanceStatus = vi.fn(async (..._args: unknown[]): Promise<GetRebalanceStatusResult> => ({
-      state: "FUNDED" as const,
-    }));
+    const ensureChainLiquidity = vi.fn(
+      async (..._args: unknown[]): Promise<EnsureChainLiquidityResult> => ({
+        state: "FUNDED" as const,
+        started: false,
+      }),
+    );
+    const getRebalanceStatus = vi.fn(
+      async (..._args: unknown[]): Promise<GetRebalanceStatusResult> => ({
+        state: "FUNDED" as const,
+      }),
+    );
     const getLiquidityCapabilities = vi.fn(async () => ({
       directRebalance: true,
       channelLifecycle: true,
@@ -265,13 +274,17 @@ describe("runLiquidityBatch", () => {
       liquidityRequestId: liquidityRequest.id,
       liquidityPendingReason: "hot wallet underfunded",
     });
-    const ensureChainLiquidity = vi.fn(async (..._args: unknown[]): Promise<EnsureChainLiquidityResult> => ({
-      state: "PENDING" as const,
-      started: true,
-    }));
-    const getRebalanceStatus = vi.fn(async (..._args: unknown[]): Promise<GetRebalanceStatusResult> => ({
-      state: "IDLE" as const,
-    }));
+    const ensureChainLiquidity = vi.fn(
+      async (..._args: unknown[]): Promise<EnsureChainLiquidityResult> => ({
+        state: "PENDING" as const,
+        started: true,
+      }),
+    );
+    const getRebalanceStatus = vi.fn(
+      async (..._args: unknown[]): Promise<GetRebalanceStatusResult> => ({
+        state: "IDLE" as const,
+      }),
+    );
     const getLiquidityCapabilities = vi.fn(async () => ({
       directRebalance: true,
       channelLifecycle: true,
@@ -357,16 +370,20 @@ describe("runLiquidityBatch", () => {
       network: "AGGRON4" as const,
       availableAmount: "0",
     }));
-    const ensureChainLiquidity = vi.fn(async (..._args: unknown[]): Promise<EnsureChainLiquidityResult> => ({
-      state: "PENDING" as const,
-      started: true,
-      recoveryStrategy: "LOCAL_CKB_SWEEP" as const,
-      txHash: "0xsweep",
-      trackingNetwork: "AGGRON4" as const,
-    }));
-    const getRebalanceStatus = vi.fn(async (..._args: unknown[]): Promise<GetRebalanceStatusResult> => ({
-      state: "IDLE" as const,
-    }));
+    const ensureChainLiquidity = vi.fn(
+      async (..._args: unknown[]): Promise<EnsureChainLiquidityResult> => ({
+        state: "PENDING" as const,
+        started: true,
+        recoveryStrategy: "LOCAL_CKB_SWEEP" as const,
+        txHash: "0xsweep",
+        trackingNetwork: "AGGRON4" as const,
+      }),
+    );
+    const getRebalanceStatus = vi.fn(
+      async (..._args: unknown[]): Promise<GetRebalanceStatusResult> => ({
+        state: "IDLE" as const,
+      }),
+    );
 
     await runLiquidityBatch({
       now: new Date("2026-03-07T00:00:00.000Z"),
@@ -452,13 +469,17 @@ describe("runLiquidityBatch", () => {
       liquidityPendingReason: "hot wallet underfunded",
     });
 
-    const ensureChainLiquidity = vi.fn(async (..._args: unknown[]): Promise<EnsureChainLiquidityResult> => ({
-      state: "PENDING" as const,
-      started: true,
-    }));
-    const getRebalanceStatus = vi.fn(async (..._args: unknown[]): Promise<GetRebalanceStatusResult> => ({
-      state: "IDLE" as const,
-    }));
+    const ensureChainLiquidity = vi.fn(
+      async (..._args: unknown[]): Promise<EnsureChainLiquidityResult> => ({
+        state: "PENDING" as const,
+        started: true,
+      }),
+    );
+    const getRebalanceStatus = vi.fn(
+      async (..._args: unknown[]): Promise<GetRebalanceStatusResult> => ({
+        state: "IDLE" as const,
+      }),
+    );
 
     await runLiquidityBatch({
       now: new Date("2026-03-07T00:06:00.000Z"),
@@ -499,8 +520,7 @@ describe("runLiquidityBatch", () => {
   });
 
   it("uses channel rotation when direct rebalance is unsupported and fallback mode is enabled", async () => {
-    process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY =
-      "0x1111111111111111111111111111111111111111111111111111111111111111";
+    process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY = "0x1111111111111111111111111111111111111111111111111111111111111111";
     const repo = createInMemoryWithdrawalRepo();
     const liquidityRequestRepo = createInMemoryLiquidityRequestRepo();
     const liquidityRequest = await liquidityRequestRepo.create({
@@ -519,11 +539,13 @@ describe("runLiquidityBatch", () => {
       liquidityRequestId: liquidityRequest.id,
       liquidityPendingReason: "hot wallet underfunded",
     });
-    const ensureChainLiquidity = vi.fn(async (..._args: unknown[]): Promise<EnsureChainLiquidityResult> => ({
-      state: "FAILED" as const,
-      started: false,
-      error: "unsupported",
-    }));
+    const ensureChainLiquidity = vi.fn(
+      async (..._args: unknown[]): Promise<EnsureChainLiquidityResult> => ({
+        state: "FAILED" as const,
+        started: false,
+        error: "unsupported",
+      }),
+    );
     const getRebalanceStatus = vi.fn(async (..._args: unknown[]): Promise<GetRebalanceStatusResult> => {
       throw new Error("getRebalanceStatus should not be called when direct rebalance is unsupported");
     });

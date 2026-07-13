@@ -1,10 +1,10 @@
 import { createHash } from "node:crypto";
-import { rpcCall, type FiberRpcEndpoint } from "../fiber-client";
 import { executeCkbOnchainWithdrawal } from "../ckb-onchain-withdrawal";
-import { executeUdtOnchainWithdrawal } from "../udt-onchain-withdrawal";
-import { pickTxEvidence, toHexQuantity } from "./normalize";
-import { mapAssetToCurrency, pickPaymentHash, resolveUsdiUdtScript, toWithdrawalUdtTypeScript } from "./invoice-ops";
+import { type FiberRpcEndpoint, rpcCall } from "../fiber-client";
 import type { Asset, ExecuteWithdrawalArgs } from "../types";
+import { executeUdtOnchainWithdrawal } from "../udt-onchain-withdrawal";
+import { mapAssetToCurrency, pickPaymentHash, resolveUsdiUdtScript, toWithdrawalUdtTypeScript } from "./invoice-ops";
+import { pickTxEvidence, toHexQuantity } from "./normalize";
 
 function generateFallbackRequestId({ invoice, amount, asset }: { invoice: string; amount: string; asset: Asset }) {
   return `fiber:${createHash("sha256").update(`${invoice}|${amount}|${asset}`).digest("hex").slice(0, 20)}`;
@@ -35,8 +35,7 @@ export async function executeWithdrawal(
   if (!paymentHash) {
     throw new Error("parse_invoice response is missing 'invoice.data.payment_hash' string");
   }
-  const resolvedRequestId =
-    requestId?.trim() || generateFallbackRequestId({ invoice: paymentRequest, amount, asset });
+  const resolvedRequestId = requestId?.trim() || generateFallbackRequestId({ invoice: paymentRequest, amount, asset });
   const result = (await rpcCall(endpoint, "send_payment", {
     payment_hash: paymentHash,
     amount: toHexQuantity(amount),

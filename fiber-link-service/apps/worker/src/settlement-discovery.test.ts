@@ -1,11 +1,15 @@
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createInMemoryLedgerRepo, createInMemoryTipIntentEventRepo, createInMemoryTipIntentRepo } from "@fiber-link/db";
+import {
+  createInMemoryLedgerRepo,
+  createInMemoryTipIntentEventRepo,
+  createInMemoryTipIntentRepo,
+} from "@fiber-link/db";
 import { FiberRpcError } from "@fiber-link/fiber-adapter";
-import { runSettlementDiscovery } from "./settlement-discovery";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createFileSettlementCursorStore } from "./settlement-cursor-store";
+import { runSettlementDiscovery } from "./settlement-discovery";
 
 describe("runSettlementDiscovery", () => {
   const tipIntentRepo = createInMemoryTipIntentRepo();
@@ -253,7 +257,9 @@ describe("runSettlementDiscovery", () => {
     expect(second.terminalFailures).toBe(1);
     expect(second.failed).toBe(1);
     expect(second.events).toEqual(
-      expect.arrayContaining([expect.objectContaining({ outcome: "FAILED_RETRY_EXHAUSTED", invoice: "inv-retry-budget" })]),
+      expect.arrayContaining([
+        expect.objectContaining({ outcome: "FAILED_RETRY_EXHAUSTED", invoice: "inv-retry-budget" }),
+      ]),
     );
 
     const afterSecond = await tipIntentRepo.findByInvoiceOrThrow("inv-retry-budget");
@@ -315,7 +321,9 @@ describe("runSettlementDiscovery", () => {
     expect(second.settledCredits).toBe(1);
     expect(second.retryScheduled).toBe(0);
     expect(second.events).toEqual(
-      expect.arrayContaining([expect.objectContaining({ outcome: "SETTLED_CREDIT_APPLIED", invoice: "inv-retry-recover" })]),
+      expect.arrayContaining([
+        expect.objectContaining({ outcome: "SETTLED_CREDIT_APPLIED", invoice: "inv-retry-recover" }),
+      ]),
     );
 
     const saved = await tipIntentRepo.findByInvoiceOrThrow("inv-retry-recover");
@@ -456,7 +464,6 @@ describe("runSettlementDiscovery", () => {
     expect(summary.scanned).toBe(1);
     expect(summary.stillUnpaid).toBe(1);
   });
-
 
   it("skips intents whose retry delay is in the future", async () => {
     const now = new Date("2026-02-11T10:00:00.000Z");

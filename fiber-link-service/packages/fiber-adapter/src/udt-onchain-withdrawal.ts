@@ -1,5 +1,7 @@
 import { BI, Indexer, RPC, commons, config, hd, helpers } from "@ckb-lumos/lumos";
+import type { HashType } from "@ckb-lumos/lumos";
 import {
+  type LumosConfig,
   WithdrawalExecutionError,
   classifyUnknownRuntimeError,
   normalizeErrorMessage,
@@ -8,10 +10,8 @@ import {
   resolveFeeRateShannonsPerKb,
   resolveIndexerUrl,
   resolvePrivateKey,
-  type LumosConfig,
 } from "./ckb-onchain-withdrawal";
 import type { ExecuteWithdrawalArgs, UdtTypeScript } from "./types";
-import type { HashType } from "@ckb-lumos/lumos";
 
 function normalizeHexLike(input: string): string {
   const normalized = input.trim().toLowerCase();
@@ -49,10 +49,7 @@ function parseHashType(value: string): HashType {
   if (trimmed === "type" || trimmed === "data" || trimmed === "data1" || trimmed === "data2") {
     return trimmed;
   }
-  throw new WithdrawalExecutionError(
-    `unsupported hash_type in UDT type script: ${trimmed}`,
-    "permanent",
-  );
+  throw new WithdrawalExecutionError(`unsupported hash_type in UDT type script: ${trimmed}`, "permanent");
 }
 
 function resolveUsdiUdtTypeScript(args: ExecuteWithdrawalArgs): UdtTypeScript {
@@ -62,7 +59,10 @@ function resolveUsdiUdtTypeScript(args: ExecuteWithdrawalArgs): UdtTypeScript {
 
   const raw = process.env.FIBER_USDI_UDT_TYPE_SCRIPT_JSON?.trim();
   if (!raw) {
-    throw new WithdrawalExecutionError("FIBER_USDI_UDT_TYPE_SCRIPT_JSON is required for USDI on-chain withdrawal", "permanent");
+    throw new WithdrawalExecutionError(
+      "FIBER_USDI_UDT_TYPE_SCRIPT_JSON is required for USDI on-chain withdrawal",
+      "permanent",
+    );
   }
 
   let parsed: unknown;
@@ -150,11 +150,9 @@ async function submitUdtTransfer(args: ExecuteWithdrawalArgs): Promise<{ txHash:
 
   config.initializeConfig(cfg);
 
-  const fromAddress = helpers.encodeToConfigAddress(
-    hd.key.privateKeyToBlake160(privateKey),
-    "SECP256K1_BLAKE160",
-    { config: cfg },
-  );
+  const fromAddress = helpers.encodeToConfigAddress(hd.key.privateKeyToBlake160(privateKey), "SECP256K1_BLAKE160", {
+    config: cfg,
+  });
 
   const indexer = new Indexer(indexerUrl, rpcUrl);
   let txSkeleton = helpers.TransactionSkeleton({ cellProvider: indexer });

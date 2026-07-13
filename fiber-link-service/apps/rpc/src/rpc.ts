@@ -1,6 +1,5 @@
-import type { FastifyInstance } from "fastify";
 import { InsufficientFundsError, TipIntentNotFoundError, createDbClient, toErrorMessage } from "@fiber-link/db";
-import { registerStreamRoute } from "./stream";
+import type { FastifyInstance } from "fastify";
 import { verifyHmac } from "./auth/hmac";
 import {
   DashboardAnalyticsParamsSchema,
@@ -12,6 +11,7 @@ import {
   NotificationChannelListParamsSchema,
   NotificationChannelListResultSchema,
   RpcErrorCode,
+  type RpcId,
   RpcIdSchema,
   RpcRequestSchema,
   TipCreateParamsSchema,
@@ -24,24 +24,11 @@ import {
   WithdrawalQuoteResultSchema,
   WithdrawalRequestParamsSchema,
   WithdrawalRequestResultSchema,
-  type RpcId,
 } from "./contracts";
-import { handleTipCreate, handleTipSettledFeed, handleTipStatus, getDefaultAdapterForStream } from "./methods/tip";
-import { handleDashboardSummary, handleDashboardAnalytics } from "./methods/dashboard";
+import { handleDashboardAnalytics, handleDashboardSummary } from "./methods/dashboard";
 import { handleNotificationChannelCreate, handleNotificationChannelList } from "./methods/notification";
+import { getDefaultAdapterForStream, handleTipCreate, handleTipSettledFeed, handleTipStatus } from "./methods/tip";
 import { WithdrawalPolicyViolationError, quoteWithdrawal, requestWithdrawal } from "./methods/withdrawal";
-import { createNonceStore } from "./nonce-store";
-import { dispatchMethod, type MethodDef } from "./rpc-dispatch";
-import {
-  createRateLimitStore,
-  parseRpcRateLimitConfig,
-  rateLimitKey,
-  type RateLimitStore,
-  type RpcRateLimitConfig,
-} from "./rate-limit";
-import { type AppRepo, createDbAppRepo } from "./repositories/app-repo";
-import { rpcErrorResponse, rpcResultResponse } from "./rpc-error";
-import { loadSecretMap, resolveSecretForApp } from "./secret-map";
 import {
   ensureDefaultMetrics,
   hmacSecretSourceTotal,
@@ -51,6 +38,19 @@ import {
   parseMetricsToken,
   rpcRequestsTotal,
 } from "./metrics";
+import { createNonceStore } from "./nonce-store";
+import {
+  type RateLimitStore,
+  type RpcRateLimitConfig,
+  createRateLimitStore,
+  parseRpcRateLimitConfig,
+  rateLimitKey,
+} from "./rate-limit";
+import { type AppRepo, createDbAppRepo } from "./repositories/app-repo";
+import { type MethodDef, dispatchMethod } from "./rpc-dispatch";
+import { rpcErrorResponse, rpcResultResponse } from "./rpc-error";
+import { loadSecretMap, resolveSecretForApp } from "./secret-map";
+import { registerStreamRoute } from "./stream";
 
 const NONCE_TTL_MS = 5 * 60 * 1000;
 const nonceStore = createNonceStore();
@@ -275,21 +275,21 @@ export function registerRpc(
       let secret = "";
       if (appRepo) {
         secret = await resolveSecretForApp(appId, {
-            appRepo,
-            envSecretMap: secretMap,
-            envFallbackSecret: getFallbackSecret(),
-            onResolve: ({ source }) => {
-              hmacSecretSourceTotal.inc({ source });
-              if (source === "env_fallback") {
-                // The shared fallback secret cannot distinguish apps: any holder can
-                // sign requests for any appId. Warn so operators migrate to per-app
-                // secrets (DB or FIBER_LINK_HMAC_SECRET_MAP).
-                req.log.warn({ appId, source }, "RPC request authenticated with shared fallback HMAC secret");
-              } else if (source !== "db") {
-                req.log.info({ appId, source }, "RPC secret resolved by fallback source");
-              }
-            },
-          });
+          appRepo,
+          envSecretMap: secretMap,
+          envFallbackSecret: getFallbackSecret(),
+          onResolve: ({ source }) => {
+            hmacSecretSourceTotal.inc({ source });
+            if (source === "env_fallback") {
+              // The shared fallback secret cannot distinguish apps: any holder can
+              // sign requests for any appId. Warn so operators migrate to per-app
+              // secrets (DB or FIBER_LINK_HMAC_SECRET_MAP).
+              req.log.warn({ appId, source }, "RPC request authenticated with shared fallback HMAC secret");
+            } else if (source !== "db") {
+              req.log.info({ appId, source }, "RPC secret resolved by fallback source");
+            }
+          },
+        });
       } else {
         const fromMap = secretMap?.[appId];
         const fallback = getFallbackSecret();
@@ -352,7 +352,11 @@ export function registerRpc(
           resultSchema: TipStatusResultSchema,
           handler: (params, ctx) => handleTipStatus({ ...params }, { log: ctx.log }),
           errorMap: [
-            { match: (e) => e instanceof TipIntentNotFoundError, code: RpcErrorCode.TIP_NOT_FOUND, message: "Tip not found" },
+            {
+              match: (e) => e instanceof TipIntentNotFoundError,
+              code: RpcErrorCode.TIP_NOT_FOUND,
+              message: "Tip not found",
+            },
           ],
           methodLabel: "tip.status",
         },
@@ -379,7 +383,11 @@ export function registerRpc(
           resultSchema: WithdrawalQuoteResultSchema,
           handler: (params) => quoteWithdrawal({ appId, ...params }),
           errorMap: [
-            { match: (e) => e instanceof WithdrawalPolicyViolationError, code: RpcErrorCode.INVALID_PARAMS, message: (e) => e.message },
+            {
+              match: (e) => e instanceof WithdrawalPolicyViolationError,
+              code: RpcErrorCode.INVALID_PARAMS,
+              message: (e) => e.message,
+            },
           ],
           methodLabel: "withdrawal.quote",
         },
@@ -388,8 +396,16 @@ export function registerRpc(
           resultSchema: WithdrawalRequestResultSchema,
           handler: (params) => requestWithdrawal({ appId, ...params }),
           errorMap: [
-            { match: (e) => e instanceof InsufficientFundsError, code: RpcErrorCode.INVALID_PARAMS, message: "Insufficient balance for withdrawal" },
-            { match: (e) => e instanceof WithdrawalPolicyViolationError, code: RpcErrorCode.INVALID_PARAMS, message: (e) => e.message },
+            {
+              match: (e) => e instanceof InsufficientFundsError,
+              code: RpcErrorCode.INVALID_PARAMS,
+              message: "Insufficient balance for withdrawal",
+            },
+            {
+              match: (e) => e instanceof WithdrawalPolicyViolationError,
+              code: RpcErrorCode.INVALID_PARAMS,
+              message: (e) => e.message,
+            },
           ],
           methodLabel: "withdrawal.request",
         },
@@ -419,11 +435,7 @@ export function registerRpc(
     } catch (error) {
       req.log.error(error);
       return reply.send(
-        rpcErrorResponse(
-          extractRpcId(req.body as unknown),
-          RpcErrorCode.INTERNAL_ERROR,
-          "Internal error",
-        ),
+        rpcErrorResponse(extractRpcId(req.body as unknown), RpcErrorCode.INTERNAL_ERROR, "Internal error"),
       );
     }
   });

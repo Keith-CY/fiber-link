@@ -64,8 +64,12 @@ async function dispatchEvent(
 export function createNoopNotificationDispatcher(): NotificationDispatcher {
   const empty = { matched: 0, attempted: 0, delivered: 0, failed: 0 };
   return {
-    async dispatchWithdrawalEvent() { return empty; },
-    async dispatchTipSettledEvent() { return empty; },
+    async dispatchWithdrawalEvent() {
+      return empty;
+    },
+    async dispatchTipSettledEvent() {
+      return empty;
+    },
   };
 }
 

@@ -1,4 +1,4 @@
-import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
+import { type NodePgDatabase, drizzle } from "drizzle-orm/node-postgres";
 // @ts-expect-error This workspace does not install pg type declarations.
 import { Pool } from "pg";
 import * as schema from "./schema";
@@ -55,9 +55,10 @@ export function createDbClient(urlOrOptions: string | DbClientOptions = process.
     ...(maxConnections !== undefined && { max: maxConnections }),
     ...(idleTimeoutMs !== undefined && { idleTimeoutMillis: idleTimeoutMs }),
     ...(connectionTimeoutMs !== undefined && { connectionTimeoutMillis: connectionTimeoutMs }),
-    ...(statementTimeoutMs !== undefined && statementTimeoutMs > 0 && {
-      options: `-c statement_timeout=${statementTimeoutMs}`,
-    }),
+    ...(statementTimeoutMs !== undefined &&
+      statementTimeoutMs > 0 && {
+        options: `-c statement_timeout=${statementTimeoutMs}`,
+      }),
   });
 
   return drizzle(pool, { schema });

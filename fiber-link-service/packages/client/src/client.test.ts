@@ -1,6 +1,6 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FiberLinkClient } from "./client";
-import { FiberLinkValidationError, FiberLinkResponseError, FiberLinkNetworkError } from "./errors";
+import { FiberLinkNetworkError, FiberLinkResponseError, FiberLinkValidationError } from "./errors";
 
 function makeClient(overrides: Partial<ConstructorParameters<typeof FiberLinkClient>[0]> = {}) {
   return new FiberLinkClient({
@@ -18,15 +18,15 @@ describe("FiberLinkClient constructor", () => {
   });
 
   it("throws when signed mode lacks appId", () => {
-    expect(
-      () => new FiberLinkClient({ endpoint: "http://x", mode: "signed", hmacSecret: "s" }),
-    ).toThrow(FiberLinkValidationError);
+    expect(() => new FiberLinkClient({ endpoint: "http://x", mode: "signed", hmacSecret: "s" })).toThrow(
+      FiberLinkValidationError,
+    );
   });
 
   it("throws when signed mode lacks hmacSecret", () => {
-    expect(
-      () => new FiberLinkClient({ endpoint: "http://x", mode: "signed", appId: "a" }),
-    ).toThrow(FiberLinkValidationError);
+    expect(() => new FiberLinkClient({ endpoint: "http://x", mode: "signed", appId: "a" })).toThrow(
+      FiberLinkValidationError,
+    );
   });
 
   it("constructs successfully in presigned mode", () => {
@@ -73,16 +73,16 @@ describe("FiberLinkClient#createTip", () => {
 
   it("throws FiberLinkValidationError on missing postId", async () => {
     const client = makeClient();
-    await expect(
-      client.createTip({ postId: "", fromUserId: "1", toUserId: "2", amount: "5" }),
-    ).rejects.toThrow(FiberLinkValidationError);
+    await expect(client.createTip({ postId: "", fromUserId: "1", toUserId: "2", amount: "5" })).rejects.toThrow(
+      FiberLinkValidationError,
+    );
   });
 
   it("throws FiberLinkValidationError on zero amount", async () => {
     const client = makeClient();
-    await expect(
-      client.createTip({ postId: "1", fromUserId: "1", toUserId: "2", amount: "0" }),
-    ).rejects.toThrow(FiberLinkValidationError);
+    await expect(client.createTip({ postId: "1", fromUserId: "1", toUserId: "2", amount: "0" })).rejects.toThrow(
+      FiberLinkValidationError,
+    );
   });
 
   it("throws FiberLinkResponseError on RPC error response", async () => {
@@ -96,18 +96,18 @@ describe("FiberLinkClient#createTip", () => {
     );
 
     const client = makeClient();
-    await expect(
-      client.createTip({ postId: "1", fromUserId: "1", toUserId: "2", amount: "1" }),
-    ).rejects.toThrow(FiberLinkResponseError);
+    await expect(client.createTip({ postId: "1", fromUserId: "1", toUserId: "2", amount: "1" })).rejects.toThrow(
+      FiberLinkResponseError,
+    );
   });
 
   it("throws FiberLinkNetworkError on fetch failure", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network failure")));
 
     const client = makeClient();
-    await expect(
-      client.createTip({ postId: "1", fromUserId: "1", toUserId: "2", amount: "1" }),
-    ).rejects.toThrow(FiberLinkNetworkError);
+    await expect(client.createTip({ postId: "1", fromUserId: "1", toUserId: "2", amount: "1" })).rejects.toThrow(
+      FiberLinkNetworkError,
+    );
   });
 });
 
@@ -195,9 +195,7 @@ describe("FiberLinkClient#streamTipStatus", () => {
 
       const presignedClient = makeClient();
       presignedClient.streamTipStatus(FAKE_INVOICE, vi.fn())?.close();
-      expect(seenUrls[1]).toBe(
-        `http://localhost:3000/rpc/stream?invoice=${encodeURIComponent(FAKE_INVOICE)}`,
-      );
+      expect(seenUrls[1]).toBe(`http://localhost:3000/rpc/stream?invoice=${encodeURIComponent(FAKE_INVOICE)}`);
     } finally {
       vi.unstubAllGlobals();
     }

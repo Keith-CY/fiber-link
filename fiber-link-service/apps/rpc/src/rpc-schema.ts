@@ -1,6 +1,6 @@
-import { zodToJsonSchema } from "zod-to-json-schema";
 import type { ZodTypeAny } from "zod";
 import { z } from "zod";
+import { zodToJsonSchema } from "zod-to-json-schema";
 import {
   DashboardAnalyticsParamsSchema,
   DashboardAnalyticsResultSchema,
@@ -39,7 +39,7 @@ const METHOD_SCHEMAS: Record<string, MethodSchemaEntry> = {
   "health.ping": {
     params: HealthPingParamsSchema,
     result: HealthPingResultSchema,
-    description: "Liveness probe over signed JSON-RPC; returns { status: \"ok\" }.",
+    description: 'Liveness probe over signed JSON-RPC; returns { status: "ok" }.',
   },
   "tip.create": {
     params: TipCreateParamsSchema,

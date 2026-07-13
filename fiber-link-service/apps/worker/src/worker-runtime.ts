@@ -1,5 +1,5 @@
+import { type WorkerLogContext, createComponentLogger } from "./logger";
 import { runWithdrawalBatch as runWithdrawalBatchDefault } from "./withdrawal-batch";
-import { createComponentLogger, type WorkerLogContext } from "./logger";
 
 type WorkerLogger = {
   info: (event: string, context?: WorkerLogContext) => void;
@@ -8,7 +8,11 @@ type WorkerLogger = {
 };
 
 type RunLiquidityBatchFn = (options: { signal: AbortSignal }) => Promise<unknown>;
-type RunWithdrawalBatchFn = (options: { maxRetries: number; retryDelayMs: number; signal: AbortSignal }) => Promise<unknown>;
+type RunWithdrawalBatchFn = (options: {
+  maxRetries: number;
+  retryDelayMs: number;
+  signal: AbortSignal;
+}) => Promise<unknown>;
 type PollSettlementsFn = (options: { limit: number; signal: AbortSignal }) => Promise<unknown>;
 
 export type CreateWorkerRuntimeOptions = {

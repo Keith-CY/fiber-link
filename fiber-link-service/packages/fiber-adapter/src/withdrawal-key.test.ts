@@ -43,9 +43,9 @@ describe("readWithdrawalPrivateKeyRaw", () => {
   });
 
   it("throws a descriptive error for an unreadable file without leaking contents", () => {
-    expect(() =>
-      readWithdrawalPrivateKeyRaw({ FIBER_WITHDRAWAL_CKB_PRIVATE_KEY_FILE: "/nonexistent/key" }),
-    ).toThrow(/FIBER_WITHDRAWAL_CKB_PRIVATE_KEY_FILE/);
+    expect(() => readWithdrawalPrivateKeyRaw({ FIBER_WITHDRAWAL_CKB_PRIVATE_KEY_FILE: "/nonexistent/key" })).toThrow(
+      /FIBER_WITHDRAWAL_CKB_PRIVATE_KEY_FILE/,
+    );
   });
 
   it("caches the file read by path and does not re-read after the file changes", () => {

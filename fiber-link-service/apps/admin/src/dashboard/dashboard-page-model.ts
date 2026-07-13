@@ -205,7 +205,8 @@ export function buildOpsTriageCards(state: DashboardTriageInputs): DashboardOpsT
     countState(state.statusSummaries, "BROADCASTED") +
     retryPendingWithdrawals;
 
-  const monitoringSummary = state.operations?.monitoring.status === "ready" ? state.operations.monitoring.summary : undefined;
+  const monitoringSummary =
+    state.operations?.monitoring.status === "ready" ? state.operations.monitoring.summary : undefined;
   const unpaidBacklog = monitoringSummary?.unpaidBacklog ?? 0;
   const settlementRetryPending = monitoringSummary?.retryPendingCount ?? 0;
   const alertCount = monitoringSummary?.alertCount ?? 0;
@@ -254,7 +255,9 @@ export function buildOpsTriageCards(state: DashboardTriageInputs): DashboardOpsT
       label: "Ops alerts",
       value: monitoringSummary ? String(alertCount) : "N/A",
       severity: monitoringSummary ? severityFromCount(alertCount) : "watch",
-      description: monitoringSummary ? `Ops summary status: ${monitoringSummary.status}.` : "Monitoring integration is unavailable.",
+      description: monitoringSummary
+        ? `Ops summary status: ${monitoringSummary.status}.`
+        : "Monitoring integration is unavailable.",
       href: "#monitoring",
     },
   ];

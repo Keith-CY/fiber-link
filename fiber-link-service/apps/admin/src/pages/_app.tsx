@@ -1,11 +1,11 @@
-import type { AppProps } from "next/app";
-import { useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { httpLink } from "@trpc/client";
+import type { AppProps } from "next/app";
+import { useState } from "react";
 import superjson from "superjson";
-import { trpc } from "../utils/trpc";
 import { AppShell } from "../components/layout/app-shell";
 import { Toaster } from "../components/ui/sonner";
+import { trpc } from "../utils/trpc";
 import "../styles/globals.css";
 
 export default function AdminApp({ Component, pageProps }: AppProps) {

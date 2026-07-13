@@ -1,14 +1,14 @@
-import { and, desc, eq, gte, like } from "drizzle-orm";
 import {
+  type DbClient,
+  type TipIntentRepo,
   createDbClient,
   createDbTipIntentRepo,
   ledgerEntries,
   withdrawals,
-  type DbClient,
-  type TipIntentRepo,
 } from "@fiber-link/db";
-import { buildWithdrawalParityReport, type WithdrawalParityReport } from "./withdrawal-reconciliation";
-import { runWorkerReadinessChecks, type WorkerReadinessResult } from "./worker-readiness";
+import { and, desc, eq, gte, like } from "drizzle-orm";
+import { type WithdrawalParityReport, buildWithdrawalParityReport } from "./withdrawal-reconciliation";
+import { type WorkerReadinessResult, runWorkerReadinessChecks } from "./worker-readiness";
 
 export type WorkerOpsConfig = {
   maxUnpaidBacklog: number;
@@ -218,13 +218,15 @@ export function evaluateWorkerOpsSummary(input: {
   };
 }
 
-export async function collectWorkerOpsSummary(input: {
-  env?: NodeJS.ProcessEnv;
-  now?: Date;
-  db?: DbClient;
-  tipIntentRepo?: TipIntentRepo;
-  fetchImpl?: typeof fetch;
-} = {}): Promise<WorkerOpsSummary> {
+export async function collectWorkerOpsSummary(
+  input: {
+    env?: NodeJS.ProcessEnv;
+    now?: Date;
+    db?: DbClient;
+    tipIntentRepo?: TipIntentRepo;
+    fetchImpl?: typeof fetch;
+  } = {},
+): Promise<WorkerOpsSummary> {
   const env = input.env ?? process.env;
   const fiberRpcUrl = env.FIBER_RPC_URL;
   if (!fiberRpcUrl) {

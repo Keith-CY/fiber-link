@@ -1,4 +1,4 @@
-import { assertPositiveAmount, compareDecimalStrings, type Asset } from "@fiber-link/db";
+import { type Asset, assertPositiveAmount, compareDecimalStrings } from "@fiber-link/db";
 
 export type WithdrawalPolicyInput = {
   appId: string;

@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
 import type { DbClient } from "@fiber-link/db";
+import { describe, expect, it } from "vitest";
 import { createDbAdminServices } from "./db-services";
 
 type FakeRows = {
@@ -151,7 +151,14 @@ describe("db admin services", () => {
     const services = createDbAdminServices(db);
     const saved = await services.upsertPolicy(
       { role: "SUPER_ADMIN", adminUserId: "ops-1" },
-      { appId: "app-alpha", allowedAssets: ["CKB"], maxPerRequest: "100", perUserDailyMax: "1000", perAppDailyMax: "10000", cooldownSeconds: 60 },
+      {
+        appId: "app-alpha",
+        allowedAssets: ["CKB"],
+        maxPerRequest: "100",
+        perUserDailyMax: "1000",
+        perAppDailyMax: "10000",
+        cooldownSeconds: 60,
+      },
     );
     expect(saved.appId).toBe("app-alpha");
     expect(saved.createdAt).toBe("2026-03-18T00:00:00.000Z");
@@ -164,7 +171,14 @@ describe("db admin services", () => {
     await expect(
       services.upsertPolicy(
         { role: "SUPER_ADMIN", adminUserId: "ops-1" },
-        { appId: "ghost", allowedAssets: ["CKB"], maxPerRequest: "1", perUserDailyMax: "1", perAppDailyMax: "1", cooldownSeconds: 0 },
+        {
+          appId: "ghost",
+          allowedAssets: ["CKB"],
+          maxPerRequest: "1",
+          perUserDailyMax: "1",
+          perAppDailyMax: "1",
+          cooldownSeconds: 0,
+        },
       ),
     ).rejects.toThrow(/unknown app/);
     expect(inserted).toHaveLength(0);
@@ -176,7 +190,14 @@ describe("db admin services", () => {
     await expect(
       services.upsertPolicy(
         { role: "COMMUNITY_ADMIN", adminUserId: "c" },
-        { appId: "app-beta", allowedAssets: ["CKB"], maxPerRequest: "1", perUserDailyMax: "1", perAppDailyMax: "1", cooldownSeconds: 0 },
+        {
+          appId: "app-beta",
+          allowedAssets: ["CKB"],
+          maxPerRequest: "1",
+          perUserDailyMax: "1",
+          perAppDailyMax: "1",
+          cooldownSeconds: 0,
+        },
       ),
     ).rejects.toThrow(/COMMUNITY_ADMIN/);
   });

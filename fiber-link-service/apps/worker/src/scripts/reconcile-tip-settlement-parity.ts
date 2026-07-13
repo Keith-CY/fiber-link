@@ -1,9 +1,9 @@
-import { and, desc, eq, gte, inArray, isNull, like, lte, ne, or, sql } from "drizzle-orm";
 import { createDbClient, ledgerEntries, tipIntents } from "@fiber-link/db";
+import { and, desc, eq, gte, inArray, isNull, like, lte, ne, or, sql } from "drizzle-orm";
 import {
+  type TipSettlementParityCreditRow,
   buildTipSettlementParityReport,
   parseTipIntentIdFromSettlementCreditIdempotencyKey,
-  type TipSettlementParityCreditRow,
 } from "../tip-settlement-reconciliation";
 
 export type ReconcileArgs = {
@@ -166,12 +166,7 @@ async function main() {
       nullSettledAtFallbackPredicates.push(lte(tipIntents.createdAt, to));
     }
 
-    settledTipPredicates.push(
-      or(
-        and(...settledAtWindowPredicates),
-        and(...nullSettledAtFallbackPredicates),
-      )!,
-    );
+    settledTipPredicates.push(or(and(...settledAtWindowPredicates), and(...nullSettledAtFallbackPredicates))!);
   }
 
   const unsettledTipPredicates = [sql`TRUE`, ne(tipIntents.invoiceState, "SETTLED")];
@@ -185,7 +180,11 @@ async function main() {
     unsettledTipPredicates.push(lte(tipIntents.createdAt, to));
   }
 
-  const creditPredicates = [sql`TRUE`, eq(ledgerEntries.type, "credit"), like(ledgerEntries.idempotencyKey, "settlement:tip_intent:%")];
+  const creditPredicates = [
+    sql`TRUE`,
+    eq(ledgerEntries.type, "credit"),
+    like(ledgerEntries.idempotencyKey, "settlement:tip_intent:%"),
+  ];
   if (appId) {
     creditPredicates.push(eq(ledgerEntries.appId, appId));
   }
@@ -255,25 +254,27 @@ async function main() {
   const loadedTipIds = new Set([...settledTipRows, ...unsettledTipRows].map((row) => row.id));
   const referencedTipIntentIds = collectReferencedTipIntentIds(creditRows).filter((id) => !loadedTipIds.has(id));
 
-  const referencedTipRows = referencedTipIntentIds.length === 0
-    ? []
-    : (await db
-      .select({
-        id: tipIntents.id,
-        appId: tipIntents.appId,
-        postId: tipIntents.postId,
-        fromUserId: tipIntents.fromUserId,
-        toUserId: tipIntents.toUserId,
-        asset: tipIntents.asset,
-        amount: tipIntents.amount,
-        invoice: tipIntents.invoice,
-        state: tipIntents.invoiceState,
-        createdAt: tipIntents.createdAt,
-        settledAt: tipIntents.settledAt,
-      })
-      .from(tipIntents)
-      .where(inArray(tipIntents.id, referencedTipIntentIds))
-    ).map(mapTipRow);
+  const referencedTipRows =
+    referencedTipIntentIds.length === 0
+      ? []
+      : (
+          await db
+            .select({
+              id: tipIntents.id,
+              appId: tipIntents.appId,
+              postId: tipIntents.postId,
+              fromUserId: tipIntents.fromUserId,
+              toUserId: tipIntents.toUserId,
+              asset: tipIntents.asset,
+              amount: tipIntents.amount,
+              invoice: tipIntents.invoice,
+              state: tipIntents.invoiceState,
+              createdAt: tipIntents.createdAt,
+              settledAt: tipIntents.settledAt,
+            })
+            .from(tipIntents)
+            .where(inArray(tipIntents.id, referencedTipIntentIds))
+        ).map(mapTipRow);
 
   const report = buildTipSettlementParityReport({
     tipIntents: mergeTipRows(settledTipRows, unsettledTipRows, referencedTipRows),

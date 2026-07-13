@@ -1,6 +1,6 @@
-import { asc, eq } from "drizzle-orm";
 import { createDbClient, notificationChannels, notificationRules } from "@fiber-link/db";
-import { createDbNotificationRepo, type NotificationChannelRecord } from "@fiber-link/notifications";
+import { type NotificationChannelRecord, createDbNotificationRepo } from "@fiber-link/notifications";
+import { asc, eq } from "drizzle-orm";
 import type { z } from "zod";
 import type { NotificationChannelCreateParamsSchema } from "../contracts";
 
@@ -34,9 +34,7 @@ export async function handleNotificationChannelCreate({ appId, name, kind, targe
     const repo = createDbNotificationRepo(tx);
     const channel = await repo.createChannel({ appId, name, kind, target, secret: secret ?? null });
 
-    await Promise.all(
-      events.map((event) => repo.createRule({ appId, channelId: channel.id, event: event as any })),
-    );
+    await Promise.all(events.map((event) => repo.createRule({ appId, channelId: channel.id, event: event as any })));
 
     return serializeChannel(channel, events);
   });
@@ -67,7 +65,14 @@ export async function handleNotificationChannelList({ appId }: { appId: string }
       channelMap.set(
         row.id,
         serializeChannel(
-          { id: row.id, name: row.name, kind: row.kind, target: row.target, enabled: row.enabled, createdAt: row.createdAt },
+          {
+            id: row.id,
+            name: row.name,
+            kind: row.kind,
+            target: row.target,
+            enabled: row.enabled,
+            createdAt: row.createdAt,
+          },
           [],
         ),
       );

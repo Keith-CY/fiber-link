@@ -179,7 +179,17 @@ export const DashboardSummaryResultSchema = z.object({
       postId: z.string().min(1),
       amount: z.string().min(1),
       asset: z.enum(["CKB", "USDI"]),
-      state: z.enum(["UNPAID", "SETTLED", "FAILED", "LIQUIDITY_PENDING", "PENDING", "PROCESSING", "BROADCASTED", "RETRY_PENDING", "COMPLETED"]),
+      state: z.enum([
+        "UNPAID",
+        "SETTLED",
+        "FAILED",
+        "LIQUIDITY_PENDING",
+        "PENDING",
+        "PROCESSING",
+        "BROADCASTED",
+        "RETRY_PENDING",
+        "COMPLETED",
+      ]),
       direction: z.enum(["IN", "OUT", "WITHDRAWAL"]),
       counterpartyUserId: z.string().min(1),
       message: z.string().nullable(),
@@ -355,7 +365,9 @@ export const NotificationChannelCreateParamsSchema = z.object({
   kind: z.literal("WEBHOOK"),
   target: z.string().url(),
   secret: z.string().trim().min(8).max(256).optional().nullable(),
-  events: z.array(z.enum(["TIP_SETTLED", "WITHDRAWAL_COMPLETED", "WITHDRAWAL_FAILED", "WITHDRAWAL_RETRY_PENDING"])).min(1),
+  events: z
+    .array(z.enum(["TIP_SETTLED", "WITHDRAWAL_COMPLETED", "WITHDRAWAL_FAILED", "WITHDRAWAL_RETRY_PENDING"]))
+    .min(1),
 });
 
 export const NotificationChannelCreateResultSchema = z.object({

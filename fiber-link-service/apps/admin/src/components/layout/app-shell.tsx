@@ -1,11 +1,11 @@
-import * as React from "react";
+import { Activity, Banknote, Boxes, LayoutDashboard, Wallet, Wrench } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/router";
-import { Activity, Banknote, Boxes, LayoutDashboard, Wallet, Wrench } from "lucide-react";
+import type * as React from "react";
+import { cn } from "../../lib/utils";
 import { trpc } from "../../utils/trpc";
 import { Badge } from "../ui/badge";
 import { Skeleton } from "../ui/skeleton";
-import { cn } from "../../lib/utils";
 
 type NavItem = {
   href: string;
@@ -71,7 +71,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 data-testid={`nav-${item.label.toLowerCase()}`}
                 className={cn(
                   "inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
-                  active ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                  active
+                    ? "bg-accent text-accent-foreground"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground",
                 )}
               >
                 <Icon className="h-4 w-4" />

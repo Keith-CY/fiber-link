@@ -1,16 +1,25 @@
 import { describe, expect, it } from "vitest";
 import {
+  type DashboardWithdrawal,
   WITHDRAWAL_STATE_ORDER,
   buildOpsTriageCards,
   getRoleVisibility,
   parseAdminRole,
   summarizeWithdrawalStates,
-  type DashboardWithdrawal,
 } from "./dashboard-page-model";
 
 const WITHDRAWALS: DashboardWithdrawal[] = [
   { id: "w1", appId: "a", userId: "u", asset: "CKB", amount: "1", state: "FAILED", createdAt: "t", txHash: null },
-  { id: "w2", appId: "a", userId: "u", asset: "CKB", amount: "1", state: "LIQUIDITY_PENDING", createdAt: "t", txHash: null },
+  {
+    id: "w2",
+    appId: "a",
+    userId: "u",
+    asset: "CKB",
+    amount: "1",
+    state: "LIQUIDITY_PENDING",
+    createdAt: "t",
+    txHash: null,
+  },
   { id: "w3", appId: "a", userId: "u", asset: "CKB", amount: "1", state: "COMPLETED", createdAt: "t", txHash: "0x" },
 ];
 

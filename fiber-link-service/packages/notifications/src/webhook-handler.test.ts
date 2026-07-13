@@ -1,8 +1,13 @@
-import { describe, expect, it, vi } from "vitest";
 import crypto from "node:crypto";
-import { createWebhookChannelHandler } from "./webhook-handler";
+import { describe, expect, it, vi } from "vitest";
+import type {
+  TipSettledNotificationEvent,
+  WithdrawalCompletedNotificationEvent,
+  WithdrawalFailedNotificationEvent,
+  WithdrawalRetryPendingNotificationEvent,
+} from "./notification-events";
 import type { NotificationDispatchTarget } from "./notification-repo";
-import type { TipSettledNotificationEvent, WithdrawalCompletedNotificationEvent, WithdrawalFailedNotificationEvent, WithdrawalRetryPendingNotificationEvent } from "./notification-events";
+import { createWebhookChannelHandler } from "./webhook-handler";
 
 const BASE_TARGET: NotificationDispatchTarget = {
   ruleId: "rule-1",
@@ -63,7 +68,10 @@ describe("createWebhookChannelHandler", () => {
     const sig = (init.headers as Record<string, string>)["x-fiber-link-signature"];
     expect(sig).toMatch(/^sha256=[a-f0-9]{64}$/);
 
-    const expected = "sha256=" + crypto.createHmac("sha256", secret).update(init.body as string).digest("hex");
+    const expected = `sha256=${crypto
+      .createHmac("sha256", secret)
+      .update(init.body as string)
+      .digest("hex")}`;
     expect(sig).toBe(expected);
   });
 
@@ -84,12 +92,12 @@ describe("createWebhookChannelHandler", () => {
   });
 
   it("includes a response body snippet in the non-2xx error message", async () => {
-    const mockFetch = vi.fn(async (_url: string, _init?: RequestInit) => new Response('{"error":"invalid_token"}', { status: 401 }));
+    const mockFetch = vi.fn(
+      async (_url: string, _init?: RequestInit) => new Response('{"error":"invalid_token"}', { status: 401 }),
+    );
     const handler = createWebhookChannelHandler({ fetch: mockFetch as unknown as typeof fetch });
 
-    await expect(handler({ target: BASE_TARGET, event: COMPLETED_EVENT })).rejects.toThrow(
-      /HTTP 401.*invalid_token/,
-    );
+    await expect(handler({ target: BASE_TARGET, event: COMPLETED_EVENT })).rejects.toThrow(/HTTP 401.*invalid_token/);
   });
 
   it("truncates long response bodies to 200 characters in the error message", async () => {
@@ -97,9 +105,7 @@ describe("createWebhookChannelHandler", () => {
     const mockFetch = vi.fn(async (_url: string, _init?: RequestInit) => new Response(longBody, { status: 500 }));
     const handler = createWebhookChannelHandler({ fetch: mockFetch as unknown as typeof fetch });
 
-    await expect(handler({ target: BASE_TARGET, event: COMPLETED_EVENT })).rejects.toThrow(
-      /HTTP 500.*x{200}$/,
-    );
+    await expect(handler({ target: BASE_TARGET, event: COMPLETED_EVENT })).rejects.toThrow(/HTTP 500.*x{200}$/);
   });
 
   it("includes retry-pending fields for WITHDRAWAL_RETRY_PENDING events", async () => {

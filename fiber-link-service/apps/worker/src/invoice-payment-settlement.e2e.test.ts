@@ -1,10 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  createInMemoryLedgerRepo,
-  createInMemoryTipIntentRepo,
   type InvoiceState,
   type LedgerRepo,
+  createInMemoryLedgerRepo,
+  createInMemoryTipIntentRepo,
 } from "@fiber-link/db";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { handleTipCreate } from "../../rpc/src/methods/tip";
 import { runSettlementDiscovery } from "./settlement-discovery";
 

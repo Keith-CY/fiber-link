@@ -1,6 +1,6 @@
-import { initTRPC, TRPCError } from "@trpc/server";
-import superjson from "superjson";
 import type { UserRole } from "@fiber-link/db";
+import { TRPCError, initTRPC } from "@trpc/server";
+import superjson from "superjson";
 import type { AdminScope, AdminServices } from "../services/types";
 
 export type TrpcContext = {

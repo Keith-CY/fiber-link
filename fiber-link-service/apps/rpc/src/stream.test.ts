@@ -1,6 +1,6 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
 import Fastify from "fastify";
-import { registerStreamRoute, type StreamInvoiceRecord } from "./stream";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { type StreamInvoiceRecord, registerStreamRoute } from "./stream";
 
 const APP_ID = "app1";
 const APP_HEADERS = { "x-app-id": APP_ID };
@@ -201,10 +201,7 @@ describe("GET /rpc/stream", () => {
     });
     expect(res.statusCode).toBe(200);
     expect(res.body).toContain('"status":"TIMEOUT"');
-    expect(subscriber.subscribe).toHaveBeenCalledWith(
-      "fiber-link:settlement:inv-timeout",
-      expect.any(Function),
-    );
+    expect(subscriber.subscribe).toHaveBeenCalledWith("fiber-link:settlement:inv-timeout", expect.any(Function));
   });
 
   it("sets SSE headers on successful connection", async () => {
@@ -261,7 +258,11 @@ describe("GET /rpc/stream", () => {
     expect(second.statusCode).toBe(429);
     expect(second.json()).toEqual({ error: "Too many concurrent streams" });
 
-    subscriber.emit("message", "fiber-link:settlement:inv-held", JSON.stringify({ invoice: "inv-held", status: "SETTLED" }));
+    subscriber.emit(
+      "message",
+      "fiber-link:settlement:inv-held",
+      JSON.stringify({ invoice: "inv-held", status: "SETTLED" }),
+    );
     const firstRes = await first;
     expect(firstRes.statusCode).toBe(200);
 
@@ -280,7 +281,11 @@ describe("GET /rpc/stream", () => {
     const first = app.inject({ method: "GET", url: "/rpc/stream?invoice=inv-1", headers: { "x-app-id": "busy-app" } });
     await vi.waitFor(() => expect(subscriber.subscribe).toHaveBeenCalled());
 
-    const second = await app.inject({ method: "GET", url: "/rpc/stream?invoice=inv-2", headers: { "x-app-id": "other-app" } });
+    const second = await app.inject({
+      method: "GET",
+      url: "/rpc/stream?invoice=inv-2",
+      headers: { "x-app-id": "other-app" },
+    });
     expect(second.statusCode).toBe(429);
 
     subscriber.emit("message", "fiber-link:settlement:inv-1", JSON.stringify({ invoice: "inv-1", status: "SETTLED" }));

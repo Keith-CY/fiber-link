@@ -1,15 +1,15 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
-import { useRouter } from "next/router";
-import Link from "next/link";
-import { toast } from "sonner";
 import type { Asset } from "@fiber-link/db";
-import { trpc } from "../../utils/trpc";
+import Link from "next/link";
+import { useRouter } from "next/router";
+import { type FormEvent, type ReactNode, useEffect, useState } from "react";
+import { toast } from "sonner";
 import { PageHeader, QueryBoundary } from "../../components/page";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
 import { formatDateTime } from "../../lib/format";
+import { trpc } from "../../utils/trpc";
 
 const ASSETS: Asset[] = ["CKB", "USDI"];
 
@@ -116,86 +116,86 @@ export default function AppDetailPage() {
             </CardContent>
           </Card>
         ) : (
-        <Card className="max-w-2xl">
-          <CardHeader>
-            <CardTitle>Withdrawal policy</CardTitle>
-            <CardDescription>
-              {policy
-                ? `Updated by ${policy.updatedBy ?? "—"} at ${formatDateTime(policy.updatedAt)}`
-                : "No policy configured yet for this app."}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form className="space-y-4" onSubmit={onSubmit} data-testid={`policy-form-${appId}`}>
-              <fieldset className="space-y-2">
-                <legend className="text-sm font-medium">Allowed assets</legend>
-                <div className="flex gap-4">
-                  {ASSETS.map((asset) => (
-                    <label key={asset} className="flex items-center gap-2 text-sm">
-                      <input
-                        type="checkbox"
-                        name="allowedAssets"
-                        value={asset}
-                        checked={form.allowedAssets.includes(asset)}
-                        onChange={(event) => toggleAsset(asset, event.target.checked)}
-                      />
-                      {asset}
-                    </label>
-                  ))}
+          <Card className="max-w-2xl">
+            <CardHeader>
+              <CardTitle>Withdrawal policy</CardTitle>
+              <CardDescription>
+                {policy
+                  ? `Updated by ${policy.updatedBy ?? "—"} at ${formatDateTime(policy.updatedAt)}`
+                  : "No policy configured yet for this app."}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form className="space-y-4" onSubmit={onSubmit} data-testid={`policy-form-${appId}`}>
+                <fieldset className="space-y-2">
+                  <legend className="text-sm font-medium">Allowed assets</legend>
+                  <div className="flex gap-4">
+                    {ASSETS.map((asset) => (
+                      <label key={asset} className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          name="allowedAssets"
+                          value={asset}
+                          checked={form.allowedAssets.includes(asset)}
+                          onChange={(event) => toggleAsset(asset, event.target.checked)}
+                        />
+                        {asset}
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <Field label="Max per request" htmlFor="maxPerRequest">
+                    <Input
+                      id="maxPerRequest"
+                      name="maxPerRequest"
+                      value={form.maxPerRequest}
+                      onChange={(event) => setForm((prev) => ({ ...prev, maxPerRequest: event.target.value }))}
+                    />
+                  </Field>
+                  <Field label="Per-user daily max" htmlFor="perUserDailyMax">
+                    <Input
+                      id="perUserDailyMax"
+                      name="perUserDailyMax"
+                      value={form.perUserDailyMax}
+                      onChange={(event) => setForm((prev) => ({ ...prev, perUserDailyMax: event.target.value }))}
+                    />
+                  </Field>
+                  <Field label="Per-app daily max" htmlFor="perAppDailyMax">
+                    <Input
+                      id="perAppDailyMax"
+                      name="perAppDailyMax"
+                      value={form.perAppDailyMax}
+                      onChange={(event) => setForm((prev) => ({ ...prev, perAppDailyMax: event.target.value }))}
+                    />
+                  </Field>
+                  <Field label="Cooldown seconds" htmlFor="cooldownSeconds">
+                    <Input
+                      id="cooldownSeconds"
+                      name="cooldownSeconds"
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={form.cooldownSeconds}
+                      onChange={(event) => setForm((prev) => ({ ...prev, cooldownSeconds: event.target.value }))}
+                    />
+                  </Field>
                 </div>
-              </fieldset>
 
-              <div className="grid grid-cols-2 gap-4">
-                <Field label="Max per request" htmlFor="maxPerRequest">
-                  <Input
-                    id="maxPerRequest"
-                    name="maxPerRequest"
-                    value={form.maxPerRequest}
-                    onChange={(event) => setForm((prev) => ({ ...prev, maxPerRequest: event.target.value }))}
-                  />
-                </Field>
-                <Field label="Per-user daily max" htmlFor="perUserDailyMax">
-                  <Input
-                    id="perUserDailyMax"
-                    name="perUserDailyMax"
-                    value={form.perUserDailyMax}
-                    onChange={(event) => setForm((prev) => ({ ...prev, perUserDailyMax: event.target.value }))}
-                  />
-                </Field>
-                <Field label="Per-app daily max" htmlFor="perAppDailyMax">
-                  <Input
-                    id="perAppDailyMax"
-                    name="perAppDailyMax"
-                    value={form.perAppDailyMax}
-                    onChange={(event) => setForm((prev) => ({ ...prev, perAppDailyMax: event.target.value }))}
-                  />
-                </Field>
-                <Field label="Cooldown seconds" htmlFor="cooldownSeconds">
-                  <Input
-                    id="cooldownSeconds"
-                    name="cooldownSeconds"
-                    type="number"
-                    min={0}
-                    step={1}
-                    value={form.cooldownSeconds}
-                    onChange={(event) => setForm((prev) => ({ ...prev, cooldownSeconds: event.target.value }))}
-                  />
-                </Field>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <Button type="submit" disabled={upsert.isPending}>
-                  {upsert.isPending ? "Saving…" : "Save policy"}
-                </Button>
-                {upsert.isSuccess ? (
-                  <span className="text-sm text-success" data-testid="policy-saved">
-                    Policy saved for {appId}
-                  </span>
-                ) : null}
-              </div>
-            </form>
-          </CardContent>
-        </Card>
+                <div className="flex items-center gap-3">
+                  <Button type="submit" disabled={upsert.isPending}>
+                    {upsert.isPending ? "Saving…" : "Save policy"}
+                  </Button>
+                  {upsert.isSuccess ? (
+                    <span className="text-sm text-success" data-testid="policy-saved">
+                      Policy saved for {appId}
+                    </span>
+                  ) : null}
+                </div>
+              </form>
+            </CardContent>
+          </Card>
         )}
       </QueryBoundary>
     </div>

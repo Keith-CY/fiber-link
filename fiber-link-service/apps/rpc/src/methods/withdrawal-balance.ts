@@ -1,15 +1,12 @@
 import {
-  addDecimalStrings,
-  compareDecimalStrings,
   InsufficientFundsError,
-  subtractDecimalStrings,
   type LedgerRepo,
   type WithdrawalRepo,
+  addDecimalStrings,
+  compareDecimalStrings,
+  subtractDecimalStrings,
 } from "@fiber-link/db";
-import {
-  resolveFeeRateShannonsPerKb,
-  shannonsToCkbDecimal,
-} from "@fiber-link/fiber-adapter";
+import { resolveFeeRateShannonsPerKb, shannonsToCkbDecimal } from "@fiber-link/fiber-adapter";
 import type { RequestWithdrawalInput } from "./withdrawal-policy";
 
 function clampNonNegative(left: string, right: string): string {

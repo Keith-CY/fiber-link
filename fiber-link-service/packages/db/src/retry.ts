@@ -3,11 +3,7 @@ export type ComputeRetryDelayOptions = {
   maxDelayMs?: number;
 };
 
-export function computeRetryDelay(
-  baseMs: number,
-  retryCount: number,
-  options: ComputeRetryDelayOptions = {},
-): number {
+export function computeRetryDelay(baseMs: number, retryCount: number, options: ComputeRetryDelayOptions = {}): number {
   const { jitter = false, maxDelayMs } = options;
   const exponential = baseMs * 2 ** retryCount;
   let delay = maxDelayMs !== undefined ? Math.min(exponential, maxDelayMs) : exponential;

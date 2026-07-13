@@ -1,4 +1,3 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   InsufficientFundsError,
   createInMemoryLedgerRepo,
@@ -6,8 +5,9 @@ import {
   createInMemoryWithdrawalPolicyRepo,
   createInMemoryWithdrawalRepo,
 } from "@fiber-link/db";
-import { WithdrawalPolicyViolationError as ExtractedWithdrawalPolicyViolationError } from "./withdrawal-policy";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WithdrawalPolicyViolationError, requestWithdrawal } from "./withdrawal";
+import { WithdrawalPolicyViolationError as ExtractedWithdrawalPolicyViolationError } from "./withdrawal-policy";
 
 describe("quoteWithdrawal", () => {
   const repo = createInMemoryWithdrawalRepo();
@@ -39,16 +39,19 @@ describe("quoteWithdrawal", () => {
     });
 
     const { quoteWithdrawal } = await import("./withdrawal");
-    const quote = await quoteWithdrawal({
-      appId: "app1",
-      userId: "u1",
-      asset: "CKB",
-      amount: "62",
-      destination: {
-        kind: "CKB_ADDRESS",
-        address: "ckt1qyqfth8m4fevfzh5hhd088s78qcdjjp8cehs7z8jhw",
+    const quote = await quoteWithdrawal(
+      {
+        appId: "app1",
+        userId: "u1",
+        asset: "CKB",
+        amount: "62",
+        destination: {
+          kind: "CKB_ADDRESS",
+          address: "ckt1qyqfth8m4fevfzh5hhd088s78qcdjjp8cehs7z8jhw",
+        },
       },
-    }, { repo, ledgerRepo: ledger });
+      { repo, ledgerRepo: ledger },
+    );
 
     expect(quote.availableBalance).toBe("124");
     expect(quote.lockedBalance).toBe("61");
@@ -70,16 +73,19 @@ describe("quoteWithdrawal", () => {
     });
 
     const { quoteWithdrawal } = await import("./withdrawal");
-    const quote = await quoteWithdrawal({
-      appId: "app1",
-      userId: "u1",
-      asset: "CKB",
-      amount: "61",
-      destination: {
-        kind: "CKB_ADDRESS",
-        address: "bad-address",
+    const quote = await quoteWithdrawal(
+      {
+        appId: "app1",
+        userId: "u1",
+        asset: "CKB",
+        amount: "61",
+        destination: {
+          kind: "CKB_ADDRESS",
+          address: "bad-address",
+        },
       },
-    }, { repo, ledgerRepo: ledger });
+      { repo, ledgerRepo: ledger },
+    );
 
     expect(quote.destinationValid).toBe(false);
     expect(quote.validationMessage).toContain("CKB address");
@@ -1100,10 +1106,7 @@ describe("requestWithdrawal", () => {
       (releaseFirstInventoryCall as (() => void) | null)?.();
 
       const [firstResult, secondResult] = await Promise.all([firstRequest, secondRequest]);
-      expect([firstResult.state, secondResult.state].sort()).toEqual([
-        "LIQUIDITY_PENDING",
-        "LIQUIDITY_PENDING",
-      ]);
+      expect([firstResult.state, secondResult.state].sort()).toEqual(["LIQUIDITY_PENDING", "LIQUIDITY_PENDING"]);
       expect(liquidityRequestRepo.__listForTests?.()).toHaveLength(1);
     } finally {
       if (previousAllowedAssets === undefined) delete process.env.FIBER_WITHDRAWAL_POLICY_ALLOWED_ASSETS;
