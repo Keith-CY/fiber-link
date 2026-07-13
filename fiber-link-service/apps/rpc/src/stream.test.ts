@@ -136,6 +136,54 @@ describe("GET /rpc/stream", () => {
     expect(res.body).toContain('"status":"SETTLED"');
   });
 
+  it("app.close() ends active SSE connections instead of waiting out the window", async () => {
+    let subscribed = false;
+    const subscriber = makeMockSubscriber(() => {
+      subscribed = true;
+    });
+
+    const app = buildTestApp({
+      getInvoice: async () => ownedInvoice("UNPAID"),
+      createSubscriber: () => subscriber as unknown as InstanceType<typeof import("ioredis").default>,
+      timeoutMs: 5_000,
+    });
+
+    const pending = app.inject({
+      method: "GET",
+      url: "/rpc/stream?invoice=inv-shutdown",
+      headers: APP_HEADERS,
+    });
+    await vi.waitFor(() => {
+      expect(subscribed).toBe(true);
+    });
+
+    const closeStartedAt = Date.now();
+    await app.close();
+    const res = await pending;
+
+    // The stream was ended by the shutdown hook, not the 5s timeout window.
+    expect(Date.now() - closeStartedAt).toBeLessThan(4_000);
+    expect(res.body).toContain('"status":"LISTENING"');
+    expect(res.body).not.toContain('"status":"TIMEOUT"');
+  });
+
+  it("closing one fastify instance does not tear down another instance's stream route", async () => {
+    const first = buildTestApp({ getInvoice: async () => ownedInvoice("SETTLED") });
+    const second = buildTestApp({ getInvoice: async () => ownedInvoice("SETTLED") });
+    await first.ready();
+    await second.ready();
+
+    await first.close();
+
+    const res = await second.inject({
+      method: "GET",
+      url: `/rpc/stream?invoice=inv-multi&appId=${APP_ID}`,
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toContain('"status":"SETTLED"');
+    await second.close();
+  });
+
   it("streams TIMEOUT event when no settlement arrives within the configured window", async () => {
     const subscriber = makeMockSubscriber();
 

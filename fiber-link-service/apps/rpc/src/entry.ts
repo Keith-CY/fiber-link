@@ -27,7 +27,10 @@ async function main() {
     throw new Error(`Invalid environment: ${envReport.errors.join("; ")}`);
   }
 
+  let shuttingDown = false;
   const shutdown = async (signal: NodeJS.Signals) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
     app.log.info({ signal }, "shutting down");
     // If close() hangs (a stuck connection or onClose hook), force the exit
     // after a bounded drain window instead of wedging the container.

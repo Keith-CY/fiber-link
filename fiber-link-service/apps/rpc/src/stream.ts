@@ -19,6 +19,11 @@ function getDefaultDb() {
 // one Redis connection regardless of how many concurrent SSE connections exist.
 let sharedRedis: Redis | null = null;
 const channelListeners = new Map<string, Set<(msg: string) => void>>();
+// Live route registrations sharing the singleton connection. The connection is
+// only torn down when the last registered fastify instance closes, so closing
+// one instance in a multi-instance process (integration tests, embedders)
+// cannot yank the subscriber out from under the others.
+let sharedRegistrations = 0;
 
 function getOrCreateSharedRedis(redisUrl: string): Redis {
   if (!sharedRedis) {
@@ -43,7 +48,14 @@ export async function closeSharedStreamResources(): Promise<void> {
     const redis = sharedRedis;
     sharedRedis = null;
     try {
-      await redis.quit();
+      // quit() waits for a server reply and can hang on an unresponsive or
+      // half-open peer; fall back to a hard disconnect after a short grace.
+      await Promise.race([
+        redis.quit(),
+        new Promise((_, reject) => {
+          setTimeout(() => reject(new Error("redis quit timed out")), 2000).unref();
+        }),
+      ]);
     } catch {
       redis.disconnect();
     }
@@ -109,9 +121,21 @@ export function registerStreamRoute(
     heartbeatIntervalMs?: number;
   } = {},
 ) {
-  // Release the shared subscriber when the server shuts down gracefully.
+  // Track the finisher of every open SSE response so a graceful shutdown ends
+  // them promptly instead of waiting out long-lived connections, and release
+  // the shared subscriber when the last registered instance closes.
+  const activeStreams = new Set<() => void>();
+  sharedRegistrations += 1;
   app.addHook("onClose", async () => {
-    await closeSharedStreamResources();
+    for (const finishStream of [...activeStreams]) {
+      finishStream();
+    }
+    activeStreams.clear();
+    sharedRegistrations -= 1;
+    if (sharedRegistrations <= 0) {
+      sharedRegistrations = 0;
+      await closeSharedStreamResources();
+    }
   });
 
   const maxConnections = options.maxConnections ?? parsePositiveIntEnv("RPC_STREAM_MAX_CONNECTIONS", DEFAULT_MAX_CONNECTIONS);
@@ -274,6 +298,10 @@ export function registerStreamRoute(
       function finish() {
         if (finished) return;
         finished = true;
+        activeStreams.delete(finish);
+        // Callers on the settle/close paths clear this too; clearing here as
+        // well keeps the shutdown path from leaving the window timer armed.
+        clearTimeout(timeout);
         if (pollTimer) {
           clearTimeout(pollTimer);
           pollTimer = null;
@@ -310,6 +338,10 @@ export function registerStreamRoute(
           schedulePoll();
         }, intervalMs);
       }
+
+      // Register with the shutdown tracker so app.close() can end this
+      // response instead of waiting for the timeout window.
+      activeStreams.add(finish);
 
       const timeout = setTimeout(() => {
         if (!finished) {
