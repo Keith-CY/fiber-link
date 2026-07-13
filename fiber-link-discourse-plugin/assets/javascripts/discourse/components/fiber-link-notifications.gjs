@@ -3,17 +3,12 @@ import { tracked } from "@glimmer/tracking";
 import { action } from "@ember/object";
 import { fn } from "@ember/helper";
 import { on } from "@ember/modifier";
+import { i18n } from "discourse-i18n";
 
 const joinEvents = (events) => (Array.isArray(events) ? events : []).join(", ");
 const isInSet = (set, value) => set instanceof Set && set.has(value);
-const yesNo = (v) => (v ? "Yes" : "No");
+const yesNo = (v) => (v ? i18n("fiber_link.notifications.enabled_yes") : i18n("fiber_link.notifications.enabled_no"));
 
-const SUPPORTED_EVENTS = [
-  { value: "TIP_SETTLED", label: "Tip settled" },
-  { value: "WITHDRAWAL_COMPLETED", label: "Withdrawal completed" },
-  { value: "WITHDRAWAL_FAILED", label: "Withdrawal failed" },
-  { value: "WITHDRAWAL_RETRY_PENDING", label: "Withdrawal retry pending" },
-];
 
 async function rpcCall(method, params = {}) {
   const { ajax } = await import("discourse/lib/ajax");
@@ -39,7 +34,12 @@ export default class FiberLinkNotifications extends Component {
   @tracked newEvents = new Set(["TIP_SETTLED"]);
 
   get supportedEvents() {
-    return SUPPORTED_EVENTS;
+    return [
+      { value: "TIP_SETTLED", label: i18n("fiber_link.notifications.event_tip_settled") },
+      { value: "WITHDRAWAL_COMPLETED", label: i18n("fiber_link.notifications.event_withdrawal_completed") },
+      { value: "WITHDRAWAL_FAILED", label: i18n("fiber_link.notifications.event_withdrawal_failed") },
+      { value: "WITHDRAWAL_RETRY_PENDING", label: i18n("fiber_link.notifications.event_withdrawal_retry_pending") },
+    ];
   }
 
   constructor(owner, args) {
@@ -60,7 +60,7 @@ export default class FiberLinkNotifications extends Component {
       const result = await rpcCall("notification.channel.list");
       this.channels = result?.channels ?? [];
     } catch (e) {
-      this.errorMessage = e?.message || "Failed to load webhook channels.";
+      this.errorMessage = e?.message || i18n("fiber_link.notifications.load_failed");
     } finally {
       this.isLoading = false;
     }
@@ -97,7 +97,7 @@ export default class FiberLinkNotifications extends Component {
       this.newEvents = new Set(["TIP_SETTLED"]);
       await this.loadChannels();
     } catch (e) {
-      this.errorMessage = e?.message || "Failed to create webhook channel.";
+      this.errorMessage = e?.message || i18n("fiber_link.notifications.create_failed");
     } finally {
       this.isCreating = false;
     }
@@ -106,14 +106,14 @@ export default class FiberLinkNotifications extends Component {
   <template>
     <section class="fiber-link-notifications" data-fiber-link-notifications>
       <div class="fiber-link-notifications__header">
-        <h3 class="fiber-link-notifications__title">Webhook Channels</h3>
+        <h3 class="fiber-link-notifications__title">{{i18n "fiber_link.notifications.title"}}</h3>
         <button
           class="btn btn-small"
           type="button"
           {{on "click" this.loadChannels}}
           disabled={{this.isLoading}}
         >
-          Refresh
+          {{i18n "fiber_link.notifications.refresh"}}
         </button>
       </div>
 
@@ -122,19 +122,19 @@ export default class FiberLinkNotifications extends Component {
       {{/if}}
 
       <form class="fiber-link-notifications__form" {{on "submit" this.createChannel}}>
-        <h4>Add webhook channel</h4>
+        <h4>{{i18n "fiber_link.notifications.add_channel_heading"}}</h4>
         <div class="fiber-link-notifications__field">
-          <label>Name</label>
+          <label>{{i18n "fiber_link.notifications.field_name"}}</label>
           <input
             type="text"
             class="input-small"
-            placeholder="My webhook"
+            placeholder={{i18n "fiber_link.notifications.name_placeholder"}}
             value={{this.newName}}
             {{on "input" this.setNewName}}
           />
         </div>
         <div class="fiber-link-notifications__field">
-          <label>URL</label>
+          <label>{{i18n "fiber_link.notifications.field_url"}}</label>
           <input
             type="url"
             class="input-small"
@@ -144,17 +144,17 @@ export default class FiberLinkNotifications extends Component {
           />
         </div>
         <div class="fiber-link-notifications__field">
-          <label>Secret (optional, for HMAC signature)</label>
+          <label>{{i18n "fiber_link.notifications.field_secret"}}</label>
           <input
             type="password"
             class="input-small"
-            placeholder="at least 8 characters"
+            placeholder={{i18n "fiber_link.notifications.secret_placeholder"}}
             value={{this.newSecret}}
             {{on "input" this.setNewSecret}}
           />
         </div>
         <div class="fiber-link-notifications__field">
-          <label>Events</label>
+          <label>{{i18n "fiber_link.notifications.field_events"}}</label>
           <div class="fiber-link-notifications__events">
             {{#each this.supportedEvents as |ev|}}
               <label class="fiber-link-notifications__event-label">
@@ -173,20 +173,20 @@ export default class FiberLinkNotifications extends Component {
           type="submit"
           disabled={{this.isCreating}}
         >
-          {{#if this.isCreating}}Creating…{{else}}Add Channel{{/if}}
+          {{#if this.isCreating}}{{i18n "fiber_link.notifications.creating"}}{{else}}{{i18n "fiber_link.notifications.add_channel_button"}}{{/if}}
         </button>
       </form>
 
       {{#if this.isLoading}}
-        <p class="fiber-link-analytics__loading">Loading channels…</p>
+        <p class="fiber-link-analytics__loading">{{i18n "fiber_link.notifications.loading"}}</p>
       {{else if this.channels.length}}
         <table class="fiber-link-notifications__table fiber-link-analytics__table">
           <thead>
             <tr>
-              <th>Name</th>
-              <th>URL</th>
-              <th>Events</th>
-              <th>Enabled</th>
+              <th>{{i18n "fiber_link.notifications.field_name"}}</th>
+              <th>{{i18n "fiber_link.notifications.field_url"}}</th>
+              <th>{{i18n "fiber_link.notifications.field_events"}}</th>
+              <th>{{i18n "fiber_link.notifications.table_enabled"}}</th>
             </tr>
           </thead>
           <tbody>
@@ -201,7 +201,7 @@ export default class FiberLinkNotifications extends Component {
           </tbody>
         </table>
       {{else}}
-        <p class="fiber-link-analytics__empty">No webhook channels configured yet.</p>
+        <p class="fiber-link-analytics__empty">{{i18n "fiber_link.notifications.empty"}}</p>
       {{/if}}
     </section>
   </template>

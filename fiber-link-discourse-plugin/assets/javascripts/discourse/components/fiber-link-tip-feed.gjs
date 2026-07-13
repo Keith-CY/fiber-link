@@ -4,6 +4,7 @@ import { registerDestructor } from "@ember/destroyable";
 import { on } from "@ember/modifier";
 import { tracked } from "@glimmer/tracking";
 import formatDate from "discourse/helpers/format-date";
+import { i18n } from "discourse-i18n";
 
 const RELATIVE_TIME_TICK_MS = 1000;
 
@@ -18,29 +19,29 @@ function formatCompactRelativeTime(rawValue) {
     Math.floor((Date.now() - value.getTime()) / 1000),
   );
   if (ageSeconds < 2) {
-    return "now";
+    return i18n("fiber_link.feed.rel_now");
   }
   if (ageSeconds < 60) {
-    return `${ageSeconds}s ago`;
+    return i18n("fiber_link.feed.rel_seconds", { n: ageSeconds });
   }
 
   const ageMinutes = Math.floor(ageSeconds / 60);
   if (ageMinutes < 60) {
-    return `${ageMinutes}m ago`;
+    return i18n("fiber_link.feed.rel_minutes", { n: ageMinutes });
   }
 
   const ageHours = Math.floor(ageMinutes / 60);
   if (ageHours < 24) {
-    return `${ageHours}h ago`;
+    return i18n("fiber_link.feed.rel_hours", { n: ageHours });
   }
 
   const ageDays = Math.floor(ageHours / 24);
   if (ageDays < 7) {
-    return `${ageDays}d ago`;
+    return i18n("fiber_link.feed.rel_days", { n: ageDays });
   }
 
   const ageWeeks = Math.floor(ageDays / 7);
-  return `${ageWeeks}w ago`;
+  return i18n("fiber_link.feed.rel_weeks", { n: ageWeeks });
 }
 
 export default class FiberLinkTipFeed extends Component {
@@ -113,7 +114,7 @@ export default class FiberLinkTipFeed extends Component {
 
   get resultSummary() {
     const count = this.filteredTips.length;
-    return `Showing ${count} of ${this.tips.length} transactions · Last 30 days`;
+    return i18n("fiber_link.feed.result_summary", { shown: count, total: this.tips.length });
   }
 
   countForFilter(value) {
@@ -126,11 +127,11 @@ export default class FiberLinkTipFeed extends Component {
 
   get filterOptions() {
     return [
-      { value: "all", label: "All" },
-      { value: "received", label: "Received" },
-      { value: "withdrawn", label: "Withdrawals" },
-      { value: "pending", label: "Pending" },
-      { value: "failed", label: "Failed" },
+      { value: "all", label: i18n("fiber_link.feed.filter_all") },
+      { value: "received", label: i18n("fiber_link.feed.filter_received") },
+      { value: "withdrawn", label: i18n("fiber_link.feed.filter_withdrawals") },
+      { value: "pending", label: i18n("fiber_link.feed.filter_pending") },
+      { value: "failed", label: i18n("fiber_link.feed.filter_failed") },
     ].map((option) => ({
       ...option,
       className: option.value === this.activeFilter ? "fiber-link-filter-chip is-active" : "fiber-link-filter-chip",
@@ -193,31 +194,30 @@ export default class FiberLinkTipFeed extends Component {
 
   <template>
     {{#if this.isLoading}}
-      <p class="fiber-link-tip-feed-loading">Loading payments...</p>
+      <p class="fiber-link-tip-feed-loading">{{i18n "fiber_link.feed.loading"}}</p>
     {{else}}
       {{#if this.errorMessage}}
-        <p class="fiber-link-tip-feed-error">Failed to load payments: {{this.errorMessage}}</p>
+        <p class="fiber-link-tip-feed-error">{{i18n "fiber_link.feed.load_failed" message=this.errorMessage}}</p>
       {{else}}
         {{#if this.isEmpty}}
           <p class="fiber-link-tip-feed-empty">
-            You don’t have payments yet.
+            {{i18n "fiber_link.feed.empty"}}
           </p>
         {{else}}
           <div class="fiber-link-tip-feed-header">
             <div>
               <div class="fiber-link-dashboard__section-kicker">
                 <strong>02</strong>
-                <span>RECENT ACTIVITY</span>
+                <span>{{i18n "fiber_link.feed.kicker"}}</span>
               </div>
-              <h3>All <span>transactions.</span></h3>
+              <h3>{{i18n "fiber_link.feed.title_lead"}} <span>{{i18n "fiber_link.feed.title_emphasis"}}</span></h3>
               <p>
-                Settlement history across Discourse — received tips and
-                withdrawals that affect your creator balance.
+                {{i18n "fiber_link.feed.description"}}
               </p>
             </div>
           </div>
 
-          <div class="fiber-link-filter-group" aria-label="Activity filters">
+          <div class="fiber-link-filter-group" aria-label={{i18n "fiber_link.feed.filters_aria"}}>
             {{#each this.filterOptions as |option|}}
               <button
                 type="button"
@@ -234,11 +234,11 @@ export default class FiberLinkTipFeed extends Component {
           <table class="fiber-link-tip-feed-table">
             <thead>
               <tr>
-                <th>Amount</th>
-                <th>Type</th>
-                <th>Status</th>
-                <th>User</th>
-                <th>Time</th>
+                <th>{{i18n "fiber_link.feed.th_amount"}}</th>
+                <th>{{i18n "fiber_link.feed.th_type"}}</th>
+                <th>{{i18n "fiber_link.feed.th_status"}}</th>
+                <th>{{i18n "fiber_link.feed.th_user"}}</th>
+                <th>{{i18n "fiber_link.feed.th_time"}}</th>
               </tr>
             </thead>
             <tbody>
@@ -248,7 +248,7 @@ export default class FiberLinkTipFeed extends Component {
                   data-tip-id={{tip.id}}
                   role="button"
                   tabindex="0"
-                  aria-label="Open transaction details"
+                  aria-label={{i18n "fiber_link.feed.row_aria"}}
                   {{on "click" this.openDetails}}
                   {{on "keydown" this.openDetailsFromKeyboard}}
                 >
@@ -309,7 +309,7 @@ export default class FiberLinkTipFeed extends Component {
                 <button
                   type="button"
                   class="fiber-link-transaction-dialog__close"
-                  aria-label="Close payment details"
+                  aria-label={{i18n "fiber_link.feed.close_aria"}}
                   {{on "click" this.closeDetails}}
                 >
                   <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
@@ -336,13 +336,13 @@ export default class FiberLinkTipFeed extends Component {
               <div class="fiber-link-transaction-dialog__rail">
                 <div class="fiber-link-transaction-dialog__row">
                   <div class="fiber-link-transaction-dialog__cell">
-                    <div class="fiber-link-transaction-dialog__label">Record ID</div>
+                    <div class="fiber-link-transaction-dialog__label">{{i18n "fiber_link.feed.label_record_id"}}</div>
                     <div class="fiber-link-transaction-dialog__value is-mono">
                       <span>{{this.selectedTip.id}}</span>
                       <button
                         type="button"
                         class="fiber-link-transaction-dialog__copy"
-                        aria-label="Copy record ID"
+                        aria-label={{i18n "fiber_link.feed.copy_record_id"}}
                         data-copy-value={{this.selectedTip.id}}
                         {{on "click" this.copyValue}}
                       >
@@ -354,7 +354,7 @@ export default class FiberLinkTipFeed extends Component {
                     </div>
                   </div>
                   <div class="fiber-link-transaction-dialog__cell">
-                    <div class="fiber-link-transaction-dialog__label">Activity</div>
+                    <div class="fiber-link-transaction-dialog__label">{{i18n "fiber_link.feed.label_activity"}}</div>
                     <div class={{this.selectedTip.transactionActivityClassName}}>
                       <span class="fiber-link-transaction-dialog__activity-dot"></span>
                       <span>{{this.selectedTip.directionLabel}}</span>
@@ -366,7 +366,7 @@ export default class FiberLinkTipFeed extends Component {
 
                 <div class="fiber-link-transaction-dialog__row">
                   <div class="fiber-link-transaction-dialog__cell">
-                    <div class="fiber-link-transaction-dialog__label">User</div>
+                    <div class="fiber-link-transaction-dialog__label">{{i18n "fiber_link.feed.label_user"}}</div>
                     <div class="fiber-link-transaction-dialog__value">
                       <div class="fiber-link-transaction-dialog__avatar-line">
                         <span class="fiber-link-transaction-dialog__avatar">{{this.selectedTip.avatarInitials}}</span>
@@ -375,7 +375,7 @@ export default class FiberLinkTipFeed extends Component {
                     </div>
                   </div>
                   <div class="fiber-link-transaction-dialog__cell">
-                    <div class="fiber-link-transaction-dialog__label">Time</div>
+                    <div class="fiber-link-transaction-dialog__label">{{i18n "fiber_link.feed.label_time"}}</div>
                     <div class="fiber-link-transaction-dialog__value">
                       <span>{{this.selectedTip.relativeTimeLabel}}</span>
                       {{#if this.selectedTip.shortTimeLabel}}
@@ -388,13 +388,13 @@ export default class FiberLinkTipFeed extends Component {
                 {{#if this.selectedTip.destination}}
                   <div class="fiber-link-transaction-dialog__row">
                     <div class="fiber-link-transaction-dialog__cell is-full">
-                      <div class="fiber-link-transaction-dialog__label">Destination</div>
+                      <div class="fiber-link-transaction-dialog__label">{{i18n "fiber_link.feed.label_destination"}}</div>
                       <div class="fiber-link-transaction-dialog__value is-mono">
                         <span>{{this.selectedTip.destination}}</span>
                         <button
                           type="button"
                           class="fiber-link-transaction-dialog__copy"
-                          aria-label="Copy destination"
+                          aria-label={{i18n "fiber_link.feed.copy_destination"}}
                           data-copy-value={{this.selectedTip.destination}}
                           {{on "click" this.copyValue}}
                         >
@@ -411,13 +411,13 @@ export default class FiberLinkTipFeed extends Component {
                 {{#if this.selectedTip.txHash}}
                   <div class="fiber-link-transaction-dialog__row">
                     <div class="fiber-link-transaction-dialog__cell is-full">
-                      <div class="fiber-link-transaction-dialog__label">CKB transaction</div>
+                      <div class="fiber-link-transaction-dialog__label">{{i18n "fiber_link.feed.label_ckb_tx"}}</div>
                       <div class="fiber-link-transaction-dialog__value is-mono">
                         <span>{{this.selectedTip.txHash}}</span>
                         <button
                           type="button"
                           class="fiber-link-transaction-dialog__copy"
-                          aria-label="Copy CKB transaction"
+                          aria-label={{i18n "fiber_link.feed.copy_ckb_tx"}}
                           data-copy-value={{this.selectedTip.txHash}}
                           {{on "click" this.copyValue}}
                         >

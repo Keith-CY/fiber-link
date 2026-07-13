@@ -2,16 +2,12 @@ import Component from "@glimmer/component";
 import { tracked } from "@glimmer/tracking";
 import { action } from "@ember/object";
 import { on } from "@ember/modifier";
+import { i18n } from "discourse-i18n";
 import { getDashboardAnalytics } from "../services/fiber-link-api";
 
 const eq = (a, b) => a === b;
 const inc = (n) => n + 1;
 
-const RANGES = [
-  { value: "7d", label: "7 days" },
-  { value: "30d", label: "30 days" },
-  { value: "all", label: "All time" },
-];
 
 function formatAmount(amount) {
   const n = parseFloat(amount ?? "0");
@@ -26,7 +22,11 @@ export default class FiberLinkAnalytics extends Component {
   @tracked errorMessage = null;
 
   get ranges() {
-    return RANGES;
+    return [
+      { value: "7d", label: i18n("fiber_link.analytics.range_7d") },
+      { value: "30d", label: i18n("fiber_link.analytics.range_30d") },
+      { value: "all", label: i18n("fiber_link.analytics.range_all") },
+    ];
   }
 
   get hasData() {
@@ -67,7 +67,7 @@ export default class FiberLinkAnalytics extends Component {
     try {
       this.data = await getDashboardAnalytics({ range: this.range });
     } catch (e) {
-      this.errorMessage = e?.message || "Failed to load analytics.";
+      this.errorMessage = e?.message || i18n("fiber_link.analytics.load_failed");
     } finally {
       this.isLoading = false;
     }
@@ -76,10 +76,10 @@ export default class FiberLinkAnalytics extends Component {
   <template>
     <section class="fiber-link-analytics" data-fiber-link-analytics>
       <div class="fiber-link-analytics__header">
-        <h3 class="fiber-link-analytics__title">Analytics</h3>
+        <h3 class="fiber-link-analytics__title">{{i18n "fiber_link.analytics.title"}}</h3>
         <select
           class="fiber-link-analytics__range"
-          aria-label="Date range"
+          aria-label={{i18n "fiber_link.analytics.range_aria_label"}}
           {{on "change" this.onRangeChange}}
         >
           {{#each this.ranges as |r|}}
@@ -93,11 +93,11 @@ export default class FiberLinkAnalytics extends Component {
       {{/if}}
 
       {{#if this.isLoading}}
-        <p class="fiber-link-analytics__loading">Loading analytics…</p>
+        <p class="fiber-link-analytics__loading">{{i18n "fiber_link.analytics.loading"}}</p>
       {{else if this.hasData}}
 
         {{#if this.data.timeSeries.length}}
-          <div class="fiber-link-analytics__chart" aria-label="Daily tips chart">
+          <div class="fiber-link-analytics__chart" aria-label={{i18n "fiber_link.analytics.chart_aria_label"}}>
             {{#each this.data.timeSeries as |row|}}
               <div class="fiber-link-analytics__bar-row" title="{{row.date}}: {{row.amount}} CKB">
                 <span class="fiber-link-analytics__bar-label">{{row.date}}</span>
@@ -117,10 +117,10 @@ export default class FiberLinkAnalytics extends Component {
         <div class="fiber-link-analytics__tables">
           {{#if this.data.topPosts.length}}
             <div class="fiber-link-analytics__table-section">
-              <h4>Top posts</h4>
+              <h4>{{i18n "fiber_link.analytics.top_posts"}}</h4>
               <table class="fiber-link-analytics__table">
                 <thead>
-                  <tr><th>#</th><th>Post</th><th>Tips</th><th>Total CKB</th></tr>
+                  <tr><th>#</th><th>{{i18n "fiber_link.analytics.table_post"}}</th><th>{{i18n "fiber_link.analytics.table_tips"}}</th><th>{{i18n "fiber_link.analytics.table_total_ckb"}}</th></tr>
                 </thead>
                 <tbody>
                   {{#each this.data.topPosts as |post i|}}
@@ -128,7 +128,7 @@ export default class FiberLinkAnalytics extends Component {
                       <td>{{inc i}}</td>
                       <td>
                         <a href="/p/{{post.postId}}" target="_blank" rel="noopener noreferrer">
-                          Post #{{post.postId}}
+                          {{i18n "fiber_link.analytics.post_link" id=post.postId}}
                         </a>
                       </td>
                       <td>{{post.tipCount}}</td>
@@ -142,10 +142,10 @@ export default class FiberLinkAnalytics extends Component {
 
           {{#if this.data.topTippers.length}}
             <div class="fiber-link-analytics__table-section">
-              <h4>Top supporters</h4>
+              <h4>{{i18n "fiber_link.analytics.top_supporters"}}</h4>
               <table class="fiber-link-analytics__table">
                 <thead>
-                  <tr><th>#</th><th>User ID</th><th>Tips</th><th>Total CKB</th></tr>
+                  <tr><th>#</th><th>{{i18n "fiber_link.analytics.table_user_id"}}</th><th>{{i18n "fiber_link.analytics.table_tips"}}</th><th>{{i18n "fiber_link.analytics.table_total_ckb"}}</th></tr>
                 </thead>
                 <tbody>
                   {{#each this.data.topTippers as |tipper i|}}
@@ -163,7 +163,7 @@ export default class FiberLinkAnalytics extends Component {
         </div>
 
       {{else}}
-        <p class="fiber-link-analytics__empty">No analytics data yet for this period.</p>
+        <p class="fiber-link-analytics__empty">{{i18n "fiber_link.analytics.empty"}}</p>
       {{/if}}
     </section>
   </template>
