@@ -332,7 +332,9 @@ export const notificationRules = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     appId: text("app_id").notNull(),
-    channelId: uuid("channel_id").notNull(),
+    channelId: uuid("channel_id")
+      .notNull()
+      .references(() => notificationChannels.id, { onDelete: "cascade" }),
     event: notificationEventEnum("event").notNull(),
     enabled: boolean("enabled").notNull().default(true),
     createdAt: timestamp("created_at").defaultNow().notNull(),

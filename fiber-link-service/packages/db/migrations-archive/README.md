@@ -65,9 +65,11 @@ of them:
   both the legacy-named FK and the drizzle-named FK after the baseline replay
   (the guard keys on constraint name). Redundant but harmless; drop the legacy one
   manually if desired.
-- **`notification_rules.channel_id` FK.** The legacy chain created this FK, but
+- **`notification_rules.channel_id` FK.** ~~The legacy chain created this FK, but
   `src/schema.ts` does not declare a `.references()` for it, so fresh databases do
-  not have it. Follow-up candidate: declare the reference in `src/schema.ts`.
+  not have it.~~ Resolved: `src/schema.ts` now declares the reference
+  (`ON DELETE CASCADE`) and migration `0002_notification_rules_channel_fk` adds it
+  to baseline databases (deleting any orphaned rules first).
 
 Note: `0000_baseline.sql` carries one hand-maintained statement — the
 `withdrawals_liquidity_pending_fields_check` check constraint — because drizzle-kit
