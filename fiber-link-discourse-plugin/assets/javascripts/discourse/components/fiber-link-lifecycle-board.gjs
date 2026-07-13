@@ -2,6 +2,7 @@ import Component from "@glimmer/component";
 import { tracked } from "@glimmer/tracking";
 import { action } from "@ember/object";
 import { on } from "@ember/modifier";
+import { i18n } from "discourse-i18n";
 
 const STAGE_VALUES = Object.freeze(["UNPAID", "SETTLED", "FAILED"]);
 const STAGE_FILTER_OPTIONS = Object.freeze(["ALL", ...STAGE_VALUES]);
@@ -140,8 +141,8 @@ export default class FiberLinkLifecycleBoard extends Component {
 
   <template>
     <section class="fiber-link-lifecycle-board">
-      <h4>Lifecycle Pipeline Board</h4>
-      <p>Stage counts and sample invoice rows from the latest dashboard.summary payload.</p>
+      <h4>{{i18n "fiber_link.lifecycle.title"}}</h4>
+      <p>{{i18n "fiber_link.lifecycle.description"}}</p>
 
       <p class="fiber-link-lifecycle-board__stage-counts">
         {{#each this.stageCounts as |row|}}
@@ -151,10 +152,10 @@ export default class FiberLinkLifecycleBoard extends Component {
 
       <div class="fiber-link-lifecycle-board__filters">
         <label>
-          Lifecycle stage
+          {{i18n "fiber_link.lifecycle.stage_label"}}
           <select
             value={{this.selectedStage}}
-            aria-label="Lifecycle stage"
+            aria-label={{i18n "fiber_link.lifecycle.stage_label"}}
             {{on "change" this.updateStageFilter}}
           >
             {{#each this.stageFilterOptions as |stageOption|}}
@@ -164,30 +165,30 @@ export default class FiberLinkLifecycleBoard extends Component {
         </label>
 
         <label>
-          Search invoice
+          {{i18n "fiber_link.lifecycle.search_label"}}
           <input
             type="text"
-            aria-label="Search invoice"
+            aria-label={{i18n "fiber_link.lifecycle.search_label"}}
             value={{this.invoiceQuery}}
             {{on "input" this.updateInvoiceQuery}}
           />
         </label>
 
-        <a href={{this.csvHref}} download="fiber-link-lifecycle-board.csv">Export CSV</a>
-        <button type="button" {{on "click" this.clearFilters}}>Clear</button>
+        <a href={{this.csvHref}} download="fiber-link-lifecycle-board.csv">{{i18n "fiber_link.lifecycle.export_csv"}}</a>
+        <button type="button" {{on "click" this.clearFilters}}>{{i18n "fiber_link.lifecycle.clear"}}</button>
       </div>
 
       <table class="fiber-link-lifecycle-board__table">
         <thead>
           <tr>
-            <th>invoice</th>
-            <th>stage</th>
-            <th>amount</th>
-            <th>asset</th>
-            <th>from</th>
-            <th>to</th>
-            <th>createdAt</th>
-            <th>timeline</th>
+            <th>{{i18n "fiber_link.lifecycle.th_invoice"}}</th>
+            <th>{{i18n "fiber_link.lifecycle.th_stage"}}</th>
+            <th>{{i18n "fiber_link.lifecycle.th_amount"}}</th>
+            <th>{{i18n "fiber_link.lifecycle.th_asset"}}</th>
+            <th>{{i18n "fiber_link.lifecycle.th_from"}}</th>
+            <th>{{i18n "fiber_link.lifecycle.th_to"}}</th>
+            <th>{{i18n "fiber_link.lifecycle.th_created_at"}}</th>
+            <th>{{i18n "fiber_link.lifecycle.th_timeline"}}</th>
           </tr>
         </thead>
         <tbody>
@@ -203,15 +204,15 @@ export default class FiberLinkLifecycleBoard extends Component {
               <td>
                 <a
                   href={{row.timelineHref}}
-                  title="Timeline placeholder link for future invoice lifecycle timeline view."
+                  title={{i18n "fiber_link.lifecycle.timeline_title"}}
                 >
-                  Timeline
+                  {{i18n "fiber_link.lifecycle.timeline"}}
                 </a>
               </td>
             </tr>
           {{else}}
             <tr>
-              <td colspan="8">No invoice rows for current lifecycle filter.</td>
+              <td colspan="8">{{i18n "fiber_link.lifecycle.empty"}}</td>
             </tr>
           {{/each}}
         </tbody>

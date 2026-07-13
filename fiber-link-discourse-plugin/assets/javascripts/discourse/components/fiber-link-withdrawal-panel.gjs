@@ -5,6 +5,7 @@ import { service } from "@ember/service";
 import { tracked } from "@glimmer/tracking";
 import { registerDestructor } from "@ember/destroyable";
 import DButton from "discourse/components/d-button";
+import { i18n } from "discourse-i18n";
 
 import { quoteWithdrawal, requestWithdrawal } from "../services/fiber-link-api";
 
@@ -21,8 +22,8 @@ function getWithdrawalResultPresentation(state) {
     return {
       alertClass: "fiber-link-tip-alert is-warning",
       badgeClass: "fiber-link-status-badge is-liquidity-pending",
-      badgeLabel: "Liquidity Pending",
-      detail: "Withdrawal queued until liquidity is available.",
+      badgeLabel: i18n("fiber_link.withdrawal.badge_liquidity_pending"),
+      detail: i18n("fiber_link.withdrawal.detail_liquidity_pending"),
     };
   }
 
@@ -87,19 +88,19 @@ export default class FiberLinkWithdrawalPanel extends Component {
   get amountErrorMessage() {
     const value = normalizeValue(this.amount);
     if (!value) {
-      return "Enter an amount in CKB.";
+      return i18n("fiber_link.withdrawal.error_amount_required");
     }
 
     if (!/^\d+(?:\.\d+)?$/.test(value)) {
-      return "Amount must be numeric.";
+      return i18n("fiber_link.withdrawal.error_amount_numeric");
     }
 
     if (Number(value) < MIN_WITHDRAW_AMOUNT) {
-      return `Amount must be at least ${MIN_WITHDRAW_AMOUNT} CKB.`;
+      return i18n("fiber_link.withdrawal.error_amount_min", { min: MIN_WITHDRAW_AMOUNT });
     }
 
     if (Number(value) > this.availableBalanceNumber) {
-      return "Amount exceeds available balance.";
+      return i18n("fiber_link.withdrawal.error_amount_exceeds");
     }
 
     return null;
@@ -108,11 +109,11 @@ export default class FiberLinkWithdrawalPanel extends Component {
   get addressErrorMessage() {
     const value = normalizeValue(this.destinationAddress);
     if (!value) {
-      return "Enter a valid CKB withdrawal address.";
+      return i18n("fiber_link.withdrawal.error_address_invalid");
     }
 
     if (!ADDRESS_PATTERN.test(value)) {
-      return "Enter a valid CKB withdrawal address.";
+      return i18n("fiber_link.withdrawal.error_address_invalid");
     }
 
     return null;
@@ -148,7 +149,7 @@ export default class FiberLinkWithdrawalPanel extends Component {
     }
 
     if (this.quote?.destinationValid) {
-      return "Address valid";
+      return i18n("fiber_link.withdrawal.address_valid");
     }
 
     return normalizeValue(this.quote?.validationMessage) || null;
@@ -185,31 +186,33 @@ export default class FiberLinkWithdrawalPanel extends Component {
       return null;
     }
     if (this.isSubmitting) {
-      return "Withdrawal request is being submitted.";
+      return i18n("fiber_link.withdrawal.reason_submitting");
     }
     if (this.isQuoteLoading) {
-      return "Calculating withdrawal quote and network fee.";
+      return i18n("fiber_link.withdrawal.reason_quoting");
     }
     if (this.amountErrorMessage) {
       return this.amountErrorMessage;
     }
     if (!this.destination) {
-      return "Enter a destination address to enable withdrawal.";
+      return i18n("fiber_link.withdrawal.reason_no_destination");
     }
     if (this.addressErrorMessage) {
       return this.addressErrorMessage;
     }
     if (this.quote?.destinationValid === false) {
-      return normalizeValue(this.quote?.validationMessage) || "Destination address is not valid for withdrawal.";
+      return normalizeValue(this.quote?.validationMessage) || i18n("fiber_link.withdrawal.reason_destination_invalid");
     }
     if (this.quoteErrorMessage) {
       return this.quoteErrorMessage;
     }
-    return "Withdrawal is temporarily unavailable. Retry after the dashboard refreshes.";
+    return i18n("fiber_link.withdrawal.reason_unavailable");
   }
 
   get submitLabel() {
-    return this.isSubmitting ? "Requesting..." : "Request withdrawal →";
+    return this.isSubmitting
+      ? i18n("fiber_link.withdrawal.submitting")
+      : i18n("fiber_link.withdrawal.submit");
   }
 
   get minimumWithdrawalAmount() {
@@ -236,8 +239,8 @@ export default class FiberLinkWithdrawalPanel extends Component {
     }
 
     return this.requestedId
-      ? `Requested withdrawal ${this.requestedId}`
-      : "Withdrawal request submitted.";
+      ? i18n("fiber_link.withdrawal.toast_requested", { id: this.requestedId })
+      : i18n("fiber_link.withdrawal.toast_submitted");
   }
 
   _clearQuoteTimer() {
@@ -311,7 +314,7 @@ export default class FiberLinkWithdrawalPanel extends Component {
       this.hasSubmitted = false;
       this._scheduleQuoteRefresh();
     } catch (_error) {
-      this.pasteErrorMessage = "Clipboard access failed. Paste manually.";
+      this.pasteErrorMessage = i18n("fiber_link.withdrawal.paste_failed");
     }
   }
 
@@ -331,7 +334,7 @@ export default class FiberLinkWithdrawalPanel extends Component {
         destination: this.destination,
       });
     } catch (error) {
-      this.quoteErrorMessage = error?.message ?? "Failed to calculate withdrawal quote. Please retry.";
+      this.quoteErrorMessage = error?.message ?? i18n("fiber_link.withdrawal.quote_failed");
     } finally {
       this.isQuoteLoading = false;
     }
@@ -353,7 +356,7 @@ export default class FiberLinkWithdrawalPanel extends Component {
         this.addressErrorMessage ||
         this.submitDisabledReason ||
         this.quoteErrorMessage ||
-        "Enter a valid CKB withdrawal address.";
+        i18n("fiber_link.withdrawal.error_address_invalid");
       return;
     }
 
@@ -378,7 +381,7 @@ export default class FiberLinkWithdrawalPanel extends Component {
         this.args.onRequested(result);
       }
     } catch (error) {
-      this.errorMessage = error?.message ?? "Failed to request withdrawal.";
+      this.errorMessage = error?.message ?? i18n("fiber_link.withdrawal.request_failed");
     } finally {
       this.isSubmitting = false;
     }
@@ -397,14 +400,13 @@ export default class FiberLinkWithdrawalPanel extends Component {
     <section class="fiber-link-dashboard__withdrawal">
       <div class="fiber-link-dashboard__section-kicker">
         <strong>01</strong>
-        <span>WITHDRAW</span>
+        <span>{{i18n "fiber_link.withdrawal.kicker"}}</span>
       </div>
 
       <div class="fiber-link-dashboard__withdrawal-heading">
-        <h3>Move your <span>settled</span> CKB.</h3>
+        <h3>{{i18n "fiber_link.withdrawal.title_lead"}} <span>{{i18n "fiber_link.withdrawal.title_emphasis"}}</span> {{i18n "fiber_link.withdrawal.title_tail"}}</h3>
         <p>
-          Send funds from your Fiber Link balance to a wallet you control.
-          Minimum withdrawal is {{this.minimumWithdrawalAmount}} CKB.
+          {{i18n "fiber_link.withdrawal.description" min=this.minimumWithdrawalAmount}}
         </p>
       </div>
 
@@ -416,15 +418,15 @@ export default class FiberLinkWithdrawalPanel extends Component {
 
       <div class="fiber-link-dashboard__withdrawal-summary-grid">
         <div class="fiber-link-dashboard__withdrawal-summary-item">
-          <span>Available</span>
+          <span>{{i18n "fiber_link.withdrawal.available"}}</span>
           <strong>{{this.availableBalance}} {{this.asset}}</strong>
         </div>
         <div class="fiber-link-dashboard__withdrawal-summary-item">
-          <span>Locked</span>
+          <span>{{i18n "fiber_link.withdrawal.locked"}}</span>
           <strong>{{this.lockedBalance}} {{this.asset}}</strong>
         </div>
         <div class="fiber-link-dashboard__withdrawal-summary-item is-highlighted">
-          <span>Payout amount</span>
+          <span>{{i18n "fiber_link.withdrawal.payout_amount"}}</span>
           <strong>{{this.receiveAmount}} {{this.asset}}</strong>
         </div>
       </div>
@@ -432,8 +434,8 @@ export default class FiberLinkWithdrawalPanel extends Component {
       <div class="fiber-link-dashboard__withdrawal-form">
         <label class="fiber-link-tip-field">
           <span class="fiber-link-dashboard__field-row">
-            <span class="fiber-link-tip-label">Amount</span>
-            <span>Network fee {{this.networkFee}} {{this.asset}}</span>
+            <span class="fiber-link-tip-label">{{i18n "fiber_link.withdrawal.amount_label"}}</span>
+            <span>{{i18n "fiber_link.withdrawal.network_fee" fee=this.networkFee asset=this.asset}}</span>
           </span>
           <span class="fiber-link-dashboard__amount-input-wrap">
             <input
@@ -447,11 +449,11 @@ export default class FiberLinkWithdrawalPanel extends Component {
             />
             <span>{{this.asset}}</span>
           </span>
-          <span class="fiber-link-dashboard__quick-amounts" aria-label="Withdrawal amount shortcuts">
+          <span class="fiber-link-dashboard__quick-amounts" aria-label={{i18n "fiber_link.withdrawal.quick_amounts_aria"}}>
             <button type="button" data-quick-amount="0.25" {{on "click" this.setQuickAmount}}>25%</button>
             <button type="button" data-quick-amount="0.5" {{on "click" this.setQuickAmount}}>50%</button>
             <button type="button" data-quick-amount="0.75" {{on "click" this.setQuickAmount}}>75%</button>
-            <button type="button" data-quick-amount="max" {{on "click" this.setQuickAmount}}>Max · {{this.maxWithdrawalAmountLabel}}</button>
+            <button type="button" data-quick-amount="max" {{on "click" this.setQuickAmount}}>{{i18n "fiber_link.withdrawal.max_button" amount=this.maxWithdrawalAmountLabel}}</button>
           </span>
           {{#if this.amountErrorMessage}}
             <p class="fiber-link-tip-input-error">{{this.amountErrorMessage}}</p>
@@ -460,18 +462,18 @@ export default class FiberLinkWithdrawalPanel extends Component {
 
         <div class="fiber-link-tip-field">
           <span class="fiber-link-dashboard__field-row">
-            <span class="fiber-link-tip-label">Destination Address</span>
+            <span class="fiber-link-tip-label">{{i18n "fiber_link.withdrawal.destination_label"}}</span>
             <button
               class="fiber-link-dashboard__paste-button"
               type="button"
               {{on "click" this.pasteDestination}}
             >
-              Paste
+              {{i18n "fiber_link.withdrawal.paste"}}
             </button>
           </span>
           <input
             class="fiber-link-tip-input fiber-link-dashboard__withdrawal-input is-address"
-            aria-label="Destination Address"
+            aria-label={{i18n "fiber_link.withdrawal.destination_label"}}
             data-fiber-link-withdrawal-input="address"
             placeholder="ckb1q..."
             spellcheck="false"
@@ -508,7 +510,7 @@ export default class FiberLinkWithdrawalPanel extends Component {
         {{/if}}
         {{#if this.requestedId}}
           <p class="fiber-link-dashboard__withdrawal-meta">
-            Latest request:
+            {{i18n "fiber_link.withdrawal.latest_request"}}
             <code data-fiber-link-withdrawal-result="id">{{this.requestedId}}</code>
           </p>
         {{/if}}

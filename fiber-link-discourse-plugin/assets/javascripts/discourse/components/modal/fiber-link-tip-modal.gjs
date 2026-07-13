@@ -8,6 +8,7 @@ import DModal from "discourse/components/d-modal";
 import DModalCancel from "discourse/components/d-modal-cancel";
 import { avatarUrl } from "discourse/lib/avatar-utils";
 import { clipboardCopy } from "discourse/lib/utilities";
+import { i18n } from "discourse-i18n";
 
 import { createTip, getTipStatus, streamTipStatus } from "../../services/fiber-link-api";
 
@@ -19,8 +20,6 @@ const TIP_STATUS_AUTO_POLL_MAX_FAILURES = 5;
 const TIP_STATUS_AUTO_POLL_MAX_ELAPSED_MS = 120000;
 const TIP_STATUS_HIDDEN_POLL_INTERVAL_MS = 15000;
 const TIP_GENERATION_WATCHDOG_MS = 15000;
-const TIP_GENERATION_WATCHDOG_MESSAGE =
-  "Fiber Link is busy while preparing invoice. Please retry.";
 const FIBER_LINK_HOMEPAGE_URL = "https://www.fiberlink.me";
 const FIBER_LINK_LOGO_URL = "https://fiberlink.me/brand/fiber-link-logo.png";
 const MAX_MESSAGE_LENGTH = 120;
@@ -60,7 +59,7 @@ function withTipGenerationWatchdog(promise) {
   let timeoutId;
   const timeoutPromise = new Promise((_, reject) => {
     timeoutId = setTimeout(() => {
-      reject(new Error(TIP_GENERATION_WATCHDOG_MESSAGE));
+      reject(new Error(i18n("fiber_link.tip_modal.watchdog_message")));
     }, TIP_GENERATION_WATCHDOG_MS);
   });
 
@@ -72,17 +71,17 @@ function withTipGenerationWatchdog(promise) {
 function mapTipStateToLabel(state) {
   switch (state) {
     case "SETTLED":
-      return "Payment complete";
+      return i18n("fiber_link.tip_modal.status_settled");
     case "PROCESSING":
-      return "Confirming payment";
+      return i18n("fiber_link.tip_modal.status_processing");
     case "FAILED":
-      return "Payment failed";
+      return i18n("fiber_link.tip_modal.status_failed");
     case "EXPIRED":
-      return "Invoice expired";
+      return i18n("fiber_link.tip_modal.status_expired");
     case "DETECTED":
-      return "Payment detected";
+      return i18n("fiber_link.tip_modal.status_detected");
     default:
-      return "Awaiting payment";
+      return i18n("fiber_link.tip_modal.status_unpaid");
   }
 }
 
@@ -107,23 +106,23 @@ function mapCreateTipErrorToMessage(error) {
   const lower = message.toLowerCase();
 
   if (code === -32002 || lower.includes("self")) {
-    return "You can’t tip your own post.";
+    return i18n("fiber_link.tip_modal.error_self_tip");
   }
   if (code === -32602 || lower.includes("invalid params")) {
-    return "Unable to generate an invoice for this post. Please refresh and try again.";
+    return i18n("fiber_link.tip_modal.error_invalid_params");
   }
   if (isTransientNetworkError(message)) {
-    return "Network issue while generating invoice. Please retry in a moment.";
+    return i18n("fiber_link.tip_modal.error_generate_network");
   }
-  return message || "Failed to generate invoice.";
+  return message || i18n("fiber_link.tip_modal.error_generate_failed");
 }
 
 function mapStatusErrorToMessage(error) {
   const message = normalizeMessage(error?.message);
   if (isTransientNetworkError(message)) {
-    return "Network issue while checking status. Please retry.";
+    return i18n("fiber_link.tip_modal.error_status_network");
   }
-  return message || "Failed to check status.";
+  return message || i18n("fiber_link.tip_modal.error_status_failed");
 }
 
 export default class FiberLinkTipModal extends Component {
@@ -206,7 +205,7 @@ export default class FiberLinkTipModal extends Component {
 
   get targetUsername() {
     const value = normalizeMessage(this.args?.model?.targetUsername);
-    return value || "post author";
+    return value || i18n("fiber_link.tip.post_author_fallback");
   }
 
   get targetAvatarUrl() {
@@ -220,7 +219,7 @@ export default class FiberLinkTipModal extends Component {
 
   get topicTitle() {
     const value = normalizeMessage(this.args?.model?.topicTitle);
-    return value || "Community post";
+    return value || i18n("fiber_link.tip_modal.topic_fallback");
   }
 
   get postNumber() {
@@ -231,7 +230,7 @@ export default class FiberLinkTipModal extends Component {
 
   get postSummary() {
     const value = normalizeMessage(this.args?.model?.postSummary);
-    return value || (this.postNumber ? `Reply #${this.postNumber}` : "Reply");
+    return value || (this.postNumber ? i18n("fiber_link.tip_modal.reply_number", { number: this.postNumber }) : i18n("fiber_link.tip_modal.reply_fallback"));
   }
 
   get isReplyContext() {
@@ -239,11 +238,11 @@ export default class FiberLinkTipModal extends Component {
   }
 
   get contextLabel() {
-    return this.isReplyContext ? "Reply:" : "Topic:";
+    return this.isReplyContext ? i18n("fiber_link.tip_modal.context_reply") : i18n("fiber_link.tip_modal.context_topic");
   }
 
   get contextSectionLabel() {
-    return this.isReplyContext ? "Reply context" : "Topic";
+    return this.isReplyContext ? i18n("fiber_link.tip_modal.section_reply") : i18n("fiber_link.tip_modal.section_topic");
   }
 
   get contextTitle() {
@@ -259,27 +258,27 @@ export default class FiberLinkTipModal extends Component {
   }
 
   get modalTitle() {
-    return "Send a tip";
+    return i18n("fiber_link.tip_modal.title");
   }
 
   get stepNumberLabel() {
     if (this.isPayStep) {
-      return "Step 02";
+      return i18n("fiber_link.tip_modal.step_two");
     }
     if (this.isConfirmedStep) {
-      return "Step 02";
+      return i18n("fiber_link.tip_modal.step_two");
     }
-    return "Step 01";
+    return i18n("fiber_link.tip_modal.step_one");
   }
 
   get stepContextLabel() {
     if (this.isPayStep) {
-      return "of 02 · Pay with wallet";
+      return i18n("fiber_link.tip_modal.step_context_pay");
     }
     if (this.isConfirmedStep) {
-      return "of 02 · Complete";
+      return i18n("fiber_link.tip_modal.step_context_complete");
     }
-    return "of 02 · Amount";
+    return i18n("fiber_link.tip_modal.step_context_amount");
   }
 
   get invoicePreview() {
@@ -333,14 +332,14 @@ export default class FiberLinkTipModal extends Component {
   get amountErrorMessage() {
     const value = normalizeMessage(this.amount);
     if (!value) {
-      return "Enter an amount in CKB.";
+      return i18n("fiber_link.tip_modal.error_amount_required");
     }
     if (!AMOUNT_PATTERN.test(value)) {
-      return "Use numbers only (up to 8 decimal places).";
+      return i18n("fiber_link.tip_modal.error_amount_pattern");
     }
     const parsed = Number(value);
     if (!Number.isFinite(parsed) || parsed <= 0) {
-      return "Amount must be greater than 0.";
+      return i18n("fiber_link.tip_modal.error_amount_positive");
     }
     return null;
   }
@@ -362,7 +361,7 @@ export default class FiberLinkTipModal extends Component {
   }
 
   get generateButtonLabel() {
-    return this.isGenerating ? "Preparing payment..." : "Review & Pay";
+    return this.isGenerating ? i18n("fiber_link.tip_modal.generating") : i18n("fiber_link.tip_modal.generate");
   }
 
   get shouldShowInvoiceQr() {
@@ -379,12 +378,12 @@ export default class FiberLinkTipModal extends Component {
 
   get copyButtonLabel() {
     if (this.copyState === "copied") {
-      return "Copied";
+      return i18n("fiber_link.tip_modal.copied");
     }
     if (this.copyState === "failed") {
-      return "Copy failed";
+      return i18n("fiber_link.tip_modal.copy_failed");
     }
-    return "Copy invoice";
+    return i18n("fiber_link.tip_modal.copy_invoice");
   }
 
   get isGenerateStep() {
@@ -467,8 +466,8 @@ export default class FiberLinkTipModal extends Component {
 
     if (!this._canContinueStatusPolling()) {
       const message = this._statusPollFailureCount > 0
-        ? "Status polling paused after repeated failures. Please retry."
-        : "Status polling timed out. Please retry.";
+        ? i18n("fiber_link.tip_modal.poll_paused")
+        : i18n("fiber_link.tip_modal.poll_timed_out");
       this.errorMessage = mapStatusErrorToMessage(
         new Error(message),
       );
@@ -515,7 +514,7 @@ export default class FiberLinkTipModal extends Component {
     this._clearStatusPollTimer();
 
     if (this.isSelfTip) {
-      this.errorMessage = "You can’t tip your own post.";
+      this.errorMessage = i18n("fiber_link.tip_modal.error_self_tip");
       return;
     }
 
@@ -525,7 +524,7 @@ export default class FiberLinkTipModal extends Component {
     }
 
     if (!this.postId || !this.fromUserId || !this.targetUserId) {
-      this.errorMessage = "Missing tip context. Please refresh and retry.";
+      this.errorMessage = i18n("fiber_link.tip_modal.error_missing_context");
       return;
     }
 
@@ -544,7 +543,7 @@ export default class FiberLinkTipModal extends Component {
       );
 
       if (!normalizeMessage(result?.invoice)) {
-        throw new Error("Invoice is empty");
+        throw new Error(i18n("fiber_link.tip_modal.error_invoice_empty"));
       }
 
       this.invoice = result?.invoice;
@@ -646,7 +645,7 @@ export default class FiberLinkTipModal extends Component {
                 <em>CKB</em>
               </h2>
               <div class="fiber-link-tip-modal__hero-sub">
-                <span>Tipping</span>
+                <span>{{i18n "fiber_link.tip_modal.tipping"}}</span>
                 <span class="fiber-link-tip-modal__hero-handle">@{{this.targetUsername}}</span>
               </div>
             </section>
@@ -670,11 +669,11 @@ export default class FiberLinkTipModal extends Component {
                 {{/if}}
                 <div class="fiber-link-tip-modal__recipient-copy">
                   <strong>@{{this.targetUsername}}</strong>
-                  <span>Recipient · Fiber Link profile</span>
+                  <span>{{i18n "fiber_link.tip_modal.recipient_note"}}</span>
                 </div>
               </div>
               <p class="fiber-link-tip-modal__receive-note">
-                <span>Receives</span>
+                <span>{{i18n "fiber_link.tip_modal.receives"}}</span>
                 <strong>{{this.displayAmount}}<small>CKB</small></strong>
               </p>
             </div>
@@ -685,8 +684,8 @@ export default class FiberLinkTipModal extends Component {
                 <strong title={{this.contextTitle}}>{{this.contextTitle}}</strong>
               </div>
               <div class="fiber-link-tip-modal__meta-cell">
-                <span>Network</span>
-                <strong>Fiber Link · Testnet</strong>
+                <span>{{i18n "fiber_link.tip_modal.network"}}</span>
+                <strong>{{i18n "fiber_link.tip_modal.network_value"}}</strong>
               </div>
             </div>
           </header>
@@ -697,12 +696,12 @@ export default class FiberLinkTipModal extends Component {
 
           {{#if this.isGenerating}}
             <p class="fiber-link-tip-alert is-info" data-fiber-link-tip-modal="invoice-loading">
-              Preparing invoice… this will time out with a retryable error if Fiber Link is busy.
+              {{i18n "fiber_link.tip_modal.preparing_invoice"}}
             </p>
           {{/if}}
 
           {{#if this.isSelfTip}}
-            <p class="fiber-link-tip-alert is-warning">You can’t tip your own post.</p>
+            <p class="fiber-link-tip-alert is-warning">{{i18n "fiber_link.tip_modal.error_self_tip"}}</p>
           {{/if}}
 
           {{#if this.isGenerateStep}}
@@ -726,13 +725,13 @@ export default class FiberLinkTipModal extends Component {
               <div class="fiber-link-tip-form">
                 <label class="fiber-link-tip-field">
                   <span class="fiber-link-tip-field-row">
-                    <span class="fiber-link-tip-label">Amount</span>
+                    <span class="fiber-link-tip-label">{{i18n "fiber_link.tip_modal.amount_label"}}</span>
                     <span class="fiber-link-tip-field-hint">≈ $0.42 USD</span>
                   </span>
                   <div class="fiber-link-tip-input-group">
                     <input
                       class="fiber-link-tip-input fiber-link-tip-input--amount"
-                      aria-label="Amount"
+                      aria-label={{i18n "fiber_link.tip_modal.amount_label"}}
                       inputmode="decimal"
                       name="fiber-link-tip-amount"
                       value={{this.amount}}
@@ -742,7 +741,7 @@ export default class FiberLinkTipModal extends Component {
                   </div>
                 </label>
 
-                <div class="fiber-link-tip-quick-amounts" aria-label="Quick amounts">
+                <div class="fiber-link-tip-quick-amounts" aria-label={{i18n "fiber_link.tip_modal.quick_amounts_aria"}}>
                   {{#each this.quickAmountItems as |quickAmount|}}
                     <button
                       type="button"
@@ -759,7 +758,7 @@ export default class FiberLinkTipModal extends Component {
                     class={{this.customAmountClassName}}
                     aria-pressed={{this.customAmountAriaPressed}}
                   >
-                    Custom
+                    {{i18n "fiber_link.tip_modal.custom"}}
                   </button>
                 </div>
 
@@ -769,17 +768,17 @@ export default class FiberLinkTipModal extends Component {
 
                 <label class="fiber-link-tip-field">
                   <span class="fiber-link-tip-field-row">
-                    <span class="fiber-link-tip-label">Tip message</span>
-                    <span class="fiber-link-tip-field-hint">Optional · {{this.messageCharacterCount}} / {{this.maxMessageLength}}</span>
+                    <span class="fiber-link-tip-label">{{i18n "fiber_link.tip_modal.message_label"}}</span>
+                    <span class="fiber-link-tip-field-hint">{{i18n "fiber_link.tip_modal.message_hint" current=this.messageCharacterCount max=this.maxMessageLength}}</span>
                   </span>
                   <span class="fiber-link-tip-textarea-wrap">
                     <textarea
                       class="fiber-link-tip-input fiber-link-tip-textarea"
-                      aria-label="Message (optional)"
+                      aria-label={{i18n "fiber_link.tip_modal.message_aria"}}
                       maxlength={{this.maxMessageLength}}
                       name="fiber-link-tip-message"
                       rows="3"
-                      placeholder="Leave a short note"
+                      placeholder={{i18n "fiber_link.tip_modal.message_placeholder"}}
                       value={{this.message}}
                       {{on "input" this.onMessageInput}}
                     ></textarea>
@@ -815,13 +814,13 @@ export default class FiberLinkTipModal extends Component {
                       class="fiber-link-tip-invoice-qr"
                       data-fiber-link-tip-modal="invoice-qr"
                       src={{this.invoiceQrDataUrl}}
-                      alt="Invoice QR code"
+                      alt={{i18n "fiber_link.tip_modal.qr_alt"}}
                     />
                   </div>
                 {{else}}
                   <div class="fiber-link-tip-invoice-visual fiber-link-tip-invoice-visual--placeholder">
                     <p class="fiber-link-tip-step-card__placeholder">
-                      QR preview unavailable. Open Fiber Wallet or copy the invoice below.
+                      {{i18n "fiber_link.tip_modal.qr_unavailable"}}
                     </p>
                   </div>
                 {{/if}}
@@ -834,12 +833,12 @@ export default class FiberLinkTipModal extends Component {
                       aria-hidden="true"
                     ></span>
                     <span>{{this.statusLabel}}</span>
-                    <small>· listening on Fiber Link</small>
+                    <small>{{i18n "fiber_link.tip_modal.listening"}}</small>
                   </span>
                 </div>
 
                 <div class="fiber-link-tip-invoice-line">
-                  <span>Invoice</span>
+                  <span>{{i18n "fiber_link.tip_modal.invoice_label"}}</span>
                   <strong
                     data-fiber-link-tip-modal="invoice-value"
                     data-fiber-link-invoice={{this.invoice}}
@@ -859,7 +858,7 @@ export default class FiberLinkTipModal extends Component {
 
                 {{#if this.shouldShowInvoiceTimer}}
                   <div class="fiber-link-tip-timer">
-                    <span>Expires in</span>
+                    <span>{{i18n "fiber_link.tip_modal.expires_in"}}</span>
                     <span class="fiber-link-tip-timer__track" aria-hidden="true"></span>
                     <strong>09:24</strong>
                   </div>
@@ -874,8 +873,8 @@ export default class FiberLinkTipModal extends Component {
                 <span>✓</span>
               </div>
               <div class="fiber-link-tip-step-card__header is-centered">
-                <h3>Payment complete</h3>
-                <p class="fiber-link-tip-step-card__caption">{{this.displayAmount}} CKB sent to @{{this.targetUsername}}.</p>
+                <h3>{{i18n "fiber_link.tip_modal.confirmed_title"}}</h3>
+                <p class="fiber-link-tip-step-card__caption">{{i18n "fiber_link.tip_modal.confirmed_caption" amount=this.displayAmount username=this.targetUsername}}</p>
               </div>
               <div class="fiber-link-tip-status-row">
                 <span class={{this.statusClass}}>{{this.statusLabel}}</span>
@@ -894,7 +893,7 @@ export default class FiberLinkTipModal extends Component {
               class="fiber-link-tip-modal__brand-logo"
               data-fiber-link-tip-modal="brand-logo"
             />
-            <span>Powered by</span>
+            <span>{{i18n "fiber_link.tip_modal.powered_by"}}</span>
             <a
               href={{this.brandHomepageUrl}}
               target="_blank"
@@ -929,12 +928,12 @@ export default class FiberLinkTipModal extends Component {
                   data-fiber-link-tip-modal="wallet-button"
                   disabled
                 >
-                  Open Fiber Wallet →
+                  {{i18n "fiber_link.tip_modal.open_wallet"}}
                 </button>
               {{/if}}
 
               {{#if this.isConfirmedStep}}
-                <DButton class="btn-primary" @action={{@closeModal}} @translatedLabel="Done" />
+                <DButton class="btn-primary" @action={{@closeModal}} @translatedLabel={{i18n "fiber_link.tip_modal.done"}} />
               {{/if}}
             </div>
           </div>

@@ -4,6 +4,7 @@ import { action } from "@ember/object";
 import { scheduleOnce } from "@ember/runloop";
 import { service } from "@ember/service";
 import DButton from "discourse/components/d-button";
+import { i18n } from "discourse-i18n";
 
 import FiberLinkTipModal from "../modal/fiber-link-tip-modal";
 import {
@@ -59,7 +60,7 @@ export default class FiberLinkTipPostMenuButton extends Component {
     if (typeof username === "string" && username.trim()) {
       return username.trim();
     }
-    return "post author";
+    return i18n("fiber_link.tip.post_author_fallback");
   }
 
   get targetAvatarTemplate() {
@@ -140,8 +141,8 @@ export default class FiberLinkTipPostMenuButton extends Component {
     {{#if this.shouldShow}}
       <DButton
         @class="post-action-menu__fiber-link-tip fiber-link-tip-button--icon-only fiber-link-client-ready-button"
-        @translatedTitle="Tip"
-        @translatedAriaLabel="Tip"
+        @translatedTitle={{i18n "fiber_link.tip.button_title"}}
+        @translatedAriaLabel={{i18n "fiber_link.tip.button_title"}}
         @icon="gift"
         @action={{this.openTipModal}}
         data-fiber-link-tip-button="post-menu"
