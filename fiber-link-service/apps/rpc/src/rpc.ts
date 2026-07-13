@@ -42,6 +42,7 @@ import {
 import { type AppRepo, createDbAppRepo } from "./repositories/app-repo";
 import { rpcErrorResponse, rpcResultResponse } from "./rpc-error";
 import { loadSecretMap, resolveSecretForApp } from "./secret-map";
+import { ensureDefaultMetrics, hmacSecretSourceTotal, metricsRegistry, normalizeMethodLabel, rpcRequestsTotal } from "./metrics";
 
 const NONCE_TTL_MS = 5 * 60 * 1000;
 const nonceStore = createNonceStore();
@@ -199,6 +200,12 @@ export function registerRpc(
     return { status: "alive" as const };
   });
 
+  app.get("/metrics", async (_req, reply) => {
+    ensureDefaultMetrics();
+    reply.header("Content-Type", metricsRegistry.contentType);
+    return reply.send(await metricsRegistry.metrics());
+  });
+
   app.get("/healthz/ready", async (req, reply) => {
     try {
       const result = options.readinessProbe
@@ -248,6 +255,7 @@ export function registerRpc(
         return reply.send(rpcErrorResponse(null, RpcErrorCode.INVALID_REQUEST, "Invalid Request"));
       }
       const rpc = parsedRequest.data;
+      rpcRequestsTotal.inc({ method: normalizeMethodLabel(rpc.method) });
 
       const appRepo = options.appRepo ?? getDefaultAppRepo();
       let secret = "";
@@ -257,6 +265,7 @@ export function registerRpc(
             envSecretMap: secretMap,
             envFallbackSecret: getFallbackSecret(),
             onResolve: ({ source }) => {
+              hmacSecretSourceTotal.inc({ source });
               if (source === "env_fallback") {
                 // The shared fallback secret cannot distinguish apps: any holder can
                 // sign requests for any appId. Warn so operators migrate to per-app
@@ -273,6 +282,7 @@ export function registerRpc(
         secret = fromMap ?? fallback;
 
         const source = fromMap ? "env_map" : fallback ? "env_fallback" : "missing";
+        hmacSecretSourceTotal.inc({ source });
         if (source === "env_fallback") {
           req.log.warn({ appId, source }, "RPC request authenticated with shared fallback HMAC secret");
         } else {

@@ -6,7 +6,7 @@ This reference deployment starts:
 - `migrate` (one-shot Drizzle migration runner; `rpc` waits for it to complete)
 - `redis` (nonce replay cache for RPC)
 - `fnn` (Hub Fiber Node from official release binary)
-- `rpc` (`/rpc` JSON-RPC service)
+- `rpc` (`/rpc` JSON-RPC service; also serves `/metrics` Prometheus exposition and `/healthz/*`)
 - `worker` (withdrawal batch loop)
 
 It is intended for local/staging bring-up, not production hardening.
