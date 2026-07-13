@@ -1,0 +1,1639 @@
+{
+  "name": "fiber-link-rpc",
+  "description": "Machine-readable description of the Fiber Link JSON-RPC surface, generated from the zod contracts in apps/rpc/src/contracts.ts.",
+  "schemaVersion": 1,
+  "transport": {
+    "endpoint": "POST /rpc",
+    "protocol": "JSON-RPC 2.0",
+    "authentication": "HMAC-SHA256 request signing via x-app-id, x-ts, x-nonce, and x-signature headers; see docs and @fiber-link/client for the signing scheme.",
+    "streaming": "GET /rpc/stream?invoice=... serves Server-Sent Events for settlement updates (LISTENING, SETTLED, TIMEOUT)."
+  },
+  "errorCodes": {
+    "INVALID_REQUEST": -32600,
+    "METHOD_NOT_FOUND": -32601,
+    "INVALID_PARAMS": -32602,
+    "INTERNAL_ERROR": -32603,
+    "UNAUTHORIZED": -32001,
+    "RATE_LIMITED": -32005,
+    "TIP_NOT_FOUND": -32004
+  },
+  "methods": {
+    "health.ping": {
+      "description": "Liveness probe over signed JSON-RPC; returns { status: \"ok\" }.",
+      "params": {
+        "$ref": "#/definitions/health.ping.params",
+        "definitions": {
+          "health.ping.params": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": true,
+            "description": "Ignored; any params are accepted."
+          }
+        },
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "result": {
+        "$ref": "#/definitions/health.ping.result",
+        "definitions": {
+          "health.ping.result": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "string",
+                "const": "ok"
+              }
+            },
+            "required": [
+              "status"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    "tip.create": {
+      "description": "Create a Fiber payment invoice for tipping a post.",
+      "params": {
+        "$ref": "#/definitions/tip.create.params",
+        "definitions": {
+          "tip.create.params": {
+            "type": "object",
+            "properties": {
+              "postId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "fromUserId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "toUserId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "asset": {
+                "type": "string",
+                "enum": [
+                  "CKB",
+                  "USDI"
+                ]
+              },
+              "amount": {
+                "type": "string",
+                "pattern": "^\\d+(?:\\.\\d+)?$"
+              },
+              "message": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 280
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "postId",
+              "fromUserId",
+              "toUserId",
+              "asset",
+              "amount"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "result": {
+        "$ref": "#/definitions/tip.create.result",
+        "definitions": {
+          "tip.create.result": {
+            "type": "object",
+            "properties": {
+              "invoice": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "invoice"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    "tip.status": {
+      "description": "Poll the settlement state of a tip invoice.",
+      "params": {
+        "$ref": "#/definitions/tip.status.params",
+        "definitions": {
+          "tip.status.params": {
+            "type": "object",
+            "properties": {
+              "invoice": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "invoice"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "result": {
+        "$ref": "#/definitions/tip.status.result",
+        "definitions": {
+          "tip.status.result": {
+            "type": "object",
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "UNPAID",
+                  "SETTLED",
+                  "FAILED"
+                ]
+              }
+            },
+            "required": [
+              "state"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    "tip.get": {
+      "description": "Alias of tip.status.",
+      "aliasOf": "tip.status",
+      "params": {
+        "$ref": "#/definitions/tip.get.params",
+        "definitions": {
+          "tip.get.params": {
+            "type": "object",
+            "properties": {
+              "invoice": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "invoice"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "result": {
+        "$ref": "#/definitions/tip.get.result",
+        "definitions": {
+          "tip.get.result": {
+            "type": "object",
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "UNPAID",
+                  "SETTLED",
+                  "FAILED"
+                ]
+              }
+            },
+            "required": [
+              "state"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    "tip.settled_feed": {
+      "description": "Cursor-paginated feed of settled tips for the authenticated app.",
+      "params": {
+        "$ref": "#/definitions/tip.settled_feed.params",
+        "definitions": {
+          "tip.settled_feed.params": {
+            "type": "object",
+            "properties": {
+              "limit": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 100
+              },
+              "after": {
+                "type": "object",
+                "properties": {
+                  "settledAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "settledAt",
+                  "id"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "result": {
+        "$ref": "#/definitions/tip.settled_feed.result",
+        "definitions": {
+          "tip.settled_feed.result": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "tipIntentId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "postId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "invoice": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "amount": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "asset": {
+                      "type": "string",
+                      "enum": [
+                        "CKB",
+                        "USDI"
+                      ]
+                    },
+                    "fromUserId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "toUserId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "message": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "settledAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "tipIntentId",
+                    "postId",
+                    "invoice",
+                    "amount",
+                    "asset",
+                    "fromUserId",
+                    "toUserId",
+                    "message",
+                    "settledAt"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "nextCursor": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "settledAt": {
+                        "type": "string",
+                        "format": "date-time"
+                      },
+                      "id": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": [
+                      "settledAt",
+                      "id"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "items",
+              "nextCursor"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    "dashboard.summary": {
+      "description": "Per-user dashboard summary (balances, tips, withdrawals).",
+      "params": {
+        "$ref": "#/definitions/dashboard.summary.params",
+        "definitions": {
+          "dashboard.summary.params": {
+            "type": "object",
+            "properties": {
+              "userId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "limit": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 50
+              },
+              "includeAdmin": {
+                "type": "boolean"
+              },
+              "filters": {
+                "type": "object",
+                "properties": {
+                  "withdrawalState": {
+                    "type": "string",
+                    "enum": [
+                      "ALL",
+                      "LIQUIDITY_PENDING",
+                      "PENDING",
+                      "PROCESSING",
+                      "BROADCASTED",
+                      "RETRY_PENDING",
+                      "COMPLETED",
+                      "FAILED"
+                    ]
+                  },
+                  "settlementState": {
+                    "type": "string",
+                    "enum": [
+                      "ALL",
+                      "UNPAID",
+                      "SETTLED",
+                      "FAILED"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "userId"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "result": {
+        "$ref": "#/definitions/dashboard.summary.result",
+        "definitions": {
+          "dashboard.summary.result": {
+            "type": "object",
+            "properties": {
+              "balance": {
+                "type": "string",
+                "minLength": 1
+              },
+              "balances": {
+                "type": "object",
+                "properties": {
+                  "available": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "pending": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "locked": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "asset": {
+                    "type": "string",
+                    "enum": [
+                      "CKB",
+                      "USDI"
+                    ]
+                  }
+                },
+                "required": [
+                  "available",
+                  "pending",
+                  "locked",
+                  "asset"
+                ],
+                "additionalProperties": false
+              },
+              "assetBalances": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "asset": {
+                      "type": "string",
+                      "enum": [
+                        "CKB",
+                        "USDI"
+                      ]
+                    },
+                    "available": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "pending": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "locked": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "asset",
+                    "available",
+                    "pending",
+                    "locked"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "stats": {
+                "type": "object",
+                "properties": {
+                  "pendingCount": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "completedCount": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "failedCount": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                },
+                "required": [
+                  "pendingCount",
+                  "completedCount",
+                  "failedCount"
+                ],
+                "additionalProperties": false
+              },
+              "tips": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "invoice": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "postId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "amount": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "asset": {
+                      "type": "string",
+                      "enum": [
+                        "CKB",
+                        "USDI"
+                      ]
+                    },
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "UNPAID",
+                        "SETTLED",
+                        "FAILED",
+                        "LIQUIDITY_PENDING",
+                        "PENDING",
+                        "PROCESSING",
+                        "BROADCASTED",
+                        "RETRY_PENDING",
+                        "COMPLETED"
+                      ]
+                    },
+                    "direction": {
+                      "type": "string",
+                      "enum": [
+                        "IN",
+                        "OUT",
+                        "WITHDRAWAL"
+                      ]
+                    },
+                    "counterpartyUserId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "message": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "settledAt": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "activityType": {
+                      "type": "string",
+                      "enum": [
+                        "TIP",
+                        "WITHDRAWAL"
+                      ]
+                    },
+                    "txHash": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "explorerUrl": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "destinationKind": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "destination": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "invoice",
+                    "postId",
+                    "amount",
+                    "asset",
+                    "state",
+                    "direction",
+                    "counterpartyUserId",
+                    "message",
+                    "createdAt",
+                    "settledAt"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "admin": {
+                "type": "object",
+                "properties": {
+                  "filtersApplied": {
+                    "type": "object",
+                    "properties": {
+                      "withdrawalState": {
+                        "type": "string",
+                        "enum": [
+                          "ALL",
+                          "LIQUIDITY_PENDING",
+                          "PENDING",
+                          "PROCESSING",
+                          "BROADCASTED",
+                          "RETRY_PENDING",
+                          "COMPLETED",
+                          "FAILED"
+                        ]
+                      },
+                      "settlementState": {
+                        "type": "string",
+                        "enum": [
+                          "ALL",
+                          "UNPAID",
+                          "SETTLED",
+                          "FAILED"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "withdrawalState",
+                      "settlementState"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "apps": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "appId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "createdAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "appId",
+                        "createdAt"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "withdrawals": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "userId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "asset": {
+                          "type": "string",
+                          "enum": [
+                            "CKB",
+                            "USDI"
+                          ]
+                        },
+                        "amount": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "state": {
+                          "type": "string",
+                          "enum": [
+                            "LIQUIDITY_PENDING",
+                            "PENDING",
+                            "PROCESSING",
+                            "BROADCASTED",
+                            "RETRY_PENDING",
+                            "COMPLETED",
+                            "FAILED"
+                          ]
+                        },
+                        "retryCount": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "createdAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "updatedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "txHash": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "nextRetryAt": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "lastError": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "userId",
+                        "asset",
+                        "amount",
+                        "state",
+                        "retryCount",
+                        "createdAt",
+                        "updatedAt",
+                        "txHash",
+                        "nextRetryAt",
+                        "lastError"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "settlements": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "invoice": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "fromUserId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "toUserId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "state": {
+                          "type": "string",
+                          "enum": [
+                            "UNPAID",
+                            "SETTLED",
+                            "FAILED"
+                          ]
+                        },
+                        "retryCount": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "createdAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "settledAt": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "nextRetryAt": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "lastCheckedAt": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "lastError": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "failureReason": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "invoice",
+                        "fromUserId",
+                        "toUserId",
+                        "state",
+                        "retryCount",
+                        "createdAt",
+                        "settledAt",
+                        "nextRetryAt",
+                        "lastCheckedAt",
+                        "lastError",
+                        "failureReason"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "pipelineBoard": {
+                    "type": "object",
+                    "properties": {
+                      "stageCounts": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "stage": {
+                              "type": "string",
+                              "enum": [
+                                "UNPAID",
+                                "SETTLED",
+                                "FAILED"
+                              ]
+                            },
+                            "count": {
+                              "type": "integer",
+                              "minimum": 0
+                            }
+                          },
+                          "required": [
+                            "stage",
+                            "count"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "invoiceRows": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "invoice": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "state": {
+                              "type": "string",
+                              "enum": [
+                                "UNPAID",
+                                "SETTLED",
+                                "FAILED"
+                              ]
+                            },
+                            "amount": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "asset": {
+                              "type": "string",
+                              "enum": [
+                                "CKB",
+                                "USDI"
+                              ]
+                            },
+                            "fromUserId": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "toUserId": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "createdAt": {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            "timelineHref": {
+                              "type": "string",
+                              "minLength": 1
+                            }
+                          },
+                          "required": [
+                            "invoice",
+                            "state",
+                            "amount",
+                            "asset",
+                            "fromUserId",
+                            "toUserId",
+                            "createdAt",
+                            "timelineHref"
+                          ],
+                          "additionalProperties": false
+                        }
+                      }
+                    },
+                    "required": [
+                      "stageCounts",
+                      "invoiceRows"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "filtersApplied",
+                  "apps",
+                  "withdrawals",
+                  "settlements"
+                ],
+                "additionalProperties": false
+              },
+              "generatedAt": {
+                "type": "string",
+                "format": "date-time"
+              }
+            },
+            "required": [
+              "balance",
+              "balances",
+              "assetBalances",
+              "stats",
+              "tips",
+              "generatedAt"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    "dashboard.analytics": {
+      "description": "Aggregated tipping analytics for the authenticated app.",
+      "params": {
+        "$ref": "#/definitions/dashboard.analytics.params",
+        "definitions": {
+          "dashboard.analytics.params": {
+            "type": "object",
+            "properties": {
+              "userId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "range": {
+                "type": "string",
+                "enum": [
+                  "7d",
+                  "30d",
+                  "all"
+                ],
+                "default": "30d"
+              }
+            },
+            "required": [
+              "userId"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "result": {
+        "$ref": "#/definitions/dashboard.analytics.result",
+        "definitions": {
+          "dashboard.analytics.result": {
+            "type": "object",
+            "properties": {
+              "range": {
+                "type": "string",
+                "enum": [
+                  "7d",
+                  "30d",
+                  "all"
+                ]
+              },
+              "timeSeries": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "date": {
+                      "type": "string"
+                    },
+                    "amount": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "date",
+                    "amount"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "topPosts": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "postId": {
+                      "type": "string"
+                    },
+                    "totalAmount": {
+                      "type": "string"
+                    },
+                    "tipCount": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "postId",
+                    "totalAmount",
+                    "tipCount"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "topTippers": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "userId": {
+                      "type": "string"
+                    },
+                    "totalAmount": {
+                      "type": "string"
+                    },
+                    "tipCount": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "userId",
+                    "totalAmount",
+                    "tipCount"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "withdrawalHistory": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "amount": {
+                      "type": "string"
+                    },
+                    "asset": {
+                      "type": "string"
+                    },
+                    "state": {
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "completedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "amount",
+                    "asset",
+                    "state",
+                    "createdAt",
+                    "completedAt"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "generatedAt": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "range",
+              "timeSeries",
+              "topPosts",
+              "topTippers",
+              "withdrawalHistory",
+              "generatedAt"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    "withdrawal.quote": {
+      "description": "Quote a withdrawal (policy checks, liquidity, fees) without executing it.",
+      "params": {
+        "$ref": "#/definitions/withdrawal.quote.params",
+        "definitions": {
+          "withdrawal.quote.params": {
+            "type": "object",
+            "properties": {
+              "userId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "asset": {
+                "type": "string",
+                "enum": [
+                  "CKB",
+                  "USDI"
+                ]
+              },
+              "amount": {
+                "type": "string",
+                "pattern": "^\\d+(?:\\.\\d+)?$"
+              },
+              "destination": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "CKB_ADDRESS"
+                      },
+                      "address": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "address"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "PAYMENT_REQUEST"
+                      },
+                      "paymentRequest": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "paymentRequest"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              }
+            },
+            "required": [
+              "userId",
+              "asset",
+              "amount",
+              "destination"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "result": {
+        "$ref": "#/definitions/withdrawal.quote.result",
+        "definitions": {
+          "withdrawal.quote.result": {
+            "type": "object",
+            "properties": {
+              "asset": {
+                "type": "string",
+                "enum": [
+                  "CKB",
+                  "USDI"
+                ]
+              },
+              "amount": {
+                "type": "string",
+                "minLength": 1
+              },
+              "minimumAmount": {
+                "type": "string",
+                "minLength": 1
+              },
+              "availableBalance": {
+                "type": "string",
+                "minLength": 1
+              },
+              "lockedBalance": {
+                "type": "string",
+                "minLength": 1
+              },
+              "networkFee": {
+                "type": "string",
+                "minLength": 1
+              },
+              "receiveAmount": {
+                "type": "string",
+                "minLength": 1
+              },
+              "destinationValid": {
+                "type": "boolean"
+              },
+              "validationMessage": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "asset",
+              "amount",
+              "minimumAmount",
+              "availableBalance",
+              "lockedBalance",
+              "networkFee",
+              "receiveAmount",
+              "destinationValid",
+              "validationMessage"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    "withdrawal.request": {
+      "description": "Request an asynchronous withdrawal to a payment request or CKB address.",
+      "params": {
+        "$ref": "#/definitions/withdrawal.request.params",
+        "definitions": {
+          "withdrawal.request.params": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "userId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "asset": {
+                    "type": "string",
+                    "enum": [
+                      "CKB",
+                      "USDI"
+                    ]
+                  },
+                  "amount": {
+                    "type": "string",
+                    "pattern": "^\\d+(?:\\.\\d+)?$"
+                  },
+                  "clientRequestId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "destination": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "CKB_ADDRESS"
+                          },
+                          "address": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "address"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "PAYMENT_REQUEST"
+                          },
+                          "paymentRequest": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "paymentRequest"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "userId",
+                  "asset",
+                  "amount",
+                  "destination"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "userId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "asset": {
+                    "type": "string",
+                    "enum": [
+                      "CKB",
+                      "USDI"
+                    ]
+                  },
+                  "amount": {
+                    "type": "string",
+                    "pattern": "^\\d+(?:\\.\\d+)?$"
+                  },
+                  "clientRequestId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "toAddress": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "userId",
+                  "asset",
+                  "amount",
+                  "toAddress"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          }
+        },
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "result": {
+        "$ref": "#/definitions/withdrawal.request.result",
+        "definitions": {
+          "withdrawal.request.result": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "LIQUIDITY_PENDING",
+                  "PENDING",
+                  "PROCESSING",
+                  "BROADCASTED",
+                  "RETRY_PENDING",
+                  "COMPLETED",
+                  "FAILED"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "state"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    "notification.channel.create": {
+      "description": "Register a webhook notification channel for the authenticated app.",
+      "params": {
+        "$ref": "#/definitions/notification.channel.create.params",
+        "definitions": {
+          "notification.channel.create.params": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "kind": {
+                "type": "string",
+                "const": "WEBHOOK"
+              },
+              "target": {
+                "type": "string",
+                "format": "uri"
+              },
+              "secret": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 256
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "events": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "TIP_SETTLED",
+                    "WITHDRAWAL_COMPLETED",
+                    "WITHDRAWAL_FAILED",
+                    "WITHDRAWAL_RETRY_PENDING"
+                  ]
+                },
+                "minItems": 1
+              }
+            },
+            "required": [
+              "name",
+              "kind",
+              "target",
+              "events"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "result": {
+        "$ref": "#/definitions/notification.channel.create.result",
+        "definitions": {
+          "notification.channel.create.result": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "name": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "const": "WEBHOOK"
+              },
+              "target": {
+                "type": "string"
+              },
+              "events": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "createdAt": {
+                "type": "string",
+                "format": "date-time"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "kind",
+              "target",
+              "events",
+              "createdAt"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    "notification.channel.list": {
+      "description": "List the authenticated app's notification channels.",
+      "params": {
+        "$ref": "#/definitions/notification.channel.list.params",
+        "definitions": {
+          "notification.channel.list.params": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": false
+          }
+        },
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "result": {
+        "$ref": "#/definitions/notification.channel.list.result",
+        "definitions": {
+          "notification.channel.list.result": {
+            "type": "object",
+            "properties": {
+              "channels": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "const": "WEBHOOK"
+                    },
+                    "target": {
+                      "type": "string"
+                    },
+                    "events": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "enabled": {
+                      "type": "boolean"
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "kind",
+                    "target",
+                    "events",
+                    "enabled",
+                    "createdAt"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "channels"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    }
+  }
+}

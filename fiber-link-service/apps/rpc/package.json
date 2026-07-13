@@ -3,7 +3,8 @@
   "private": true,
   "scripts": {
     "test": "vitest",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "schema:generate": "bun run src/scripts/generate-rpc-schema.ts"
   },
   "dependencies": {
     "@fiber-link/db": "workspace:*",
@@ -17,7 +18,8 @@
   "devDependencies": {
     "ioredis-mock": "^8.9.0",
     "supertest": "^6.3.3",
+    "typescript": "^5.6.0",
     "vitest": "^1.6.0",
-    "typescript": "^5.6.0"
+    "zod-to-json-schema": "^3.23"
   }
 }

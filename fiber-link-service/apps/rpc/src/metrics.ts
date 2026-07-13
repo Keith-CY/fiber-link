@@ -17,7 +17,7 @@ export function ensureDefaultMetrics() {
 
 // Known RPC method names, so the `method` label has bounded cardinality even if
 // a client sends an unrecognized method (bucketed as "unknown").
-const KNOWN_RPC_METHODS = new Set<string>([
+export const KNOWN_RPC_METHODS = new Set<string>([
   "health.ping",
   "tip.create",
   "tip.status",
