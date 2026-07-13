@@ -325,4 +325,181 @@ describe("rebalance-ops local CKB liquidity fallback", () => {
       state: "FUNDED",
     });
   });
+
+  it("recognizes a FiberRpcError instance with code -32601 as unsupported", async () => {
+    process.env.FIBER_LIQUIDITY_CKB_SOURCE_PRIVATE_KEY =
+      "0x2222222222222222222222222222222222222222222222222222222222222222";
+    process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY =
+      "0x1111111111111111111111111111111111111111111111111111111111111111";
+
+    rpcCallMock.mockRejectedValueOnce(new MockFiberRpcError(-32601, "rpc method missing"));
+    resolveHotWalletAddressMock.mockReturnValue("ckt1qhotwallet");
+    executeTransferMock.mockResolvedValue({ txHash: "0xsweep" });
+
+    const { ensureChainLiquidity } = await import("./rebalance-ops");
+    const result = await ensureChainLiquidity("http://fnn:8227", {
+      requestId: "liq-rpc-error-instance",
+      asset: "CKB",
+      network: "AGGRON4",
+      requiredAmount: "62",
+      sourceKind: "FIBER_TO_CKB_CHAIN",
+    });
+
+    expect(result).toMatchObject({ recoveryStrategy: "LOCAL_CKB_SWEEP", txHash: "0xsweep" });
+  });
+
+  it("recognizes an unsupported rpc from a message-only error object", async () => {
+    process.env.FIBER_LIQUIDITY_CKB_SOURCE_PRIVATE_KEY =
+      "0x2222222222222222222222222222222222222222222222222222222222222222";
+    process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY =
+      "0x1111111111111111111111111111111111111111111111111111111111111111";
+
+    // Plain object without a `code`, exercising the message-extraction branch.
+    rpcCallMock.mockRejectedValueOnce({ message: "unknown method: rebalance_to_ckb_chain" });
+    resolveHotWalletAddressMock.mockReturnValue("ckt1qhotwallet");
+    executeTransferMock.mockResolvedValue({ txHash: "0xsweep" });
+
+    const { ensureChainLiquidity } = await import("./rebalance-ops");
+    const result = await ensureChainLiquidity("http://fnn:8227", {
+      requestId: "liq-msg-only",
+      asset: "CKB",
+      network: "AGGRON4",
+      requiredAmount: "62",
+      sourceKind: "FIBER_TO_CKB_CHAIN",
+    });
+
+    expect(result).toMatchObject({ recoveryStrategy: "LOCAL_CKB_SWEEP" });
+  });
+
+  it("maps a failed rebalance status from the Fiber RPC result", async () => {
+    rpcCallMock.mockResolvedValueOnce({ status: "failed", error: "insufficient inbound", started: true });
+
+    const { ensureChainLiquidity } = await import("./rebalance-ops");
+    await expect(
+      ensureChainLiquidity("http://fnn:8227", {
+        requestId: "liq-failed-status",
+        asset: "CKB",
+        network: "AGGRON4",
+        requiredAmount: "62",
+        sourceKind: "FIBER_TO_CKB_CHAIN",
+      }),
+    ).resolves.toEqual({ state: "FAILED", started: true, error: "insufficient inbound" });
+  });
+
+  it("treats an unrecognized rebalance status as pending", async () => {
+    rpcCallMock.mockResolvedValueOnce({ status: "who-knows" });
+
+    const { ensureChainLiquidity } = await import("./rebalance-ops");
+    await expect(
+      ensureChainLiquidity("http://fnn:8227", {
+        requestId: "liq-idle-status",
+        asset: "CKB",
+        network: "AGGRON4",
+        requiredAmount: "62",
+        sourceKind: "FIBER_TO_CKB_CHAIN",
+      }),
+    ).resolves.toEqual({ state: "PENDING", started: false });
+  });
+
+  it("treats a result with no status field as pending", async () => {
+    rpcCallMock.mockResolvedValueOnce({});
+
+    const { ensureChainLiquidity } = await import("./rebalance-ops");
+    await expect(
+      ensureChainLiquidity("http://fnn:8227", {
+        requestId: "liq-no-status",
+        asset: "CKB",
+        network: "AGGRON4",
+        requiredAmount: "62",
+        sourceKind: "FIBER_TO_CKB_CHAIN",
+      }),
+    ).resolves.toEqual({ state: "PENDING", started: false });
+  });
+
+  it("rethrows a non-Error, non-object rpc rejection unchanged", async () => {
+    process.env.FIBER_LIQUIDITY_CKB_SOURCE_PRIVATE_KEY =
+      "0x2222222222222222222222222222222222222222222222222222222222222222";
+    process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY =
+      "0x1111111111111111111111111111111111111111111111111111111111111111";
+
+    // A primitive rejection exercises the String(error) normalization fallback.
+    rpcCallMock.mockRejectedValueOnce("boom");
+
+    const { ensureChainLiquidity } = await import("./rebalance-ops");
+    await expect(
+      ensureChainLiquidity("http://fnn:8227", {
+        requestId: "liq-primitive-error",
+        asset: "CKB",
+        network: "AGGRON4",
+        requiredAmount: "62",
+        sourceKind: "FIBER_TO_CKB_CHAIN",
+      }),
+    ).rejects.toBe("boom");
+    expect(executeTransferMock).not.toHaveBeenCalled();
+  });
+
+  it("encodes non-CKB rebalance amounts as plain hex and rethrows rpc failures without local fallback", async () => {
+    delete process.env.FIBER_LIQUIDITY_CKB_SOURCE_PRIVATE_KEY;
+    delete process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY;
+
+    rpcCallMock.mockRejectedValueOnce({ code: -32601, message: "Method not found" });
+
+    const { ensureChainLiquidity } = await import("./rebalance-ops");
+    await expect(
+      ensureChainLiquidity("http://fnn:8227", {
+        requestId: "liq-usdi",
+        asset: "USDI",
+        network: "AGGRON4",
+        requiredAmount: "100",
+        sourceKind: "FIBER_TO_CKB_CHAIN",
+      }),
+    ).rejects.toMatchObject({ code: -32601 });
+
+    expect(rpcCallMock).toHaveBeenCalledWith(
+      "http://fnn:8227",
+      "rebalance_to_ckb_chain",
+      expect.objectContaining({ required_amount: "0x64" }),
+    );
+    expect(executeTransferMock).not.toHaveBeenCalled();
+  });
+
+  it("reports IDLE from get_rebalance_status when the rpc is unsupported and local sweep is available", async () => {
+    process.env.FIBER_LIQUIDITY_CKB_SOURCE_PRIVATE_KEY =
+      "0x2222222222222222222222222222222222222222222222222222222222222222";
+    process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY =
+      "0x1111111111111111111111111111111111111111111111111111111111111111";
+
+    rpcCallMock.mockRejectedValueOnce({ code: -32601, message: "Method not found" });
+
+    const { getRebalanceStatus } = await import("./rebalance-ops");
+    await expect(
+      getRebalanceStatus("http://fnn:8227", { requestId: "liq-no-local-tracking" }),
+    ).resolves.toEqual({ state: "IDLE" });
+  });
+
+  it("marks a local sweep failed when its transaction is rejected on chain", async () => {
+    process.env.FIBER_LIQUIDITY_CKB_SOURCE_PRIVATE_KEY =
+      "0x2222222222222222222222222222222222222222222222222222222222222222";
+    process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY =
+      "0x1111111111111111111111111111111111111111111111111111111111111111";
+
+    rpcCallMock.mockRejectedValueOnce({ code: -32601, message: "Method not found" });
+    resolveHotWalletAddressMock.mockReturnValue("ckt1qhotwallet");
+    executeTransferMock.mockResolvedValue({ txHash: "0xsweep" });
+    getTransactionStatusMock.mockResolvedValueOnce("REJECTED");
+
+    const { ensureChainLiquidity, getRebalanceStatus } = await import("./rebalance-ops");
+    await ensureChainLiquidity("http://fnn:8227", {
+      requestId: "liq-rejected",
+      asset: "CKB",
+      network: "AGGRON4",
+      requiredAmount: "62",
+      sourceKind: "FIBER_TO_CKB_CHAIN",
+    });
+
+    await expect(getRebalanceStatus("http://fnn:8227", { requestId: "liq-rejected" })).resolves.toEqual({
+      state: "FAILED",
+      error: "local liquidity sweep transaction 0xsweep was rejected",
+    });
+  });
 });

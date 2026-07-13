@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { getHotWalletInventory, resolveHotWalletLockScript } from "./hot-wallet-inventory";
+import {
+  createDefaultHotWalletInventoryProvider,
+  getHotWalletInventory,
+  resolveHotWalletLockScript,
+} from "./hot-wallet-inventory";
 
 function ckbToHexShannons(amount: bigint): string {
   return `0x${(amount * 100_000_000n).toString(16)}`;
@@ -147,5 +151,59 @@ describe("resolveHotWalletLockScript", () => {
     });
     expect(typeof lock.codeHash).toBe("string");
     expect(typeof lock.args).toBe("string");
+  });
+
+  it("accepts a private key supplied without a 0x prefix", () => {
+    process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY =
+      "2222222222222222222222222222222222222222222222222222222222222222";
+
+    const lock = resolveHotWalletLockScript("LINA");
+    expect(typeof lock.codeHash).toBe("string");
+    expect(typeof lock.args).toBe("string");
+  });
+});
+
+describe("hot wallet private key resolution failures", () => {
+  const originalKey = process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY;
+  const originalKeyFile = process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY_FILE;
+
+  afterEach(() => {
+    for (const [name, value] of [
+      ["FIBER_WITHDRAWAL_CKB_PRIVATE_KEY", originalKey],
+      ["FIBER_WITHDRAWAL_CKB_PRIVATE_KEY_FILE", originalKeyFile],
+    ] as const) {
+      if (value === undefined) {
+        delete process.env[name];
+      } else {
+        process.env[name] = value;
+      }
+    }
+  });
+
+  it("throws when no withdrawal private key source is configured", () => {
+    delete process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY;
+    delete process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY_FILE;
+
+    expect(() => resolveHotWalletLockScript("AGGRON4")).toThrow(
+      "FIBER_WITHDRAWAL_CKB_PRIVATE_KEY (or FIBER_WITHDRAWAL_CKB_PRIVATE_KEY_FILE) is required",
+    );
+  });
+
+  it("throws when the private key is not a 32-byte hex string", () => {
+    process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY = "0xdeadbeef";
+    delete process.env.FIBER_WITHDRAWAL_CKB_PRIVATE_KEY_FILE;
+
+    expect(() => resolveHotWalletLockScript("AGGRON4")).toThrow(
+      "FIBER_WITHDRAWAL_CKB_PRIVATE_KEY must be a 32-byte hex private key",
+    );
+  });
+});
+
+describe("createDefaultHotWalletInventoryProvider", () => {
+  it("rejects non-CKB assets", async () => {
+    const provider = createDefaultHotWalletInventoryProvider();
+    await expect(provider({ asset: "USDI", network: "AGGRON4" })).rejects.toThrow(
+      "default hot wallet inventory provider currently supports only CKB",
+    );
   });
 });

@@ -81,6 +81,29 @@ describe("adapter provider", () => {
     expect(() => createAdapterProvider()).toThrow("FIBER_RPC_URL environment variable is not set.");
   });
 
+  it("rejects an unrecognized adapter mode", () => {
+    expect(() => createAdapterProvider({ mode: "bogus" })).toThrow(
+      "Invalid FIBER_ADAPTER_MODE 'bogus'. Expected one of: rpc, simulation.",
+    );
+  });
+
+  it("builds an rpc adapter through the injected factory when an endpoint is set", () => {
+    const sentinel = { marker: "rpc-adapter" } as unknown as ReturnType<typeof createAdapterProvider>;
+    let received: { endpoint?: string } | undefined;
+
+    const adapter = createAdapterProvider({
+      mode: "rpc",
+      endpoint: "https://rpc.example.com",
+      rpcFactory: (factoryArgs) => {
+        received = factoryArgs;
+        return sentinel;
+      },
+    });
+
+    expect(adapter).toBe(sentinel);
+    expect(received?.endpoint).toBe("https://rpc.example.com");
+  });
+
   it("selects simulation mode from environment", async () => {
     process.env.FIBER_ADAPTER_MODE = "simulation";
     process.env.FIBER_SIMULATION_SCENARIO = "always-failed";

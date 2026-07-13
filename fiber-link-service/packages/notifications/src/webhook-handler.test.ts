@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import crypto from "node:crypto";
 import { createWebhookChannelHandler } from "./webhook-handler";
 import type { NotificationDispatchTarget } from "./notification-repo";
-import type { WithdrawalCompletedNotificationEvent, WithdrawalFailedNotificationEvent, WithdrawalRetryPendingNotificationEvent } from "./notification-events";
+import type { TipSettledNotificationEvent, WithdrawalCompletedNotificationEvent, WithdrawalFailedNotificationEvent, WithdrawalRetryPendingNotificationEvent } from "./notification-events";
 
 const BASE_TARGET: NotificationDispatchTarget = {
   ruleId: "rule-1",
@@ -150,6 +150,44 @@ describe("createWebhookChannelHandler", () => {
     const body = JSON.parse(init.body as string);
     expect(body.retryCount).toBe(5);
     expect(body.error).toBe("max retries exceeded");
+    expect(body.txHash).toBeUndefined();
+  });
+
+  it("serializes TIP_SETTLED events with tip fields and omits withdrawal fields", async () => {
+    const mockFetch = vi.fn(async (_url: string, _init?: RequestInit) => new Response(null, { status: 200 }));
+    const handler = createWebhookChannelHandler({ fetch: mockFetch as unknown as typeof fetch });
+
+    const event: TipSettledNotificationEvent = {
+      type: "TIP_SETTLED",
+      occurredAt: new Date("2026-02-07T15:00:00.000Z"),
+      appId: "app-1",
+      toUserId: "author-1",
+      fromUserId: "tipper-1",
+      postId: "post-42",
+      invoice: "fibt1qxyz",
+      asset: "CKB",
+      amount: "7",
+    };
+
+    await handler({ target: { ...BASE_TARGET, event: "TIP_SETTLED" }, event });
+
+    const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect((init.headers as Record<string, string>)["x-fiber-link-event"]).toBe("TIP_SETTLED");
+    const body = JSON.parse(init.body as string);
+    expect(body).toMatchObject({
+      event: "TIP_SETTLED",
+      occurredAt: "2026-02-07T15:00:00.000Z",
+      appId: "app-1",
+      toUserId: "author-1",
+      fromUserId: "tipper-1",
+      postId: "post-42",
+      invoice: "fibt1qxyz",
+      asset: "CKB",
+      amount: "7",
+    });
+    // Withdrawal-only fields must not leak into a tip payload.
+    expect(body.withdrawalId).toBeUndefined();
+    expect(body.userId).toBeUndefined();
     expect(body.txHash).toBeUndefined();
   });
 

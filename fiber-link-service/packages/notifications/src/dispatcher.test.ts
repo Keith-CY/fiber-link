@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createNotificationDispatcher } from "./dispatcher";
+import { createNoopNotificationDispatcher, createNotificationDispatcher } from "./dispatcher";
 import { createInMemoryNotificationRepo } from "./notification-repo";
 
 describe("createNotificationDispatcher", () => {
@@ -121,5 +121,103 @@ describe("createNotificationDispatcher", () => {
 
     expect(summary).toEqual({ matched: 0, attempted: 0, delivered: 0, failed: 0 });
     expect(webhookHandler).not.toHaveBeenCalled();
+  });
+
+  it("swallows errors thrown by the onDispatchError observer", async () => {
+    const channel = await repo.createChannel({
+      appId: "app-1",
+      name: "observer-throws",
+      kind: "WEBHOOK",
+      target: "https://example.com/hooks/observer",
+    });
+    await repo.createRule({ appId: "app-1", channelId: channel.id, event: "WITHDRAWAL_FAILED" });
+
+    const onDispatchError = vi.fn(() => {
+      throw new Error("observer blew up");
+    });
+    const dispatcher = createNotificationDispatcher({
+      repo,
+      handlers: {
+        WEBHOOK: vi.fn(async () => {
+          throw new Error("delivery failed");
+        }),
+      },
+      onDispatchError,
+    });
+
+    // A throwing observer must not propagate out of dispatch (best-effort).
+    const summary = await dispatcher.dispatchWithdrawalEvent({
+      type: "WITHDRAWAL_FAILED",
+      occurredAt: new Date("2026-02-07T13:30:00.000Z"),
+      appId: "app-1",
+      userId: "user-1",
+      withdrawalId: "wd-observer",
+      asset: "CKB",
+      amount: "1",
+      retryCount: 3,
+      error: "exhausted",
+    });
+
+    expect(summary).toEqual({ matched: 1, attempted: 1, delivered: 0, failed: 1 });
+    expect(onDispatchError).toHaveBeenCalledTimes(1);
+  });
+
+  it("dispatches TIP_SETTLED events to matched channels", async () => {
+    const channel = await repo.createChannel({
+      appId: "app-1",
+      name: "tip-hook",
+      kind: "WEBHOOK",
+      target: "https://example.com/hooks/tip",
+    });
+    await repo.createRule({ appId: "app-1", channelId: channel.id, event: "TIP_SETTLED" });
+
+    const webhookHandler = vi.fn(async () => {});
+    const dispatcher = createNotificationDispatcher({ repo, handlers: { WEBHOOK: webhookHandler } });
+
+    const summary = await dispatcher.dispatchTipSettledEvent({
+      type: "TIP_SETTLED",
+      occurredAt: new Date("2026-02-07T15:30:00.000Z"),
+      appId: "app-1",
+      toUserId: "author-1",
+      fromUserId: "tipper-1",
+      postId: "post-1",
+      invoice: "fibt1qtip",
+      asset: "CKB",
+      amount: "3",
+    });
+
+    expect(summary).toEqual({ matched: 1, attempted: 1, delivered: 1, failed: 0 });
+    expect(webhookHandler).toHaveBeenCalledOnce();
+  });
+});
+
+describe("createNoopNotificationDispatcher", () => {
+  it("returns empty summaries without dispatching", async () => {
+    const dispatcher = createNoopNotificationDispatcher();
+
+    const withdrawalSummary = await dispatcher.dispatchWithdrawalEvent({
+      type: "WITHDRAWAL_COMPLETED",
+      occurredAt: new Date("2026-02-07T16:00:00.000Z"),
+      appId: "app-1",
+      userId: "user-1",
+      withdrawalId: "wd-noop",
+      asset: "CKB",
+      amount: "1",
+      txHash: "0xnoop",
+    });
+    const tipSummary = await dispatcher.dispatchTipSettledEvent({
+      type: "TIP_SETTLED",
+      occurredAt: new Date("2026-02-07T16:05:00.000Z"),
+      appId: "app-1",
+      toUserId: "author-1",
+      fromUserId: "tipper-1",
+      postId: "post-1",
+      invoice: "fibt1qnoop",
+      asset: "CKB",
+      amount: "1",
+    });
+
+    expect(withdrawalSummary).toEqual({ matched: 0, attempted: 0, delivered: 0, failed: 0 });
+    expect(tipSummary).toEqual({ matched: 0, attempted: 0, delivered: 0, failed: 0 });
   });
 });
