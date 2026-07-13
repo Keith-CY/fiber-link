@@ -1,4 +1,4 @@
-FROM public.ecr.aws/docker/library/node:22-bookworm-slim AS base
+FROM public.ecr.aws/docker/library/node:26-bookworm-slim AS base
 
 # Install bun under /opt (not /root/.bun) so the runtime stages can drop to the
 # non-root `node` user (uid/gid 1000, built into the node base image) and still
