@@ -140,6 +140,15 @@ services:
       FIBER_CHANNEL_ROTATION_BOOTSTRAP_RESERVE: ${FIBER_CHANNEL_ROTATION_BOOTSTRAP_RESERVE:-61}
       FIBER_CHANNEL_ROTATION_MIN_RECOVERABLE_AMOUNT: ${FIBER_CHANNEL_ROTATION_MIN_RECOVERABLE_AMOUNT:-61}
       FIBER_CHANNEL_ROTATION_MAX_CONCURRENT: ${FIBER_CHANNEL_ROTATION_MAX_CONCURRENT:-1}
+    # To supply the withdrawal key as a file instead of an env var, set
+    # FIBER_WITHDRAWAL_CKB_PRIVATE_KEY_FILE=/run/secrets/fiber_withdrawal_key and
+    # attach it as a native Docker secret. Compose mounts the secret read-only at
+    # /run/secrets/fiber_withdrawal_key, keeps the key out of `docker inspect`,
+    # and avoids the bind-mount gotchas (a missing host file being created as a
+    # directory, or permission errors under a non-root user). Uncomment the
+    # top-level `secrets:` block at the bottom of this file as well:
+    # secrets:
+    #   - fiber_withdrawal_key
     ports:
       - "${RPC_PORT:-3000}:3000"
     healthcheck:
@@ -201,6 +210,12 @@ services:
       WORKER_OPS_WITHDRAWAL_SAMPLE_LIMIT: ${WORKER_OPS_WITHDRAWAL_SAMPLE_LIMIT:-500}
     volumes:
       - worker-data:/var/lib/fiber-link
+    # To supply the withdrawal key as a file (set
+    # FIBER_WITHDRAWAL_CKB_PRIVATE_KEY_FILE=/run/secrets/fiber_withdrawal_key),
+    # attach the same native Docker secret. `secrets:` is a sibling of `volumes:`,
+    # not nested under it:
+    # secrets:
+    #   - fiber_withdrawal_key
     healthcheck:
       test: ["CMD", "bun", "run", "apps/worker/src/scripts/healthcheck.ts"]
       interval: 15s
@@ -213,3 +228,11 @@ volumes:
   fnn-data:
   fnn2-data:
   worker-data:
+
+# To enable the withdrawal-key secret referenced (commented) by the rpc and
+# worker services above, uncomment this block and point `file:` at the host file
+# holding the raw private key. Compose mounts it read-only at
+# /run/secrets/fiber_withdrawal_key inside each service that lists it.
+# secrets:
+#   fiber_withdrawal_key:
+#     file: ./secrets/withdrawal-key
