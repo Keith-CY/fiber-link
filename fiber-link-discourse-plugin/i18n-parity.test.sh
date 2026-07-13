@@ -15,7 +15,7 @@ from pathlib import Path
 try:
     import yaml
 except ImportError:
-    print("i18n-parity: PyYAML is required. Install it with 'pip install PyYAML'.")
+    print("i18n-parity: PyYAML is required. Install it with 'pip install PyYAML'.", file=sys.stderr)
     sys.exit(1)
 
 plugin_dir = Path(sys.argv[1])
