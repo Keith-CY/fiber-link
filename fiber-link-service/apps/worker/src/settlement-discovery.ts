@@ -122,7 +122,7 @@ function getDefaultTipIntentEventRepo(): TipIntentEventRepo | null {
   try {
     defaultTipIntentEventRepo = createDbTipIntentEventRepo(getDefaultDb());
   } catch (error) {
-    console.error("Failed to initialize default TipIntentEventRepo.", error);
+    defaultLogger.error("settlement.discovery.event_repo_init_failed", { error });
     defaultTipIntentEventRepo = null;
   }
 
