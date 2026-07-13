@@ -47,6 +47,16 @@ describe("readWithdrawalPrivateKeyRaw", () => {
       readWithdrawalPrivateKeyRaw({ FIBER_WITHDRAWAL_CKB_PRIVATE_KEY_FILE: "/nonexistent/key" }),
     ).toThrow(/FIBER_WITHDRAWAL_CKB_PRIVATE_KEY_FILE/);
   });
+
+  it("caches the file read by path and does not re-read after the file changes", () => {
+    const file = keyFileWith(`${KEY}\n`);
+    expect(readWithdrawalPrivateKeyRaw({ FIBER_WITHDRAWAL_CKB_PRIVATE_KEY_FILE: file })).toBe(KEY);
+
+    // Mutating the on-disk secret must not be observed: the file variant is a
+    // static mount and the first read is cached by path.
+    writeFileSync(file, "0x".padEnd(66, "c"));
+    expect(readWithdrawalPrivateKeyRaw({ FIBER_WITHDRAWAL_CKB_PRIVATE_KEY_FILE: file })).toBe(KEY);
+  });
 });
 
 describe("hasWithdrawalPrivateKey", () => {
