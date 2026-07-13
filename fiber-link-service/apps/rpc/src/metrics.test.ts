@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import Fastify from "fastify";
 import { registerRpc } from "./rpc";
-import { normalizeMethodLabel } from "./metrics";
+import { isMetricsRequestAuthorized, normalizeMethodLabel, parseMetricsToken } from "./metrics";
 
 describe("normalizeMethodLabel", () => {
   it("passes through known methods", () => {
@@ -18,6 +18,36 @@ describe("normalizeMethodLabel", () => {
   });
 });
 
+describe("parseMetricsToken", () => {
+  it("returns null when unset or blank", () => {
+    expect(parseMetricsToken({})).toBeNull();
+    expect(parseMetricsToken({ RPC_METRICS_TOKEN: "   " })).toBeNull();
+  });
+
+  it("returns the trimmed token when set", () => {
+    expect(parseMetricsToken({ RPC_METRICS_TOKEN: " s3cret " })).toBe("s3cret");
+  });
+});
+
+describe("isMetricsRequestAuthorized", () => {
+  it("allows every request when no token is configured", () => {
+    expect(isMetricsRequestAuthorized(undefined, null)).toBe(true);
+    expect(isMetricsRequestAuthorized("Bearer anything", null)).toBe(true);
+  });
+
+  it("rejects missing, malformed, or mismatching credentials", () => {
+    expect(isMetricsRequestAuthorized(undefined, "s3cret")).toBe(false);
+    expect(isMetricsRequestAuthorized("s3cret", "s3cret")).toBe(false);
+    expect(isMetricsRequestAuthorized("Basic s3cret", "s3cret")).toBe(false);
+    expect(isMetricsRequestAuthorized("Bearer wrong", "s3cret")).toBe(false);
+  });
+
+  it("accepts a matching bearer token with a case-insensitive scheme", () => {
+    expect(isMetricsRequestAuthorized("Bearer s3cret", "s3cret")).toBe(true);
+    expect(isMetricsRequestAuthorized("bearer s3cret", "s3cret")).toBe(true);
+  });
+});
+
 describe("GET /metrics", () => {
   it("exposes a Prometheus exposition with default and custom metrics", async () => {
     const app = Fastify({ logger: false });
@@ -31,5 +61,29 @@ describe("GET /metrics", () => {
     expect(res.body).toContain("fiber_link_rpc_hmac_secret_source_total");
     // default process collector is present
     expect(res.body).toContain("process_cpu_user_seconds_total");
+  });
+
+  it("returns 401 without the bearer token when RPC_METRICS_TOKEN is configured", async () => {
+    const app = Fastify({ logger: false });
+    registerRpc(app, { metricsToken: "scrape-secret" });
+
+    const denied = await app.inject({ method: "GET", url: "/metrics" });
+    expect(denied.statusCode).toBe(401);
+    expect(denied.body).not.toContain("fiber_link_rpc_requests_total");
+
+    const wrong = await app.inject({
+      method: "GET",
+      url: "/metrics",
+      headers: { authorization: "Bearer nope" },
+    });
+    expect(wrong.statusCode).toBe(401);
+
+    const allowed = await app.inject({
+      method: "GET",
+      url: "/metrics",
+      headers: { authorization: "Bearer scrape-secret" },
+    });
+    expect(allowed.statusCode).toBe(200);
+    expect(allowed.body).toContain("fiber_link_rpc_requests_total");
   });
 });
