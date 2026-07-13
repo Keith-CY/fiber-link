@@ -31,6 +31,25 @@ function getOrCreateSharedRedis(redisUrl: string): Redis {
   return sharedRedis;
 }
 
+/**
+ * Close the shared subscriber connection and drop all channel listeners.
+ * Wired into fastify's onClose so a graceful shutdown does not leave the
+ * process pinned by the singleton Redis connection. Idempotent; the next
+ * stream request after a close lazily recreates the connection.
+ */
+export async function closeSharedStreamResources(): Promise<void> {
+  channelListeners.clear();
+  if (sharedRedis) {
+    const redis = sharedRedis;
+    sharedRedis = null;
+    try {
+      await redis.quit();
+    } catch {
+      redis.disconnect();
+    }
+  }
+}
+
 async function addChannelListener(sub: Redis, channel: string, fn: (msg: string) => void) {
   let set = channelListeners.get(channel);
   if (!set) {
@@ -90,6 +109,11 @@ export function registerStreamRoute(
     heartbeatIntervalMs?: number;
   } = {},
 ) {
+  // Release the shared subscriber when the server shuts down gracefully.
+  app.addHook("onClose", async () => {
+    await closeSharedStreamResources();
+  });
+
   const maxConnections = options.maxConnections ?? parsePositiveIntEnv("RPC_STREAM_MAX_CONNECTIONS", DEFAULT_MAX_CONNECTIONS);
   const maxConnectionsPerApp =
     options.maxConnectionsPerApp ?? parsePositiveIntEnv("RPC_STREAM_MAX_CONNECTIONS_PER_APP", DEFAULT_MAX_CONNECTIONS_PER_APP);
