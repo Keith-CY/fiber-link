@@ -12,7 +12,11 @@ import re
 import sys
 from pathlib import Path
 
-import yaml
+try:
+    import yaml
+except ImportError:
+    print("i18n-parity: PyYAML is required. Install it with 'pip install PyYAML'.", file=sys.stderr)
+    sys.exit(1)
 
 plugin_dir = Path(sys.argv[1])
 assets_dir = plugin_dir / "assets" / "javascripts"
@@ -22,7 +26,7 @@ zh_path = plugin_dir / "config" / "locales" / "client.zh_CN.yml"
 # i18n("fiber_link....") in JS and {{i18n "fiber_link...."}} in templates.
 key_pattern = re.compile(
     r"i18n\(\s*[\"'](fiber_link\.[A-Za-z0-9_.]+)[\"']"
-    r"|{{\s*i18n\s+\"(fiber_link\.[A-Za-z0-9_.]+)\""
+    r"|{{\s*i18n\s+[\"'](fiber_link\.[A-Za-z0-9_.]+)[\"']"
 )
 
 used_keys = set()
