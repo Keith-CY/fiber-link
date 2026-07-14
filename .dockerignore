@@ -35,7 +35,12 @@
 deploy/compose/evidence
 deploy/compose/backups
 
-# Editor and OS noise
+# Editor/IDE config and OS noise (developer-local, may hold local settings/secrets)
 **/*.log
 **/.DS_Store
 **/Thumbs.db
+.vscode
+.idea
+**/*.swp
+**/*.swo
+**/*~
