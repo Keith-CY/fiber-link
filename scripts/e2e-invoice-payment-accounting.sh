@@ -879,17 +879,33 @@ request_ckb_faucet() {
   printf '%s\n' "${payload}" > "${target_dir}/ckb-faucet-${label}.request.json"
 
   local response_file="${target_dir}/ckb-faucet-${label}.response.json"
-  local http_code
-  set +e
-  http_code="$(curl -sS -o "${response_file}" -w "%{http_code}" \
-    -H "content-type: application/json" \
-    -d "${payload}" \
-    "${CKB_FAUCET_API_BASE%/}/claim_events")"
-  local rc=$?
-  set -e
-  if [[ "${rc}" -ne 0 ]]; then
-    http_code="000"
-  fi
+  local http_code rc attempt
+  local attempts="${CKB_FAUCET_ATTEMPTS:-3}"
+  local retry_interval="${CKB_FAUCET_RETRY_INTERVAL_SECONDS:-20}"
+  for (( attempt=1; attempt<=attempts; attempt++ )); do
+    set +e
+    http_code="$(curl -sS -o "${response_file}" -w "%{http_code}" \
+      -H "content-type: application/json" \
+      -d "${payload}" \
+      "${CKB_FAUCET_API_BASE%/}/claim_events")"
+    rc=$?
+    set -e
+    if [[ "${rc}" -ne 0 ]]; then
+      http_code="000"
+    fi
+    # Success, or a non-transient status: stop retrying. Only network
+    # failures (000), timeouts (408), rate limits (429), and 5xx heal.
+    if [[ "${http_code}" -ge 200 && "${http_code}" -lt 300 ]]; then
+      break
+    fi
+    if [[ "${http_code}" =~ ^4 && "${http_code}" != "408" && "${http_code}" != "429" ]]; then
+      break
+    fi
+    if (( attempt < attempts )); then
+      log "CKB faucet(${label}) transient failure (HTTP ${http_code}); retry ${attempt}/${attempts} in $((retry_interval * attempt))s"
+      sleep $((retry_interval * attempt))
+    fi
+  done
 
   if [[ "${http_code}" -lt 200 || "${http_code}" -ge 300 ]]; then
     if [[ "${CKB_FAUCET_ENABLE_FALLBACK}" == "1" ]]; then

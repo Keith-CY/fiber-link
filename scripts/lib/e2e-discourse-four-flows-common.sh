@@ -32,6 +32,13 @@ CKB_FAUCET_FALLBACK_API_BASE="${CKB_FAUCET_FALLBACK_API_BASE:-https://ckb-utilit
 CKB_FAUCET_ENABLE_FALLBACK="${CKB_FAUCET_ENABLE_FALLBACK:-1}"
 CKB_FAUCET_AMOUNT="${CKB_FAUCET_AMOUNT:-100000}"
 CKB_FAUCET_WAIT_SECONDS="${CKB_FAUCET_WAIT_SECONDS:-20}"
+# Transient-failure retries: public testnet faucets intermittently return
+# 5xx/timeouts under load (a 504 aborted PR #517's run). Retry with linear
+# backoff before declaring the run dead.
+CKB_FAUCET_ATTEMPTS="${CKB_FAUCET_ATTEMPTS:-3}"
+CKB_FAUCET_RETRY_INTERVAL_SECONDS="${CKB_FAUCET_RETRY_INTERVAL_SECONDS:-20}"
+HOT_WALLET_INVENTORY_ATTEMPTS="${HOT_WALLET_INVENTORY_ATTEMPTS:-3}"
+HOT_WALLET_INVENTORY_RETRY_INTERVAL_SECONDS="${HOT_WALLET_INVENTORY_RETRY_INTERVAL_SECONDS:-10}"
 WITHDRAWAL_SIGNER_CACHE_PATH="${E2E_WITHDRAWAL_SIGNER_CACHE_PATH:-${ROOT_DIR}/.tmp/e2e-discourse-four-flows/withdrawal-signer.json}"
 WITHDRAWAL_RESERVE_CACHE_PATH="${E2E_WITHDRAWAL_RESERVE_CACHE_PATH:-${ROOT_DIR}/.tmp/e2e-discourse-four-flows/withdrawal-reserve.json}"
 WORKFLOW_RPC_PORT="${WORKFLOW_RPC_PORT:-${DEFAULT_WORKFLOW_RPC_PORT}}"
@@ -1019,14 +1026,18 @@ rebalance_withdrawal_signer_balance() {
   vlog "withdrawal signer balance after reserve rebalance: ${signer_balance} shannons"
 }
 
-request_ckb_faucet_for_address() {
+# One primary+fallback faucet attempt. Returns 0 on acceptance, 1 otherwise;
+# leaves the primary HTTP status in LAST_FAUCET_HTTP_CODE for the retry loop.
+request_ckb_faucet_for_address_attempt() {
   local address="$1"
   local label="$2"
+  local suffix="$3"
   local payload request_file response_file http_code
   local fallback_payload fallback_request_file fallback_response_file fallback_http_code
+  LAST_FAUCET_HTTP_CODE="000"
   payload="$(jq -cn --arg address "${address}" --arg amount "${CKB_FAUCET_AMOUNT}" '{claim_event:{address_hash:$address,amount:$amount}}')"
-  request_file="${ARTIFACTS_DIR}/ckb-faucet-${label}.request.json"
-  response_file="${ARTIFACTS_DIR}/ckb-faucet-${label}.response.json"
+  request_file="${ARTIFACTS_DIR}/ckb-faucet-${label}${suffix}.request.json"
+  response_file="${ARTIFACTS_DIR}/ckb-faucet-${label}${suffix}.response.json"
   printf '%s\n' "${payload}" > "${request_file}"
 
   set +e
@@ -1036,7 +1047,11 @@ request_ckb_faucet_for_address() {
     "${CKB_FAUCET_API_BASE%/}/claim_events")"
   local rc=$?
   set -e
-  if [[ "${rc}" -eq 0 && "${http_code}" -ge 200 && "${http_code}" -lt 300 ]] \
+  if [[ "${rc}" -ne 0 ]]; then
+    http_code="000"
+  fi
+  LAST_FAUCET_HTTP_CODE="${http_code}"
+  if [[ "${http_code}" -ge 200 && "${http_code}" -lt 300 ]] \
     && ! jq -e '(.error != null) or ((.errors | type) == "array" and (.errors | length) > 0)' "${response_file}" >/dev/null 2>&1; then
     log "ckb faucet(${label}) accepted; waiting ${CKB_FAUCET_WAIT_SECONDS}s"
     sleep "${CKB_FAUCET_WAIT_SECONDS}"
@@ -1045,8 +1060,8 @@ request_ckb_faucet_for_address() {
 
   if [[ "${CKB_FAUCET_ENABLE_FALLBACK}" == "1" ]]; then
     fallback_payload="$(jq -cn --arg address "${address}" '{address:$address,token:"ckb"}')"
-    fallback_request_file="${ARTIFACTS_DIR}/ckb-faucet-fallback-${label}.request.json"
-    fallback_response_file="${ARTIFACTS_DIR}/ckb-faucet-fallback-${label}.response.json"
+    fallback_request_file="${ARTIFACTS_DIR}/ckb-faucet-fallback-${label}${suffix}.request.json"
+    fallback_response_file="${ARTIFACTS_DIR}/ckb-faucet-fallback-${label}${suffix}.response.json"
     printf '%s\n' "${fallback_payload}" > "${fallback_request_file}"
     set +e
     fallback_http_code="$(curl -sS -o "${fallback_response_file}" -w "%{http_code}" \
@@ -1063,10 +1078,35 @@ request_ckb_faucet_for_address() {
     fi
   fi
 
-  if [[ "${http_code:-000}" == "422" ]]; then
-    log "ckb faucet(${label}) returned HTTP 422; continuing with existing signer balance"
-    return 0
-  fi
+  return 1
+}
+
+request_ckb_faucet_for_address() {
+  local address="$1"
+  local label="$2"
+  local attempt http_code=""
+  for (( attempt=1; attempt<=CKB_FAUCET_ATTEMPTS; attempt++ )); do
+    if request_ckb_faucet_for_address_attempt "${address}" "${label}" "-a${attempt}"; then
+      return 0
+    fi
+    http_code="${LAST_FAUCET_HTTP_CODE:-000}"
+
+    if [[ "${http_code}" == "422" ]]; then
+      log "ckb faucet(${label}) returned HTTP 422; continuing with existing signer balance"
+      return 0
+    fi
+
+    # Other 4xx (bad request/auth/eligibility) won't heal on retry; only
+    # network failures (000), timeouts (408), rate limits (429), and 5xx do.
+    if [[ "${http_code}" =~ ^4 && "${http_code}" != "408" && "${http_code}" != "429" ]]; then
+      break
+    fi
+
+    if (( attempt < CKB_FAUCET_ATTEMPTS )); then
+      log "ckb faucet(${label}) transient failure (http=${http_code}); retry ${attempt}/${CKB_FAUCET_ATTEMPTS} in $((CKB_FAUCET_RETRY_INTERVAL_SECONDS * attempt))s"
+      sleep $((CKB_FAUCET_RETRY_INTERVAL_SECONDS * attempt))
+    fi
+  done
 
   fatal "${EXIT_PRECHECK}" "ckb faucet request failed for ${label} (http=${http_code:-000})"
 }
@@ -1271,14 +1311,26 @@ capture_hot_wallet_inventory() {
   local output_path="$1"
   local asset="${2:-CKB}"
   local network="${3:-AGGRON4}"
+  local attempt
 
-  docker exec -w /app fiber-link-rpc sh -lc "bun -e '
+  # The provider queries the live CKB testnet indexer, which intermittently
+  # times out; retry with linear backoff before failing the run.
+  for (( attempt=1; attempt<=HOT_WALLET_INVENTORY_ATTEMPTS; attempt++ )); do
+    if docker exec -w /app fiber-link-rpc sh -lc "bun -e '
 import { createDefaultHotWalletInventoryProvider } from \"@fiber-link/fiber-adapter\";
 const provider = createDefaultHotWalletInventoryProvider();
 const inventory = await provider({ asset: \"${asset}\", network: \"${network}\" });
 console.log(JSON.stringify(inventory));
-' " > "${output_path}" 2>"${output_path%.json}.stderr.log" \
-    || fatal "${EXIT_ARTIFACT}" "failed to capture hot wallet inventory"
+' " > "${output_path}" 2>"${output_path%.json}.attempt${attempt}.stderr.log"; then
+      return 0
+    fi
+    if (( attempt < HOT_WALLET_INVENTORY_ATTEMPTS )); then
+      log "hot wallet inventory capture failed; retry ${attempt}/${HOT_WALLET_INVENTORY_ATTEMPTS} in $((HOT_WALLET_INVENTORY_RETRY_INTERVAL_SECONDS * attempt))s"
+      sleep $((HOT_WALLET_INVENTORY_RETRY_INTERVAL_SECONDS * attempt))
+    fi
+  done
+
+  fatal "${EXIT_ARTIFACT}" "failed to capture hot wallet inventory"
 }
 
 capture_withdrawal_liquidity_snapshot() {
