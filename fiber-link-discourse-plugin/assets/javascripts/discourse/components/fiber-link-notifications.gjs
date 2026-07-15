@@ -9,7 +9,6 @@ const joinEvents = (events) => (Array.isArray(events) ? events : []).join(", ");
 const isInSet = (set, value) => set instanceof Set && set.has(value);
 const yesNo = (v) => (v ? i18n("fiber_link.notifications.enabled_yes") : i18n("fiber_link.notifications.enabled_no"));
 const lookup = (map, key) => (map ? map[key] : undefined);
-const eqStr = (a, b) => a === b;
 
 
 async function rpcCall(method, params = {}) {
@@ -244,7 +243,7 @@ export default class FiberLinkNotifications extends Component {
                     <button
                       class="btn btn-small"
                       type="button"
-                      disabled={{eqStr this.busyChannelId ch.id}}
+                      disabled={{this.busyChannelId}}
                       {{on "click" (fn this.testChannel ch)}}
                     >
                       {{i18n "fiber_link.notifications.action_test"}}
@@ -252,7 +251,7 @@ export default class FiberLinkNotifications extends Component {
                     <button
                       class="btn btn-danger btn-small"
                       type="button"
-                      disabled={{eqStr this.busyChannelId ch.id}}
+                      disabled={{this.busyChannelId}}
                       {{on "click" (fn this.deleteChannel ch)}}
                     >
                       {{i18n "fiber_link.notifications.action_delete"}}

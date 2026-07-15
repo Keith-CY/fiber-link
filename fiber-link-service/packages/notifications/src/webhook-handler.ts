@@ -127,10 +127,22 @@ export function createWebhookChannelHandler(options: WebhookDeliveryOptions = {}
         });
 
         if (!response.ok) {
-          const snippet = await response
-            .text()
-            .then((t) => t.slice(0, 200))
-            .catch(() => "");
+          // Read only the first chunk of the error body: a misconfigured
+          // endpoint could return an arbitrarily large response, and
+          // response.text() would buffer all of it in the worker.
+          let snippet = "";
+          try {
+            const reader = response.body?.getReader();
+            if (reader) {
+              const { value } = await reader.read();
+              if (value) {
+                snippet = new TextDecoder().decode(value).slice(0, 200);
+              }
+              await reader.cancel().catch(() => {});
+            }
+          } catch {
+            // No snippet if the stream is unreadable; the status code stands alone.
+          }
           throw new Error(
             `Webhook delivery failed: HTTP ${response.status} from ${target.target}${snippet ? ` — ${snippet}` : ""}`,
           );
