@@ -32,7 +32,7 @@ zh_CN:
         table_post: "帖子"
         table_tips: "打赏次数"
         table_total_ckb: "CKB 总额"
-        table_user_id: "用户 ID"
+        table_supporter: "打赏人"
         post_link: "帖子 #%{id}"
         empty: "该时间段暂无分析数据。"
       notifications:

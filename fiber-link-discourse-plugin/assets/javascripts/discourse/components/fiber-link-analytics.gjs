@@ -127,9 +127,14 @@ export default class FiberLinkAnalytics extends Component {
                     <tr>
                       <td>{{inc i}}</td>
                       <td>
-                        <a href="/p/{{post.postId}}" target="_blank" rel="noopener noreferrer">
+                        {{#if post.topicId}}
+                          <a href="/t/{{post.topicId}}" target="_blank" rel="noopener noreferrer">
+                            {{i18n "fiber_link.analytics.post_link" id=post.postId}}
+                          </a>
+                        {{else}}
+                          {{! Rows created before topic tracking have no deep link. }}
                           {{i18n "fiber_link.analytics.post_link" id=post.postId}}
-                        </a>
+                        {{/if}}
                       </td>
                       <td>{{post.tipCount}}</td>
                       <td>{{formatAmount post.totalAmount}}</td>
@@ -145,13 +150,14 @@ export default class FiberLinkAnalytics extends Component {
               <h4>{{i18n "fiber_link.analytics.top_supporters"}}</h4>
               <table class="fiber-link-analytics__table">
                 <thead>
-                  <tr><th>#</th><th>{{i18n "fiber_link.analytics.table_user_id"}}</th><th>{{i18n "fiber_link.analytics.table_tips"}}</th><th>{{i18n "fiber_link.analytics.table_total_ckb"}}</th></tr>
+                  <tr><th>#</th><th>{{i18n "fiber_link.analytics.table_supporter"}}</th><th>{{i18n "fiber_link.analytics.table_tips"}}</th><th>{{i18n "fiber_link.analytics.table_total_ckb"}}</th></tr>
                 </thead>
                 <tbody>
                   {{#each this.data.topTippers as |tipper i|}}
                     <tr>
                       <td>{{inc i}}</td>
-                      <td>{{tipper.userId}}</td>
+                      {{! The Discourse proxy enriches rows with local usernames; fall back to the raw id. }}
+                      <td>{{if tipper.username tipper.username tipper.userId}}</td>
                       <td>{{tipper.tipCount}}</td>
                       <td>{{formatAmount tipper.totalAmount}}</td>
                     </tr>
