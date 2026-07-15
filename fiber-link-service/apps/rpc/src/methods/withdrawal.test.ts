@@ -596,6 +596,15 @@ describe("requestWithdrawal", () => {
       idempotencyKey: "credit:t1",
     });
 
+    // Inject a stub inventory provider (like the sibling tests) so the store
+    // path stays hermetic. Without one, a CKB_ADDRESS withdrawal falls through
+    // to the default provider, which queries the live CKB indexer (testnet).
+    const hotWalletInventoryProvider = vi.fn(async () => ({
+      asset: "CKB" as const,
+      network: "AGGRON4" as const,
+      availableAmount: "1000",
+    }));
+
     const res = await requestWithdrawal(
       {
         appId: "app1",
@@ -607,7 +616,7 @@ describe("requestWithdrawal", () => {
           address: "ckt1qyqfth8m4fevfzh5hhd088s78qcdjjp8cehs7z8jhw",
         },
       },
-      { repo, ledgerRepo: ledger },
+      { repo, ledgerRepo: ledger, hotWalletInventoryProvider },
     );
 
     const saved = await repo.findByIdOrThrow(res.id);
