@@ -876,13 +876,16 @@ request_ckb_faucet() {
 
   local payload
   payload="$(jq -cn --arg address "${address}" --arg amount "${CKB_FAUCET_AMOUNT}" '{claim_event:{address_hash:$address,amount:$amount}}')"
-  printf '%s\n' "${payload}" > "${target_dir}/ckb-faucet-${label}.request.json"
 
-  local response_file="${target_dir}/ckb-faucet-${label}.response.json"
+  local response_file
   local http_code rc attempt
   local attempts="${CKB_FAUCET_ATTEMPTS:-3}"
   local retry_interval="${CKB_FAUCET_RETRY_INTERVAL_SECONDS:-20}"
   for (( attempt=1; attempt<=attempts; attempt++ )); do
+    # Per-attempt request/response artifacts keep the debugging trail intact
+    # (matches the four-flows common lib).
+    printf '%s\n' "${payload}" > "${target_dir}/ckb-faucet-${label}-a${attempt}.request.json"
+    response_file="${target_dir}/ckb-faucet-${label}-a${attempt}.response.json"
     set +e
     http_code="$(curl -sS -o "${response_file}" -w "%{http_code}" \
       -H "content-type: application/json" \

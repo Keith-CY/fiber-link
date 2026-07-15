@@ -1102,6 +1102,12 @@ request_ckb_faucet_for_address() {
       break
     fi
 
+    # 2xx with a failed attempt means the response body carried a logical
+    # error — permanent, so don't burn retries on it.
+    if [[ "${http_code}" -ge 200 && "${http_code}" -lt 300 ]]; then
+      break
+    fi
+
     if (( attempt < CKB_FAUCET_ATTEMPTS )); then
       log "ckb faucet(${label}) transient failure (http=${http_code}); retry ${attempt}/${CKB_FAUCET_ATTEMPTS} in $((CKB_FAUCET_RETRY_INTERVAL_SECONDS * attempt))s"
       sleep $((CKB_FAUCET_RETRY_INTERVAL_SECONDS * attempt))

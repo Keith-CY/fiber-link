@@ -191,4 +191,41 @@ trap 'rm -rf "${TEST_TMPDIR}" "${NORMALIZE_TMPDIR}" "${COPY_TMPDIR}" "${FAUCET_T
   ! grep -q '^fatal:' "${FAUCET_TMPDIR}/inventory.log"
 )
 
+
+# Faucet retry: a 2xx response carrying a logical error body is permanent —
+# must fail fast without retries.
+(
+  # shellcheck disable=SC1091
+  source "${ROOT_DIR}/scripts/lib/e2e-discourse-four-flows-common.sh"
+
+  ARTIFACTS_DIR="${FAUCET_TMPDIR}"
+  CKB_FAUCET_ENABLE_FALLBACK=0
+  CKB_FAUCET_RETRY_INTERVAL_SECONDS=0
+  CURL_COUNT_FILE="${FAUCET_TMPDIR}/curl-logical.count"
+  printf '0' > "${CURL_COUNT_FILE}"
+
+  log() { printf '%s\n' "$*" >> "${FAUCET_TMPDIR}/faucet-logical.log"; }
+  sleep() { :; }
+  fatal() { printf 'fatal:%s\n' "$*" >> "${FAUCET_TMPDIR}/faucet-logical.log"; exit 90; }
+
+  curl() {
+    local out=""
+    while [[ $# -gt 0 ]]; do
+      if [[ "$1" == "-o" ]]; then out="$2"; shift 2; else shift; fi
+    done
+    local n
+    n=$(( $(cat "${CURL_COUNT_FILE}") + 1 ))
+    printf '%s' "${n}" > "${CURL_COUNT_FILE}"
+    printf '{"error":"address already claimed"}' > "${out}"
+    printf '200'
+    return 0
+  }
+
+  rc=0
+  ( request_ckb_faucet_for_address "ckt1qtestaddress" "logical-case" ) || rc=$?
+  [[ "${rc}" == "90" ]]
+  [[ "$(cat "${CURL_COUNT_FILE}")" == "1" ]]
+  grep -q 'fatal:.*http=200' "${FAUCET_TMPDIR}/faucet-logical.log"
+)
+
 printf 'e2e-discourse-four-flows-common checks passed\n'
