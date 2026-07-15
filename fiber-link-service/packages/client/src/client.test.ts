@@ -236,30 +236,46 @@ describe("FiberLinkClient streamTipStatus event handling", () => {
     return new FiberLinkClient({ endpoint: "http://localhost:3000/rpc", mode: "presigned" });
   }
 
-  class CapturingEventSource {
-    static instances: CapturingEventSource[] = [];
+  type MockEventSource = {
     url: string;
-    closed = false;
-    onmessage: ((event: { data: string }) => void) | null = null;
-    onerror: (() => void) | null = null;
+    closed: boolean;
+    close(): void;
+    onmessage: ((event: { data: string }) => void) | null;
+    onerror: (() => void) | null;
+  };
 
-    constructor(url: string) {
-      this.url = url;
-      CapturingEventSource.instances.push(this);
-    }
-
-    close() {
-      this.closed = true;
-    }
+  // Local factory instead of a static registry: each test gets its own
+  // instance list, so no shared mutable state can leak between tests.
+  function setupMockEventSource(): MockEventSource[] {
+    const instances: MockEventSource[] = [];
+    vi.stubGlobal(
+      "EventSource",
+      class {
+        constructor(url: string) {
+          const instance: MockEventSource = {
+            url,
+            closed: false,
+            close() {
+              this.closed = true;
+            },
+            onmessage: null,
+            onerror: null,
+          };
+          instances.push(instance);
+          // biome-ignore lint/correctness/noConstructorReturn: the mock hands back a plain capturing object.
+          return instance;
+        }
+      },
+    );
+    return instances;
   }
 
   it("forwards status events and closes on terminal SETTLED", () => {
-    CapturingEventSource.instances = [];
-    vi.stubGlobal("EventSource", CapturingEventSource);
+    const instances = setupMockEventSource();
     try {
       const events: unknown[] = [];
       const handle = makePresignedClient().streamTipStatus(FAKE_INVOICE, (e) => events.push(e));
-      const es = CapturingEventSource.instances[0];
+      const es = instances[0];
 
       es.onmessage?.({ data: JSON.stringify({ invoice: FAKE_INVOICE, status: "LISTENING" }) });
       expect(es.closed).toBe(false);
@@ -277,12 +293,11 @@ describe("FiberLinkClient streamTipStatus event handling", () => {
   });
 
   it("closes on terminal TIMEOUT", () => {
-    CapturingEventSource.instances = [];
-    vi.stubGlobal("EventSource", CapturingEventSource);
+    const instances = setupMockEventSource();
     try {
       const events: unknown[] = [];
       makePresignedClient().streamTipStatus(FAKE_INVOICE, (e) => events.push(e));
-      const es = CapturingEventSource.instances[0];
+      const es = instances[0];
 
       es.onmessage?.({ data: JSON.stringify({ invoice: FAKE_INVOICE, status: "TIMEOUT" }) });
       expect(events).toEqual([{ invoice: FAKE_INVOICE, status: "TIMEOUT" }]);
@@ -293,30 +308,29 @@ describe("FiberLinkClient streamTipStatus event handling", () => {
   });
 
   it("ignores malformed and status-less events", () => {
-    CapturingEventSource.instances = [];
-    vi.stubGlobal("EventSource", CapturingEventSource);
+    const instances = setupMockEventSource();
     try {
       const events: unknown[] = [];
-      makePresignedClient().streamTipStatus(FAKE_INVOICE, (e) => events.push(e));
-      const es = CapturingEventSource.instances[0];
+      const handle = makePresignedClient().streamTipStatus(FAKE_INVOICE, (e) => events.push(e));
+      const es = instances[0];
 
       es.onmessage?.({ data: "not-json{{" });
       es.onmessage?.({ data: JSON.stringify({ hello: "world" }) });
       es.onmessage?.({ data: JSON.stringify(null) });
       expect(events).toEqual([]);
       expect(es.closed).toBe(false);
+      handle?.close();
     } finally {
       vi.unstubAllGlobals();
     }
   });
 
   it("emits SSE_ERROR and closes on transport error", () => {
-    CapturingEventSource.instances = [];
-    vi.stubGlobal("EventSource", CapturingEventSource);
+    const instances = setupMockEventSource();
     try {
       const events: unknown[] = [];
       makePresignedClient().streamTipStatus(FAKE_INVOICE, (e) => events.push(e));
-      const es = CapturingEventSource.instances[0];
+      const es = instances[0];
 
       es.onerror?.();
       expect(es.closed).toBe(true);
@@ -343,11 +357,10 @@ describe("FiberLinkClient streamTipStatus event handling", () => {
   });
 
   it("close() on the handle closes the underlying stream", () => {
-    CapturingEventSource.instances = [];
-    vi.stubGlobal("EventSource", CapturingEventSource);
+    const instances = setupMockEventSource();
     try {
       const handle = makePresignedClient().streamTipStatus(FAKE_INVOICE, vi.fn());
-      const es = CapturingEventSource.instances[0];
+      const es = instances[0];
       expect(es.closed).toBe(false);
       handle?.close();
       expect(es.closed).toBe(true);
