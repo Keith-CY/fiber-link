@@ -34,9 +34,9 @@ function stripGuardedBlocks(sql: string): string {
   return sql.replace(/DO\s+\$\$[\s\S]*?\$\$\s*;?/gi, "");
 }
 
-/** Remove SQL comments so commented-out DDL doesn't trip the checks. */
+/** Remove line and block comments so commented-out DDL doesn't trip the checks. */
 function stripComments(sql: string): string {
-  return sql.replace(/--[^\n]*/g, "");
+  return sql.replace(/--[^\n]*/g, "").replace(/\/\*[\s\S]*?\*\//g, "");
 }
 
 describe("migration idempotency (drizzle/*.sql replay safety)", () => {
@@ -50,18 +50,27 @@ describe("migration idempotency (drizzle/*.sql replay safety)", () => {
   for (const file of files) {
     describe(file, () => {
       const raw = readFileSync(join(MIGRATIONS_DIR, file), "utf8");
-      const unguarded = stripComments(stripGuardedBlocks(raw));
+      // Comments first, then guards: a comment containing `$$` must not
+      // corrupt the guarded-block stripping.
+      const unguarded = stripGuardedBlocks(stripComments(raw));
 
       it("uses CREATE TABLE IF NOT EXISTS", () => {
         expect(unguarded).not.toMatch(/CREATE\s+TABLE\s+(?!IF\s+NOT\s+EXISTS)/i);
       });
 
-      it("uses CREATE [UNIQUE] INDEX IF NOT EXISTS", () => {
-        expect(unguarded).not.toMatch(/CREATE\s+(UNIQUE\s+)?INDEX\s+(?!IF\s+NOT\s+EXISTS)/i);
+      it("uses CREATE [UNIQUE] INDEX [CONCURRENTLY] IF NOT EXISTS", () => {
+        // The optional CONCURRENTLY lives inside the lookahead: an optional
+        // group *before* a negative lookahead can backtrack and false-flag
+        // the compliant `CONCURRENTLY IF NOT EXISTS` form.
+        expect(unguarded).not.toMatch(/CREATE\s+(UNIQUE\s+)?INDEX\s+(?!(CONCURRENTLY\s+)?IF\s+NOT\s+EXISTS)/i);
       });
 
-      it("uses ADD COLUMN IF NOT EXISTS", () => {
-        expect(unguarded).not.toMatch(/ADD\s+COLUMN\s+(?!IF\s+NOT\s+EXISTS)/i);
+      it("uses ADD [COLUMN] IF NOT EXISTS", () => {
+        // Postgres allows omitting the COLUMN keyword, so catch both forms.
+        // Two alternations (instead of one optional group) avoid lookahead
+        // backtracking false-positives on `ADD COLUMN IF NOT EXISTS`.
+        expect(unguarded).not.toMatch(/\bADD\s+COLUMN\s+(?!IF\s+NOT\s+EXISTS)/i);
+        expect(unguarded).not.toMatch(/\bADD\s+(?!COLUMN\b|CONSTRAINT\b|IF\s+NOT\s+EXISTS)/i);
       });
 
       it("wraps CREATE TYPE in a duplicate_object guard", () => {
