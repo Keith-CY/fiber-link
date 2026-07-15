@@ -35,7 +35,6 @@ export class RedisSettlementPublisher implements SettlementPublisher {
 
   static create(redisUrl: string): RedisSettlementPublisher {
     // Import lazily so the worker can run without Redis when the env var is absent.
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const Redis = require("ioredis");
     const client = new Redis(redisUrl, { lazyConnect: true });
     return new RedisSettlementPublisher(
