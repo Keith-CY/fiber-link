@@ -230,3 +230,139 @@ describe("FiberLinkClient signed mode header generation", () => {
     expect(headers["x-signature"]).toMatch(/^[0-9a-f]+$/);
   });
 });
+
+describe("FiberLinkClient streamTipStatus event handling", () => {
+  function makePresignedClient() {
+    return new FiberLinkClient({ endpoint: "http://localhost:3000/rpc", mode: "presigned" });
+  }
+
+  class CapturingEventSource {
+    static instances: CapturingEventSource[] = [];
+    url: string;
+    closed = false;
+    onmessage: ((event: { data: string }) => void) | null = null;
+    onerror: (() => void) | null = null;
+
+    constructor(url: string) {
+      this.url = url;
+      CapturingEventSource.instances.push(this);
+    }
+
+    close() {
+      this.closed = true;
+    }
+  }
+
+  it("forwards status events and closes on terminal SETTLED", () => {
+    CapturingEventSource.instances = [];
+    vi.stubGlobal("EventSource", CapturingEventSource);
+    try {
+      const events: unknown[] = [];
+      const handle = makePresignedClient().streamTipStatus(FAKE_INVOICE, (e) => events.push(e));
+      const es = CapturingEventSource.instances[0];
+
+      es.onmessage?.({ data: JSON.stringify({ invoice: FAKE_INVOICE, status: "LISTENING" }) });
+      expect(es.closed).toBe(false);
+
+      es.onmessage?.({ data: JSON.stringify({ invoice: FAKE_INVOICE, status: "SETTLED" }) });
+      expect(events).toEqual([
+        { invoice: FAKE_INVOICE, status: "LISTENING" },
+        { invoice: FAKE_INVOICE, status: "SETTLED" },
+      ]);
+      expect(es.closed).toBe(true);
+      handle?.close();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("closes on terminal TIMEOUT", () => {
+    CapturingEventSource.instances = [];
+    vi.stubGlobal("EventSource", CapturingEventSource);
+    try {
+      const events: unknown[] = [];
+      makePresignedClient().streamTipStatus(FAKE_INVOICE, (e) => events.push(e));
+      const es = CapturingEventSource.instances[0];
+
+      es.onmessage?.({ data: JSON.stringify({ invoice: FAKE_INVOICE, status: "TIMEOUT" }) });
+      expect(events).toEqual([{ invoice: FAKE_INVOICE, status: "TIMEOUT" }]);
+      expect(es.closed).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("ignores malformed and status-less events", () => {
+    CapturingEventSource.instances = [];
+    vi.stubGlobal("EventSource", CapturingEventSource);
+    try {
+      const events: unknown[] = [];
+      makePresignedClient().streamTipStatus(FAKE_INVOICE, (e) => events.push(e));
+      const es = CapturingEventSource.instances[0];
+
+      es.onmessage?.({ data: "not-json{{" });
+      es.onmessage?.({ data: JSON.stringify({ hello: "world" }) });
+      es.onmessage?.({ data: JSON.stringify(null) });
+      expect(events).toEqual([]);
+      expect(es.closed).toBe(false);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("emits SSE_ERROR and closes on transport error", () => {
+    CapturingEventSource.instances = [];
+    vi.stubGlobal("EventSource", CapturingEventSource);
+    try {
+      const events: unknown[] = [];
+      makePresignedClient().streamTipStatus(FAKE_INVOICE, (e) => events.push(e));
+      const es = CapturingEventSource.instances[0];
+
+      es.onerror?.();
+      expect(es.closed).toBe(true);
+      expect(events).toEqual([{ invoice: FAKE_INVOICE, status: "SSE_ERROR" }]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("returns null when the EventSource constructor throws", () => {
+    vi.stubGlobal(
+      "EventSource",
+      class {
+        constructor() {
+          throw new Error("blocked");
+        }
+      },
+    );
+    try {
+      expect(makePresignedClient().streamTipStatus(FAKE_INVOICE, vi.fn())).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("close() on the handle closes the underlying stream", () => {
+    CapturingEventSource.instances = [];
+    vi.stubGlobal("EventSource", CapturingEventSource);
+    try {
+      const handle = makePresignedClient().streamTipStatus(FAKE_INVOICE, vi.fn());
+      const es = CapturingEventSource.instances[0];
+      expect(es.closed).toBe(false);
+      handle?.close();
+      expect(es.closed).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
+describe("package entrypoint re-exports", () => {
+  it("exposes the client and error classes from ./index", async () => {
+    const entry = await import("./index");
+    expect(entry.FiberLinkClient).toBe(FiberLinkClient);
+    expect(typeof entry.FiberLinkValidationError).toBe("function");
+    expect(typeof entry.FiberLinkResponseError).toBe("function");
+    expect(typeof entry.FiberLinkNetworkError).toBe("function");
+  });
+});
