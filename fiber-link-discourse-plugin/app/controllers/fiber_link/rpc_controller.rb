@@ -210,6 +210,7 @@ module ::FiberLink
         amount: params["amount"],
         asset: params["asset"],
         postId: post_id.to_s,
+        topicId: post.topic_id&.to_s,
         fromUserId: current_user.id.to_s,
         toUserId: post.user_id.to_s,
         message: params["message"].to_s.strip.presence,

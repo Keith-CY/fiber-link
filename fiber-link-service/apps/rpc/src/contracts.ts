@@ -19,6 +19,7 @@ const PositiveAmountStringSchema = z
 
 export const TipCreateParamsSchema = z.object({
   postId: z.string().min(1),
+  topicId: z.string().min(1).optional().nullable(),
   fromUserId: z.string().min(1),
   toUserId: z.string().min(1),
   asset: z.enum(["CKB", "USDI"]),
@@ -328,6 +329,7 @@ const AnalyticsTimeSeriesItemSchema = z.object({
 
 const AnalyticsTopPostSchema = z.object({
   postId: z.string(),
+  topicId: z.string().nullable(),
   totalAmount: z.string(),
   tipCount: z.number().int(),
 });

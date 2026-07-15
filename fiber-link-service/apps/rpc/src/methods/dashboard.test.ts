@@ -283,7 +283,7 @@ describe("handleDashboardAnalytics", () => {
 
     const analyticsResult = {
       timeSeries: [{ date: "2026-05-01", amount: "100" }],
-      topPosts: [{ postId: "post-1", totalAmount: "50", tipCount: 3 }],
+      topPosts: [{ postId: "post-1", topicId: "topic-1", totalAmount: "50", tipCount: 3 }],
       topTippers: [{ userId: "u-alice", totalAmount: "75", tipCount: 5 }],
       withdrawalHistory: [],
     };

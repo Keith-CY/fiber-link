@@ -98,6 +98,7 @@ export function getDefaultAdapterForStream(): ReturnType<typeof createAdapterPro
 export type HandleTipCreateInput = {
   appId: string;
   postId: string;
+  topicId?: string | null;
   fromUserId: string;
   toUserId: string;
   asset: "CKB" | "USDI";
@@ -183,6 +184,7 @@ export async function handleTipCreate(input: HandleTipCreateInput, options: Hand
   const tipIntent = await repo.create({
     appId: input.appId,
     postId: input.postId,
+    topicId: input.topicId ?? null,
     fromUserId: input.fromUserId,
     toUserId: input.toUserId,
     asset: input.asset,

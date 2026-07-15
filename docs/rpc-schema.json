@@ -64,6 +64,17 @@
                 "type": "string",
                 "minLength": 1
               },
+              "topicId": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
               "fromUserId": {
                 "type": "string",
                 "minLength": 1
@@ -1072,6 +1083,12 @@
                     "postId": {
                       "type": "string"
                     },
+                    "topicId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
                     "totalAmount": {
                       "type": "string"
                     },
@@ -1081,6 +1098,7 @@
                   },
                   "required": [
                     "postId",
+                    "topicId",
                     "totalAmount",
                     "tipCount"
                   ],

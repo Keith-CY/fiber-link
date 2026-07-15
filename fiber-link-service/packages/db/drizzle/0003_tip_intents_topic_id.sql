@@ -1,0 +1,1 @@
+ALTER TABLE "tip_intents" ADD COLUMN "topic_id" text;
