@@ -50,6 +50,7 @@ RSpec.describe ::FiberLink::RpcController, type: :request do
         body = JSON.parse(request.body)
         body.fetch("method") == "tip.create" &&
           body.dig("params", "postId") == post_id.to_s &&
+          body.dig("params", "topicId") == topic.id.to_s &&
           body.dig("params", "fromUserId") == user.id.to_s &&
           body.dig("params", "toUserId") == to_user_id.to_s &&
           body.dig("params", "message") == "Great post"

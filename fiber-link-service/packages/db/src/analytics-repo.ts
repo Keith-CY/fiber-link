@@ -11,6 +11,7 @@ export type AnalyticsTimeSeries = {
 
 export type AnalyticsTopPost = {
   postId: string;
+  topicId: string | null;
   totalAmount: string;
   tipCount: number;
 };
@@ -76,6 +77,10 @@ export async function getCreatorAnalytics(
     db
       .select({
         postId: tipIntents.postId,
+        // A post_id maps to exactly one topic, but topic_id is nullable for
+        // rows created before it was tracked; MAX ignores NULLs so a post that
+        // ever recorded a topic keeps its deep link.
+        topicId: sql<string | null>`max(${tipIntents.topicId})`,
         totalAmount: sql<string>`COALESCE(SUM(${tipIntents.amount}), 0)::text`,
         tipCount: sql<number>`count(*)::int`,
       })
@@ -121,6 +126,7 @@ export async function getCreatorAnalytics(
     timeSeries: timeSeriesRows.map((r) => ({ date: r.date, amount: r.amount })),
     topPosts: topPostRows.map((r) => ({
       postId: r.postId,
+      topicId: r.topicId ?? null,
       totalAmount: r.totalAmount,
       tipCount: Number(r.tipCount),
     })),

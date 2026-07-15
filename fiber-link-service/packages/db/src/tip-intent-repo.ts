@@ -16,6 +16,7 @@ export type SettlementFailureReason =
 export type CreateTipIntentInput = {
   appId: string;
   postId: string;
+  topicId?: string | null;
   fromUserId: string;
   toUserId: string;
   asset: TipAsset;
@@ -117,6 +118,7 @@ function toRecord(row: TipIntentRow): TipIntentRecord {
     id: row.id,
     appId: row.appId,
     postId: row.postId,
+    topicId: row.topicId ?? null,
     fromUserId: row.fromUserId,
     toUserId: row.toUserId,
     asset: row.asset as TipAsset,
@@ -186,6 +188,7 @@ export function createDbTipIntentRepo(db: DbClient): TipIntentRepo {
           .values({
             appId: input.appId,
             postId: input.postId,
+            topicId: input.topicId ?? null,
             fromUserId: input.fromUserId,
             toUserId: input.toUserId,
             asset: input.asset,
@@ -396,6 +399,7 @@ export function createInMemoryTipIntentRepo(): TipIntentRepo {
       const now = new Date();
       const record: TipIntentRecord = {
         ...input,
+        topicId: input.topicId ?? null,
         message: input.message ?? null,
         id: randomUUID(),
         invoiceState: "UNPAID",

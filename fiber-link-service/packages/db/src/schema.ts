@@ -168,6 +168,10 @@ export const tipIntents = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     appId: text("app_id").notNull(),
     postId: text("post_id").notNull(),
+    // Nullable: older rows predate this column and analytics simply omits the
+    // post deep link for them. New tips persist the Discourse topic id so the
+    // analytics top-posts list can link to /t/:topic_id.
+    topicId: text("topic_id"),
     fromUserId: text("from_user_id").notNull(),
     toUserId: text("to_user_id").notNull(),
     asset: assetEnum("asset").notNull(),
