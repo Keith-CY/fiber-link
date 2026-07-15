@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { getCreatorAnalytics } from "./analytics-repo";
 import type { DbClient } from "./client";
-import { tipIntents, withdrawals } from "./schema";
+import { type WithdrawalState, tipIntents, withdrawals } from "./schema";
 import { type PgliteTestDb, createPgliteTestDb } from "./test-helpers/pglite";
 
 const APP = "app-analytics";
@@ -55,7 +55,7 @@ describe("getCreatorAnalytics (PGlite: real SQL over the committed migrations)",
     amount: string;
     createdDaysAgo?: number;
     userId?: string;
-    state?: string;
+    state?: WithdrawalState;
   }): Promise<void> {
     const createdAt = daysAgoAtNoonUtc(input.createdDaysAgo ?? 0);
     await db.insert(withdrawals).values({
@@ -64,13 +64,19 @@ describe("getCreatorAnalytics (PGlite: real SQL over the committed migrations)",
       asset: "CKB",
       amount: input.amount,
       toAddress: "ckt1qexampleaddress",
-      state: (input.state ?? "COMPLETED") as never,
+      state: input.state ?? "COMPLETED",
       createdAt,
       completedAt: input.state === "COMPLETED" || input.state === undefined ? createdAt : null,
     });
   }
 
   beforeAll(async () => {
+    // Freeze Date (and only Date — faking timers would stall PGlite's async
+    // internals) so a run crossing UTC midnight can't shift the seeded
+    // buckets relative to rangeStart()'s view of "now".
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-07-15T12:00:00Z"));
+
     harness = await createPgliteTestDb();
     db = harness.db;
 
@@ -97,6 +103,7 @@ describe("getCreatorAnalytics (PGlite: real SQL over the committed migrations)",
 
   afterAll(async () => {
     await harness.close();
+    vi.useRealTimers();
   });
 
   it("7d: buckets daily sums and excludes older tips", async () => {
