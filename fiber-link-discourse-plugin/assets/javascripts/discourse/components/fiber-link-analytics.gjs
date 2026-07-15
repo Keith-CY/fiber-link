@@ -127,14 +127,12 @@ export default class FiberLinkAnalytics extends Component {
                     <tr>
                       <td>{{inc i}}</td>
                       <td>
-                        {{#if post.topicId}}
-                          <a href="/t/{{post.topicId}}" target="_blank" rel="noopener noreferrer">
-                            {{i18n "fiber_link.analytics.post_link" id=post.postId}}
-                          </a>
-                        {{else}}
-                          {{! Rows created before topic tracking have no deep link. }}
+                        {{! /p/:postId is Discourse's short-link route: it resolves the
+                            exact post and scrolls to it, and works for legacy rows with
+                            no topicId. The API still returns topicId for consumers. }}
+                        <a href="/p/{{post.postId}}" target="_blank" rel="noopener noreferrer">
                           {{i18n "fiber_link.analytics.post_link" id=post.postId}}
-                        {{/if}}
+                        </a>
                       </td>
                       <td>{{post.tipCount}}</td>
                       <td>{{formatAmount post.totalAmount}}</td>
