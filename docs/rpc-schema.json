@@ -15,7 +15,8 @@
     "INTERNAL_ERROR": -32603,
     "UNAUTHORIZED": -32001,
     "RATE_LIMITED": -32005,
-    "TIP_NOT_FOUND": -32004
+    "TIP_NOT_FOUND": -32004,
+    "CHANNEL_NOT_FOUND": -32006
   },
   "methods": {
     "health.ping": {
@@ -1588,6 +1589,98 @@
               "target",
               "events",
               "createdAt"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    "notification.channel.delete": {
+      "description": "Disable (soft-delete) one of the authenticated app's notification channels.",
+      "params": {
+        "$ref": "#/definitions/notification.channel.delete.params",
+        "definitions": {
+          "notification.channel.delete.params": {
+            "type": "object",
+            "properties": {
+              "channelId": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "required": [
+              "channelId"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "result": {
+        "$ref": "#/definitions/notification.channel.delete.result",
+        "definitions": {
+          "notification.channel.delete.result": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "disabled": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "id",
+              "disabled"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    "notification.channel.test": {
+      "description": "Send a synthetic TIP_SETTLED delivery to a channel and report whether it was accepted.",
+      "params": {
+        "$ref": "#/definitions/notification.channel.test.params",
+        "definitions": {
+          "notification.channel.test.params": {
+            "type": "object",
+            "properties": {
+              "channelId": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "required": [
+              "channelId"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "result": {
+        "$ref": "#/definitions/notification.channel.test.result",
+        "definitions": {
+          "notification.channel.test.result": {
+            "type": "object",
+            "properties": {
+              "delivered": {
+                "type": "boolean"
+              },
+              "error": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "delivered",
+              "error"
             ],
             "additionalProperties": false
           }

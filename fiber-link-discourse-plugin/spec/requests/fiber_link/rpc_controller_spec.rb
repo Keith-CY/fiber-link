@@ -181,6 +181,51 @@ RSpec.describe ::FiberLink::RpcController, type: :request do
       }
     end
 
+    it "forwards notification.channel.delete with a validated channel id" do
+      sign_in(user)
+
+      stub_request(:post, "https://fiber-link.example/rpc").to_return(
+        status: 200,
+        body: { jsonrpc: "2.0", id: "del-req", result: { id: "6f9619ff-8b86-4d01-b42d-00c04fc964ff", disabled: true } }.to_json,
+        headers: { "Content-Type" => "application/json" },
+      )
+
+      post "/fiber-link/rpc",
+           params: {
+             jsonrpc: "2.0",
+             id: "del-req",
+             method: "notification.channel.delete",
+             params: { channelId: "6f9619ff-8b86-4d01-b42d-00c04fc964ff" },
+           },
+           as: :json
+
+      expect(response).to have_http_status(:ok)
+      expect(WebMock).to have_requested(:post, "https://fiber-link.example/rpc").with { |request|
+        body = JSON.parse(request.body)
+        body.fetch("method") == "notification.channel.delete" &&
+          body.dig("params", "channelId") == "6f9619ff-8b86-4d01-b42d-00c04fc964ff"
+      }
+    end
+
+    it "rejects notification.channel.delete and .test with a non-uuid channel id" do
+      sign_in(user)
+
+      ["notification.channel.delete", "notification.channel.test"].each do |method|
+        post "/fiber-link/rpc",
+             params: {
+               jsonrpc: "2.0",
+               id: "bad-req",
+               method: method,
+               params: { channelId: "1 OR 1=1" },
+             },
+             as: :json
+
+        expect(response).to have_http_status(:bad_request)
+        body = JSON.parse(response.body)
+        expect(body.dig("error", "code")).to eq(-32602)
+      end
+    end
+
     it "rejects dashboard.summary includeAdmin for non-admin users" do
       sign_in(user)
 

@@ -86,7 +86,8 @@ describe("createWebhookChannelHandler", () => {
 
   it("throws when endpoint returns a non-2xx status", async () => {
     const mockFetch = vi.fn(async (_url: string, _init?: RequestInit) => new Response("Not Found", { status: 404 }));
-    const handler = createWebhookChannelHandler({ fetch: mockFetch as unknown as typeof fetch });
+    // maxAttempts: 1 — these cases assert error shaping, not retry policy.
+    const handler = createWebhookChannelHandler({ fetch: mockFetch as unknown as typeof fetch, maxAttempts: 1 });
 
     await expect(handler({ target: BASE_TARGET, event: COMPLETED_EVENT })).rejects.toThrow("HTTP 404");
   });
@@ -95,7 +96,7 @@ describe("createWebhookChannelHandler", () => {
     const mockFetch = vi.fn(
       async (_url: string, _init?: RequestInit) => new Response('{"error":"invalid_token"}', { status: 401 }),
     );
-    const handler = createWebhookChannelHandler({ fetch: mockFetch as unknown as typeof fetch });
+    const handler = createWebhookChannelHandler({ fetch: mockFetch as unknown as typeof fetch, maxAttempts: 1 });
 
     await expect(handler({ target: BASE_TARGET, event: COMPLETED_EVENT })).rejects.toThrow(/HTTP 401.*invalid_token/);
   });
@@ -103,7 +104,7 @@ describe("createWebhookChannelHandler", () => {
   it("truncates long response bodies to 200 characters in the error message", async () => {
     const longBody = "x".repeat(500);
     const mockFetch = vi.fn(async (_url: string, _init?: RequestInit) => new Response(longBody, { status: 500 }));
-    const handler = createWebhookChannelHandler({ fetch: mockFetch as unknown as typeof fetch });
+    const handler = createWebhookChannelHandler({ fetch: mockFetch as unknown as typeof fetch, maxAttempts: 1 });
 
     await expect(handler({ target: BASE_TARGET, event: COMPLETED_EVENT })).rejects.toThrow(/HTTP 500.*x{200}$/);
   });
@@ -210,9 +211,75 @@ describe("createWebhookChannelHandler", () => {
 
     const handler = createWebhookChannelHandler({
       fetch: mockFetch as unknown as typeof fetch,
+      maxAttempts: 1,
       timeoutMs: 1,
     });
 
     await expect(handler({ target: BASE_TARGET, event: COMPLETED_EVENT })).rejects.toThrow();
+  });
+});
+
+describe("createWebhookChannelHandler retry and delivery log", () => {
+  it("retries with backoff, logs every attempt, and succeeds", async () => {
+    let calls = 0;
+    const mockFetch = vi.fn(async () => {
+      calls += 1;
+      return calls < 3 ? new Response("boom", { status: 500 }) : new Response(null, { status: 200 });
+    });
+    const sleeps: number[] = [];
+    const attempts: Array<{ attempt: number; status: string; error?: string; payloadHash: string }> = [];
+
+    const handler = createWebhookChannelHandler({
+      fetch: mockFetch as unknown as typeof fetch,
+      sleep: async (ms) => {
+        sleeps.push(ms);
+      },
+      onAttempt: async (a) => {
+        attempts.push({ attempt: a.attempt, status: a.status, error: a.error, payloadHash: a.payloadHash });
+      },
+    });
+
+    await handler({ target: BASE_TARGET, event: COMPLETED_EVENT });
+
+    expect(mockFetch).toHaveBeenCalledTimes(3);
+    expect(sleeps).toEqual([1_000, 4_000]);
+    expect(attempts.map((a) => [a.attempt, a.status])).toEqual([
+      [1, "FAILED"],
+      [2, "FAILED"],
+      [3, "DELIVERED"],
+    ]);
+    expect(attempts[0].error).toMatch(/HTTP 500/);
+    // Same payload across attempts: identical hash correlates the trail.
+    expect(new Set(attempts.map((a) => a.payloadHash)).size).toBe(1);
+    expect(attempts[0].payloadHash).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it("throws the last error after exhausting retries", async () => {
+    const mockFetch = vi.fn(async () => new Response("nope", { status: 503 }));
+    const attempts: string[] = [];
+
+    const handler = createWebhookChannelHandler({
+      fetch: mockFetch as unknown as typeof fetch,
+      sleep: async () => {},
+      onAttempt: (a) => {
+        attempts.push(a.status);
+      },
+    });
+
+    await expect(handler({ target: BASE_TARGET, event: COMPLETED_EVENT })).rejects.toThrow("HTTP 503");
+    expect(mockFetch).toHaveBeenCalledTimes(3);
+    expect(attempts).toEqual(["FAILED", "FAILED", "FAILED"]);
+  });
+
+  it("swallows delivery-log observer failures without affecting delivery", async () => {
+    const mockFetch = vi.fn(async () => new Response(null, { status: 200 }));
+    const handler = createWebhookChannelHandler({
+      fetch: mockFetch as unknown as typeof fetch,
+      onAttempt: () => {
+        throw new Error("log db down");
+      },
+    });
+
+    await expect(handler({ target: BASE_TARGET, event: COMPLETED_EVENT })).resolves.toBeUndefined();
   });
 });

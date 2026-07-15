@@ -9,6 +9,7 @@ import {
 } from "@fiber-link/db";
 import type { NotificationDispatcher } from "@fiber-link/notifications";
 import { createComponentLogger } from "./logger";
+import { getDefaultNotificationDispatcher } from "./notification-dispatcher";
 import type { SettlementPublisher } from "./settlement-publisher";
 
 import { settlementCreditedTotal } from "./metrics";
@@ -51,6 +52,11 @@ export async function markSettled(
 ) {
   const tipIntentRepo = options.tipIntentRepo ?? getDefaultTipIntentRepo();
   const ledgerRepo = options.ledgerRepo ?? getDefaultLedgerRepo();
+  // Default to the shared dispatcher so TIP_SETTLED webhooks fire on the
+  // production settlement paths (discovery + subscription runner), which
+  // never passed an explicit dispatcher. Falls back to a no-op without
+  // DATABASE_URL, so unit tests keep their existing behavior.
+  const dispatcher = options.dispatcher ?? getDefaultNotificationDispatcher();
 
   const tipIntent = await tipIntentRepo.findByInvoiceOrThrow(invoice);
   const idempotencyKey = settlementCreditIdempotencyKey(tipIntent.id);
@@ -75,21 +81,19 @@ export async function markSettled(
     settledAt = updated.settledAt;
   }
 
-  if (options.dispatcher) {
-    options.dispatcher
-      .dispatchTipSettledEvent({
-        type: "TIP_SETTLED",
-        occurredAt: new Date(),
-        appId: tipIntent.appId,
-        toUserId: tipIntent.toUserId,
-        fromUserId: tipIntent.fromUserId,
-        postId: tipIntent.postId,
-        invoice,
-        asset: tipIntent.asset,
-        amount: String(tipIntent.amount),
-      })
-      .catch((e) => logger.warn("settlement.tip_settled_notification_failed", { invoice, error: e }));
-  }
+  dispatcher
+    .dispatchTipSettledEvent({
+      type: "TIP_SETTLED",
+      occurredAt: new Date(),
+      appId: tipIntent.appId,
+      toUserId: tipIntent.toUserId,
+      fromUserId: tipIntent.fromUserId,
+      postId: tipIntent.postId,
+      invoice,
+      asset: tipIntent.asset,
+      amount: String(tipIntent.amount),
+    })
+    .catch((e) => logger.warn("settlement.tip_settled_notification_failed", { invoice, error: e }));
 
   // Publish settlement event for real-time SSE subscribers. Failure is non-blocking.
   if (options.publisher) {

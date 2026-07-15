@@ -17,14 +17,9 @@ import {
   createAdapter,
   getCkbTransactionStatus,
 } from "@fiber-link/fiber-adapter";
-import {
-  type NotificationDispatcher,
-  type WithdrawalNotificationEvent,
-  createDbNotificationRepo,
-  createNoopNotificationDispatcher,
-  createNotificationDispatcher,
-} from "@fiber-link/notifications";
+import type { NotificationDispatcher, WithdrawalNotificationEvent } from "@fiber-link/notifications";
 import { withdrawalBatchDuration, withdrawalFailuresTotal } from "./metrics";
+import { getDefaultNotificationDispatcher } from "./notification-dispatcher";
 
 export type WithdrawalExecutionResult =
   | { ok: true; txHash: string }
@@ -95,7 +90,6 @@ async function defaultConfirmWithdrawal(withdrawal: WithdrawalRecord): Promise<W
 let defaultRepo: WithdrawalRepo | null = null;
 let defaultLedgerRepo: LedgerRepo | null = null;
 let defaultFiberAdapter: ReturnType<typeof createAdapter> | null = null;
-let defaultNotificationDispatcher: NotificationDispatcher | null = null;
 
 function getDefaultRepo(): WithdrawalRepo {
   if (!defaultRepo) {
@@ -116,25 +110,6 @@ function getDefaultFiberAdapter(endpoint: string) {
     defaultFiberAdapter = createAdapter({ endpoint });
   }
   return defaultFiberAdapter;
-}
-
-function getDefaultNotificationDispatcher(): NotificationDispatcher {
-  if (defaultNotificationDispatcher) {
-    return defaultNotificationDispatcher;
-  }
-
-  if (!process.env.DATABASE_URL) {
-    defaultNotificationDispatcher = createNoopNotificationDispatcher();
-    return defaultNotificationDispatcher;
-  }
-
-  try {
-    const repo = createDbNotificationRepo(createDbClient());
-    defaultNotificationDispatcher = createNotificationDispatcher({ repo });
-  } catch {
-    defaultNotificationDispatcher = createNoopNotificationDispatcher();
-  }
-  return defaultNotificationDispatcher;
 }
 
 type ExecutionFailureKind = "transient" | "permanent";

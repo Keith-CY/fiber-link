@@ -29,6 +29,8 @@ export const KNOWN_RPC_METHODS = new Set<string>([
   "withdrawal.request",
   "notification.channel.create",
   "notification.channel.list",
+  "notification.channel.delete",
+  "notification.channel.test",
 ]);
 
 export function normalizeMethodLabel(method: unknown): string {

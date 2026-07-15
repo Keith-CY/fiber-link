@@ -1,12 +1,41 @@
 import crypto from "node:crypto";
 import type { NotificationChannelHandler, NotificationDispatchInput } from "./dispatcher";
 
+export type WebhookDeliveryAttempt = {
+  target: NotificationDispatchInput["target"];
+  event: NotificationDispatchInput["event"];
+  /** 1-based attempt counter. */
+  attempt: number;
+  status: "DELIVERED" | "FAILED";
+  /** SHA-256 hex of the delivered body — correlates attempts without storing payloads. */
+  payloadHash: string;
+  error?: string;
+};
+
 export type WebhookDeliveryOptions = {
   /** Maximum time in milliseconds to wait for the webhook endpoint to respond. */
   timeoutMs?: number;
   /** Custom fetch implementation, defaults to the global fetch. */
   fetch?: typeof globalThis.fetch;
+  /** Total attempts per delivery (default 3). */
+  maxAttempts?: number;
+  /** Backoff before retry N+1, in ms (default [1s, 4s, 16s]). */
+  retryDelaysMs?: number[];
+  /** Injectable sleep for tests. */
+  sleep?: (ms: number) => Promise<void>;
+  /**
+   * Observer invoked after every attempt (delivered or failed) — used to
+   * persist the notification delivery log. Observer failures are swallowed:
+   * logging must never affect delivery semantics.
+   */
+  onAttempt?: (attempt: WebhookDeliveryAttempt) => void | Promise<void>;
 };
+
+const DEFAULT_RETRY_DELAYS_MS = [1_000, 4_000, 16_000];
+
+function defaultSleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 /**
  * Sign the payload with the channel secret using HMAC-SHA256 so the receiver
@@ -31,6 +60,9 @@ function signPayload(secret: string, body: string): string {
 export function createWebhookChannelHandler(options: WebhookDeliveryOptions = {}): NotificationChannelHandler {
   const fetchImpl = options.fetch ?? globalThis.fetch;
   const timeoutMs = options.timeoutMs ?? 10_000;
+  const maxAttempts = Math.max(1, options.maxAttempts ?? 3);
+  const retryDelaysMs = options.retryDelaysMs ?? DEFAULT_RETRY_DELAYS_MS;
+  const sleep = options.sleep ?? defaultSleep;
 
   return async function webhookChannelHandler({ target, event }: NotificationDispatchInput): Promise<void> {
     const body = JSON.stringify({
@@ -73,28 +105,58 @@ export function createWebhookChannelHandler(options: WebhookDeliveryOptions = {}
       headers["x-fiber-link-signature"] = signPayload(target.secret, body);
     }
 
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const payloadHash = crypto.createHash("sha256").update(body).digest("hex");
 
-    try {
-      const response = await fetchImpl(target.target, {
-        method: "POST",
-        headers,
-        body,
-        signal: controller.signal,
-      });
-
-      if (!response.ok) {
-        const snippet = await response
-          .text()
-          .then((t) => t.slice(0, 200))
-          .catch(() => "");
-        throw new Error(
-          `Webhook delivery failed: HTTP ${response.status} from ${target.target}${snippet ? ` — ${snippet}` : ""}`,
-        );
+    const recordAttempt = async (attempt: number, status: "DELIVERED" | "FAILED", error?: string) => {
+      try {
+        await options.onAttempt?.({ target, event, attempt, status, payloadHash, error });
+      } catch {
+        // The delivery log is an audit trail; its failures never alter delivery.
       }
-    } finally {
-      clearTimeout(timer);
+    };
+
+    const attemptOnce = async (): Promise<void> => {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const response = await fetchImpl(target.target, {
+          method: "POST",
+          headers,
+          body,
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          const snippet = await response
+            .text()
+            .then((t) => t.slice(0, 200))
+            .catch(() => "");
+          throw new Error(
+            `Webhook delivery failed: HTTP ${response.status} from ${target.target}${snippet ? ` — ${snippet}` : ""}`,
+          );
+        }
+      } finally {
+        clearTimeout(timer);
+      }
+    };
+
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        await attemptOnce();
+        await recordAttempt(attempt, "DELIVERED");
+        return;
+      } catch (error) {
+        lastError = error;
+        await recordAttempt(attempt, "FAILED", error instanceof Error ? error.message : String(error));
+        if (attempt < maxAttempts) {
+          await sleep(retryDelaysMs[Math.min(attempt - 1, retryDelaysMs.length - 1)] ?? 0);
+        }
+      }
     }
+    // Exhausted retries: surface the failure so the dispatch summary counts it.
+    // Settlement/withdrawal processing never blocks on this (the dispatcher
+    // catches per-target errors).
+    throw lastError;
   };
 }

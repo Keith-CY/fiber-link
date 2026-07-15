@@ -77,6 +77,9 @@ export type WithdrawalDestinationKind = (typeof withdrawalDestinationKindEnum.en
 export const notificationChannelKindEnum = pgEnum("notification_channel_kind", ["WEBHOOK"]);
 export type NotificationChannelKind = (typeof notificationChannelKindEnum.enumValues)[number];
 
+export const notificationDeliveryStatusEnum = pgEnum("notification_delivery_status", ["DELIVERED", "FAILED"]);
+export type NotificationDeliveryStatus = (typeof notificationDeliveryStatusEnum.enumValues)[number];
+
 export const notificationEventEnum = pgEnum("notification_event", [
   "WITHDRAWAL_RETRY_PENDING",
   "WITHDRAWAL_FAILED",
@@ -370,6 +373,30 @@ export const notificationRules = pgTable(
       table.id,
     ),
     byChannelEnabled: index("notification_rules_channel_enabled_idx").on(table.channelId, table.enabled, table.id),
+  }),
+);
+
+export const notificationDeliveryLog = pgTable(
+  "notification_delivery_log",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    channelId: uuid("channel_id")
+      .notNull()
+      .references(() => notificationChannels.id, { onDelete: "cascade" }),
+    event: notificationEventEnum("event").notNull(),
+    /** SHA-256 of the delivered body: correlates attempts without storing payloads. */
+    payloadHash: text("payload_hash").notNull(),
+    attempt: integer("attempt").notNull(),
+    status: notificationDeliveryStatusEnum("status").notNull(),
+    error: text("error"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    byChannelCreatedAt: index("notification_delivery_log_channel_created_at_idx").on(
+      table.channelId,
+      table.createdAt,
+      table.id,
+    ),
   }),
 );
 
