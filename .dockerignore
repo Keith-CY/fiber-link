@@ -1,0 +1,46 @@
+# Build context excludes for all images built from the repo root
+# (docker-compose builds service.Dockerfile and fnn/Dockerfile with `context: ../..`).
+# Only non-source artifacts are excluded here; every path the Dockerfiles COPY
+# — fiber-link-service/{package.json,bun.lockb,bunfig.toml,tsconfig.base.json,
+# pnpm-workspace.yaml,apps,packages} (including packages/db/drizzle migrations)
+# and deploy/compose/fnn/{config,entrypoint.sh} — is intentionally kept.
+
+# Dependencies (bun reinstalls from the lockfile inside the image)
+**/node_modules
+
+# Build output (services run TypeScript from src via bun; no compiled dist needed)
+**/dist
+**/.next
+**/.turbo
+
+# Test and coverage output
+**/coverage
+**/coverage-reports
+**/*.lcov
+
+# VCS metadata and history
+.git
+.gitignore
+.gitattributes
+
+# Local environment and secrets (never ship these in the build context)
+**/.env
+**/.env.*
+!**/.env.example
+
+# Local scratch and tooling caches
+.worktrees
+.tmp
+.playwright-cli
+deploy/compose/evidence
+deploy/compose/backups
+
+# Editor/IDE config and OS noise (developer-local, may hold local settings/secrets)
+**/*.log
+**/.DS_Store
+**/Thumbs.db
+.vscode
+.idea
+**/*.swp
+**/*.swo
+**/*~
