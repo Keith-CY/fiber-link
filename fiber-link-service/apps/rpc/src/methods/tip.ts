@@ -235,7 +235,7 @@ export async function handleTipStatus(input: HandleTipStatusInput, options: Hand
       },
       options.log,
     );
-    return { state: tipIntent.invoiceState };
+    return { state: tipIntent.invoiceState, asset: tipIntent.asset };
   }
 
   const invoiceStatus = await adapter.getInvoiceStatus({ invoice: input.invoice });
@@ -275,7 +275,7 @@ export async function handleTipStatus(input: HandleTipStatusInput, options: Hand
       },
       options.log,
     );
-    return { state: nextState };
+    return { state: nextState, asset: tipIntent.asset };
   }
 
   if (invoiceStatus.state === "FAILED") {
@@ -306,7 +306,7 @@ export async function handleTipStatus(input: HandleTipStatusInput, options: Hand
       },
       options.log,
     );
-    return { state: nextState };
+    return { state: nextState, asset: tipIntent.asset };
   }
 
   await appendTipTimelineEvent(
@@ -324,7 +324,7 @@ export async function handleTipStatus(input: HandleTipStatusInput, options: Hand
     },
     options.log,
   );
-  return { state: tipIntent.invoiceState };
+  return { state: tipIntent.invoiceState, asset: tipIntent.asset };
 }
 
 export async function handleTipSettledFeed(

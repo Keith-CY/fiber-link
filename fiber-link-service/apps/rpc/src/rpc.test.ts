@@ -363,7 +363,7 @@ describe("json-rpc", () => {
 
   it("returns tip.status result from handler", async () => {
     const app = buildServer();
-    const tipStatusSpy = vi.spyOn(tipMethods, "handleTipStatus").mockResolvedValue({ state: "UNPAID" });
+    const tipStatusSpy = vi.spyOn(tipMethods, "handleTipStatus").mockResolvedValue({ state: "UNPAID", asset: "CKB" });
     try {
       const payload = { jsonrpc: "2.0", id: "s1", method: "tip.status", params: { invoice: "inv-1" } };
       const ts = String(Math.floor(Date.now() / 1000));
@@ -389,7 +389,7 @@ describe("json-rpc", () => {
       });
 
       expect(res.statusCode).toBe(200);
-      expect(res.json()).toEqual({ jsonrpc: "2.0", id: "s1", result: { state: "UNPAID" } });
+      expect(res.json()).toEqual({ jsonrpc: "2.0", id: "s1", result: { state: "UNPAID", asset: "CKB" } });
       expect(tipStatusSpy).toHaveBeenCalledWith(
         { invoice: "inv-1" },
         expect.objectContaining({ log: expect.anything() }),
@@ -401,7 +401,7 @@ describe("json-rpc", () => {
 
   it("returns tip.get result from handler", async () => {
     const app = buildServer();
-    const tipStatusSpy = vi.spyOn(tipMethods, "handleTipStatus").mockResolvedValue({ state: "UNPAID" });
+    const tipStatusSpy = vi.spyOn(tipMethods, "handleTipStatus").mockResolvedValue({ state: "UNPAID", asset: "CKB" });
     try {
       const payload = { jsonrpc: "2.0", id: "g1", method: "tip.get", params: { invoice: "inv-1" } };
       const ts = String(Math.floor(Date.now() / 1000));
@@ -427,7 +427,7 @@ describe("json-rpc", () => {
       });
 
       expect(res.statusCode).toBe(200);
-      expect(res.json()).toEqual({ jsonrpc: "2.0", id: "g1", result: { state: "UNPAID" } });
+      expect(res.json()).toEqual({ jsonrpc: "2.0", id: "g1", result: { state: "UNPAID", asset: "CKB" } });
       expect(tipStatusSpy).toHaveBeenCalledWith(
         { invoice: "inv-1" },
         expect.objectContaining({ log: expect.anything() }),
@@ -1044,7 +1044,8 @@ describe("json-rpc", () => {
     const app = buildServer();
     const tipCreateSpy = vi.spyOn(tipMethods, "handleTipCreate").mockResolvedValue({ invoice: "inv-happy-1" });
     const tipStatusSpy = vi.spyOn(tipMethods, "handleTipStatus").mockImplementation(async ({ invoice }) => ({
-      state: invoice === "inv-happy-1" ? "UNPAID" : "FAILED",
+      state: invoice === "inv-happy-1" ? ("UNPAID" as const) : ("FAILED" as const),
+      asset: "CKB" as const,
     }));
     try {
       const createPayload = {
@@ -1125,7 +1126,7 @@ describe("json-rpc", () => {
       expect(getRes.json()).toEqual({
         jsonrpc: "2.0",
         id: "get-1",
-        result: { state: "UNPAID" },
+        result: { state: "UNPAID", asset: "CKB" },
       });
       expect(tipStatusSpy).toHaveBeenCalledWith(
         { invoice: "inv-happy-1" },

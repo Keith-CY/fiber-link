@@ -172,10 +172,18 @@
                   "SETTLED",
                   "FAILED"
                 ]
+              },
+              "asset": {
+                "type": "string",
+                "enum": [
+                  "CKB",
+                  "USDI"
+                ]
               }
             },
             "required": [
-              "state"
+              "state",
+              "asset"
             ],
             "additionalProperties": false
           }
@@ -218,10 +226,18 @@
                   "SETTLED",
                   "FAILED"
                 ]
+              },
+              "asset": {
+                "type": "string",
+                "enum": [
+                  "CKB",
+                  "USDI"
+                ]
               }
             },
             "required": [
-              "state"
+              "state",
+              "asset"
             ],
             "additionalProperties": false
           }

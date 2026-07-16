@@ -68,7 +68,8 @@ describe("rpc contracts", () => {
     ).toBe(false);
 
     expect(TipCreateResultSchema.safeParse({ invoice: "invoice-1" }).success).toBe(true);
-    expect(TipStatusResultSchema.safeParse({ state: "SETTLED" }).success).toBe(true);
+    expect(TipStatusResultSchema.safeParse({ state: "SETTLED", asset: "CKB" }).success).toBe(true);
+    expect(TipStatusResultSchema.safeParse({ state: "SETTLED" }).success).toBe(false);
     expect(TipStatusResultSchema.safeParse({ state: "BROKEN" }).success).toBe(false);
     expect(
       WithdrawalRequestParamsSchema.safeParse({

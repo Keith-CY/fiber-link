@@ -10,6 +10,7 @@ import { i18n } from "discourse-i18n";
 import { quoteWithdrawal, requestWithdrawal } from "../services/fiber-link-api";
 
 const MIN_WITHDRAW_AMOUNT = 61;
+const eq = (a, b) => a === b;
 const ADDRESS_PATTERN = /^(?:ckt|ckb)1[0-9a-zA-Z]+$/;
 const QUOTE_DEBOUNCE_MS = 300;
 
@@ -49,6 +50,7 @@ export default class FiberLinkWithdrawalPanel extends Component {
   @tracked requestedId = null;
   @tracked requestedState = null;
   @tracked hasSubmitted = false;
+  @tracked selectedAsset = null;
 
   _quoteTimer = null;
 
@@ -58,15 +60,47 @@ export default class FiberLinkWithdrawalPanel extends Component {
   }
 
   get asset() {
-    return this.args.asset === "USDI" ? "USDI" : "CKB";
+    return this.selectedAsset || this.args.asset || "CKB";
+  }
+
+  // Assets the creator actually holds; the selector only renders when there
+  // is more than one, so single-asset creators keep the uncluttered form.
+  get selectableAssets() {
+    const balances = Array.isArray(this.args.assetBalances) ? this.args.assetBalances : [];
+    return balances.map((entry) => entry.asset).filter(Boolean);
+  }
+
+  get showAssetSelector() {
+    return this.selectableAssets.length > 1;
+  }
+
+  get selectedAssetBalances() {
+    const balances = Array.isArray(this.args.assetBalances) ? this.args.assetBalances : [];
+    return balances.find((entry) => entry.asset === this.asset) ?? null;
+  }
+
+  get isPrimaryAssetSelected() {
+    return this.asset === (this.args.asset || "CKB");
   }
 
   get availableBalance() {
-    return normalizeValue(this.quote?.availableBalance) || normalizeValue(this.args.availableBalance) || "0";
+    // The scalar args balances describe the primary asset only; never let
+    // them bleed into another asset's display while balances/quote load.
+    return (
+      normalizeValue(this.quote?.availableBalance) ||
+      normalizeValue(this.selectedAssetBalances?.available) ||
+      (this.isPrimaryAssetSelected ? normalizeValue(this.args.availableBalance) : "") ||
+      "0"
+    );
   }
 
   get lockedBalance() {
-    return normalizeValue(this.quote?.lockedBalance) || normalizeValue(this.args.lockedBalance) || "0";
+    return (
+      normalizeValue(this.quote?.lockedBalance) ||
+      normalizeValue(this.selectedAssetBalances?.locked) ||
+      (this.isPrimaryAssetSelected ? normalizeValue(this.args.lockedBalance) : "") ||
+      "0"
+    );
   }
 
   get receiveAmount() {
@@ -95,8 +129,8 @@ export default class FiberLinkWithdrawalPanel extends Component {
       return i18n("fiber_link.withdrawal.error_amount_numeric");
     }
 
-    if (Number(value) < MIN_WITHDRAW_AMOUNT) {
-      return i18n("fiber_link.withdrawal.error_amount_min", { min: MIN_WITHDRAW_AMOUNT });
+    if (this.minimumWithdrawalAmount > 0 && Number(value) < this.minimumWithdrawalAmount) {
+      return i18n("fiber_link.withdrawal.error_amount_min", { min: this.minimumWithdrawalAmount });
     }
 
     if (Number(value) > this.availableBalanceNumber) {
@@ -216,7 +250,13 @@ export default class FiberLinkWithdrawalPanel extends Component {
   }
 
   get minimumWithdrawalAmount() {
-    return MIN_WITHDRAW_AMOUNT;
+    const quoted = Number(this.quote?.minimumAmount);
+    if (Number.isFinite(quoted) && quoted > 0) {
+      return quoted;
+    }
+    // The 61 floor is the CKB minimal cell capacity; UDT assets have no
+    // client-side floor until the server quotes one.
+    return this.asset === "CKB" ? MIN_WITHDRAW_AMOUNT : 0;
   }
 
   get availableBalanceNumber() {
@@ -263,6 +303,16 @@ export default class FiberLinkWithdrawalPanel extends Component {
       this._quoteTimer = null;
       void this.refreshQuote();
     }, QUOTE_DEBOUNCE_MS);
+  }
+
+  @action
+  onAssetChange(event) {
+    this.selectedAsset = event?.target?.value || "CKB";
+    this.quote = null;
+    this.errorMessage = null;
+    this.quoteErrorMessage = null;
+    this.hasSubmitted = false;
+    this._scheduleQuoteRefresh();
   }
 
   @action
@@ -433,6 +483,21 @@ export default class FiberLinkWithdrawalPanel extends Component {
 
       <div class="fiber-link-dashboard__withdrawal-form">
         <label class="fiber-link-tip-field">
+          {{#if this.showAssetSelector}}
+            <span class="fiber-link-dashboard__field-row">
+              <span class="fiber-link-tip-label">{{i18n "fiber_link.withdrawal.asset_label"}}</span>
+              <select
+                class="fiber-link-dashboard__withdrawal-asset"
+                data-fiber-link-withdrawal-input="asset"
+                aria-label={{i18n "fiber_link.withdrawal.asset_label"}}
+                {{on "change" this.onAssetChange}}
+              >
+                {{#each this.selectableAssets as |assetOption|}}
+                  <option value={{assetOption}} selected={{eq assetOption this.asset}}>{{assetOption}}</option>
+                {{/each}}
+              </select>
+            </span>
+          {{/if}}
           <span class="fiber-link-dashboard__field-row">
             <span class="fiber-link-tip-label">{{i18n "fiber_link.withdrawal.amount_label"}}</span>
             <span>{{i18n "fiber_link.withdrawal.network_fee" fee=this.networkFee asset=this.asset}}</span>
