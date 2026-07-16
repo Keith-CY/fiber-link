@@ -1,4 +1,4 @@
-import { Activity, Banknote, Boxes, LayoutDashboard, Wallet, Wrench } from "lucide-react";
+import { Activity, Banknote, BookOpenCheck, Boxes, LayoutDashboard, Wallet, Wrench } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import type * as React from "react";
@@ -18,6 +18,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/", label: "Overview", icon: LayoutDashboard },
   { href: "/settlements", label: "Settlements", icon: Banknote, superAdminOnly: true },
   { href: "/withdrawals", label: "Withdrawals", icon: Wallet },
+  { href: "/ledger", label: "Ledger", icon: BookOpenCheck, superAdminOnly: true },
   { href: "/apps", label: "Apps", icon: Boxes },
   { href: "/ops", label: "Ops", icon: Wrench, superAdminOnly: true },
 ];

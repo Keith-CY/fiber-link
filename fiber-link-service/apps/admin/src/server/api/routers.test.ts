@@ -49,6 +49,35 @@ function fixture(): DashboardFixture {
         createdAt: "2026-03-18T00:01:00.000Z",
       },
     ],
+    ledgerEntries: [
+      {
+        id: "le-1",
+        appId: "app-alpha",
+        userId: "author-1",
+        amount: "100",
+        type: "credit",
+        refId: "lnfib1settledalpha",
+        createdAt: "2026-03-18T00:11:00.000Z",
+      },
+      {
+        id: "le-2",
+        appId: "app-alpha",
+        userId: "author-1",
+        amount: "30",
+        type: "debit",
+        refId: "w-orphan",
+        createdAt: "2026-03-18T00:12:00.000Z",
+      },
+      {
+        id: "le-3",
+        appId: "app-beta",
+        userId: "author-9",
+        amount: "5",
+        type: "credit",
+        refId: "tip-unknown",
+        createdAt: "2026-03-18T00:13:00.000Z",
+      },
+    ],
     communityAdminAppIds: ["app-alpha"],
     backupBundles: [
       {
@@ -250,6 +279,80 @@ describe("settlement investigation workflow (#470)", () => {
     await expect(caller.settlements.addOpsNote({ invoice: "lnfib1unpaidalpha", note: "  " })).rejects.toMatchObject({
       code: "BAD_REQUEST",
     });
+  });
+});
+
+describe("ledger reconciliation and balance explanation (#471)", () => {
+  it("pages the ledger statement with an opaque keyset cursor", async () => {
+    const caller = createCaller(ctxFor("SUPER_ADMIN", "ops"));
+
+    const firstPage = await caller.ledger.entries({ appId: "app-alpha", userId: "author-1", limit: 1 });
+    expect(firstPage.entries.map((entry) => entry.id)).toEqual(["le-2"]);
+    expect(firstPage.nextCursor).not.toBeNull();
+
+    const secondPage = await caller.ledger.entries({
+      appId: "app-alpha",
+      userId: "author-1",
+      limit: 1,
+      cursor: firstPage.nextCursor ?? undefined,
+    });
+    expect(secondPage.entries.map((entry) => entry.id)).toEqual(["le-1"]);
+    expect(secondPage.nextCursor).toBeNull();
+
+    const credits = await caller.ledger.entries({ appId: "app-alpha", type: "credit" });
+    expect(credits.entries).toHaveLength(1);
+
+    await expect(caller.ledger.entries({ appId: "app-alpha", asset: "DOGE" } as never)).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+    });
+    await expect(caller.ledger.entries({ appId: "app-alpha", cursor: "not-a-cursor" })).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+    });
+  });
+
+  it("explains a balance from source credits and debits", async () => {
+    const caller = createCaller(ctxFor("SUPER_ADMIN", "ops"));
+    const breakdown = await caller.ledger.balanceBreakdown({ appId: "app-alpha", userId: "author-1", asset: "CKB" });
+    expect(breakdown).toMatchObject({
+      balance: "70",
+      creditTotal: "100",
+      debitTotal: "30",
+      creditCount: 1,
+      debitCount: 1,
+    });
+    expect(breakdown.firstEntryAt).toBe("2026-03-18T00:11:00.000Z");
+  });
+
+  it("reports anomaly counts and example entry ids from reconciliation", async () => {
+    const caller = createCaller(ctxFor("SUPER_ADMIN", "ops"));
+    const report = await caller.ledger.reconcile({});
+
+    expect(report.countsByKind.DEBIT_WITHOUT_COMPLETED_WITHDRAWAL).toBe(1);
+    expect(report.countsByKind.CREDIT_WITHOUT_SETTLED_TIP).toBe(1);
+    expect(report.countsByKind.SETTLED_TIP_MISSING_CREDIT).toBe(0);
+    expect(report.anomalies).toHaveLength(2);
+
+    const orphanDebit = report.anomalies.find((anomaly) => anomaly.kind === "DEBIT_WITHOUT_COMPLETED_WITHDRAWAL");
+    expect(orphanDebit?.entryIds).toEqual(["le-2"]);
+
+    // The settled tip (with its matching credit) and the FAILED withdrawal are clean.
+    expect(report.checked.tipIntents).toBe(2);
+    expect(report.checked.withdrawals).toBe(1);
+
+    const scopedToAlpha = await caller.ledger.reconcile({ appId: "app-alpha" });
+    expect(scopedToAlpha.anomalies).toHaveLength(1);
+    expect(scopedToAlpha.anomalies[0]?.kind).toBe("DEBIT_WITHOUT_COMPLETED_WITHDRAWAL");
+
+    await expect(
+      caller.ledger.reconcile({ from: "2026-03-19T00:00:00.000Z", to: "2026-03-18T00:00:00.000Z" }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+
+  it("denies ledger procedures to COMMUNITY_ADMIN and anonymous callers", async () => {
+    await expect(
+      createCaller(ctxFor("COMMUNITY_ADMIN", "c1")).ledger.entries({ appId: "app-alpha" }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(createCaller(ctxFor(undefined)).ledger.reconcile({})).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 });
 

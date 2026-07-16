@@ -1,4 +1,5 @@
 import { appsRouter } from "./routers/apps";
+import { ledgerRouter } from "./routers/ledger";
 import { opsRouter } from "./routers/ops";
 import { sessionRouter } from "./routers/session";
 import { settlementsRouter } from "./routers/settlements";
@@ -12,6 +13,7 @@ export const appRouter = router({
   withdrawals: withdrawalsRouter,
   withdrawalPolicy: withdrawalPolicyRouter,
   settlements: settlementsRouter,
+  ledger: ledgerRouter,
   ops: opsRouter,
 });
 

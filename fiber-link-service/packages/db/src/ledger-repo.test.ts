@@ -88,6 +88,94 @@ describe("ledgerRepo (in-memory)", () => {
     expect(balance).toBe("7.25");
   });
 
+  it("lists entries newest-first with filters and keyset pagination", async () => {
+    await repo.creditOnce({
+      appId: "app1",
+      userId: "u1",
+      asset: "CKB",
+      amount: "10",
+      refId: "tip-1",
+      idempotencyKey: "k-1",
+    });
+    await repo.debitOnce({
+      appId: "app1",
+      userId: "u1",
+      asset: "CKB",
+      amount: "4",
+      refId: "w-1",
+      idempotencyKey: "k-2",
+    });
+    await repo.creditOnce({
+      appId: "app1",
+      userId: "u2",
+      asset: "USDI",
+      amount: "7",
+      refId: "tip-2",
+      idempotencyKey: "k-3",
+    });
+
+    const all = await repo.listEntries({ appId: "app1" });
+    expect(all).toHaveLength(3);
+
+    const credits = await repo.listEntries({ appId: "app1", type: "credit" });
+    expect(credits.map((item) => item.refId).sort()).toEqual(["tip-1", "tip-2"]);
+
+    const scoped = await repo.listEntries({ appId: "app1", userId: "u1", asset: "CKB" });
+    expect(scoped).toHaveLength(2);
+
+    const firstPage = await repo.listEntries({ appId: "app1", limit: 2 });
+    expect(firstPage).toHaveLength(2);
+    const last = firstPage[firstPage.length - 1];
+    const secondPage = await repo.listEntries({
+      appId: "app1",
+      limit: 2,
+      after: { createdAt: last.createdAt, id: last.id },
+    });
+    expect(secondPage).toHaveLength(1);
+    expect([...firstPage, ...secondPage].map((item) => item.id)).toHaveLength(3);
+  });
+
+  it("explains a balance via getBalanceBreakdown", async () => {
+    await repo.creditOnce({
+      appId: "app1",
+      userId: "u1",
+      asset: "CKB",
+      amount: "10.5",
+      refId: "tip-1",
+      idempotencyKey: "k-1",
+    });
+    await repo.creditOnce({
+      appId: "app1",
+      userId: "u1",
+      asset: "CKB",
+      amount: "2",
+      refId: "tip-2",
+      idempotencyKey: "k-2",
+    });
+    await repo.debitOnce({
+      appId: "app1",
+      userId: "u1",
+      asset: "CKB",
+      amount: "4",
+      refId: "w-1",
+      idempotencyKey: "k-3",
+    });
+
+    const breakdown = await repo.getBalanceBreakdown({ appId: "app1", userId: "u1", asset: "CKB" });
+    expect(breakdown.balance).toBe("8.5");
+    expect(breakdown.creditTotal).toBe("12.5");
+    expect(breakdown.debitTotal).toBe("4");
+    expect(breakdown.creditCount).toBe(2);
+    expect(breakdown.debitCount).toBe(1);
+    expect(breakdown.firstEntryAt).not.toBeNull();
+    expect(breakdown.lastEntryAt).not.toBeNull();
+
+    const empty = await repo.getBalanceBreakdown({ appId: "app1", userId: "nobody", asset: "CKB" });
+    expect(empty.balance).toBe("0");
+    expect(empty.creditCount).toBe(0);
+    expect(empty.firstEntryAt).toBeNull();
+  });
+
   it("rejects non-positive ledger writes", async () => {
     await expect(
       repo.creditOnce({

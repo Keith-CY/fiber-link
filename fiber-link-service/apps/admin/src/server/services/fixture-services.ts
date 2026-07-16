@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { reconcileLedger } from "@fiber-link/db";
 import {
   type DashboardApp,
   type DashboardBackupBundle,
@@ -14,14 +15,18 @@ import { buildDashboardRateLimitChangeSet, parseDashboardRateLimitInput } from "
 import { PolicyScopeError, SettlementNotFoundError, SettlementRetryStateError, UnknownAppError } from "./errors";
 import {
   type AdminAuditEventInput,
+  type AdminLedgerEntry,
   type AdminScope,
   type AdminServices,
   type AdminSettlementEvent,
   type AdminSettlementIntent,
   type AdminWithdrawal,
   type AdminWithdrawalFilters,
+  LEDGER_PAGE_DEFAULT_LIMIT,
+  LEDGER_PAGE_MAX_LIMIT,
   SETTLEMENT_LIST_LIMIT,
   WITHDRAWAL_LIST_LIMIT,
+  encodeLedgerCursor,
 } from "./types";
 
 /**
@@ -38,11 +43,16 @@ export type DashboardFixtureSettlement = Partial<AdminSettlementIntent> &
     events?: Array<Partial<AdminSettlementEvent> & Pick<AdminSettlementEvent, "type">>;
   };
 
+/** Ledger fixture rows only need the accounting identity; timestamps default. */
+export type DashboardFixtureLedgerEntry = Partial<AdminLedgerEntry> &
+  Pick<AdminLedgerEntry, "id" | "appId" | "userId" | "amount" | "type" | "refId">;
+
 export type DashboardFixture = {
   apps: DashboardApp[];
   withdrawals: Array<DashboardWithdrawal & Partial<AdminWithdrawal>>;
   policies: DashboardWithdrawalPolicy[];
   settlements?: DashboardFixtureSettlement[];
+  ledgerEntries?: DashboardFixtureLedgerEntry[];
   communityAdminAppIds?: string[];
   monitoringSummary?: DashboardMonitoringSummary;
   rateLimitConfig?: DashboardRateLimitConfig;
@@ -106,6 +116,20 @@ function toFixtureSettlement(row: DashboardFixtureSettlement): {
   };
 }
 
+function toFixtureLedgerEntry(row: DashboardFixtureLedgerEntry): AdminLedgerEntry {
+  return {
+    id: row.id,
+    appId: row.appId,
+    userId: row.userId,
+    asset: row.asset ?? "CKB",
+    amount: row.amount,
+    type: row.type,
+    refId: row.refId,
+    idempotencyKey: row.idempotencyKey ?? `fixture:${row.type}:${row.refId}`,
+    createdAt: row.createdAt ?? "2026-03-18T00:00:00.000Z",
+  };
+}
+
 function buildDefaultMonitoringSummary(): DashboardMonitoringSummary {
   return {
     status: "ok",
@@ -137,6 +161,7 @@ export function createFixtureAdminServices(fixture: DashboardFixture): AdminServ
     withdrawals: fixture.withdrawals.map(toAdminWithdrawal),
     policies: new Map(fixture.policies.map((policy) => [policy.appId, { ...policy }])),
     settlements: (fixture.settlements ?? []).map(toFixtureSettlement),
+    ledgerEntries: (fixture.ledgerEntries ?? []).map(toFixtureLedgerEntry),
     monitoringSummary: fixture.monitoringSummary ? { ...fixture.monitoringSummary } : buildDefaultMonitoringSummary(),
     rateLimitConfig: fixture.rateLimitConfig ? { ...fixture.rateLimitConfig } : buildDefaultRateLimitConfig(),
     backupBundles: (fixture.backupBundles ?? []).map((bundle) => ({ ...bundle })),
@@ -257,6 +282,101 @@ export function createFixtureAdminServices(fixture: DashboardFixture): AdminServ
       row.intent.settlementFailureReason = null;
       row.intent.settlementLastCheckedAt = new Date().toISOString();
       return { ...row.intent };
+    },
+    async listLedgerEntries(scope, filters) {
+      if (!inScope(scope, filters.appId)) {
+        return { entries: [], nextCursor: null };
+      }
+      const limit = Math.min(Math.max(filters.limit ?? LEDGER_PAGE_DEFAULT_LIMIT, 1), LEDGER_PAGE_MAX_LIMIT);
+      let items = snapshot.ledgerEntries.filter((row) => row.appId === filters.appId);
+      if (filters.userId) {
+        items = items.filter((row) => row.userId === filters.userId);
+      }
+      if (filters.asset) {
+        items = items.filter((row) => row.asset === filters.asset);
+      }
+      if (filters.type) {
+        items = items.filter((row) => row.type === filters.type);
+      }
+      items = items.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
+      const after = filters.after;
+      if (after) {
+        items = items.filter(
+          (row) => row.createdAt < after.createdAt || (row.createdAt === after.createdAt && row.id < after.id),
+        );
+      }
+      const page = items.slice(0, limit);
+      const last = page[page.length - 1];
+      return {
+        entries: page.map((row) => ({ ...row })),
+        nextCursor:
+          items.length > limit && last ? encodeLedgerCursor({ createdAt: last.createdAt, id: last.id }) : null,
+      };
+    },
+    async getLedgerBalanceBreakdown(scope, params) {
+      const relevant = inScope(scope, params.appId)
+        ? snapshot.ledgerEntries.filter(
+            (row) => row.appId === params.appId && row.userId === params.userId && row.asset === params.asset,
+          )
+        : [];
+      const credits = relevant.filter((row) => row.type === "credit");
+      const debits = relevant.filter((row) => row.type === "debit");
+      const total = (rows: AdminLedgerEntry[]) => rows.reduce((acc, row) => acc + Number(row.amount), 0);
+      const timestamps = relevant.map((row) => row.createdAt).sort();
+      return {
+        appId: params.appId,
+        userId: params.userId,
+        asset: params.asset,
+        balance: String(total(credits) - total(debits)),
+        creditTotal: String(total(credits)),
+        debitTotal: String(total(debits)),
+        creditCount: credits.length,
+        debitCount: debits.length,
+        firstEntryAt: timestamps[0] ?? null,
+        lastEntryAt: timestamps[timestamps.length - 1] ?? null,
+      };
+    },
+    async reconcileLedger(scope, params) {
+      const now = new Date();
+      const window = {
+        from: params.from ?? new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString(),
+        to: params.to ?? now.toISOString(),
+      };
+      const appMatches = (appId: string) => inScope(scope, appId) && (params.appId ? appId === params.appId : true);
+      const report = reconcileLedger({
+        tipIntents: snapshot.settlements
+          .filter((row) => appMatches(row.intent.appId))
+          .map((row) => ({
+            id: row.intent.id,
+            appId: row.intent.appId,
+            toUserId: row.intent.toUserId,
+            asset: row.intent.asset,
+            amount: row.intent.amount,
+            invoiceState: row.intent.invoiceState,
+          })),
+        withdrawals: snapshot.withdrawals
+          .filter((row) => appMatches(row.appId))
+          .map((row) => ({
+            id: row.id,
+            appId: row.appId,
+            userId: row.userId,
+            asset: row.asset,
+            amount: row.amount,
+            state: row.state,
+          })),
+        entries: snapshot.ledgerEntries
+          .filter((row) => appMatches(row.appId))
+          .map((row) => ({
+            id: row.id,
+            appId: row.appId,
+            userId: row.userId,
+            asset: row.asset,
+            amount: row.amount,
+            type: row.type,
+            refId: row.refId,
+          })),
+      });
+      return { ...report, window, truncated: false };
     },
     async loadMonitoringSummary() {
       return { ...snapshot.monitoringSummary };
