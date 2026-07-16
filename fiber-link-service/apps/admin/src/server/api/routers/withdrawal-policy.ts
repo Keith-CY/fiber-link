@@ -1,7 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { type WithdrawalPolicyInput, parseWithdrawalPolicyInput } from "../../../withdrawal-policy-input";
 import { PolicyScopeError, UnknownAppError } from "../../services/errors";
-import { adminProcedure, router } from "../trpc";
+import { adminProcedure, recordAuditEvent, router } from "../trpc";
 
 function parsePolicyInput(input: unknown): WithdrawalPolicyInput {
   try {
@@ -21,7 +21,14 @@ export const withdrawalPolicyRouter = router({
 
   upsert: adminProcedure.input(parsePolicyInput).mutation(async ({ ctx, input }) => {
     try {
-      return await ctx.services.upsertPolicy(ctx.scope, input);
+      const policy = await ctx.services.upsertPolicy(ctx.scope, input);
+      await recordAuditEvent(ctx, ctx.scope, {
+        action: "withdrawal_policy.upsert",
+        targetType: "withdrawal_policy",
+        targetId: input.appId,
+        after: input as unknown as Record<string, unknown>,
+      });
+      return policy;
     } catch (error) {
       if (error instanceof PolicyScopeError) {
         throw new TRPCError({ code: "FORBIDDEN", message: error.message });

@@ -1,6 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import type { DashboardRateLimitDraft } from "../../dashboard-rate-limit";
-import { router, superAdminProcedure } from "../trpc";
+import { recordAuditEvent, router, superAdminProcedure } from "../trpc";
 
 function parseRateLimitDraft(input: unknown): DashboardRateLimitDraft {
   if (typeof input !== "object" || input === null) {
@@ -41,7 +41,14 @@ export const opsRouter = router({
 
   createRateLimitChangeSet: superAdminProcedure.input(parseRateLimitDraft).mutation(async ({ ctx, input }) => {
     try {
-      return await ctx.services.createRateLimitChangeSet(input);
+      const changeSet = await ctx.services.createRateLimitChangeSet(input);
+      await recordAuditEvent(ctx, ctx.scope, {
+        action: "rate_limit.change_set.create",
+        targetType: "rate_limit_config",
+        targetId: "global",
+        after: input as Record<string, unknown>,
+      });
+      return changeSet;
     } catch (error) {
       throw new TRPCError({
         code: "BAD_REQUEST",
@@ -56,7 +63,13 @@ export const opsRouter = router({
 
   captureBackup: superAdminProcedure.mutation(async ({ ctx }) => {
     try {
-      return await ctx.services.captureBackup();
+      const result = await ctx.services.captureBackup();
+      await recordAuditEvent(ctx, ctx.scope, {
+        action: "backup.capture",
+        targetType: "backup_bundle",
+        targetId: (result as { backupId?: string }).backupId ?? "unknown",
+      });
+      return result;
     } catch (error) {
       throw toServiceError(error, "Failed to capture backup");
     }
@@ -64,7 +77,13 @@ export const opsRouter = router({
 
   restorePlan: superAdminProcedure.input(parseBackupId).mutation(async ({ ctx, input }) => {
     try {
-      return await ctx.services.buildBackupRestorePlan(input.backupId);
+      const plan = await ctx.services.buildBackupRestorePlan(input.backupId);
+      await recordAuditEvent(ctx, ctx.scope, {
+        action: "backup.restore_plan.build",
+        targetType: "backup_bundle",
+        targetId: input.backupId,
+      });
+      return plan;
     } catch (error) {
       throw toServiceError(error, "Failed to generate restore plan");
     }

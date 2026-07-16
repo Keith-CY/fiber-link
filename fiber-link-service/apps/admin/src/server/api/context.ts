@@ -49,7 +49,12 @@ export function createTrpcContext(opts: CreateNextContextOptions): TrpcContext {
   if (proxySharedSecret) {
     const proxyToken = readHeader(opts.req, "x-admin-proxy-token")?.trim() ?? "";
     if (!timingSafeEquals(proxyToken, proxySharedSecret)) {
-      return { role: undefined, adminUserId: undefined, services: createAdminServices(env) };
+      return {
+        role: undefined,
+        adminUserId: undefined,
+        requestId: crypto.randomUUID(),
+        services: createAdminServices(env),
+      };
     }
   } else if (env.NODE_ENV === "production" && !warnedMissingProxySecret) {
     warnedMissingProxySecret = true;
@@ -70,6 +75,7 @@ export function createTrpcContext(opts: CreateNextContextOptions): TrpcContext {
   return {
     role,
     adminUserId,
+    requestId: crypto.randomUUID(),
     services: createAdminServices(env),
   };
 }

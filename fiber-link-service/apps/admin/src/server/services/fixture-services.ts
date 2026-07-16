@@ -13,6 +13,7 @@ import { buildDashboardBackupRestorePlan } from "../dashboard-backups";
 import { buildDashboardRateLimitChangeSet, parseDashboardRateLimitInput } from "../dashboard-rate-limit";
 import { PolicyScopeError, UnknownAppError } from "./errors";
 import {
+  type AdminAuditEventInput,
   type AdminScope,
   type AdminServices,
   type AdminWithdrawal,
@@ -80,6 +81,8 @@ function buildDefaultRateLimitConfig(): DashboardRateLimitConfig {
 }
 
 export function createFixtureAdminServices(fixture: DashboardFixture): AdminServices {
+  const auditEvents: AdminAuditEventInput[] = [];
+
   const snapshot = {
     apps: fixture.apps.map((app) => ({ ...app })),
     withdrawals: fixture.withdrawals.map(toAdminWithdrawal),
@@ -96,6 +99,13 @@ export function createFixtureAdminServices(fixture: DashboardFixture): AdminServ
   }
 
   return {
+    async appendAuditEvent(event) {
+      auditEvents.push({ ...event });
+    },
+    __listAuditEventsForTests() {
+      return auditEvents.map((e) => ({ ...e }));
+    },
+
     async listApps(scope) {
       return snapshot.apps
         .filter((app) => inScope(scope, app.appId))

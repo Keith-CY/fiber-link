@@ -8,6 +8,8 @@ export type TrpcContext = {
   // (or the development env fallbacks). Undefined when no role was supplied.
   role?: UserRole;
   adminUserId?: string;
+  /** Correlates every audit event written during one tRPC request. */
+  requestId?: string;
   services: AdminServices;
 };
 
@@ -40,3 +42,33 @@ export const superAdminProcedure = t.procedure.use(({ ctx, next }) => {
   const scope: AdminScope = { role, adminUserId: ctx.adminUserId };
   return next({ ctx: { scope } });
 });
+
+/**
+ * Record a durable audit event for an admin mutation. Uses the resolved
+ * scope so the actor/role can never disagree with the authorization that
+ * admitted the mutation. Never throws (the services impl logs failures).
+ */
+export async function recordAuditEvent(
+  ctx: TrpcContext,
+  scope: AdminScope,
+  event: {
+    action: string;
+    targetType: string;
+    targetId: string;
+    reason?: string | null;
+    before?: Record<string, unknown> | null;
+    after?: Record<string, unknown> | null;
+  },
+): Promise<void> {
+  await ctx.services.appendAuditEvent({
+    actorId: scope.adminUserId ?? "unknown",
+    actorRole: scope.role,
+    action: event.action,
+    targetType: event.targetType,
+    targetId: event.targetId,
+    requestId: ctx.requestId ?? "unknown",
+    reason: event.reason ?? null,
+    before: event.before ?? null,
+    after: event.after ?? null,
+  });
+}
