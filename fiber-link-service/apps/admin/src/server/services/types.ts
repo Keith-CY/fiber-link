@@ -16,6 +16,18 @@ import type { DashboardRateLimitChangeSet, DashboardRateLimitDraft } from "../da
  * scoped by this so COMMUNITY_ADMIN access can be narrowed to assigned apps in
  * one place (the services seam) rather than being re-derived in each router.
  */
+export type AdminAuditEventInput = {
+  actorId: string;
+  actorRole: "SUPER_ADMIN" | "COMMUNITY_ADMIN";
+  action: string;
+  targetType: string;
+  targetId: string;
+  requestId: string;
+  reason?: string | null;
+  before?: Record<string, unknown> | null;
+  after?: Record<string, unknown> | null;
+};
+
 export type AdminScope = {
   role: UserRole;
   adminUserId?: string;
@@ -62,6 +74,16 @@ export const WITHDRAWAL_LIST_LIMIT = 200;
  * acceptance harness end to end.
  */
 export interface AdminServices {
+  /**
+   * Append a durable audit event for an admin mutation. Implementations must
+   * never throw into the caller: auditing is recorded best-effort with an
+   * error log, so a broken audit sink cannot take admin operations down —
+   * but every mutation path MUST call it.
+   */
+  appendAuditEvent(event: AdminAuditEventInput): Promise<void>;
+  /** Test hook exposed by the fixture implementation only. */
+  __listAuditEventsForTests?: () => AdminAuditEventInput[];
+
   listApps(scope: AdminScope): Promise<DashboardApp[]>;
   /** Newest first, capped at {@link WITHDRAWAL_LIST_LIMIT} rows. */
   listWithdrawals(scope: AdminScope, filters?: AdminWithdrawalFilters): Promise<AdminWithdrawal[]>;

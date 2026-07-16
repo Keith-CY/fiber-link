@@ -124,3 +124,60 @@ describe("admin tRPC routers", () => {
     ).rejects.toBeInstanceOf(TRPCError);
   });
 });
+
+describe("admin mutation audit trail (#468)", () => {
+  it("writes an audit event for withdrawal policy upserts with the resolved actor", async () => {
+    const services = createFixtureAdminServices(fixture());
+    const ctx: TrpcContext = { role: "SUPER_ADMIN", adminUserId: "ops-user", requestId: "req-123", services };
+    const caller = createCaller(ctx);
+
+    await caller.withdrawalPolicy.upsert({
+      appId: "app-alpha",
+      allowedAssets: ["CKB"],
+      maxPerRequest: "100",
+      perUserDailyMax: "500",
+      perAppDailyMax: "5000",
+      cooldownSeconds: 60,
+    });
+
+    const events = services.__listAuditEventsForTests?.() ?? [];
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      action: "withdrawal_policy.upsert",
+      targetType: "withdrawal_policy",
+      targetId: "app-alpha",
+      actorId: "ops-user",
+      actorRole: "SUPER_ADMIN",
+      requestId: "req-123",
+    });
+    expect(events[0].after).toMatchObject({ appId: "app-alpha", cooldownSeconds: 60 });
+  });
+
+  it("writes audit events for ops mutations", async () => {
+    const services = createFixtureAdminServices(fixture());
+    const ctx: TrpcContext = { role: "SUPER_ADMIN", adminUserId: "ops-user", requestId: "req-ops", services };
+    const caller = createCaller(ctx);
+
+    await caller.ops.createRateLimitChangeSet({
+      enabled: true,
+      windowMs: "60000",
+      maxRequests: "100",
+    });
+
+    const actions = (services.__listAuditEventsForTests?.() ?? []).map((e) => e.action);
+    expect(actions).toContain("rate_limit.change_set.create");
+  });
+
+  it("does not audit denied mutations", async () => {
+    const services = createFixtureAdminServices(fixture());
+    const ctx: TrpcContext = { role: undefined, adminUserId: undefined, services };
+    const caller = createCaller(ctx);
+
+    await expect(
+      caller.ops.createRateLimitChangeSet({ enabled: true, windowMs: "60000", maxRequests: "100" }),
+    ).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+    expect(services.__listAuditEventsForTests?.() ?? []).toHaveLength(0);
+  });
+});

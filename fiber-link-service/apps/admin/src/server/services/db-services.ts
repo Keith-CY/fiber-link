@@ -1,4 +1,11 @@
-import { type DbClient, type WithdrawalState, createDbClient, withdrawalPolicies, withdrawals } from "@fiber-link/db";
+import {
+  type DbClient,
+  type WithdrawalState,
+  createDbAdminAuditRepo,
+  createDbClient,
+  withdrawalPolicies,
+  withdrawals,
+} from "@fiber-link/db";
 import { inArray, sql } from "drizzle-orm";
 import {
   type DashboardApp,
@@ -92,7 +99,16 @@ async function resolveScopedAppIds(db: DbClient, scope: AdminScope): Promise<"AL
 }
 
 export function createDbAdminServices(db: DbClient = createDbClient()): AdminServices {
+  const auditRepo = createDbAdminAuditRepo(db);
   return {
+    async appendAuditEvent(event) {
+      try {
+        await auditRepo.append(event);
+      } catch (error) {
+        console.error("[admin] failed to append audit event", { action: event.action, error });
+      }
+    },
+
     async listApps(scope): Promise<DashboardApp[]> {
       const scoped = await resolveScopedAppIds(db, scope);
       if (scoped !== "ALL" && scoped.length === 0) {
