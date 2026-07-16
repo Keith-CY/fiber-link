@@ -15,3 +15,23 @@ export class UnknownAppError extends Error {
     this.name = "UnknownAppError";
   }
 }
+
+/**
+ * Unknown invoice, or an invoice outside the caller's app scope. Both cases
+ * intentionally collapse into "not found" so a scoped admin cannot probe for
+ * the existence of other communities' invoices.
+ */
+export class SettlementNotFoundError extends Error {
+  constructor(public readonly invoice: string) {
+    super(`unknown settlement invoice: ${invoice}`);
+    this.name = "SettlementNotFoundError";
+  }
+}
+
+/** Retry requested for an invoice that is not in a retryable (UNPAID) state. */
+export class SettlementRetryStateError extends Error {
+  constructor(public readonly invoiceState: string) {
+    super(`settlement retry is only available while the invoice is UNPAID (current state: ${invoiceState})`);
+    this.name = "SettlementRetryStateError";
+  }
+}

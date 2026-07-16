@@ -1,8 +1,12 @@
 import {
   type DbClient,
+  TipIntentNotFoundError,
+  type TipIntentRecord,
   type WithdrawalState,
   createDbAdminAuditRepo,
   createDbClient,
+  createDbTipIntentEventRepo,
+  createDbTipIntentRepo,
   withdrawalPolicies,
   withdrawals,
 } from "@fiber-link/db";
@@ -32,12 +36,15 @@ import {
   loadDashboardRateLimitConfig,
   parseDashboardRateLimitInput,
 } from "../dashboard-rate-limit";
-import { PolicyScopeError, UnknownAppError } from "./errors";
+import { PolicyScopeError, SettlementNotFoundError, SettlementRetryStateError, UnknownAppError } from "./errors";
 import {
   type AdminScope,
   type AdminServices,
+  type AdminSettlementIntent,
+  type AdminSettlementTimeline,
   type AdminWithdrawal,
   type AdminWithdrawalFilters,
+  SETTLEMENT_LIST_LIMIT,
   WITHDRAWAL_LIST_LIMIT,
 } from "./types";
 
@@ -76,6 +83,27 @@ function isoOrNull(value: Date | null | undefined): string | null {
   return value ? value.toISOString() : null;
 }
 
+function toSettlementIntent(record: TipIntentRecord): AdminSettlementIntent {
+  return {
+    id: record.id,
+    invoice: record.invoice,
+    appId: record.appId,
+    postId: record.postId,
+    fromUserId: record.fromUserId,
+    toUserId: record.toUserId,
+    asset: record.asset,
+    amount: record.amount,
+    invoiceState: record.invoiceState,
+    settlementRetryCount: record.settlementRetryCount,
+    settlementNextRetryAt: isoOrNull(record.settlementNextRetryAt),
+    settlementLastError: record.settlementLastError ?? null,
+    settlementFailureReason: record.settlementFailureReason ?? null,
+    settlementLastCheckedAt: isoOrNull(record.settlementLastCheckedAt),
+    createdAt: record.createdAt.toISOString(),
+    settledAt: isoOrNull(record.settledAt),
+  };
+}
+
 /**
  * Resolve the set of app ids the scope may read. Returns `"ALL"` for
  * SUPER_ADMIN, the assigned app ids for COMMUNITY_ADMIN, or an empty array
@@ -100,6 +128,27 @@ async function resolveScopedAppIds(db: DbClient, scope: AdminScope): Promise<"AL
 
 export function createDbAdminServices(db: DbClient = createDbClient()): AdminServices {
   const auditRepo = createDbAdminAuditRepo(db);
+  const tipIntentRepo = createDbTipIntentRepo(db);
+  const tipIntentEventRepo = createDbTipIntentEventRepo(db);
+
+  /** Resolve an in-scope tip intent or collapse to "not found" (no probing). */
+  async function findScopedTipIntent(scope: AdminScope, invoice: string): Promise<TipIntentRecord> {
+    const scoped = await resolveScopedAppIds(db, scope);
+    let record: TipIntentRecord;
+    try {
+      record = await tipIntentRepo.findByInvoiceOrThrow(invoice);
+    } catch (error) {
+      if (error instanceof TipIntentNotFoundError) {
+        throw new SettlementNotFoundError(invoice);
+      }
+      throw error;
+    }
+    if (scoped !== "ALL" && !scoped.includes(record.appId)) {
+      throw new SettlementNotFoundError(invoice);
+    }
+    return record;
+  }
+
   return {
     async appendAuditEvent(event) {
       try {
@@ -264,6 +313,97 @@ export function createDbAdminServices(db: DbClient = createDbClient()): AdminSer
         createdAt: row.createdAt.toISOString(),
         updatedAt: row.updatedAt.toISOString(),
       };
+    },
+
+    async listSettlements(scope, filters): Promise<AdminSettlementIntent[]> {
+      const scoped = await resolveScopedAppIds(db, scope);
+      if (scoped !== "ALL" && scoped.length === 0) {
+        return [];
+      }
+
+      const rows = await db.query.tipIntents.findMany({
+        orderBy: (t, { desc }) => [desc(t.createdAt), desc(t.id)],
+        limit: SETTLEMENT_LIST_LIMIT,
+        where: (t, { and, eq, inArray }) => {
+          const clauses = [];
+          if (scoped !== "ALL") {
+            clauses.push(inArray(t.appId, scoped));
+          }
+          if (filters?.appId) {
+            clauses.push(eq(t.appId, filters.appId));
+          }
+          if (filters?.state) {
+            clauses.push(eq(t.invoiceState, filters.state));
+          }
+          return clauses.length > 0 ? and(...clauses) : undefined;
+        },
+      });
+
+      const redactPii = scope.role === "COMMUNITY_ADMIN";
+      return rows.map((row) => ({
+        id: row.id,
+        invoice: row.invoice,
+        appId: row.appId,
+        postId: row.postId,
+        fromUserId: redactPii ? "" : row.fromUserId,
+        toUserId: redactPii ? "" : row.toUserId,
+        asset: row.asset,
+        amount: typeof row.amount === "string" ? row.amount : String(row.amount),
+        invoiceState: row.invoiceState,
+        settlementRetryCount: row.settlementRetryCount ?? 0,
+        settlementNextRetryAt: isoOrNull(row.settlementNextRetryAt),
+        settlementLastError: row.settlementLastError ?? null,
+        settlementFailureReason: row.settlementFailureReason ?? null,
+        settlementLastCheckedAt: isoOrNull(row.settlementLastCheckedAt),
+        createdAt: row.createdAt.toISOString(),
+        settledAt: isoOrNull(row.settledAt),
+      }));
+    },
+
+    async getSettlementTimeline(scope, invoice): Promise<AdminSettlementTimeline> {
+      const record = await findScopedTipIntent(scope, invoice);
+      const [events, auditEvents] = await Promise.all([
+        tipIntentEventRepo.listByInvoice(invoice),
+        auditRepo.listRecentByTarget("tip_intent", invoice),
+      ]);
+
+      const intent = toSettlementIntent(record);
+      if (scope.role === "COMMUNITY_ADMIN") {
+        intent.fromUserId = "";
+        intent.toUserId = "";
+      }
+
+      return {
+        intent,
+        events: events.map((event) => ({
+          id: event.id,
+          source: event.source,
+          type: event.type,
+          previousInvoiceState: event.previousInvoiceState,
+          nextInvoiceState: event.nextInvoiceState,
+          metadata: event.metadata,
+          createdAt: event.createdAt.toISOString(),
+        })),
+        adminActions: auditEvents.map((event) => ({
+          action: event.action,
+          actorId: event.actorId,
+          actorRole: event.actorRole,
+          reason: event.reason,
+          createdAt: event.createdAt.toISOString(),
+        })),
+      };
+    },
+
+    async retrySettlementNow(scope, invoice): Promise<AdminSettlementIntent> {
+      const record = await findScopedTipIntent(scope, invoice);
+      // SETTLED and FAILED are terminal; the worker only re-polls UNPAID
+      // intents, so clearing retry state on anything else would be a silent
+      // no-op that misleads the operator.
+      if (record.invoiceState !== "UNPAID") {
+        throw new SettlementRetryStateError(record.invoiceState);
+      }
+      const updated = await tipIntentRepo.clearSettlementFailure(invoice, { now: new Date() });
+      return toSettlementIntent(updated);
     },
 
     async loadMonitoringSummary(): Promise<DashboardMonitoringSummary> {
