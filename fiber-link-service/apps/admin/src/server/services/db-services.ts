@@ -1,16 +1,23 @@
 import {
   type DbClient,
+  type LedgerReconciliationEntry,
+  type LedgerReconciliationTipIntent,
+  type LedgerReconciliationWithdrawal,
   TipIntentNotFoundError,
   type TipIntentRecord,
   type WithdrawalState,
   createDbAdminAuditRepo,
   createDbClient,
+  createDbLedgerRepo,
   createDbTipIntentEventRepo,
   createDbTipIntentRepo,
+  ledgerEntries,
+  reconcileLedger,
+  tipIntents,
   withdrawalPolicies,
   withdrawals,
 } from "@fiber-link/db";
-import { inArray, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import {
   type DashboardApp,
   type DashboardBackupBundle,
@@ -38,15 +45,28 @@ import {
 } from "../dashboard-rate-limit";
 import { PolicyScopeError, SettlementNotFoundError, SettlementRetryStateError, UnknownAppError } from "./errors";
 import {
+  type AdminLedgerBalanceBreakdown,
+  type AdminLedgerFilters,
+  type AdminLedgerPage,
+  type AdminLedgerReconcileParams,
+  type AdminLedgerReconciliationResult,
   type AdminScope,
   type AdminServices,
   type AdminSettlementIntent,
   type AdminSettlementTimeline,
   type AdminWithdrawal,
   type AdminWithdrawalFilters,
+  LEDGER_PAGE_DEFAULT_LIMIT,
+  LEDGER_PAGE_MAX_LIMIT,
   SETTLEMENT_LIST_LIMIT,
   WITHDRAWAL_LIST_LIMIT,
+  encodeLedgerCursor,
 } from "./types";
+
+/** Per-source row cap for one reconciliation pass; the report flags truncation. */
+const RECONCILE_MAX_ROWS = 2000;
+/** Default reconciliation window when `from` is omitted. */
+const RECONCILE_DEFAULT_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 
 const APP_COLUMNS = { appId: true, createdAt: true } as const;
 
@@ -130,6 +150,7 @@ export function createDbAdminServices(db: DbClient = createDbClient()): AdminSer
   const auditRepo = createDbAdminAuditRepo(db);
   const tipIntentRepo = createDbTipIntentRepo(db);
   const tipIntentEventRepo = createDbTipIntentEventRepo(db);
+  const ledgerRepo = createDbLedgerRepo(db);
 
   /** Resolve an in-scope tip intent or collapse to "not found" (no probing). */
   async function findScopedTipIntent(scope: AdminScope, invoice: string): Promise<TipIntentRecord> {
@@ -404,6 +425,243 @@ export function createDbAdminServices(db: DbClient = createDbClient()): AdminSer
       }
       const updated = await tipIntentRepo.clearSettlementFailure(invoice, { now: new Date() });
       return toSettlementIntent(updated);
+    },
+
+    async listLedgerEntries(scope, filters: AdminLedgerFilters): Promise<AdminLedgerPage> {
+      const scoped = await resolveScopedAppIds(db, scope);
+      if (scoped !== "ALL" && !scoped.includes(filters.appId)) {
+        return { entries: [], nextCursor: null };
+      }
+
+      const limit = Math.min(Math.max(filters.limit ?? LEDGER_PAGE_DEFAULT_LIMIT, 1), LEDGER_PAGE_MAX_LIMIT);
+      const rows = await ledgerRepo.listEntries({
+        appId: filters.appId,
+        userId: filters.userId,
+        asset: filters.asset,
+        type: filters.type,
+        // Fetch one extra row purely to detect whether a next page exists.
+        limit: limit + 1,
+        after: filters.after ? { createdAt: new Date(filters.after.createdAt), id: filters.after.id } : undefined,
+      });
+
+      const page = rows.slice(0, limit);
+      const last = page[page.length - 1];
+      return {
+        entries: page.map((row) => ({
+          id: row.id,
+          appId: row.appId,
+          userId: row.userId,
+          asset: row.asset,
+          amount: row.amount,
+          type: row.type,
+          refId: row.refId,
+          idempotencyKey: row.idempotencyKey,
+          createdAt: row.createdAt.toISOString(),
+        })),
+        nextCursor:
+          rows.length > limit && last
+            ? encodeLedgerCursor({ createdAt: last.createdAt.toISOString(), id: last.id })
+            : null,
+      };
+    },
+
+    async getLedgerBalanceBreakdown(scope, params): Promise<AdminLedgerBalanceBreakdown> {
+      const scoped = await resolveScopedAppIds(db, scope);
+      if (scoped !== "ALL" && !scoped.includes(params.appId)) {
+        // Out-of-scope apps read as empty accounts rather than existence oracles.
+        return {
+          appId: params.appId,
+          userId: params.userId,
+          asset: params.asset,
+          balance: "0",
+          creditTotal: "0",
+          debitTotal: "0",
+          creditCount: 0,
+          debitCount: 0,
+          firstEntryAt: null,
+          lastEntryAt: null,
+        };
+      }
+
+      const breakdown = await ledgerRepo.getBalanceBreakdown(params);
+      return {
+        ...breakdown,
+        firstEntryAt: isoOrNull(breakdown.firstEntryAt),
+        lastEntryAt: isoOrNull(breakdown.lastEntryAt),
+      };
+    },
+
+    async reconcileLedger(scope, params: AdminLedgerReconcileParams): Promise<AdminLedgerReconciliationResult> {
+      const scoped = await resolveScopedAppIds(db, scope);
+      const to = params.to ? new Date(params.to) : new Date();
+      const from = params.from ? new Date(params.from) : new Date(to.getTime() - RECONCILE_DEFAULT_WINDOW_MS);
+      const window = { from: from.toISOString(), to: to.toISOString() };
+
+      const outOfScope = scoped !== "ALL" && (params.appId ? !scoped.includes(params.appId) : scoped.length === 0);
+      if (outOfScope) {
+        // Out-of-scope apps read as an empty (clean) report rather than an
+        // existence oracle for other communities' data.
+        return {
+          ...reconcileLedger({ tipIntents: [], withdrawals: [], entries: [] }),
+          window,
+          truncated: false,
+        };
+      }
+
+      const appClauses = (column: typeof tipIntents.appId | typeof withdrawals.appId | typeof ledgerEntries.appId) => {
+        const clauses = [];
+        if (params.appId) {
+          clauses.push(eq(column, params.appId));
+        } else if (scoped !== "ALL") {
+          clauses.push(inArray(column, scoped));
+        }
+        return clauses;
+      };
+
+      const [tipRows, withdrawalRows, entryRowsInWindow] = await Promise.all([
+        db
+          .select({
+            id: tipIntents.id,
+            appId: tipIntents.appId,
+            toUserId: tipIntents.toUserId,
+            asset: tipIntents.asset,
+            amount: tipIntents.amount,
+            invoiceState: tipIntents.invoiceState,
+          })
+          .from(tipIntents)
+          .where(and(gte(tipIntents.createdAt, from), lte(tipIntents.createdAt, to), ...appClauses(tipIntents.appId)))
+          .limit(RECONCILE_MAX_ROWS),
+        db
+          .select({
+            id: withdrawals.id,
+            appId: withdrawals.appId,
+            userId: withdrawals.userId,
+            asset: withdrawals.asset,
+            amount: withdrawals.amount,
+            state: withdrawals.state,
+          })
+          .from(withdrawals)
+          .where(
+            and(gte(withdrawals.createdAt, from), lte(withdrawals.createdAt, to), ...appClauses(withdrawals.appId)),
+          )
+          .limit(RECONCILE_MAX_ROWS),
+        db
+          .select()
+          .from(ledgerEntries)
+          .where(
+            and(
+              gte(ledgerEntries.createdAt, from),
+              lte(ledgerEntries.createdAt, to),
+              ...appClauses(ledgerEntries.appId),
+            ),
+          )
+          .limit(RECONCILE_MAX_ROWS),
+      ]);
+
+      // Ledger writes can land slightly outside the window that produced the
+      // tip/withdrawal row (and vice versa), so pull the rows referenced by
+      // what we already have before classifying. Otherwise boundary rows show
+      // up as false "missing credit"/"unknown reference" anomalies.
+      const knownRefIds = [...tipRows.map((row) => row.id), ...withdrawalRows.map((row) => row.id)];
+      const extraEntryRows =
+        knownRefIds.length > 0
+          ? await db
+              .select()
+              .from(ledgerEntries)
+              .where(inArray(ledgerEntries.refId, knownRefIds))
+              .limit(RECONCILE_MAX_ROWS)
+          : [];
+
+      const entryById = new Map(
+        [...entryRowsInWindow, ...extraEntryRows].map((row) => [
+          row.id,
+          {
+            id: row.id,
+            appId: row.appId,
+            userId: row.userId,
+            asset: row.asset,
+            amount: typeof row.amount === "string" ? row.amount : String(row.amount),
+            type: row.type,
+            refId: row.refId,
+          } satisfies LedgerReconciliationEntry,
+        ]),
+      );
+      const entries = Array.from(entryById.values());
+
+      const tipIds = new Set(tipRows.map((row) => row.id));
+      const withdrawalIds = new Set(withdrawalRows.map((row) => row.id));
+      const creditRefIds = entries
+        .filter((entry) => entry.type === "credit" && !tipIds.has(entry.refId))
+        .map((entry) => entry.refId);
+      const debitRefIds = entries
+        .filter((entry) => entry.type === "debit" && !withdrawalIds.has(entry.refId))
+        .map((entry) => entry.refId);
+
+      const [extraTipRows, extraWithdrawalRows] = await Promise.all([
+        creditRefIds.length > 0
+          ? db
+              .select({
+                id: tipIntents.id,
+                appId: tipIntents.appId,
+                toUserId: tipIntents.toUserId,
+                asset: tipIntents.asset,
+                amount: tipIntents.amount,
+                invoiceState: tipIntents.invoiceState,
+              })
+              .from(tipIntents)
+              .where(inArray(tipIntents.id, creditRefIds))
+              .limit(RECONCILE_MAX_ROWS)
+          : Promise.resolve([]),
+        debitRefIds.length > 0
+          ? db
+              .select({
+                id: withdrawals.id,
+                appId: withdrawals.appId,
+                userId: withdrawals.userId,
+                asset: withdrawals.asset,
+                amount: withdrawals.amount,
+                state: withdrawals.state,
+              })
+              .from(withdrawals)
+              .where(inArray(withdrawals.id, debitRefIds))
+              .limit(RECONCILE_MAX_ROWS)
+          : Promise.resolve([]),
+      ]);
+
+      const toTip = (row: (typeof tipRows)[number]): LedgerReconciliationTipIntent => ({
+        id: row.id,
+        appId: row.appId,
+        toUserId: row.toUserId,
+        asset: row.asset,
+        amount: typeof row.amount === "string" ? row.amount : String(row.amount),
+        invoiceState: row.invoiceState,
+      });
+      const toWithdrawal = (row: (typeof withdrawalRows)[number]): LedgerReconciliationWithdrawal => ({
+        id: row.id,
+        appId: row.appId,
+        userId: row.userId,
+        asset: row.asset,
+        amount: typeof row.amount === "string" ? row.amount : String(row.amount),
+        state: row.state,
+      });
+
+      const report = reconcileLedger({
+        tipIntents: [...tipRows, ...extraTipRows].map(toTip),
+        withdrawals: [...withdrawalRows, ...extraWithdrawalRows].map(toWithdrawal),
+        entries,
+      });
+
+      const truncated =
+        tipRows.length >= RECONCILE_MAX_ROWS ||
+        withdrawalRows.length >= RECONCILE_MAX_ROWS ||
+        entryRowsInWindow.length >= RECONCILE_MAX_ROWS ||
+        extraEntryRows.length >= RECONCILE_MAX_ROWS;
+
+      return {
+        ...report,
+        window,
+        truncated,
+      };
     },
 
     async loadMonitoringSummary(): Promise<DashboardMonitoringSummary> {

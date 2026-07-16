@@ -7,6 +7,7 @@ export * from "./liquidity-request-repo";
 export * from "./tip-intent-repo";
 export * from "./tip-intent-event-repo";
 export * from "./ledger-repo";
+export * from "./ledger-reconciliation";
 export * from "./amount";
 export * from "./retry";
 export * from "./analytics-repo";
