@@ -127,6 +127,60 @@ RSpec.describe ::FiberLink::RpcController, type: :request do
       }
     end
 
+    it "server-enforces dashboard.analytics params and enriches tipper usernames" do
+      sign_in(user)
+
+      tipper = Fabricate(:user, username: "top_tipper")
+
+      stub_request(:post, "https://fiber-link.example/rpc").to_return(
+        status: 200,
+        body: {
+          jsonrpc: "2.0",
+          id: "analytics-req",
+          result: {
+            range: "7d",
+            timeSeries: [{ date: "2026-07-14", amount: "30" }],
+            topPosts: [
+              { postId: "11", topicId: "7", totalAmount: "30", tipCount: 2 },
+              { postId: "12", topicId: nil, totalAmount: "5", tipCount: 1 },
+            ],
+            topTippers: [
+              { userId: tipper.id.to_s, totalAmount: "30", tipCount: 2 },
+              { userId: "999999", totalAmount: "5", tipCount: 1 },
+            ],
+            withdrawalHistory: [],
+            generatedAt: "2026-07-15T00:00:00.000Z",
+          },
+        }.to_json,
+        headers: { "Content-Type" => "application/json" },
+      )
+
+      post "/fiber-link/rpc",
+           params: {
+             jsonrpc: "2.0",
+             id: "analytics-req",
+             method: "dashboard.analytics",
+             params: {
+               userId: "spoofed-user-id",
+               range: "bogus-range",
+             },
+           },
+           as: :json
+
+      expect(response).to have_http_status(:ok)
+      payload = JSON.parse(response.body)
+      expect(payload.dig("result", "topTippers", 0, "username")).to eq("top_tipper")
+      expect(payload.dig("result", "topTippers", 1, "username")).to be_nil
+      expect(payload.dig("result", "topPosts", 0, "topicId")).to eq("7")
+
+      expect(WebMock).to have_requested(:post, "https://fiber-link.example/rpc").with { |request|
+        body = JSON.parse(request.body)
+        body.fetch("method") == "dashboard.analytics" &&
+          body.dig("params", "userId") == user.id.to_s &&
+          body.dig("params", "range") == "30d"
+      }
+    end
+
     it "rejects dashboard.summary includeAdmin for non-admin users" do
       sign_in(user)
 

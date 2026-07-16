@@ -3559,6 +3559,124 @@ body:has(.fiber-link-dashboard) .profiler-results {
   line-height: normal;
 }
 
+
+/* --- Creator analytics panel ------------------------------------------- */
+
+.fiber-link-analytics {
+  border: 1px solid var(--fl-dashboard-line);
+  border-radius: 14px;
+  padding: 1.6rem 1.8rem;
+  background: var(--fl-dashboard-bg);
+}
+
+.fiber-link-analytics__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.fiber-link-analytics__title {
+  margin: 0;
+  font-size: 1.15rem;
+  color: var(--fl-dashboard-ink);
+}
+
+.fiber-link-analytics__range {
+  font-family: var(--fl-dashboard-mono);
+  font-size: 12px;
+}
+
+.fiber-link-analytics__loading,
+.fiber-link-analytics__empty {
+  color: var(--fl-dashboard-muted);
+  font-family: var(--fl-dashboard-mono);
+  font-size: 13px;
+  margin: 8px 0;
+}
+
+.fiber-link-analytics__chart {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 1.2rem;
+}
+
+.fiber-link-analytics__bar-row {
+  display: grid;
+  grid-template-columns: 92px 1fr 80px;
+  align-items: center;
+  gap: 8px;
+}
+
+.fiber-link-analytics__bar-label {
+  font-family: var(--fl-dashboard-mono);
+  font-size: 11px;
+  color: var(--fl-dashboard-muted);
+}
+
+.fiber-link-analytics__bar-track {
+  display: block;
+  height: 12px;
+  border-radius: 6px;
+  background: var(--fl-dashboard-powder);
+  overflow: hidden;
+}
+
+.fiber-link-analytics__bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 6px;
+  background: var(--fl-dashboard-green);
+}
+
+.fiber-link-analytics__bar-value {
+  font-family: var(--fl-dashboard-mono);
+  font-size: 11px;
+  color: var(--fl-dashboard-ink);
+  text-align: right;
+}
+
+.fiber-link-analytics__tables {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1.4rem;
+}
+
+.fiber-link-analytics__table-section h4 {
+  margin: 0 0 6px;
+  font-size: 0.95rem;
+  color: var(--fl-dashboard-ink);
+}
+
+.fiber-link-analytics__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.fiber-link-analytics__table th,
+.fiber-link-analytics__table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--fl-dashboard-line);
+  text-align: left;
+}
+
+.fiber-link-analytics__table th {
+  color: var(--fl-dashboard-muted);
+  font-family: var(--fl-dashboard-mono);
+  font-weight: 500;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.fiber-link-analytics__table td:last-child,
+.fiber-link-analytics__table th:last-child {
+  text-align: right;
+}
+
 @media (max-width: 1180px) {
   .fiber-link-dashboard {
     gap: 3rem;

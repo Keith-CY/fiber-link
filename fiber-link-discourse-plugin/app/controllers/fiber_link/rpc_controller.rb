@@ -377,6 +377,8 @@ module ::FiberLink
         enrich_tip_create_result(payload)
       when "dashboard.summary"
         enrich_dashboard_summary_result(payload)
+      when "dashboard.analytics"
+        enrich_dashboard_analytics_result(payload)
       else
         payload.to_json
       end
@@ -413,6 +415,20 @@ module ::FiberLink
 
         tip["postUrl"] = post.url
         tip["postContextLabel"] = post.post_number.to_i > 1 ? "View the Reply" : "View the Post"
+      end
+      payload.to_json
+    end
+
+    def enrich_dashboard_analytics_result(payload)
+      tippers = Array(payload.dig("result", "topTippers"))
+      return payload.to_json if tippers.empty?
+
+      user_ids = tippers.filter_map { |tipper| tipper["userId"].presence }.uniq
+      usernames = User.where(id: user_ids).pluck(:id, :username).to_h.transform_keys(&:to_s)
+
+      tippers.each do |tipper|
+        username = usernames[tipper["userId"].to_s]
+        tipper["username"] = username if username.present?
       end
       payload.to_json
     end

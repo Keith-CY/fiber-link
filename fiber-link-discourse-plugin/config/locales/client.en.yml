@@ -32,7 +32,7 @@ en:
         table_post: "Post"
         table_tips: "Tips"
         table_total_ckb: "Total CKB"
-        table_user_id: "User ID"
+        table_supporter: "Supporter"
         post_link: "Post #%{id}"
         empty: "No analytics data yet for this period."
       notifications:
