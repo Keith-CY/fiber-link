@@ -45,23 +45,35 @@ import {
 } from "../dashboard-rate-limit";
 import { PolicyScopeError, SettlementNotFoundError, SettlementRetryStateError, UnknownAppError } from "./errors";
 import {
+  ADMIN_LIST_DEFAULT_LIMIT,
+  ADMIN_LIST_MAX_LIMIT,
   type AdminLedgerBalanceBreakdown,
+  type AdminLedgerCursor,
   type AdminLedgerFilters,
   type AdminLedgerPage,
   type AdminLedgerReconcileParams,
   type AdminLedgerReconciliationResult,
   type AdminScope,
   type AdminServices,
+  type AdminSettlementFilters,
   type AdminSettlementIntent,
+  type AdminSettlementPage,
   type AdminSettlementTimeline,
-  type AdminWithdrawal,
   type AdminWithdrawalFilters,
+  type AdminWithdrawalPage,
   LEDGER_PAGE_DEFAULT_LIMIT,
   LEDGER_PAGE_MAX_LIMIT,
-  SETTLEMENT_LIST_LIMIT,
-  WITHDRAWAL_LIST_LIMIT,
   encodeLedgerCursor,
 } from "./types";
+
+function clampListLimit(limit: number | undefined): number {
+  return Math.min(Math.max(limit ?? ADMIN_LIST_DEFAULT_LIMIT, 1), ADMIN_LIST_MAX_LIMIT);
+}
+
+/** Keyset "strictly older than" predicate over (createdAt, id), newest-first. */
+function keysetAfter(after: AdminLedgerCursor | undefined) {
+  return after ? { createdAt: new Date(after.createdAt), id: after.id } : undefined;
+}
 
 /** Per-source row cap for one reconciliation pass; the report flags truncation. */
 const RECONCILE_MAX_ROWS = 2000;
@@ -193,17 +205,20 @@ export function createDbAdminServices(db: DbClient = createDbClient()): AdminSer
       return rows.map((row) => ({ appId: row.appId, createdAt: row.createdAt.toISOString() }));
     },
 
-    async listWithdrawals(scope, filters?: AdminWithdrawalFilters): Promise<AdminWithdrawal[]> {
+    async listWithdrawals(scope, filters?: AdminWithdrawalFilters): Promise<AdminWithdrawalPage> {
       const scoped = await resolveScopedAppIds(db, scope);
       if (scoped !== "ALL" && scoped.length === 0) {
-        return [];
+        return { items: [], nextCursor: null };
       }
 
+      const limit = clampListLimit(filters?.limit);
+      const after = keysetAfter(filters?.after);
       const rows = await db.query.withdrawals.findMany({
         columns: WITHDRAWAL_COLUMNS,
-        orderBy: (w, { desc }) => [desc(w.createdAt)],
-        limit: WITHDRAWAL_LIST_LIMIT,
-        where: (w, { and, eq, inArray }) => {
+        orderBy: (w, { desc }) => [desc(w.createdAt), desc(w.id)],
+        // One extra row purely to detect whether a next page exists.
+        limit: limit + 1,
+        where: (w, { and, or, eq, gte, lte, lt, inArray }) => {
           const clauses = [];
           if (scoped !== "ALL") {
             clauses.push(inArray(w.appId, scoped));
@@ -214,30 +229,65 @@ export function createDbAdminServices(db: DbClient = createDbClient()): AdminSer
           if (filters?.state) {
             clauses.push(eq(w.state, filters.state));
           }
+          if (filters?.userId) {
+            clauses.push(eq(w.userId, filters.userId));
+          }
+          if (filters?.asset) {
+            clauses.push(eq(w.asset, filters.asset));
+          }
+          if (filters?.id) {
+            clauses.push(eq(w.id, filters.id));
+          }
+          if (filters?.txHash) {
+            clauses.push(eq(w.txHash, filters.txHash));
+          }
+          if (filters?.createdFrom) {
+            clauses.push(gte(w.createdAt, new Date(filters.createdFrom)));
+          }
+          if (filters?.createdTo) {
+            clauses.push(lte(w.createdAt, new Date(filters.createdTo)));
+          }
+          if (after) {
+            const keyset = or(
+              lt(w.createdAt, after.createdAt),
+              and(eq(w.createdAt, after.createdAt), lt(w.id, after.id)),
+            );
+            if (keyset) {
+              clauses.push(keyset);
+            }
+          }
           return clauses.length > 0 ? and(...clauses) : undefined;
         },
       });
 
+      const page = rows.slice(0, limit);
+      const last = page[page.length - 1];
       // COMMUNITY_ADMIN must not see end-user PII (user id or payout
       // destination); redact server-side so the restriction is enforced before
       // the data leaves the procedure, independent of which columns the UI shows.
       const redactPii = scope.role === "COMMUNITY_ADMIN";
-      return rows.map((row) => ({
-        id: row.id,
-        appId: row.appId,
-        userId: redactPii ? "" : row.userId,
-        asset: row.asset,
-        amount: row.amount,
-        toAddress: redactPii ? null : (row.toAddress ?? null),
-        state: row.state,
-        retryCount: row.retryCount ?? 0,
-        nextRetryAt: isoOrNull(row.nextRetryAt),
-        lastError: row.lastError ?? null,
-        txHash: row.txHash ?? null,
-        createdAt: row.createdAt.toISOString(),
-        updatedAt: row.updatedAt.toISOString(),
-        completedAt: isoOrNull(row.completedAt),
-      }));
+      return {
+        items: page.map((row) => ({
+          id: row.id,
+          appId: row.appId,
+          userId: redactPii ? "" : row.userId,
+          asset: row.asset,
+          amount: row.amount,
+          toAddress: redactPii ? null : (row.toAddress ?? null),
+          state: row.state,
+          retryCount: row.retryCount ?? 0,
+          nextRetryAt: isoOrNull(row.nextRetryAt),
+          lastError: row.lastError ?? null,
+          txHash: row.txHash ?? null,
+          createdAt: row.createdAt.toISOString(),
+          updatedAt: row.updatedAt.toISOString(),
+          completedAt: isoOrNull(row.completedAt),
+        })),
+        nextCursor:
+          rows.length > limit && last
+            ? encodeLedgerCursor({ createdAt: last.createdAt.toISOString(), id: last.id })
+            : null,
+      };
     },
 
     async summarizeWithdrawals(scope): Promise<DashboardStatusSummary[]> {
@@ -336,16 +386,19 @@ export function createDbAdminServices(db: DbClient = createDbClient()): AdminSer
       };
     },
 
-    async listSettlements(scope, filters): Promise<AdminSettlementIntent[]> {
+    async listSettlements(scope, filters?: AdminSettlementFilters): Promise<AdminSettlementPage> {
       const scoped = await resolveScopedAppIds(db, scope);
       if (scoped !== "ALL" && scoped.length === 0) {
-        return [];
+        return { items: [], nextCursor: null };
       }
 
+      const limit = clampListLimit(filters?.limit);
+      const after = keysetAfter(filters?.after);
       const rows = await db.query.tipIntents.findMany({
         orderBy: (t, { desc }) => [desc(t.createdAt), desc(t.id)],
-        limit: SETTLEMENT_LIST_LIMIT,
-        where: (t, { and, eq, inArray }) => {
+        // One extra row purely to detect whether a next page exists.
+        limit: limit + 1,
+        where: (t, { and, or, eq, gte, lte, lt, inArray }) => {
           const clauses = [];
           if (scoped !== "ALL") {
             clauses.push(inArray(t.appId, scoped));
@@ -356,12 +409,41 @@ export function createDbAdminServices(db: DbClient = createDbClient()): AdminSer
           if (filters?.state) {
             clauses.push(eq(t.invoiceState, filters.state));
           }
+          if (filters?.invoice) {
+            clauses.push(eq(t.invoice, filters.invoice));
+          }
+          if (filters?.asset) {
+            clauses.push(eq(t.asset, filters.asset));
+          }
+          if (filters?.userId) {
+            const either = or(eq(t.fromUserId, filters.userId), eq(t.toUserId, filters.userId));
+            if (either) {
+              clauses.push(either);
+            }
+          }
+          if (filters?.createdFrom) {
+            clauses.push(gte(t.createdAt, new Date(filters.createdFrom)));
+          }
+          if (filters?.createdTo) {
+            clauses.push(lte(t.createdAt, new Date(filters.createdTo)));
+          }
+          if (after) {
+            const keyset = or(
+              lt(t.createdAt, after.createdAt),
+              and(eq(t.createdAt, after.createdAt), lt(t.id, after.id)),
+            );
+            if (keyset) {
+              clauses.push(keyset);
+            }
+          }
           return clauses.length > 0 ? and(...clauses) : undefined;
         },
       });
 
+      const page = rows.slice(0, limit);
+      const last = page[page.length - 1];
       const redactPii = scope.role === "COMMUNITY_ADMIN";
-      return rows.map((row) => ({
+      const items = page.map((row) => ({
         id: row.id,
         invoice: row.invoice,
         appId: row.appId,
@@ -379,6 +461,13 @@ export function createDbAdminServices(db: DbClient = createDbClient()): AdminSer
         createdAt: row.createdAt.toISOString(),
         settledAt: isoOrNull(row.settledAt),
       }));
+      return {
+        items,
+        nextCursor:
+          rows.length > limit && last
+            ? encodeLedgerCursor({ createdAt: last.createdAt.toISOString(), id: last.id })
+            : null,
+      };
     },
 
     async getSettlementTimeline(scope, invoice): Promise<AdminSettlementTimeline> {
