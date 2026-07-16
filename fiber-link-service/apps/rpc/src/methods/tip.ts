@@ -324,7 +324,7 @@ export async function handleTipStatus(input: HandleTipStatusInput, options: Hand
     },
     options.log,
   );
-  return { state: tipIntent.invoiceState };
+  return { state: tipIntent.invoiceState, asset: tipIntent.asset };
 }
 
 export async function handleTipSettledFeed(

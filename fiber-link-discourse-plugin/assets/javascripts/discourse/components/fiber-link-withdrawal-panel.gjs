@@ -60,10 +60,7 @@ export default class FiberLinkWithdrawalPanel extends Component {
   }
 
   get asset() {
-    if (this.selectedAsset) {
-      return this.selectedAsset;
-    }
-    return this.args.asset === "USDI" ? "USDI" : "CKB";
+    return this.selectedAsset || this.args.asset || "CKB";
   }
 
   // Assets the creator actually holds; the selector only renders when there
@@ -82,11 +79,17 @@ export default class FiberLinkWithdrawalPanel extends Component {
     return balances.find((entry) => entry.asset === this.asset) ?? null;
   }
 
+  get isPrimaryAssetSelected() {
+    return this.asset === (this.args.asset || "CKB");
+  }
+
   get availableBalance() {
+    // The scalar args balances describe the primary asset only; never let
+    // them bleed into another asset's display while balances/quote load.
     return (
       normalizeValue(this.quote?.availableBalance) ||
       normalizeValue(this.selectedAssetBalances?.available) ||
-      normalizeValue(this.args.availableBalance) ||
+      (this.isPrimaryAssetSelected ? normalizeValue(this.args.availableBalance) : "") ||
       "0"
     );
   }
@@ -95,7 +98,7 @@ export default class FiberLinkWithdrawalPanel extends Component {
     return (
       normalizeValue(this.quote?.lockedBalance) ||
       normalizeValue(this.selectedAssetBalances?.locked) ||
-      normalizeValue(this.args.lockedBalance) ||
+      (this.isPrimaryAssetSelected ? normalizeValue(this.args.lockedBalance) : "") ||
       "0"
     );
   }
@@ -126,8 +129,8 @@ export default class FiberLinkWithdrawalPanel extends Component {
       return i18n("fiber_link.withdrawal.error_amount_numeric");
     }
 
-    if (Number(value) < MIN_WITHDRAW_AMOUNT) {
-      return i18n("fiber_link.withdrawal.error_amount_min", { min: MIN_WITHDRAW_AMOUNT });
+    if (this.minimumWithdrawalAmount > 0 && Number(value) < this.minimumWithdrawalAmount) {
+      return i18n("fiber_link.withdrawal.error_amount_min", { min: this.minimumWithdrawalAmount });
     }
 
     if (Number(value) > this.availableBalanceNumber) {
@@ -247,7 +250,13 @@ export default class FiberLinkWithdrawalPanel extends Component {
   }
 
   get minimumWithdrawalAmount() {
-    return MIN_WITHDRAW_AMOUNT;
+    const quoted = Number(this.quote?.minimumAmount);
+    if (Number.isFinite(quoted) && quoted > 0) {
+      return quoted;
+    }
+    // The 61 floor is the CKB minimal cell capacity; UDT assets have no
+    // client-side floor until the server quotes one.
+    return this.asset === "CKB" ? MIN_WITHDRAW_AMOUNT : 0;
   }
 
   get availableBalanceNumber() {
@@ -298,7 +307,7 @@ export default class FiberLinkWithdrawalPanel extends Component {
 
   @action
   onAssetChange(event) {
-    this.selectedAsset = event?.target?.value === "USDI" ? "USDI" : "CKB";
+    this.selectedAsset = event?.target?.value || "CKB";
     this.quote = null;
     this.errorMessage = null;
     this.quoteErrorMessage = null;
