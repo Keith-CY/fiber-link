@@ -2,7 +2,10 @@ import type { InvoiceState } from "@fiber-link/db";
 import { TRPCError } from "@trpc/server";
 import { SettlementNotFoundError, SettlementRetryStateError } from "../../services/errors";
 import type { AdminSettlementFilters } from "../../services/types";
+import { ADMIN_LIST_MAX_LIMIT, decodeLedgerCursor } from "../../services/types";
 import { recordAuditEvent, router, superAdminProcedure } from "../trpc";
+
+const ASSETS = new Set(["CKB", "USDI"]);
 
 const INVOICE_STATES: readonly InvoiceState[] = ["UNPAID", "SETTLED", "FAILED"];
 
@@ -21,8 +24,21 @@ function parseSettlementFilters(input: unknown): AdminSettlementFilters {
   const raw = input as Record<string, unknown>;
   const filters: AdminSettlementFilters = {};
 
-  if (typeof raw.appId === "string" && raw.appId.trim()) {
-    filters.appId = raw.appId.trim();
+  for (const key of ["appId", "userId", "invoice"] as const) {
+    const value = typeof raw[key] === "string" ? (raw[key] as string).trim() : "";
+    if (value) {
+      filters[key] = value;
+    }
+  }
+  for (const key of ["createdFrom", "createdTo"] as const) {
+    const value = typeof raw[key] === "string" ? (raw[key] as string).trim() : "";
+    if (!value) {
+      continue;
+    }
+    if (Number.isNaN(new Date(value).getTime())) {
+      throw new TRPCError({ code: "BAD_REQUEST", message: `${key} must be an ISO timestamp` });
+    }
+    filters[key] = value;
   }
   if (typeof raw.state === "string" && raw.state.trim()) {
     const state = raw.state.trim();
@@ -30,6 +46,30 @@ function parseSettlementFilters(input: unknown): AdminSettlementFilters {
       throw new TRPCError({ code: "BAD_REQUEST", message: `unknown settlement state: ${state}` });
     }
     filters.state = state as InvoiceState;
+  }
+  if (typeof raw.asset === "string" && raw.asset.trim()) {
+    const asset = raw.asset.trim();
+    if (!ASSETS.has(asset)) {
+      throw new TRPCError({ code: "BAD_REQUEST", message: `unknown asset: ${asset}` });
+    }
+    filters.asset = asset as "CKB" | "USDI";
+  }
+  if (raw.limit !== undefined) {
+    const limit = Number(raw.limit);
+    if (!Number.isInteger(limit) || limit < 1 || limit > ADMIN_LIST_MAX_LIMIT) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: `limit must be an integer in [1, ${ADMIN_LIST_MAX_LIMIT}]`,
+      });
+    }
+    filters.limit = limit;
+  }
+  if (typeof raw.cursor === "string" && raw.cursor.trim()) {
+    const after = decodeLedgerCursor(raw.cursor.trim());
+    if (!after) {
+      throw new TRPCError({ code: "BAD_REQUEST", message: "invalid cursor" });
+    }
+    filters.after = after;
   }
   return filters;
 }

@@ -95,7 +95,7 @@ describe("db admin services", () => {
   it("maps withdrawal rows and keeps userId for SUPER_ADMIN", async () => {
     const { db } = makeDb({ withdrawals: [WITHDRAWAL_ROW] });
     const services = createDbAdminServices(db);
-    const rows = await services.listWithdrawals({ role: "SUPER_ADMIN" });
+    const { items: rows } = await services.listWithdrawals({ role: "SUPER_ADMIN" });
     expect(rows[0]).toMatchObject({
       id: "w-1",
       userId: "user-1",
@@ -112,7 +112,7 @@ describe("db admin services", () => {
   it("trims userId for COMMUNITY_ADMIN withdrawals", async () => {
     const { db } = makeDb({ memberships: [{ appId: "app-alpha" }], withdrawals: [WITHDRAWAL_ROW] });
     const services = createDbAdminServices(db);
-    const rows = await services.listWithdrawals({ role: "COMMUNITY_ADMIN", adminUserId: "c" });
+    const { items: rows } = await services.listWithdrawals({ role: "COMMUNITY_ADMIN", adminUserId: "c" });
     expect(rows[0]?.userId).toBe("");
     expect(rows[0]?.toAddress).toBeNull();
   });

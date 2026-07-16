@@ -14,6 +14,8 @@ import { buildDashboardBackupRestorePlan } from "../dashboard-backups";
 import { buildDashboardRateLimitChangeSet, parseDashboardRateLimitInput } from "../dashboard-rate-limit";
 import { PolicyScopeError, SettlementNotFoundError, SettlementRetryStateError, UnknownAppError } from "./errors";
 import {
+  ADMIN_LIST_DEFAULT_LIMIT,
+  ADMIN_LIST_MAX_LIMIT,
   type AdminAuditEventInput,
   type AdminLedgerEntry,
   type AdminScope,
@@ -24,10 +26,12 @@ import {
   type AdminWithdrawalFilters,
   LEDGER_PAGE_DEFAULT_LIMIT,
   LEDGER_PAGE_MAX_LIMIT,
-  SETTLEMENT_LIST_LIMIT,
-  WITHDRAWAL_LIST_LIMIT,
   encodeLedgerCursor,
 } from "./types";
+
+function clampListLimit(limit: number | undefined): number {
+  return Math.min(Math.max(limit ?? ADMIN_LIST_DEFAULT_LIMIT, 1), ADMIN_LIST_MAX_LIMIT);
+}
 
 /**
  * On-disk fixture shape pointed at by `ADMIN_DASHBOARD_FIXTURE_PATH`. Withdrawal
@@ -189,13 +193,35 @@ export function createFixtureAdminServices(fixture: DashboardFixture): AdminServ
     },
     async listWithdrawals(scope, filters?: AdminWithdrawalFilters) {
       const redactPii = scope.role === "COMMUNITY_ADMIN";
-      return snapshot.withdrawals
+      const limit = clampListLimit(filters?.limit);
+      let items = snapshot.withdrawals
         .filter((row) => inScope(scope, row.appId))
         .filter((row) => (filters?.appId ? row.appId === filters.appId : true))
         .filter((row) => (filters?.state ? row.state === filters.state : true))
-        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-        .slice(0, WITHDRAWAL_LIST_LIMIT)
-        .map((row) => ({ ...row, userId: redactPii ? "" : row.userId, toAddress: redactPii ? null : row.toAddress }));
+        .filter((row) => (filters?.userId ? row.userId === filters.userId : true))
+        .filter((row) => (filters?.asset ? row.asset === filters.asset : true))
+        .filter((row) => (filters?.id ? row.id === filters.id : true))
+        .filter((row) => (filters?.txHash ? row.txHash === filters.txHash : true))
+        .filter((row) => (filters?.createdFrom ? row.createdAt >= filters.createdFrom : true))
+        .filter((row) => (filters?.createdTo ? row.createdAt <= filters.createdTo : true))
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
+      const after = filters?.after;
+      if (after) {
+        items = items.filter(
+          (row) => row.createdAt < after.createdAt || (row.createdAt === after.createdAt && row.id < after.id),
+        );
+      }
+      const page = items.slice(0, limit);
+      const last = page[page.length - 1];
+      return {
+        items: page.map((row) => ({
+          ...row,
+          userId: redactPii ? "" : row.userId,
+          toAddress: redactPii ? null : row.toAddress,
+        })),
+        nextCursor:
+          items.length > limit && last ? encodeLedgerCursor({ createdAt: last.createdAt, id: last.id }) : null,
+      };
     },
     async summarizeWithdrawals(scope) {
       return summarizeWithdrawalStates(snapshot.withdrawals.filter((row) => inScope(scope, row.appId)));
@@ -231,17 +257,40 @@ export function createFixtureAdminServices(fixture: DashboardFixture): AdminServ
     },
     async listSettlements(scope, filters) {
       const redactPii = scope.role === "COMMUNITY_ADMIN";
-      return snapshot.settlements
+      const limit = clampListLimit(filters?.limit);
+      let items = snapshot.settlements
         .filter((row) => inScope(scope, row.intent.appId))
         .filter((row) => (filters?.appId ? row.intent.appId === filters.appId : true))
         .filter((row) => (filters?.state ? row.intent.invoiceState === filters.state : true))
-        .sort((a, b) => b.intent.createdAt.localeCompare(a.intent.createdAt))
-        .slice(0, SETTLEMENT_LIST_LIMIT)
-        .map((row) => ({
+        .filter((row) => (filters?.invoice ? row.intent.invoice === filters.invoice : true))
+        .filter((row) => (filters?.asset ? row.intent.asset === filters.asset : true))
+        .filter((row) =>
+          filters?.userId ? row.intent.fromUserId === filters.userId || row.intent.toUserId === filters.userId : true,
+        )
+        .filter((row) => (filters?.createdFrom ? row.intent.createdAt >= filters.createdFrom : true))
+        .filter((row) => (filters?.createdTo ? row.intent.createdAt <= filters.createdTo : true))
+        .sort((a, b) => b.intent.createdAt.localeCompare(a.intent.createdAt) || b.intent.id.localeCompare(a.intent.id));
+      const after = filters?.after;
+      if (after) {
+        items = items.filter(
+          (row) =>
+            row.intent.createdAt < after.createdAt ||
+            (row.intent.createdAt === after.createdAt && row.intent.id < after.id),
+        );
+      }
+      const page = items.slice(0, limit);
+      const last = page[page.length - 1];
+      return {
+        items: page.map((row) => ({
           ...row.intent,
           fromUserId: redactPii ? "" : row.intent.fromUserId,
           toUserId: redactPii ? "" : row.intent.toUserId,
-        }));
+        })),
+        nextCursor:
+          items.length > limit && last
+            ? encodeLedgerCursor({ createdAt: last.intent.createdAt, id: last.intent.id })
+            : null,
+      };
     },
     async getSettlementTimeline(scope, invoice) {
       const row = snapshot.settlements.find((candidate) => candidate.intent.invoice === invoice);

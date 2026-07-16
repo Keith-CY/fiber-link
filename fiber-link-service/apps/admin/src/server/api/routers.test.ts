@@ -111,7 +111,8 @@ describe("admin tRPC routers", () => {
     const caller = createCaller(ctxFor("SUPER_ADMIN", "ops"));
     expect((await caller.apps.list()).map((a) => a.appId)).toEqual(["app-alpha", "app-beta"]);
     const failed = await caller.withdrawals.list({ state: "FAILED" });
-    expect(failed).toHaveLength(1);
+    expect(failed.items).toHaveLength(1);
+    expect(failed.nextCursor).toBeNull();
   });
 
   it("rejects an unknown withdrawal state filter", async () => {
@@ -181,11 +182,12 @@ describe("settlement investigation workflow (#470)", () => {
   it("lists settlements newest-first and filters by state for SUPER_ADMIN", async () => {
     const caller = createCaller(ctxFor("SUPER_ADMIN", "ops"));
     const all = await caller.settlements.list({});
-    expect(all.map((s) => s.invoice)).toEqual(["lnfib1unpaidalpha", "lnfib1settledalpha"]);
+    expect(all.items.map((s) => s.invoice)).toEqual(["lnfib1unpaidalpha", "lnfib1settledalpha"]);
+    expect(all.nextCursor).toBeNull();
 
     const settled = await caller.settlements.list({ state: "SETTLED" });
-    expect(settled).toHaveLength(1);
-    expect(settled[0].invoice).toBe("lnfib1settledalpha");
+    expect(settled.items).toHaveLength(1);
+    expect(settled.items[0].invoice).toBe("lnfib1settledalpha");
 
     await expect(caller.settlements.list({ state: "NOPE" } as never)).rejects.toMatchObject({ code: "BAD_REQUEST" });
   });
@@ -353,6 +355,61 @@ describe("ledger reconciliation and balance explanation (#471)", () => {
       createCaller(ctxFor("COMMUNITY_ADMIN", "c1")).ledger.entries({ appId: "app-alpha" }),
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(createCaller(ctxFor(undefined)).ledger.reconcile({})).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+});
+
+describe("admin list pagination and exact search (#473)", () => {
+  it("supports exact search on withdrawals by id, user id, and tx hash", async () => {
+    const caller = createCaller(ctxFor("SUPER_ADMIN", "ops"));
+
+    const byId = await caller.withdrawals.list({ id: "w-1" });
+    expect(byId.items.map((row) => row.id)).toEqual(["w-1"]);
+
+    const byUser = await caller.withdrawals.list({ userId: "u1" });
+    expect(byUser.items).toHaveLength(1);
+
+    const byTx = await caller.withdrawals.list({ txHash: "0xmissing" });
+    expect(byTx.items).toEqual([]);
+
+    await expect(caller.withdrawals.list({ asset: "DOGE" } as never)).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(caller.withdrawals.list({ cursor: "junk" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(caller.withdrawals.list({ createdFrom: "not-a-date" })).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+    });
+  });
+
+  it("pages settlements newest-first through the keyset cursor", async () => {
+    const caller = createCaller(ctxFor("SUPER_ADMIN", "ops"));
+
+    const firstPage = await caller.settlements.list({ limit: 1 });
+    expect(firstPage.items.map((row) => row.invoice)).toEqual(["lnfib1unpaidalpha"]);
+    expect(firstPage.nextCursor).not.toBeNull();
+
+    const secondPage = await caller.settlements.list({ limit: 1, cursor: firstPage.nextCursor ?? undefined });
+    expect(secondPage.items.map((row) => row.invoice)).toEqual(["lnfib1settledalpha"]);
+    expect(secondPage.nextCursor).toBeNull();
+  });
+
+  it("supports exact settlement search by invoice and user", async () => {
+    const caller = createCaller(ctxFor("SUPER_ADMIN", "ops"));
+
+    const byInvoice = await caller.settlements.list({ invoice: "lnfib1settledalpha" });
+    expect(byInvoice.items.map((row) => row.invoice)).toEqual(["lnfib1settledalpha"]);
+
+    const byUser = await caller.settlements.list({ userId: "author-1" });
+    expect(byUser.items).toHaveLength(2);
+
+    const byUnknownUser = await caller.settlements.list({ userId: "nobody" });
+    expect(byUnknownUser.items).toEqual([]);
+  });
+
+  it("keeps community-admin scoping and PII redaction on paged withdrawals", async () => {
+    const caller = createCaller(ctxFor("COMMUNITY_ADMIN", "c1"));
+    const page = await caller.withdrawals.list({ limit: 1 });
+    expect(page.items).toHaveLength(1);
+    expect(page.items[0].appId).toBe("app-alpha");
+    expect(page.items[0].userId).toBe("");
+    expect(page.items[0].toAddress).toBeNull();
   });
 });
 

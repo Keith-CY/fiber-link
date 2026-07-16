@@ -1,9 +1,12 @@
 import type { InvoiceState } from "@fiber-link/db";
 import Link from "next/link";
 import { useRouter } from "next/router";
+import { useState } from "react";
 import { PageHeader, QueryBoundary, RoleGate, StatCard } from "../../components/page";
 import { SettlementStateBadge } from "../../components/settlement-state-badge";
+import { Button } from "../../components/ui/button";
 import { Card, CardContent } from "../../components/ui/card";
+import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
 import { Select } from "../../components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../components/ui/table";
@@ -27,19 +30,37 @@ export default function SettlementsPage() {
 
   const rawState = queryValue(router.query.state);
   const stateFilter = INVOICE_STATES.includes(rawState as InvoiceState) ? (rawState as InvoiceState) : undefined;
+  const invoiceFilter = queryValue(router.query.invoice);
+  const userFilter = queryValue(router.query.user);
+  const [searchDraft, setSearchDraft] = useState({ invoice: "", user: "" });
+  const [cursor, setCursor] = useState<string | undefined>(undefined);
 
-  const settlements = trpc.settlements.list.useQuery(stateFilter ? { state: stateFilter } : {}, {
-    enabled: isSuperAdmin && router.isReady,
-  });
+  const settlements = trpc.settlements.list.useQuery(
+    {
+      ...(stateFilter ? { state: stateFilter } : {}),
+      ...(invoiceFilter ? { invoice: invoiceFilter } : {}),
+      ...(userFilter ? { userId: userFilter } : {}),
+      ...(cursor ? { cursor } : {}),
+    },
+    { enabled: isSuperAdmin && router.isReady },
+  );
+  const rows = settlements.data?.items ?? [];
+
+  function replaceQuery(mutate: (next: Record<string, string | string[] | undefined>) => void) {
+    setCursor(undefined);
+    const next = { ...router.query };
+    mutate(next);
+    router.replace({ pathname: router.pathname, query: next }, undefined, { shallow: true });
+  }
 
   function setStateFilter(value: string) {
-    const next = { ...router.query };
-    if (value) {
-      next.state = value;
-    } else {
-      delete next.state;
-    }
-    router.replace({ pathname: router.pathname, query: next }, undefined, { shallow: true });
+    replaceQuery((next) => {
+      if (value) {
+        next.state = value;
+      } else {
+        delete next.state;
+      }
+    });
   }
 
   return (
@@ -64,29 +85,92 @@ export default function SettlementsPage() {
             <StatCard label="Pipeline status" value={monitoring.data?.status ?? "—"} />
           </section>
 
-          <div className="mb-4 w-48">
-            <Label htmlFor="settlement-state-filter" className="mb-1 block text-xs text-muted-foreground">
-              State
-            </Label>
-            <Select
-              id="settlement-state-filter"
-              data-testid="settlement-state-filter"
-              value={stateFilter ?? ""}
-              onChange={(event) => setStateFilter(event.target.value)}
+          <div className="mb-4 flex flex-wrap items-end gap-3">
+            <div className="w-48">
+              <Label htmlFor="settlement-state-filter" className="mb-1 block text-xs text-muted-foreground">
+                State
+              </Label>
+              <Select
+                id="settlement-state-filter"
+                data-testid="settlement-state-filter"
+                value={stateFilter ?? ""}
+                onChange={(event) => setStateFilter(event.target.value)}
+              >
+                <option value="">All states</option>
+                {INVOICE_STATES.map((state) => (
+                  <option key={state} value={state}>
+                    {state}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <form
+              className="flex flex-wrap items-end gap-2"
+              onSubmit={(event) => {
+                event.preventDefault();
+                replaceQuery((next) => {
+                  const invoice = searchDraft.invoice.trim();
+                  const user = searchDraft.user.trim();
+                  if (invoice) {
+                    next.invoice = invoice;
+                  } else {
+                    delete next.invoice;
+                  }
+                  if (user) {
+                    next.user = user;
+                  } else {
+                    delete next.user;
+                  }
+                });
+              }}
             >
-              <option value="">All states</option>
-              {INVOICE_STATES.map((state) => (
-                <option key={state} value={state}>
-                  {state}
-                </option>
-              ))}
-            </Select>
+              <div className="w-64">
+                <Label htmlFor="settlement-search-invoice" className="mb-1 block text-xs text-muted-foreground">
+                  Invoice (exact)
+                </Label>
+                <Input
+                  id="settlement-search-invoice"
+                  data-testid="settlement-search-invoice"
+                  value={searchDraft.invoice}
+                  onChange={(event) => setSearchDraft((draft) => ({ ...draft, invoice: event.target.value }))}
+                />
+              </div>
+              <div className="w-40">
+                <Label htmlFor="settlement-search-user" className="mb-1 block text-xs text-muted-foreground">
+                  User (exact)
+                </Label>
+                <Input
+                  id="settlement-search-user"
+                  data-testid="settlement-search-user"
+                  value={searchDraft.user}
+                  onChange={(event) => setSearchDraft((draft) => ({ ...draft, user: event.target.value }))}
+                />
+              </div>
+              <Button type="submit" variant="outline" data-testid="settlement-search-submit">
+                Search
+              </Button>
+              {invoiceFilter || userFilter ? (
+                <button
+                  type="button"
+                  className="text-sm text-primary underline-offset-4 hover:underline"
+                  onClick={() => {
+                    setSearchDraft({ invoice: "", user: "" });
+                    replaceQuery((next) => {
+                      delete next.invoice;
+                      delete next.user;
+                    });
+                  }}
+                >
+                  Clear search
+                </button>
+              ) : null}
+            </form>
           </div>
 
           <QueryBoundary
             isLoading={settlements.isLoading}
             error={settlements.error}
-            isEmpty={settlements.data?.length === 0}
+            isEmpty={rows.length === 0}
             emptyMessage="No settlement intents match the current filters."
           >
             <Card>
@@ -105,7 +189,7 @@ export default function SettlementsPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {(settlements.data ?? []).map((row) => (
+                    {rows.map((row) => (
                       <TableRow key={row.id} data-testid={`settlement-row-${row.id}`}>
                         <TableCell className="font-mono text-xs" title={row.invoice}>
                           <Link
@@ -136,6 +220,16 @@ export default function SettlementsPage() {
                 </Table>
               </CardContent>
             </Card>
+            {settlements.data?.nextCursor ? (
+              <Button
+                className="mt-3"
+                variant="outline"
+                data-testid="settlement-next-page"
+                onClick={() => setCursor(settlements.data?.nextCursor ?? undefined)}
+              >
+                Next page
+              </Button>
+            ) : null}
           </QueryBoundary>
         </RoleGate>
       </QueryBoundary>

@@ -58,17 +58,26 @@ export type AdminWithdrawal = {
 export type AdminWithdrawalFilters = {
   state?: WithdrawalState;
   appId?: string;
+  userId?: string;
+  asset?: "CKB" | "USDI";
+  /** Exact withdrawal id match. */
+  id?: string;
+  /** Exact transaction hash match. */
+  txHash?: string;
+  /** ISO timestamps bounding createdAt (inclusive). */
+  createdFrom?: string;
+  createdTo?: string;
+  limit?: number;
+  /** Opaque cursor as sent over the wire; the router decodes it into `after`. */
+  cursor?: string;
+  after?: AdminLedgerCursor;
 };
 
-/**
- * Cap for `listWithdrawals`. The queue view is filter-driven; an unbounded
- * SELECT over a production withdrawals table would ship the whole table to the
- * browser on every page load.
- */
-export const WITHDRAWAL_LIST_LIMIT = 200;
-
-/** Same rationale as {@link WITHDRAWAL_LIST_LIMIT}, for the settlements queue. */
-export const SETTLEMENT_LIST_LIMIT = 200;
+export type AdminWithdrawalPage = {
+  items: AdminWithdrawal[];
+  /** Opaque keyset cursor for the next page, or null when exhausted. */
+  nextCursor: string | null;
+};
 
 /**
  * Settlement projection of a tip intent for the investigation surfaces:
@@ -122,7 +131,30 @@ export type AdminSettlementTimeline = {
 export type AdminSettlementFilters = {
   state?: InvoiceState;
   appId?: string;
+  /** Matches either the tipper or the recipient. */
+  userId?: string;
+  asset?: "CKB" | "USDI";
+  /** Exact invoice match. */
+  invoice?: string;
+  /** ISO timestamps bounding createdAt (inclusive). */
+  createdFrom?: string;
+  createdTo?: string;
+  limit?: number;
+  /** Opaque cursor as sent over the wire; the router decodes it into `after`. */
+  cursor?: string;
+  after?: AdminLedgerCursor;
 };
+
+export type AdminSettlementPage = {
+  items: AdminSettlementIntent[];
+  /** Opaque keyset cursor for the next page, or null when exhausted. */
+  nextCursor: string | null;
+};
+
+/** Default page size for the admin withdrawal/settlement queues. */
+export const ADMIN_LIST_DEFAULT_LIMIT = 50;
+/** Hard page-size cap for the admin withdrawal/settlement queues. */
+export const ADMIN_LIST_MAX_LIMIT = 100;
 
 /** Ledger statement page size bounds; +1 row is fetched internally to detect more pages. */
 export const LEDGER_PAGE_DEFAULT_LIMIT = 50;
@@ -226,8 +258,8 @@ export interface AdminServices {
   __listAuditEventsForTests?: () => AdminAuditEventInput[];
 
   listApps(scope: AdminScope): Promise<DashboardApp[]>;
-  /** Newest first, capped at {@link WITHDRAWAL_LIST_LIMIT} rows. */
-  listWithdrawals(scope: AdminScope, filters?: AdminWithdrawalFilters): Promise<AdminWithdrawal[]>;
+  /** Newest first with keyset pagination; page size capped at {@link ADMIN_LIST_MAX_LIMIT}. */
+  listWithdrawals(scope: AdminScope, filters?: AdminWithdrawalFilters): Promise<AdminWithdrawalPage>;
   /**
    * Per-state withdrawal counts over the WHOLE scope (not the capped list),
    * zero-filled in canonical state order.
@@ -236,8 +268,8 @@ export interface AdminServices {
   listPolicies(scope: AdminScope): Promise<DashboardWithdrawalPolicy[]>;
   upsertPolicy(scope: AdminScope, input: WithdrawalPolicyInput): Promise<DashboardWithdrawalPolicy>;
 
-  /** Newest first, capped at {@link SETTLEMENT_LIST_LIMIT} rows. */
-  listSettlements(scope: AdminScope, filters?: AdminSettlementFilters): Promise<AdminSettlementIntent[]>;
+  /** Newest first with keyset pagination; page size capped at {@link ADMIN_LIST_MAX_LIMIT}. */
+  listSettlements(scope: AdminScope, filters?: AdminSettlementFilters): Promise<AdminSettlementPage>;
   /**
    * Full investigation view for one invoice: current intent state, the
    * `tip_intent_events` lifecycle timeline, and prior admin actions (retries,

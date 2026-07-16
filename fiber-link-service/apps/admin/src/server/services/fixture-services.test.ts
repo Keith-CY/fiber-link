@@ -62,9 +62,9 @@ describe("fixture admin services", () => {
   it("filters withdrawals by state and app", async () => {
     const services = createFixtureAdminServices(buildFixture());
     const failed = await services.listWithdrawals(SUPER, { state: "FAILED" });
-    expect(failed.map((w) => w.id)).toEqual(["w-1"]);
+    expect(failed.items.map((w) => w.id)).toEqual(["w-1"]);
     const beta = await services.listWithdrawals(SUPER, { appId: "app-beta" });
-    expect(beta.map((w) => w.id)).toEqual(["w-2"]);
+    expect(beta.items.map((w) => w.id)).toEqual(["w-2"]);
   });
 
   it("summarizes withdrawal states per scope in canonical order", async () => {
@@ -79,7 +79,7 @@ describe("fixture admin services", () => {
 
   it("redacts userId and toAddress for COMMUNITY_ADMIN withdrawals", async () => {
     const services = createFixtureAdminServices(buildFixture());
-    const rows = await services.listWithdrawals(COMMUNITY);
+    const { items: rows } = await services.listWithdrawals(COMMUNITY);
     expect(rows).toHaveLength(1);
     expect(rows[0]?.appId).toBe("app-alpha");
     expect(rows[0]?.userId).toBe("");
@@ -88,7 +88,7 @@ describe("fixture admin services", () => {
 
   it("keeps userId and toAddress for SUPER_ADMIN withdrawals", async () => {
     const services = createFixtureAdminServices(buildFixture());
-    const rows = await services.listWithdrawals(SUPER, { appId: "app-alpha" });
+    const { items: rows } = await services.listWithdrawals(SUPER, { appId: "app-alpha" });
     expect(rows[0]?.userId).toBe("user-1");
     expect(rows[0]?.toAddress).toBe("ckb1qalpha");
   });
