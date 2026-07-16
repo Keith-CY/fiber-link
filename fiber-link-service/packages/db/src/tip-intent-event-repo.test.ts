@@ -98,6 +98,41 @@ describe("tipIntentEventRepo (in-memory)", () => {
     expect(listed.map((event) => event.type)).toEqual(["TIP_CREATED", "TIP_STATUS_SETTLED"]);
   });
 
+  it("lists events by invoice across tip intents", async () => {
+    await repo.append({
+      tipIntentId: "tip-1",
+      invoice: "inv-1",
+      source: "TIP_CREATE",
+      type: "TIP_CREATED",
+      previousInvoiceState: null,
+      nextInvoiceState: "UNPAID",
+      createdAt: new Date("2026-02-21T00:00:00.000Z"),
+    });
+    await repo.append({
+      tipIntentId: "tip-2",
+      invoice: "inv-other",
+      source: "TIP_CREATE",
+      type: "TIP_CREATED",
+      previousInvoiceState: null,
+      nextInvoiceState: "UNPAID",
+      createdAt: new Date("2026-02-21T00:00:01.000Z"),
+    });
+    await repo.append({
+      tipIntentId: "tip-1",
+      invoice: "inv-1",
+      source: "SETTLEMENT_DISCOVERY",
+      type: "SETTLEMENT_SETTLED_CREDIT_APPLIED",
+      previousInvoiceState: "UNPAID",
+      nextInvoiceState: "SETTLED",
+      createdAt: new Date("2026-02-21T00:00:02.000Z"),
+    });
+
+    const listed = await repo.listByInvoice("inv-1");
+    expect(listed.map((event) => event.type)).toEqual(["TIP_CREATED", "SETTLEMENT_SETTLED_CREDIT_APPLIED"]);
+    expect(await repo.listByInvoice("inv-1", { limit: 1 })).toHaveLength(1);
+    expect(await repo.listByInvoice("inv-unknown")).toEqual([]);
+  });
+
   it("returns cloned metadata so tests cannot mutate stored events", async () => {
     await repo.append({
       tipIntentId: "tip-1",

@@ -11,13 +11,16 @@ import {
 } from "../../dashboard/dashboard-page-model";
 import { buildDashboardBackupRestorePlan } from "../dashboard-backups";
 import { buildDashboardRateLimitChangeSet, parseDashboardRateLimitInput } from "../dashboard-rate-limit";
-import { PolicyScopeError, UnknownAppError } from "./errors";
+import { PolicyScopeError, SettlementNotFoundError, SettlementRetryStateError, UnknownAppError } from "./errors";
 import {
   type AdminAuditEventInput,
   type AdminScope,
   type AdminServices,
+  type AdminSettlementEvent,
+  type AdminSettlementIntent,
   type AdminWithdrawal,
   type AdminWithdrawalFilters,
+  SETTLEMENT_LIST_LIMIT,
   WITHDRAWAL_LIST_LIMIT,
 } from "./types";
 
@@ -26,10 +29,20 @@ import {
  * rows accept the optional recovery columns so fixtures can exercise the queue
  * and detail surfaces without standing up Postgres.
  */
+/**
+ * Settlement fixture rows only need the identity fields; everything else
+ * defaults to a fresh UNPAID intent so tests stay terse.
+ */
+export type DashboardFixtureSettlement = Partial<AdminSettlementIntent> &
+  Pick<AdminSettlementIntent, "invoice" | "appId"> & {
+    events?: Array<Partial<AdminSettlementEvent> & Pick<AdminSettlementEvent, "type">>;
+  };
+
 export type DashboardFixture = {
   apps: DashboardApp[];
   withdrawals: Array<DashboardWithdrawal & Partial<AdminWithdrawal>>;
   policies: DashboardWithdrawalPolicy[];
+  settlements?: DashboardFixtureSettlement[];
   communityAdminAppIds?: string[];
   monitoringSummary?: DashboardMonitoringSummary;
   rateLimitConfig?: DashboardRateLimitConfig;
@@ -57,6 +70,42 @@ function toAdminWithdrawal(row: DashboardWithdrawal & Partial<AdminWithdrawal>):
   };
 }
 
+function toFixtureSettlement(row: DashboardFixtureSettlement): {
+  intent: AdminSettlementIntent;
+  events: AdminSettlementEvent[];
+} {
+  const createdAt = row.createdAt ?? "2026-03-18T00:00:00.000Z";
+  return {
+    intent: {
+      id: row.id ?? row.invoice,
+      invoice: row.invoice,
+      appId: row.appId,
+      postId: row.postId ?? "post-1",
+      fromUserId: row.fromUserId ?? "tipper-1",
+      toUserId: row.toUserId ?? "author-1",
+      asset: row.asset ?? "CKB",
+      amount: row.amount ?? "100",
+      invoiceState: row.invoiceState ?? "UNPAID",
+      settlementRetryCount: row.settlementRetryCount ?? 0,
+      settlementNextRetryAt: row.settlementNextRetryAt ?? null,
+      settlementLastError: row.settlementLastError ?? null,
+      settlementFailureReason: row.settlementFailureReason ?? null,
+      settlementLastCheckedAt: row.settlementLastCheckedAt ?? null,
+      createdAt,
+      settledAt: row.settledAt ?? null,
+    },
+    events: (row.events ?? []).map((event, index) => ({
+      id: event.id ?? `${row.invoice}-event-${index + 1}`,
+      source: event.source ?? "SETTLEMENT_DISCOVERY",
+      type: event.type,
+      previousInvoiceState: event.previousInvoiceState ?? null,
+      nextInvoiceState: event.nextInvoiceState ?? null,
+      metadata: event.metadata ?? null,
+      createdAt: event.createdAt ?? createdAt,
+    })),
+  };
+}
+
 function buildDefaultMonitoringSummary(): DashboardMonitoringSummary {
   return {
     status: "ok",
@@ -81,12 +130,13 @@ function buildDefaultRateLimitConfig(): DashboardRateLimitConfig {
 }
 
 export function createFixtureAdminServices(fixture: DashboardFixture): AdminServices {
-  const auditEvents: AdminAuditEventInput[] = [];
+  const auditEvents: Array<AdminAuditEventInput & { createdAt: string }> = [];
 
   const snapshot = {
     apps: fixture.apps.map((app) => ({ ...app })),
     withdrawals: fixture.withdrawals.map(toAdminWithdrawal),
     policies: new Map(fixture.policies.map((policy) => [policy.appId, { ...policy }])),
+    settlements: (fixture.settlements ?? []).map(toFixtureSettlement),
     monitoringSummary: fixture.monitoringSummary ? { ...fixture.monitoringSummary } : buildDefaultMonitoringSummary(),
     rateLimitConfig: fixture.rateLimitConfig ? { ...fixture.rateLimitConfig } : buildDefaultRateLimitConfig(),
     backupBundles: (fixture.backupBundles ?? []).map((bundle) => ({ ...bundle })),
@@ -100,7 +150,7 @@ export function createFixtureAdminServices(fixture: DashboardFixture): AdminServ
 
   return {
     async appendAuditEvent(event) {
-      auditEvents.push({ ...event });
+      auditEvents.push({ ...event, createdAt: new Date().toISOString() });
     },
     __listAuditEventsForTests() {
       return auditEvents.map((e) => ({ ...e }));
@@ -153,6 +203,60 @@ export function createFixtureAdminServices(fixture: DashboardFixture): AdminServ
       };
       snapshot.policies.set(input.appId, next);
       return { ...next };
+    },
+    async listSettlements(scope, filters) {
+      const redactPii = scope.role === "COMMUNITY_ADMIN";
+      return snapshot.settlements
+        .filter((row) => inScope(scope, row.intent.appId))
+        .filter((row) => (filters?.appId ? row.intent.appId === filters.appId : true))
+        .filter((row) => (filters?.state ? row.intent.invoiceState === filters.state : true))
+        .sort((a, b) => b.intent.createdAt.localeCompare(a.intent.createdAt))
+        .slice(0, SETTLEMENT_LIST_LIMIT)
+        .map((row) => ({
+          ...row.intent,
+          fromUserId: redactPii ? "" : row.intent.fromUserId,
+          toUserId: redactPii ? "" : row.intent.toUserId,
+        }));
+    },
+    async getSettlementTimeline(scope, invoice) {
+      const row = snapshot.settlements.find((candidate) => candidate.intent.invoice === invoice);
+      if (!row || !inScope(scope, row.intent.appId)) {
+        throw new SettlementNotFoundError(invoice);
+      }
+      const redactPii = scope.role === "COMMUNITY_ADMIN";
+      return {
+        intent: {
+          ...row.intent,
+          fromUserId: redactPii ? "" : row.intent.fromUserId,
+          toUserId: redactPii ? "" : row.intent.toUserId,
+        },
+        events: row.events.map((event) => ({ ...event })),
+        adminActions: auditEvents
+          .filter((event) => event.targetType === "tip_intent" && event.targetId === invoice)
+          .map((event) => ({
+            action: event.action,
+            actorId: event.actorId,
+            actorRole: event.actorRole,
+            reason: event.reason ?? null,
+            createdAt: event.createdAt,
+          }))
+          .reverse(),
+      };
+    },
+    async retrySettlementNow(scope, invoice) {
+      const row = snapshot.settlements.find((candidate) => candidate.intent.invoice === invoice);
+      if (!row || !inScope(scope, row.intent.appId)) {
+        throw new SettlementNotFoundError(invoice);
+      }
+      if (row.intent.invoiceState !== "UNPAID") {
+        throw new SettlementRetryStateError(row.intent.invoiceState);
+      }
+      row.intent.settlementRetryCount = 0;
+      row.intent.settlementNextRetryAt = null;
+      row.intent.settlementLastError = null;
+      row.intent.settlementFailureReason = null;
+      row.intent.settlementLastCheckedAt = new Date().toISOString();
+      return { ...row.intent };
     },
     async loadMonitoringSummary() {
       return { ...snapshot.monitoringSummary };

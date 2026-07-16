@@ -26,6 +26,29 @@ function fixture(): DashboardFixture {
       },
     ],
     policies: [],
+    settlements: [
+      {
+        invoice: "lnfib1unpaidalpha",
+        appId: "app-alpha",
+        invoiceState: "UNPAID",
+        settlementRetryCount: 2,
+        settlementNextRetryAt: "2026-03-18T01:00:00.000Z",
+        settlementLastError: "upstream timeout",
+        settlementFailureReason: "RETRY_TRANSIENT_ERROR",
+        createdAt: "2026-03-18T00:05:00.000Z",
+        events: [
+          { type: "TIP_CREATED", source: "TIP_CREATE", nextInvoiceState: "UNPAID" },
+          { type: "SETTLEMENT_RETRY_SCHEDULED", source: "SETTLEMENT_DISCOVERY" },
+        ],
+      },
+      {
+        invoice: "lnfib1settledalpha",
+        appId: "app-alpha",
+        invoiceState: "SETTLED",
+        settledAt: "2026-03-18T00:10:00.000Z",
+        createdAt: "2026-03-18T00:01:00.000Z",
+      },
+    ],
     communityAdminAppIds: ["app-alpha"],
     backupBundles: [
       {
@@ -122,6 +145,111 @@ describe("admin tRPC routers", () => {
     await expect(
       caller.ops.createRateLimitChangeSet({ enabled: true, windowMs: "abc", maxRequests: "10" }),
     ).rejects.toBeInstanceOf(TRPCError);
+  });
+});
+
+describe("settlement investigation workflow (#470)", () => {
+  it("lists settlements newest-first and filters by state for SUPER_ADMIN", async () => {
+    const caller = createCaller(ctxFor("SUPER_ADMIN", "ops"));
+    const all = await caller.settlements.list({});
+    expect(all.map((s) => s.invoice)).toEqual(["lnfib1unpaidalpha", "lnfib1settledalpha"]);
+
+    const settled = await caller.settlements.list({ state: "SETTLED" });
+    expect(settled).toHaveLength(1);
+    expect(settled[0].invoice).toBe("lnfib1settledalpha");
+
+    await expect(caller.settlements.list({ state: "NOPE" } as never)).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+
+  it("denies settlement procedures to COMMUNITY_ADMIN and anonymous callers", async () => {
+    const community = createCaller(ctxFor("COMMUNITY_ADMIN", "c1"));
+    await expect(community.settlements.list({})).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(community.settlements.retryNow({ invoice: "lnfib1unpaidalpha" })).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+    await expect(createCaller(ctxFor(undefined)).settlements.timeline({ invoice: "x" })).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+  });
+
+  it("returns the lifecycle timeline for one invoice and NOT_FOUND for unknown invoices", async () => {
+    const caller = createCaller(ctxFor("SUPER_ADMIN", "ops"));
+    const timeline = await caller.settlements.timeline({ invoice: "lnfib1unpaidalpha" });
+    expect(timeline.intent.invoiceState).toBe("UNPAID");
+    expect(timeline.intent.settlementFailureReason).toBe("RETRY_TRANSIENT_ERROR");
+    expect(timeline.events.map((e) => e.type)).toEqual(["TIP_CREATED", "SETTLEMENT_RETRY_SCHEDULED"]);
+    expect(timeline.adminActions).toEqual([]);
+
+    await expect(caller.settlements.timeline({ invoice: "lnfib1missing" })).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+  });
+
+  it("retryNow clears retry state and writes an audit record", async () => {
+    const services = createFixtureAdminServices(fixture());
+    const ctx: TrpcContext = { role: "SUPER_ADMIN", adminUserId: "ops-user", requestId: "req-retry", services };
+    const caller = createCaller(ctx);
+
+    const intent = await caller.settlements.retryNow({ invoice: "lnfib1unpaidalpha" });
+    expect(intent.settlementRetryCount).toBe(0);
+    expect(intent.settlementNextRetryAt).toBeNull();
+    expect(intent.settlementLastError).toBeNull();
+    expect(intent.settlementFailureReason).toBeNull();
+
+    const events = services.__listAuditEventsForTests?.() ?? [];
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      action: "settlement.retry_now",
+      targetType: "tip_intent",
+      targetId: "lnfib1unpaidalpha",
+      actorId: "ops-user",
+      actorRole: "SUPER_ADMIN",
+      requestId: "req-retry",
+    });
+
+    const timeline = await caller.settlements.timeline({ invoice: "lnfib1unpaidalpha" });
+    expect(timeline.adminActions.map((a) => a.action)).toEqual(["settlement.retry_now"]);
+  });
+
+  it("retryNow rejects terminal invoices and audits nothing", async () => {
+    const services = createFixtureAdminServices(fixture());
+    const ctx: TrpcContext = { role: "SUPER_ADMIN", adminUserId: "ops-user", requestId: "req-x", services };
+    const caller = createCaller(ctx);
+
+    await expect(caller.settlements.retryNow({ invoice: "lnfib1settledalpha" })).rejects.toMatchObject({
+      code: "PRECONDITION_FAILED",
+    });
+    expect(services.__listAuditEventsForTests?.() ?? []).toHaveLength(0);
+  });
+
+  it("addOpsNote records an audited note that shows up in the timeline", async () => {
+    const services = createFixtureAdminServices(fixture());
+    const ctx: TrpcContext = { role: "SUPER_ADMIN", adminUserId: "ops-user", requestId: "req-note", services };
+    const caller = createCaller(ctx);
+
+    await caller.settlements.addOpsNote({ invoice: "lnfib1unpaidalpha", note: "confirmed with payer" });
+
+    const events = services.__listAuditEventsForTests?.() ?? [];
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      action: "settlement.ops_note.add",
+      targetType: "tip_intent",
+      targetId: "lnfib1unpaidalpha",
+      reason: "confirmed with payer",
+    });
+
+    const timeline = await caller.settlements.timeline({ invoice: "lnfib1unpaidalpha" });
+    expect(timeline.adminActions[0]).toMatchObject({
+      action: "settlement.ops_note.add",
+      reason: "confirmed with payer",
+    });
+
+    await expect(caller.settlements.addOpsNote({ invoice: "lnfib1missing", note: "x" })).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+    await expect(caller.settlements.addOpsNote({ invoice: "lnfib1unpaidalpha", note: "  " })).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+    });
   });
 });
 

@@ -1,4 +1,4 @@
-import type { UserRole, WithdrawalState } from "@fiber-link/db";
+import type { InvoiceState, UserRole, WithdrawalState } from "@fiber-link/db";
 import type {
   DashboardApp,
   DashboardBackupBundle,
@@ -67,6 +67,63 @@ export type AdminWithdrawalFilters = {
  */
 export const WITHDRAWAL_LIST_LIMIT = 200;
 
+/** Same rationale as {@link WITHDRAWAL_LIST_LIMIT}, for the settlements queue. */
+export const SETTLEMENT_LIST_LIMIT = 200;
+
+/**
+ * Settlement projection of a tip intent for the investigation surfaces:
+ * current state plus every recovery-relevant column the worker maintains.
+ */
+export type AdminSettlementIntent = {
+  id: string;
+  invoice: string;
+  appId: string;
+  postId: string;
+  fromUserId: string;
+  toUserId: string;
+  asset: "CKB" | "USDI";
+  amount: string;
+  invoiceState: InvoiceState;
+  settlementRetryCount: number;
+  settlementNextRetryAt: string | null;
+  settlementLastError: string | null;
+  settlementFailureReason: string | null;
+  settlementLastCheckedAt: string | null;
+  createdAt: string;
+  settledAt: string | null;
+};
+
+/** One `tip_intent_events` row, oldest-first in the timeline. */
+export type AdminSettlementEvent = {
+  id: string;
+  source: string;
+  type: string;
+  previousInvoiceState: InvoiceState | null;
+  nextInvoiceState: InvoiceState | null;
+  metadata: Record<string, unknown> | null;
+  createdAt: string;
+};
+
+/** An admin action (retry, ops note) recorded against the invoice, newest-first. */
+export type AdminSettlementAction = {
+  action: string;
+  actorId: string;
+  actorRole: string;
+  reason: string | null;
+  createdAt: string;
+};
+
+export type AdminSettlementTimeline = {
+  intent: AdminSettlementIntent;
+  events: AdminSettlementEvent[];
+  adminActions: AdminSettlementAction[];
+};
+
+export type AdminSettlementFilters = {
+  state?: InvoiceState;
+  appId?: string;
+};
+
 /**
  * The seam every admin tRPC router depends on. The real implementation
  * (`createDbAdminServices`) queries Postgres through the `@fiber-link/db`
@@ -94,6 +151,22 @@ export interface AdminServices {
   summarizeWithdrawals(scope: AdminScope): Promise<DashboardStatusSummary[]>;
   listPolicies(scope: AdminScope): Promise<DashboardWithdrawalPolicy[]>;
   upsertPolicy(scope: AdminScope, input: WithdrawalPolicyInput): Promise<DashboardWithdrawalPolicy>;
+
+  /** Newest first, capped at {@link SETTLEMENT_LIST_LIMIT} rows. */
+  listSettlements(scope: AdminScope, filters?: AdminSettlementFilters): Promise<AdminSettlementIntent[]>;
+  /**
+   * Full investigation view for one invoice: current intent state, the
+   * `tip_intent_events` lifecycle timeline, and prior admin actions (retries,
+   * ops notes) recorded in the audit trail. Throws `SettlementNotFoundError`
+   * for unknown or out-of-scope invoices.
+   */
+  getSettlementTimeline(scope: AdminScope, invoice: string): Promise<AdminSettlementTimeline>;
+  /**
+   * Clear the settlement retry/failure state so the worker re-checks the
+   * invoice on its next poll. Only valid while the invoice is UNPAID (SETTLED
+   * and FAILED are terminal); throws `SettlementRetryStateError` otherwise.
+   */
+  retrySettlementNow(scope: AdminScope, invoice: string): Promise<AdminSettlementIntent>;
 
   loadMonitoringSummary(): Promise<DashboardMonitoringSummary>;
   loadRateLimitConfig(): Promise<DashboardRateLimitConfig>;

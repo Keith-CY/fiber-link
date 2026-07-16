@@ -35,6 +35,7 @@ export type TipIntentEventListOptions = {
 export type TipIntentEventRepo = {
   append(input: AppendTipIntentEventInput): Promise<TipIntentEventRecord>;
   listByTipIntentId(tipIntentId: string, options?: TipIntentEventListOptions): Promise<TipIntentEventRecord[]>;
+  listByInvoice(invoice: string, options?: TipIntentEventListOptions): Promise<TipIntentEventRecord[]>;
   __listForTests?: () => TipIntentEventRecord[];
   __resetForTests?: () => void;
 };
@@ -99,6 +100,17 @@ export function createDbTipIntentEventRepo(db: DbClient): TipIntentEventRepo {
       const rows = await query;
       return rows.map(toRecord);
     },
+
+    async listByInvoice(invoice, options = {}) {
+      const baseQuery = db
+        .select()
+        .from(tipIntentEvents)
+        .where(eq(tipIntentEvents.invoice, invoice))
+        .orderBy(asc(tipIntentEvents.createdAt), asc(tipIntentEvents.id));
+      const query = options.limit && options.limit > 0 ? baseQuery.limit(options.limit) : baseQuery;
+      const rows = await query;
+      return rows.map(toRecord);
+    },
   };
 }
 
@@ -132,6 +144,21 @@ export function createInMemoryTipIntentEventRepo(): TipIntentEventRepo {
 
     async listByTipIntentId(tipIntentId, options = {}) {
       let items = records.filter((record) => record.tipIntentId === tipIntentId);
+      items = items.sort((left, right) => {
+        const createdAtDiff = left.createdAt.getTime() - right.createdAt.getTime();
+        if (createdAtDiff !== 0) {
+          return createdAtDiff;
+        }
+        return left.id.localeCompare(right.id);
+      });
+      if (options.limit && options.limit > 0) {
+        items = items.slice(0, options.limit);
+      }
+      return items.map(clone);
+    },
+
+    async listByInvoice(invoice, options = {}) {
+      let items = records.filter((record) => record.invoice === invoice);
       items = items.sort((left, right) => {
         const createdAtDiff = left.createdAt.getTime() - right.createdAt.getTime();
         if (createdAtDiff !== 0) {
