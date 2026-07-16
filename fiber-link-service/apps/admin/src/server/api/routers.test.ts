@@ -173,7 +173,9 @@ describe("admin mutation audit trail (#468)", () => {
     const ctx: TrpcContext = { role: undefined, adminUserId: undefined, services };
     const caller = createCaller(ctx);
 
-    await expect(caller.ops.createRateLimitChangeSet({ enabled: true, windowMs: "60000", maxRequests: "100" })).rejects.toMatchObject({
+    await expect(
+      caller.ops.createRateLimitChangeSet({ enabled: true, windowMs: "60000", maxRequests: "100" }),
+    ).rejects.toMatchObject({
       code: "FORBIDDEN",
     });
     expect(services.__listAuditEventsForTests?.() ?? []).toHaveLength(0);
