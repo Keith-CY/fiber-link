@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import type { DbClient } from "./client";
 import { type UserRole, adminAuditEvents } from "./schema";
 
@@ -72,10 +72,10 @@ export function createDbAdminAuditRepo(db: DbClient): AdminAuditRepo {
       const rows = await db
         .select()
         .from(adminAuditEvents)
-        .where(eq(adminAuditEvents.targetType, targetType))
+        .where(and(eq(adminAuditEvents.targetType, targetType), eq(adminAuditEvents.targetId, targetId)))
         .orderBy(desc(adminAuditEvents.createdAt), desc(adminAuditEvents.id))
         .limit(limit);
-      return rows.filter((r) => r.targetId === targetId).map(toRecord);
+      return rows.map(toRecord);
     },
   };
 }
