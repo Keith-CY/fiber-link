@@ -24,6 +24,7 @@ import {
   createNoopNotificationDispatcher,
   createNotificationDispatcher,
 } from "@fiber-link/notifications";
+import { withdrawalBatchDuration, withdrawalFailuresTotal } from "./metrics";
 
 export type WithdrawalExecutionResult =
   | { ok: true; txHash: string }
@@ -253,6 +254,15 @@ async function dispatchWithdrawalEvent(
 }
 
 export async function runWithdrawalBatch(options: RunWithdrawalBatchOptions = {}) {
+  const endTimer = withdrawalBatchDuration.startTimer();
+  try {
+    return await runWithdrawalBatchInner(options);
+  } finally {
+    endTimer();
+  }
+}
+
+async function runWithdrawalBatchInner(options: RunWithdrawalBatchOptions = {}) {
   const now = options.now ?? new Date();
   // maxRetries counts retry attempts after the initial processing attempt.
   const maxRetries = options.maxRetries ?? 3;
@@ -326,6 +336,7 @@ export async function runWithdrawalBatch(options: RunWithdrawalBatchOptions = {}
           error: result.reason,
         });
         failed += 1;
+        withdrawalFailuresTotal.inc({ kind: "transient_exhausted" });
         await dispatchWithdrawalEvent(notificationDispatcher, {
           type: "WITHDRAWAL_FAILED",
           occurredAt: now,
@@ -363,6 +374,7 @@ export async function runWithdrawalBatch(options: RunWithdrawalBatchOptions = {}
 
     const failedRecord = await repo.markFailed(item.id, { now, error: result.reason });
     failed += 1;
+    withdrawalFailuresTotal.inc({ kind: "permanent" });
     await dispatchWithdrawalEvent(notificationDispatcher, {
       type: "WITHDRAWAL_FAILED",
       occurredAt: now,
@@ -402,6 +414,7 @@ export async function runWithdrawalBatch(options: RunWithdrawalBatchOptions = {}
         error: confirmation.reason ?? "CKB transaction rejected",
       });
       failed += 1;
+      withdrawalFailuresTotal.inc({ kind: "broadcast_rejected" });
       await dispatchWithdrawalEvent(notificationDispatcher, {
         type: "WITHDRAWAL_FAILED",
         occurredAt: now,

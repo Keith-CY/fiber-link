@@ -11,6 +11,8 @@ import type { NotificationDispatcher } from "@fiber-link/notifications";
 import { createComponentLogger } from "./logger";
 import type { SettlementPublisher } from "./settlement-publisher";
 
+import { settlementCreditedTotal } from "./metrics";
+
 const logger = createComponentLogger("settlement");
 
 let defaultDb: DbClient | null = null;
@@ -61,6 +63,10 @@ export async function markSettled(
     refId: tipIntent.id,
     idempotencyKey,
   });
+
+  if (credited.applied) {
+    settlementCreditedTotal.inc();
+  }
 
   // Keep invoice state convergent even if credit was already written earlier.
   let settledAt = tipIntent.settledAt;
