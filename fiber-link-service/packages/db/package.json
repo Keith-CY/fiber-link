@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@types/pg": "^8.11.0",
     "drizzle-orm": "^0.32.0",
     "pg": "^8.12.0"
   },

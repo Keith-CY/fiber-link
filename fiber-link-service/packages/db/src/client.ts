@@ -1,5 +1,4 @@
 import { type NodePgDatabase, drizzle } from "drizzle-orm/node-postgres";
-// @ts-expect-error This workspace does not install pg type declarations.
 import { Pool } from "pg";
 import * as schema from "./schema";
 

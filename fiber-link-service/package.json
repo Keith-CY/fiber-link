@@ -14,5 +14,9 @@
     "@biomejs/biome": "^1.9",
     "@vitest/coverage-v8": "^1.6.0"
   },
-  "trustedDependencies": ["@biomejs/biome"]
+  "trustedDependencies": ["@biomejs/biome"],
+  "engines": {
+    "node": ">=22",
+    "bun": ">=1.3"
+  }
 }
