@@ -114,6 +114,7 @@ zh_CN:
         rel_days: "%{n} 天前"
         rel_weeks: "%{n} 周前"
       withdrawal:
+        asset_label: "资产"
         kicker: "提现"
         title_lead: "转出你"
         title_emphasis: "已结算"

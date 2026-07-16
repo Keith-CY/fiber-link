@@ -37,6 +37,7 @@ export const TipStatusParamsSchema = z.object({
 
 export const TipStatusResultSchema = z.object({
   state: z.enum(["UNPAID", "SETTLED", "FAILED"]),
+  asset: z.enum(["CKB", "USDI"]),
 });
 
 const WithdrawalRequestBaseParamsSchema = z.object({

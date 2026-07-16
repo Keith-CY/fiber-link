@@ -114,6 +114,7 @@ en:
         rel_days: "%{n}d ago"
         rel_weeks: "%{n}w ago"
       withdrawal:
+        asset_label: "Asset"
         kicker: "WITHDRAW"
         title_lead: "Move your"
         title_emphasis: "settled"
