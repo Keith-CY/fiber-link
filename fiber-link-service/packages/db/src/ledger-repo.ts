@@ -63,6 +63,8 @@ export type LedgerRepo = {
   listEntries(options: LedgerEntryListOptions): Promise<LedgerEntryRecord[]>;
   /** Explain an account balance from its source credits/debits. */
   getBalanceBreakdown(input: { appId: string; userId: string; asset: LedgerAsset }): Promise<LedgerBalanceBreakdown>;
+  /** Number of (app, user, asset) accounts whose ledger sums below zero. */
+  countNegativeBalanceAccounts(): Promise<number>;
   __listForTests?: () => LedgerEntryRecord[];
   __resetForTests?: () => void;
 };
@@ -240,6 +242,19 @@ export function createDbLedgerRepo(db: DbClient): LedgerRepo {
         lastEntryAt: row?.lastEntryAt ? new Date(row.lastEntryAt) : null,
       };
     },
+
+    async countNegativeBalanceAccounts() {
+      const negativeAccounts = db
+        .select({ appId: ledgerEntries.appId })
+        .from(ledgerEntries)
+        .groupBy(ledgerEntries.appId, ledgerEntries.userId, ledgerEntries.asset)
+        .having(
+          sql`SUM(CASE WHEN ${ledgerEntries.type} = 'credit' THEN ${ledgerEntries.amount} ELSE -${ledgerEntries.amount} END) < 0`,
+        )
+        .as("negative_accounts");
+      const [row] = await db.select({ count: sql<number>`count(*)::int` }).from(negativeAccounts);
+      return row ? Number(row.count) : 0;
+    },
   };
 }
 
@@ -337,6 +352,23 @@ export function createInMemoryLedgerRepo(): LedgerRepo {
         firstEntryAt: timestamps.length > 0 ? new Date(Math.min(...timestamps)) : null,
         lastEntryAt: timestamps.length > 0 ? new Date(Math.max(...timestamps)) : null,
       };
+    },
+
+    async countNegativeBalanceAccounts() {
+      const byAccount = new Map<string, LedgerEntryRecord[]>();
+      for (const entry of entries) {
+        const key = JSON.stringify([entry.appId, entry.userId, entry.asset]);
+        const linked = byAccount.get(key) ?? [];
+        linked.push(entry);
+        byAccount.set(key, linked);
+      }
+      let negative = 0;
+      for (const account of byAccount.values()) {
+        if (sumEntries(account).startsWith("-")) {
+          negative += 1;
+        }
+      }
+      return negative;
     },
 
     __listForTests() {

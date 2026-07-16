@@ -1,8 +1,22 @@
-import { type TipIntentListCursor, createDbClient, createDbWorkerStateRepo } from "@fiber-link/db";
+import {
+  type TipIntentListCursor,
+  createDbClient,
+  createDbLedgerRepo,
+  createDbTipIntentRepo,
+  createDbWorkerStateRepo,
+  withdrawals,
+} from "@fiber-link/db";
 import { createAdapterProvider, createDefaultHotWalletInventoryProvider } from "@fiber-link/fiber-adapter";
+import { sql } from "drizzle-orm";
 import { parseWorkerConfig } from "./config";
 import { runLiquidityBatch } from "./liquidity-batch";
 import { createComponentLogger } from "./logger";
+import {
+  configureWorkerMetricsSources,
+  parseWorkerMetricsPort,
+  parseWorkerMetricsToken,
+  startWorkerMetricsServer,
+} from "./metrics";
 import { createDbSettlementCursorStore, createFileSettlementCursorStore } from "./settlement-cursor-store";
 import { runSettlementDiscovery } from "./settlement-discovery";
 import { createSettlementPublisher } from "./settlement-publisher";
@@ -60,6 +74,30 @@ async function main() {
           legacyFileStore: fileCursorStore,
         });
   const inventoryProvider = createDefaultHotWalletInventoryProvider();
+
+  // Scrapeable metrics are opt-in: exposed only when WORKER_METRICS_PORT is
+  // set. Gauges query Postgres at scrape time through their own client so a
+  // slow scrape cannot interfere with batch db work.
+  const metricsPort = parseWorkerMetricsPort(process.env);
+  let metricsServer: ReturnType<typeof startWorkerMetricsServer> | null = null;
+  if (metricsPort !== null) {
+    const metricsDb = createDbClient();
+    const metricsTipIntentRepo = createDbTipIntentRepo(metricsDb);
+    const metricsLedgerRepo = createDbLedgerRepo(metricsDb);
+    configureWorkerMetricsSources({
+      countUnpaidBacklog: () => metricsTipIntentRepo.countByInvoiceState("UNPAID"),
+      countSettlementRetryPending: () => metricsTipIntentRepo.countSettlementRetryPending(),
+      countWithdrawalsByState: async () => {
+        const rows = await metricsDb
+          .select({ state: withdrawals.state, count: sql<number>`count(*)::int` })
+          .from(withdrawals)
+          .groupBy(withdrawals.state);
+        return rows.map((row) => ({ state: String(row.state), count: Number(row.count) }));
+      },
+      countNegativeBalanceAccounts: () => metricsLedgerRepo.countNegativeBalanceAccounts(),
+    });
+    metricsServer = startWorkerMetricsServer({ port: metricsPort, token: parseWorkerMetricsToken(process.env) });
+  }
   let settlementCursor: TipIntentListCursor | undefined = await cursorStore.load();
   let subscriptionRunner: SettlementSubscriptionRunner | null = null;
   const liquidityFallback = {
@@ -177,6 +215,7 @@ async function main() {
   }
 
   async function shutdown(signal: NodeJS.Signals) {
+    metricsServer?.close();
     await subscriptionRunner?.close();
     await settlementPublisher.close().catch((error) => {
       logger.warn("worker.settlement_publisher_close_failed", { error });

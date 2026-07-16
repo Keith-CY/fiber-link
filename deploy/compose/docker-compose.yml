@@ -214,6 +214,10 @@ services:
       WORKER_OPS_MAX_WITHDRAWAL_PARITY_ISSUES: ${WORKER_OPS_MAX_WITHDRAWAL_PARITY_ISSUES:-0}
       WORKER_OPS_WITHDRAWAL_LOOKBACK_HOURS: ${WORKER_OPS_WITHDRAWAL_LOOKBACK_HOURS:-24}
       WORKER_OPS_WITHDRAWAL_SAMPLE_LIMIT: ${WORKER_OPS_WITHDRAWAL_SAMPLE_LIMIT:-500}
+      # Prometheus metrics (docs/runbooks/metrics-and-alerting.md). Unset
+      # WORKER_METRICS_PORT to disable the endpoint entirely.
+      WORKER_METRICS_PORT: ${WORKER_METRICS_PORT:-9464}
+      WORKER_METRICS_TOKEN: ${WORKER_METRICS_TOKEN:-}
     volumes:
       - worker-data:/var/lib/fiber-link
     # To supply the withdrawal key as a file (set

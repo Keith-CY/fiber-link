@@ -15,6 +15,7 @@ import {
 import { FiberRpcError, createAdapter } from "@fiber-link/fiber-adapter";
 import { type SettlementUpdateEvent, type SettlementUpdateOutcome, createSettlementUpdateEvent } from "./contracts";
 import { type WorkerLogContext, createComponentLogger } from "./logger";
+import { settlementFailuresTotal } from "./metrics";
 import { markSettled } from "./settlement";
 import type { SettlementPublisher } from "./settlement-publisher";
 
@@ -408,6 +409,7 @@ export async function runSettlementDiscovery(options: SettlementDiscoveryOptions
           reason: "FAILED_UPSTREAM_REPORTED",
           error: "upstream invoice state reported FAILED",
         });
+        settlementFailuresTotal.inc({ reason: "FAILED_UPSTREAM_REPORTED" });
         summary.failed += 1;
         summary.terminalFailures += 1;
         const event = createSettlementUpdateEvent({
@@ -437,6 +439,7 @@ export async function runSettlementDiscovery(options: SettlementDiscoveryOptions
           reason: "FAILED_PENDING_TIMEOUT",
           error: timeoutMessage,
         });
+        settlementFailuresTotal.inc({ reason: "FAILED_PENDING_TIMEOUT" });
         summary.failed += 1;
         summary.terminalFailures += 1;
         const event = createSettlementUpdateEvent({
@@ -482,6 +485,7 @@ export async function runSettlementDiscovery(options: SettlementDiscoveryOptions
               reason: "FAILED_RETRY_EXHAUSTED",
               error: decision.message,
             });
+            settlementFailuresTotal.inc({ reason: "FAILED_RETRY_EXHAUSTED" });
             summary.failed += 1;
             summary.terminalFailures += 1;
             const event = createSettlementUpdateEvent({
@@ -540,6 +544,7 @@ export async function runSettlementDiscovery(options: SettlementDiscoveryOptions
           reason: decision.reason,
           error: decision.message,
         });
+        settlementFailuresTotal.inc({ reason: decision.reason });
         summary.failed += 1;
         summary.terminalFailures += 1;
         const event = createSettlementUpdateEvent({

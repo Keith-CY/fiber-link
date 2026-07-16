@@ -58,6 +58,9 @@ Edit `.env` minimally:
 - Optional: tune readiness probe timeouts:
   - `RPC_HEALTHCHECK_TIMEOUT_MS`
   - `WORKER_READINESS_TIMEOUT_MS`
+- Optional: worker Prometheus metrics (see `docs/runbooks/metrics-and-alerting.md`):
+  - `WORKER_METRICS_PORT` (default `9464`, in-network only; empty disables the endpoint)
+  - `WORKER_METRICS_TOKEN` (optional bearer token for scrapes)
 - Optional: tune monitoring/alert thresholds consumed by `compose-ops-summary.sh`:
   - `WORKER_OPS_MAX_UNPAID_BACKLOG`
   - `WORKER_OPS_MAX_OLDEST_UNPAID_AGE_MS`
