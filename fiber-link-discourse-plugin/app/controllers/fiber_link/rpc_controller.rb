@@ -88,6 +88,14 @@ module ::FiberLink
         return
       end
 
+      # Webhook channel management is an operator surface: it configures
+      # outbound deliveries (and their secrets) for the whole forum, so it is
+      # restricted to staff rather than any logged-in creator.
+      if method.to_s.start_with?("notification.") && !current_user.staff?
+        render_error(request_id, :forbidden, -32001, "Unauthorized")
+        return
+      end
+
       sanitized_params = sanitize_params(method, params, request_id)
       return unless sanitized_params
 
@@ -291,7 +299,7 @@ module ::FiberLink
 
       begin
         uri = URI.parse(target)
-        unless %w[http https].include?(uri.scheme)
+        unless webhook_target_allowed?(uri)
           render_error(request_id, :bad_request, -32602, "Invalid target URL")
           return nil
         end
@@ -460,6 +468,34 @@ module ::FiberLink
     rescue StandardError => error
       Rails.logger.warn("Fiber Link invoice QR generation failed: #{error.message}")
       nil
+    end
+
+    # Webhook targets must be public HTTP(S) endpoints. Loopback, RFC1918,
+    # link-local, and unspecified hosts are rejected to keep the worker from
+    # being used as an SSRF proxy into the deployment's own network, and
+    # production requires TLS. Hostnames are checked textually and, when they
+    # are IP literals, by range; DNS names resolving to private ranges are the
+    # worker network policy's responsibility.
+    BLOCKED_WEBHOOK_HOSTS = %w[localhost localhost.localdomain ip6-localhost ip6-loopback].freeze
+
+    def webhook_target_allowed?(uri)
+      return false unless %w[http https].include?(uri.scheme)
+      return false if uri.scheme == "http" && Rails.env.production?
+
+      host = uri.host.to_s.downcase
+      return false if host.blank?
+      return false if BLOCKED_WEBHOOK_HOSTS.include?(host)
+      return false if host.end_with?(".local", ".internal", ".localhost")
+
+      begin
+        ip = IPAddr.new(host)
+        return false if ip.loopback? || ip.private? || ip.link_local? ||
+          ip == IPAddr.new("0.0.0.0") || ip == IPAddr.new("::")
+      rescue IPAddr::InvalidAddressError
+        # Not an IP literal; hostname checks above apply.
+      end
+
+      true
     end
 
     def render_error(request_id, status, code, message)

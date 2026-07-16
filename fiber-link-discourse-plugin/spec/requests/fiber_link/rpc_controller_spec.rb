@@ -182,7 +182,7 @@ RSpec.describe ::FiberLink::RpcController, type: :request do
     end
 
     it "forwards notification.channel.delete with a validated channel id" do
-      sign_in(user)
+      sign_in(Fabricate(:admin))
 
       stub_request(:post, "https://fiber-link.example/rpc").to_return(
         status: 200,
@@ -208,7 +208,7 @@ RSpec.describe ::FiberLink::RpcController, type: :request do
     end
 
     it "rejects notification.channel.delete and .test with a non-uuid channel id" do
-      sign_in(user)
+      sign_in(Fabricate(:admin))
 
       ["notification.channel.delete", "notification.channel.test"].each do |method|
         post "/fiber-link/rpc",
@@ -224,6 +224,87 @@ RSpec.describe ::FiberLink::RpcController, type: :request do
         body = JSON.parse(response.body)
         expect(body.dig("error", "code")).to eq(-32602)
       end
+    end
+
+    it "rejects notification channel management for non-staff users" do
+      sign_in(user)
+
+      post "/fiber-link/rpc",
+           params: {
+             jsonrpc: "2.0",
+             id: "notif-denied",
+             method: "notification.channel.list",
+             params: {},
+           },
+           as: :json
+
+      expect(response).to have_http_status(:forbidden)
+      body = JSON.parse(response.body)
+      expect(body.dig("error", "code")).to eq(-32001)
+    end
+
+    it "rejects webhook targets pointing at loopback or private networks" do
+      admin = Fabricate(:admin)
+      sign_in(admin)
+
+      ["http://localhost/hook", "https://127.0.0.1/hook", "https://10.0.0.5/hook",
+       "https://192.168.1.10/hook", "https://169.254.169.254/latest", "https://service.internal/hook"].each do |target|
+        post "/fiber-link/rpc",
+             params: {
+               jsonrpc: "2.0",
+               id: "notif-ssrf",
+               method: "notification.channel.create",
+               params: { name: "hook", kind: "WEBHOOK", target: target, events: ["TIP_SETTLED"] },
+             },
+             as: :json
+
+        expect(response).to have_http_status(:bad_request), "expected #{target} to be rejected"
+        body = JSON.parse(response.body)
+        expect(body.dig("error", "message")).to eq("Invalid target URL")
+      end
+    end
+
+    it "requires https webhook targets in production" do
+      admin = Fabricate(:admin)
+      sign_in(admin)
+      allow(Rails.env).to receive(:production?).and_return(true)
+
+      post "/fiber-link/rpc",
+           params: {
+             jsonrpc: "2.0",
+             id: "notif-http-prod",
+             method: "notification.channel.create",
+             params: { name: "hook", kind: "WEBHOOK", target: "http://example.com/hook", events: ["TIP_SETTLED"] },
+           },
+           as: :json
+
+      expect(response).to have_http_status(:bad_request)
+    end
+
+    it "accepts a public https webhook target from staff" do
+      admin = Fabricate(:admin)
+      sign_in(admin)
+
+      stub_request(:post, "https://fiber-link.example/rpc").to_return(
+        status: 200,
+        body: { jsonrpc: "2.0", id: "notif-ok", result: { id: "ch-1" } }.to_json,
+        headers: { "Content-Type" => "application/json" },
+      )
+
+      post "/fiber-link/rpc",
+           params: {
+             jsonrpc: "2.0",
+             id: "notif-ok",
+             method: "notification.channel.create",
+             params: { name: "hook", kind: "WEBHOOK", target: "https://hooks.example.com/fiber", events: ["TIP_SETTLED"] },
+           },
+           as: :json
+
+      expect(response).to have_http_status(:ok)
+      expect(WebMock).to have_requested(:post, "https://fiber-link.example/rpc").with { |request|
+        body = JSON.parse(request.body)
+        body.dig("params", "target") == "https://hooks.example.com/fiber"
+      }
     end
 
     it "rejects dashboard.summary includeAdmin for non-admin users" do
