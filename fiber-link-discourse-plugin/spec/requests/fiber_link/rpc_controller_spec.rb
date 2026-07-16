@@ -248,7 +248,9 @@ RSpec.describe ::FiberLink::RpcController, type: :request do
       sign_in(admin)
 
       ["http://localhost/hook", "https://127.0.0.1/hook", "https://10.0.0.5/hook",
-       "https://192.168.1.10/hook", "https://169.254.169.254/latest", "https://service.internal/hook"].each do |target|
+       "https://192.168.1.10/hook", "https://169.254.169.254/latest", "https://service.internal/hook",
+       "https://127.1/hook", "https://0x7f000001/hook", "https://2130706433/hook",
+       "https://127.0.0.1./hook", "https://localhost./hook"].each do |target|
         post "/fiber-link/rpc",
              params: {
                jsonrpc: "2.0",

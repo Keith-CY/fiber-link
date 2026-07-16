@@ -91,7 +91,7 @@ module ::FiberLink
       # Webhook channel management is an operator surface: it configures
       # outbound deliveries (and their secrets) for the whole forum, so it is
       # restricted to staff rather than any logged-in creator.
-      if method.to_s.start_with?("notification.") && !current_user.staff?
+      if method.to_s.start_with?("notification.") && !current_user&.staff?
         render_error(request_id, :forbidden, -32001, "Unauthorized")
         return
       end
@@ -482,17 +482,26 @@ module ::FiberLink
       return false unless %w[http https].include?(uri.scheme)
       return false if uri.scheme == "http" && Rails.env.production?
 
-      host = uri.host.to_s.downcase
+      # A trailing dot is root-zone DNS syntax the resolver treats as the same
+      # host, so normalize it away before any comparison.
+      host = uri.host.to_s.downcase.chomp(".")
       return false if host.blank?
       return false if BLOCKED_WEBHOOK_HOSTS.include?(host)
       return false if host.end_with?(".local", ".internal", ".localhost")
 
       begin
-        ip = IPAddr.new(host)
+        # AI_NUMERICHOST parses every numeric literal form the backend's
+        # resolver would accept (shorthand 127.1, hex 0x7f000001, octal,
+        # plain decimal) WITHOUT doing DNS, closing the literal-form bypasses
+        # that IPAddr.new alone misses.
+        addrinfo = Socket.getaddrinfo(host, nil, nil, nil, nil, Socket::AI_NUMERICHOST)
+        ip_string = addrinfo.first[2]
+        ip = IPAddr.new(ip_string).native
         return false if ip.loopback? || ip.private? || ip.link_local? ||
           ip == IPAddr.new("0.0.0.0") || ip == IPAddr.new("::")
-      rescue IPAddr::InvalidAddressError
-        # Not an IP literal; hostname checks above apply.
+      rescue SocketError, IPAddr::InvalidAddressError
+        # Not an IP literal in any form; the hostname checks above apply and
+        # DNS-resolved private targets remain the worker network policy's job.
       end
 
       true
