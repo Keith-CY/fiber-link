@@ -8,8 +8,12 @@ import {
   DashboardSummaryResultSchema,
   NotificationChannelCreateParamsSchema,
   NotificationChannelCreateResultSchema,
+  NotificationChannelDeleteParamsSchema,
+  NotificationChannelDeleteResultSchema,
   NotificationChannelListParamsSchema,
   NotificationChannelListResultSchema,
+  NotificationChannelTestParamsSchema,
+  NotificationChannelTestResultSchema,
   RpcErrorCode,
   type RpcId,
   RpcIdSchema,
@@ -26,7 +30,13 @@ import {
   WithdrawalRequestResultSchema,
 } from "./contracts";
 import { handleDashboardAnalytics, handleDashboardSummary } from "./methods/dashboard";
-import { handleNotificationChannelCreate, handleNotificationChannelList } from "./methods/notification";
+import {
+  NotificationChannelNotFoundError,
+  handleNotificationChannelCreate,
+  handleNotificationChannelDelete,
+  handleNotificationChannelList,
+  handleNotificationChannelTest,
+} from "./methods/notification";
 import { getDefaultAdapterForStream, handleTipCreate, handleTipSettledFeed, handleTipStatus } from "./methods/tip";
 import { WithdrawalPolicyViolationError, quoteWithdrawal, requestWithdrawal } from "./methods/withdrawal";
 import {
@@ -420,6 +430,32 @@ export function registerRpc(
           resultSchema: NotificationChannelListResultSchema,
           handler: () => handleNotificationChannelList({ appId }),
           methodLabel: "notification.channel.list",
+        },
+        "notification.channel.delete": {
+          paramsSchema: NotificationChannelDeleteParamsSchema,
+          resultSchema: NotificationChannelDeleteResultSchema,
+          handler: (params) => handleNotificationChannelDelete({ appId, ...params }),
+          errorMap: [
+            {
+              match: (e) => e instanceof NotificationChannelNotFoundError,
+              code: RpcErrorCode.CHANNEL_NOT_FOUND,
+              message: "Notification channel not found",
+            },
+          ],
+          methodLabel: "notification.channel.delete",
+        },
+        "notification.channel.test": {
+          paramsSchema: NotificationChannelTestParamsSchema,
+          resultSchema: NotificationChannelTestResultSchema,
+          handler: (params) => handleNotificationChannelTest({ appId, ...params }),
+          errorMap: [
+            {
+              match: (e) => e instanceof NotificationChannelNotFoundError,
+              code: RpcErrorCode.CHANNEL_NOT_FOUND,
+              message: "Notification channel not found",
+            },
+          ],
+          methodLabel: "notification.channel.test",
         },
       };
 

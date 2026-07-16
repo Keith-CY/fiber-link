@@ -310,6 +310,7 @@ export const RpcErrorCode = {
   UNAUTHORIZED: -32001,
   RATE_LIMITED: -32005,
   TIP_NOT_FOUND: -32004,
+  CHANNEL_NOT_FOUND: -32006,
 } as const;
 
 export type RpcErrorCode = (typeof RpcErrorCode)[keyof typeof RpcErrorCode];
@@ -396,4 +397,22 @@ export const NotificationChannelListResultSchema = z.object({
       createdAt: z.string().datetime(),
     }),
   ),
+});
+
+export const NotificationChannelDeleteParamsSchema = z.object({
+  channelId: z.string().uuid(),
+});
+
+export const NotificationChannelDeleteResultSchema = z.object({
+  id: z.string().min(1),
+  disabled: z.boolean(),
+});
+
+export const NotificationChannelTestParamsSchema = z.object({
+  channelId: z.string().uuid(),
+});
+
+export const NotificationChannelTestResultSchema = z.object({
+  delivered: z.boolean(),
+  error: z.string().nullable(),
 });

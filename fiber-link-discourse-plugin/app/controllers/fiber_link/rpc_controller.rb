@@ -21,7 +21,7 @@ module ::FiberLink
     ALLOWED_SETTLEMENT_STATES = ["ALL", "UNPAID", "SETTLED", "FAILED"].freeze
     READ_METHOD_RATE_LIMIT = [60, 60].freeze
     MUTATING_METHOD_RATE_LIMIT = [10, 60].freeze
-    MUTATING_METHODS = ["tip.create", "withdrawal.request"].freeze
+    MUTATING_METHODS = ["tip.create", "withdrawal.request", "notification.channel.create", "notification.channel.delete", "notification.channel.test"].freeze
 
     # Proxy the backend SSE stream to the browser so clients don't need direct
     # access to the Fastify service and authentication remains Discourse-session-gated.
@@ -183,6 +183,8 @@ module ::FiberLink
         sanitize_notification_channel_create_params(params, request_id)
       when "notification.channel.list"
         {}
+      when "notification.channel.delete", "notification.channel.test"
+        sanitize_notification_channel_id_params(params, request_id)
       else
         render_error(request_id, :bad_request, -32601, "Method not allowed")
         nil
@@ -263,6 +265,18 @@ module ::FiberLink
     end
 
     ALLOWED_NOTIFICATION_EVENTS = %w[TIP_SETTLED WITHDRAWAL_COMPLETED WITHDRAWAL_FAILED WITHDRAWAL_RETRY_PENDING].freeze
+
+    UUID_PATTERN = /\A[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\z/i
+
+    def sanitize_notification_channel_id_params(params, request_id)
+      channel_id = params["channelId"].to_s.strip
+      unless channel_id.match?(UUID_PATTERN)
+        render_error(request_id, :bad_request, -32602, "Invalid params")
+        return nil
+      end
+
+      { channelId: channel_id }
+    end
 
     def sanitize_notification_channel_create_params(params, request_id)
       name = params["name"].to_s.strip

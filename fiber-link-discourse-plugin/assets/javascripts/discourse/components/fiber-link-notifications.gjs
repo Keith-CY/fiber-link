@@ -8,6 +8,7 @@ import { i18n } from "discourse-i18n";
 const joinEvents = (events) => (Array.isArray(events) ? events : []).join(", ");
 const isInSet = (set, value) => set instanceof Set && set.has(value);
 const yesNo = (v) => (v ? i18n("fiber_link.notifications.enabled_yes") : i18n("fiber_link.notifications.enabled_no"));
+const lookup = (map, key) => (map ? map[key] : undefined);
 
 
 async function rpcCall(method, params = {}) {
@@ -32,6 +33,8 @@ export default class FiberLinkNotifications extends Component {
   @tracked newTarget = "";
   @tracked newSecret = "";
   @tracked newEvents = new Set(["TIP_SETTLED"]);
+  @tracked busyChannelId = null;
+  @tracked testResults = {};
 
   get supportedEvents() {
     return [
@@ -100,6 +103,44 @@ export default class FiberLinkNotifications extends Component {
       this.errorMessage = e?.message || i18n("fiber_link.notifications.create_failed");
     } finally {
       this.isCreating = false;
+    }
+  }
+
+  @action
+  async deleteChannel(channel) {
+    if (this.busyChannelId) return;
+    this.busyChannelId = channel.id;
+    this.errorMessage = null;
+    try {
+      await rpcCall("notification.channel.delete", { channelId: channel.id });
+      await this.loadChannels();
+    } catch (e) {
+      this.errorMessage = e?.message || i18n("fiber_link.notifications.delete_failed");
+    } finally {
+      this.busyChannelId = null;
+    }
+  }
+
+  @action
+  async testChannel(channel) {
+    if (this.busyChannelId) return;
+    this.busyChannelId = channel.id;
+    this.errorMessage = null;
+    try {
+      const result = await rpcCall("notification.channel.test", { channelId: channel.id });
+      this.testResults = {
+        ...this.testResults,
+        [channel.id]: result?.delivered
+          ? i18n("fiber_link.notifications.test_ok")
+          : i18n("fiber_link.notifications.test_failed", { error: result?.error || "" }),
+      };
+    } catch (e) {
+      this.testResults = {
+        ...this.testResults,
+        [channel.id]: i18n("fiber_link.notifications.test_failed", { error: e?.message || "" }),
+      };
+    } finally {
+      this.busyChannelId = null;
     }
   }
 
@@ -187,6 +228,7 @@ export default class FiberLinkNotifications extends Component {
               <th>{{i18n "fiber_link.notifications.field_url"}}</th>
               <th>{{i18n "fiber_link.notifications.field_events"}}</th>
               <th>{{i18n "fiber_link.notifications.table_enabled"}}</th>
+              <th>{{i18n "fiber_link.notifications.table_actions"}}</th>
             </tr>
           </thead>
           <tbody>
@@ -196,6 +238,29 @@ export default class FiberLinkNotifications extends Component {
                 <td class="fiber-link-notifications__target">{{ch.target}}</td>
                 <td>{{joinEvents ch.events}}</td>
                 <td>{{yesNo ch.enabled}}</td>
+                <td class="fiber-link-notifications__actions">
+                  {{#if ch.enabled}}
+                    <button
+                      class="btn btn-small"
+                      type="button"
+                      disabled={{this.busyChannelId}}
+                      {{on "click" (fn this.testChannel ch)}}
+                    >
+                      {{i18n "fiber_link.notifications.action_test"}}
+                    </button>
+                    <button
+                      class="btn btn-danger btn-small"
+                      type="button"
+                      disabled={{this.busyChannelId}}
+                      {{on "click" (fn this.deleteChannel ch)}}
+                    >
+                      {{i18n "fiber_link.notifications.action_delete"}}
+                    </button>
+                  {{/if}}
+                  {{#if (lookup this.testResults ch.id)}}
+                    <span class="fiber-link-notifications__test-result">{{lookup this.testResults ch.id}}</span>
+                  {{/if}}
+                </td>
               </tr>
             {{/each}}
           </tbody>
