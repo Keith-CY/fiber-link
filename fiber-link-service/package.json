@@ -11,7 +11,7 @@
     "ci": "biome ci ."
   },
   "devDependencies": {
-    "@biomejs/biome": "^1.9",
+    "@biomejs/biome": "^2.5",
     "@vitest/coverage-v8": "^1.6.0"
   },
   "trustedDependencies": ["@biomejs/biome"]

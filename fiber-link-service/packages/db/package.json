@@ -16,8 +16,8 @@
     "pg": "^8.12.0"
   },
   "devDependencies": {
-    "@electric-sql/pglite": "0.1.5",
-    "drizzle-kit": "^0.23.2",
+    "@electric-sql/pglite": "0.5.4",
+    "drizzle-kit": "^0.31.10",
     "typescript": "^5.6.0",
     "vitest": "^1.6.0"
   }
