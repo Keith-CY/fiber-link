@@ -11,7 +11,7 @@ jobs:
       FNN_ASSET_SHA256: 8f9a69361f662438fa1fc29ddc668192810b13021536ebd1101c84dc0cfa330f
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Prepare Compose Env
         shell: bash
