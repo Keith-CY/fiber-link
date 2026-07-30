@@ -4,16 +4,16 @@
 > Contract: this generator writes only `docs/audit-snapshot.md` and `.github/architecture-audit-state.json`.
 > Canonical architecture index: `docs/current-architecture.md`.
 
-Run timestamp (UTC): `2026-02-28T00:36:48Z`
+Run timestamp (UTC): `2026-03-21T19:18:08Z`
 
 ## Metric Summary
 
 | Metric | Current | Delta |
 | --- | ---: | ---: |
-| `docs_superseded` | 6 | +3 |
+| `docs_superseded` | 6 | +0 |
 | `docs_todo` | 0 | +0 |
 | `core_todo` | 0 | +0 |
-| `test_files` | 62 | +4 |
+| `test_files` | 84 | +22 |
 
 ## Superseded/Diverged Docs
 - `docs/plans/2026-02-03-fiber-link-mvp-design.md` (`superseded`)
@@ -31,18 +31,34 @@ Run timestamp (UTC): `2026-02-28T00:36:48Z`
 
 ## Test File Delta
 
-- previous: `58`
-- current: `62`
-- signed delta: `+4`
-- previous hash: `f9b8b6467ce8238a`
-- current hash: `4981eab6b7cc4c5b`
+- previous: `62`
+- current: `84`
+- signed delta: `+22`
+- previous hash: `4981eab6b7cc4c5b`
+- current hash: `2b0fcfe446b20b1d`
 - added:
-  - `fiber-link-service/apps/rpc/src/methods/dashboard.test.ts`
-  - `fiber-link-service/apps/rpc/src/methods/tip.defaults.test.ts`
-  - `fiber-link-service/apps/rpc/src/rpc-error.test.ts`
-  - `fiber-link-service/apps/worker/src/withdrawal-reconciliation.test.ts`
+  - `deploy/compose/compose-backup.test.sh`
+  - `deploy/compose/compose-ops.test.sh`
+  - `fiber-link-discourse-plugin/spec/lib/fiber_link/tip_notification_sync_spec.rb`
+  - `fiber-link-service/apps/admin/src/withdrawal-policy-ops.test.ts`
+  - `fiber-link-service/apps/rpc/src/methods/liquidity.test.ts`
+  - `fiber-link-service/apps/rpc/src/methods/withdrawal.defaults.test.ts`
+  - `fiber-link-service/apps/worker/src/channel-rotation-legacy.test.ts`
+  - `fiber-link-service/apps/worker/src/channel-rotation.test.ts`
+  - `fiber-link-service/apps/worker/src/liquidity-batch.test.ts`
+  - `fiber-link-service/apps/worker/src/ops-summary.test.ts`
+  - `fiber-link-service/packages/db/src/liquidity-request-repo.test.ts`
+  - `fiber-link-service/packages/db/src/retry.test.ts`
+  - `fiber-link-service/packages/fiber-adapter/src/channel-lifecycle.test.ts`
+  - `fiber-link-service/packages/fiber-adapter/src/hot-wallet-inventory.test.ts`
+  - `fiber-link-service/packages/fiber-adapter/src/udt-onchain-withdrawal.test.ts`
+  - `scripts/e2e-discourse-four-flows-common.test.sh`
+  - `scripts/playwright-cli.test.sh`
+  - `scripts/playwright-workflow-explorer-proof.test.sh`
+  - `scripts/playwright-workflow-flow12.test.sh`
+  - `scripts/prepare-visual-acceptance-compose-env.test.sh`
+  - +2 more
 
 ## Diagnostics
 
-- `scan-prewrite` `SCAN_PREWRITE_DIRTY` (dirty_count=5, fingerprint=b98688f3ab1a17d2)
-  - representative paths: docs/README.md, docs/current-architecture.md, docs/plans/2026-02-07-phase2-delivery-plan.md, docs/plans/2026-02-11-phase3-sprint1-settlement-v1-plan.md, docs/plans/2026-02-13-phase3-priority3-balance-debit-design.md
+- `scan-prewrite` `SCAN_PREWRITE_CLEAN` (dirty_count=0, fingerprint=0)
