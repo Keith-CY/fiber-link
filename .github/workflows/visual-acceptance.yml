@@ -44,6 +44,9 @@ jobs:
         working-directory: fiber-link-service
         run: bun install --frozen-lockfile
 
+      - name: Prime Dockerfile base images from mirror
+        run: .github/scripts/prime-base-images-from-mirror.sh
+
       - name: Run visual acceptance in Docker
         env:
           GITHUB_TOKEN: ${{ github.token }}

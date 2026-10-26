@@ -488,6 +488,9 @@ jobs:
           WORKER_READINESS_TIMEOUT_MS=5000
           EOF
 
+      - name: Prime Dockerfile base images from mirror
+        run: .github/scripts/prime-base-images-from-mirror.sh
+
       - name: Run fiber-adapter docker e2e
         run: scripts/e2e-fiber-adapter-docker.sh
 
