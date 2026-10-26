@@ -44,7 +44,7 @@ jobs:
           path: |
             ~/.bun/install/cache
             fiber-link-service/node_modules
-          key: ${{ runner.os }}-bun-${{ hashFiles('fiber-link-service/bun.lockb') }}-service
+          key: ${{ runner.os }}-bun-${{ hashFiles('fiber-link-service/bun.lock') }}-service
           restore-keys: |
             ${{ runner.os }}-bun-
       - name: Install dependencies
@@ -115,7 +115,7 @@ jobs:
           path: |
             ~/.bun/install/cache
             fiber-link-service/node_modules
-          key: ${{ runner.os }}-bun-${{ hashFiles('fiber-link-service/bun.lockb') }}-coverage
+          key: ${{ runner.os }}-bun-${{ hashFiles('fiber-link-service/bun.lock') }}-coverage
           restore-keys: |
             ${{ runner.os }}-bun-
       - name: Install service dependencies

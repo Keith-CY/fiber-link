@@ -13,7 +13,7 @@
       "packages/db/migrations-archive/**",
       "**/*.sql",
       "**/*.md",
-      "bun.lockb"
+      "bun.lock"
     ]
   },
   "formatter": {

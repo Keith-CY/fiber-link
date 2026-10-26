@@ -1,7 +1,7 @@
 # Build context excludes for all images built from the repo root
 # (docker-compose builds service.Dockerfile and fnn/Dockerfile with `context: ../..`).
 # Only non-source artifacts are excluded here; every path the Dockerfiles COPY
-# — fiber-link-service/{package.json,bun.lockb,bunfig.toml,tsconfig.base.json,
+# — fiber-link-service/{package.json,bun.lock,bunfig.toml,tsconfig.base.json,
 # pnpm-workspace.yaml,apps,packages} (including packages/db/drizzle migrations)
 # and deploy/compose/fnn/{config,entrypoint.sh} — is intentionally kept.
 

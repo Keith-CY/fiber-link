@@ -36,7 +36,7 @@ jobs:
           path: |
             ~/.bun/install/cache
             fiber-link-service/node_modules
-          key: ${{ runner.os }}-bun-${{ hashFiles('fiber-link-service/bun.lockb') }}-visual-acceptance
+          key: ${{ runner.os }}-bun-${{ hashFiles('fiber-link-service/bun.lock') }}-visual-acceptance
           restore-keys: |
             ${{ runner.os }}-bun-
 
