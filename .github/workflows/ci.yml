@@ -505,7 +505,9 @@ jobs:
     env:
       # Pin Discourse ref to reduce upstream-induced CI breakage. Update as needed.
       DISCOURSE_REF: 26f3e2aa87a3abb35849183e0740fe7ab84cec67
-      DISCOURSE_DEV_IMAGE: discourse/discourse_dev:release
+      # Pin the dev image too: the floating `release` tag moved to Ruby 4, which
+      # the pinned Discourse ref's Gemfile (`ruby "~> 3.3"`) rejects.
+      DISCOURSE_DEV_IMAGE: discourse/discourse_dev:20260925-0545@sha256:1db7981a20cdff0b55f3f265e7b40163128e04dacaa29cf51ee475f28b6a36e5
       # Keep request spec scope explicit in CI; add more paths via PLUGIN_SMOKE_EXTRA_SPECS as needed.
       PLUGIN_SMOKE_REQUEST_SPECS: "plugins/fiber-link/spec/requests/fiber_link_spec.rb plugins/fiber-link/spec/requests/fiber_link/rpc_controller_spec.rb"
       PLUGIN_SMOKE_EXTRA_SPECS: ""
