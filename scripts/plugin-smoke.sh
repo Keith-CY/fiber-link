@@ -37,6 +37,8 @@ else
   echo "Skipping Discourse fetch because PLUGIN_SMOKE_SKIP_FETCH=1."
 fi
 
+# Undo a previous run's boot_dev image pin so it cannot block the checkout.
+git -C "$DISCOURSE_ROOT" checkout -- bin/docker/boot_dev 2>/dev/null || true
 if ! git -C "$DISCOURSE_ROOT" checkout "$DISCOURSE_REF"; then
   current_ref="$(git -C "$DISCOURSE_ROOT" rev-parse --short HEAD)"
   echo "Warning: failed to checkout $DISCOURSE_REF; continuing on current ref $current_ref."
@@ -54,6 +56,7 @@ ln -sfn "$PLUGIN_DIR" "$DISCOURSE_ROOT/plugins/fiber-link"
   if docker ps -a --format '{{.Names}}' | grep -qx 'discourse_dev'; then
     docker start discourse_dev >/dev/null 2>&1 || true
   else
+    "$REPO_ROOT/scripts/pin-discourse-dev-image.sh" "$DISCOURSE_ROOT"
     ./bin/docker/boot_dev
   fi
   LOAD_PLUGINS=1 RAILS_ENV=test ./bin/docker/rake db:create db:migrate

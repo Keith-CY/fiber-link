@@ -80,6 +80,7 @@ Environment knobs:
   WORKFLOW_PAUSE_START_EMBER_CLI=1
   DISCOURSE_DEV_ROOT=/tmp/discourse-dev
   DISCOURSE_REF=26f3e2aa87a3abb35849183e0740fe7ab84cec67
+  DISCOURSE_DEV_IMAGE=discourse/discourse_dev:<tag>@sha256:<digest> (default: pinned in scripts/pin-discourse-dev-image.sh)
 
 When --skip-discourse is used, these are required:
   WORKFLOW_TIPPER_USER_ID
@@ -1189,6 +1190,7 @@ if [[ "${SKIP_DISCOURSE}" -eq 0 ]]; then
     if docker ps -a --format '{{.Names}}' | grep -qx discourse_dev; then
       docker start discourse_dev >/dev/null 2>&1 || true
     else
+      "${ROOT_DIR}/scripts/pin-discourse-dev-image.sh" "${DISCOURSE_DEV_ROOT}"
       run_with_pseudo_tty ./bin/docker/boot_dev
     fi
     "${discourse_exec[@]}" mkdir -p "${DISCOURSE_CONTAINER_TMPDIR}"

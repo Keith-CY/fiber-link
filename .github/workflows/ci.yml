@@ -33,6 +33,7 @@ jobs:
           ./scripts/render-visual-acceptance-comment.test.sh
           ./scripts/playwright-workflow-flow12.test.sh
           ./scripts/playwright-workflow-author-withdrawal.test.sh
+          ./scripts/pin-discourse-dev-image.test.sh
       - name: Check plugin i18n key parity
         run: ./fiber-link-discourse-plugin/i18n-parity.test.sh
       - uses: oven-sh/setup-bun@v2
