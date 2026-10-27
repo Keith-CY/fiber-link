@@ -162,7 +162,6 @@ export async function decideWithdrawalRequestLiquidity(
   });
   const reserved = options.repo
     ? await options.repo.getActiveCkbAddressReservationTotal({
-        appId: input.appId,
         asset: input.asset,
         network,
       })

@@ -150,7 +150,8 @@ function getHotWalletReservationKey(input: RequestWithdrawalInput): string | nul
   try {
     const { isTestnet } = resolveCkbNetworkConfig(input.destination.address);
     const network = isTestnet ? "AGGRON4" : "LINA";
-    return `${input.appId}:${input.asset}:${network}`;
+    // The hot wallet is shared by every app, so serialize per asset/network rather than per app.
+    return `${input.asset}:${network}`;
   } catch {
     return null;
   }

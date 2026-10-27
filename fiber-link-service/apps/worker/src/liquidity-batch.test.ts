@@ -252,6 +252,74 @@ describe("runLiquidityBatch", () => {
     });
   });
 
+  it("counts other apps' active reservations against the shared hot wallet before promoting", async () => {
+    const repo = createInMemoryWithdrawalRepo();
+    const liquidityRequestRepo = createInMemoryLiquidityRequestRepo();
+    await repo.create({
+      appId: "app1",
+      userId: "u1",
+      asset: "CKB",
+      amount: "80",
+      toAddress: "ckt1qotherappreserved",
+    });
+    const liquidityRequest = await liquidityRequestRepo.create({
+      appId: "app2",
+      asset: "CKB",
+      network: "AGGRON4",
+      sourceKind: "FIBER_TO_CKB_CHAIN",
+      requiredAmount: "40",
+    });
+    const waiting = await repo.createLiquidityPending({
+      appId: "app2",
+      userId: "u2",
+      asset: "CKB",
+      amount: "40",
+      toAddress: "ckt1qwaitingpending",
+      liquidityRequestId: liquidityRequest.id,
+      liquidityPendingReason: "hot wallet underfunded",
+    });
+    const inventoryProvider = vi.fn(async () => ({
+      asset: "CKB" as const,
+      network: "AGGRON4" as const,
+      availableAmount: "100",
+    }));
+
+    const result = await runLiquidityBatch({
+      now: new Date("2026-03-07T00:05:00.000Z"),
+      repo,
+      liquidityRequestRepo,
+      liquidityProvider: {
+        getLiquidityCapabilities: async () => ({
+          directRebalance: true,
+          channelLifecycle: true,
+          localCkbSweep: false,
+        }),
+        listChannels: async () => ({ channels: [] }),
+        openChannel: async () => ({ temporaryChannelId: "0xunused" }),
+        acceptChannel: async () => ({}),
+        getCkbChannelAcceptancePolicy: async () => ({
+          openChannelAutoAcceptMinFundingAmount: "0",
+          acceptChannelFundingAmount: "0",
+        }),
+        shutdownChannel: async () => ({}),
+        ensureChainLiquidity: async (): Promise<EnsureChainLiquidityResult> => ({
+          state: "FUNDED" as const,
+          started: false,
+        }),
+        getRebalanceStatus: async (): Promise<GetRebalanceStatusResult> => ({
+          state: "FUNDED" as const,
+        }),
+      },
+      inventoryProvider,
+    });
+
+    // app2's 40 fits the 100 CKB wallet alone, but app1 already reserves 80 of it.
+    expect(result.promoted).toBe(0);
+    await expect(repo.findByIdOrThrow(waiting.id)).resolves.toMatchObject({
+      state: "LIQUIDITY_PENDING",
+    });
+  });
+
   it("uses targetAvailableAmount metadata when deciding whether a rebalance is funded", async () => {
     const repo = createInMemoryWithdrawalRepo();
     const liquidityRequestRepo = createInMemoryLiquidityRequestRepo();
