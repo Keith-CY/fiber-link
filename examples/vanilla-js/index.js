@@ -21,7 +21,8 @@ function buildRequestId() {
 async function buildSignedHeaders(appId, secret, payload) {
   const ts = String(Math.floor(Date.now() / 1000));
   const nonce = buildRequestId().replace(/-/g, "").slice(0, 16);
-  const message = `${ts}.${nonce}.${payload}`;
+  // Signature v2 binds the app id: `v2\n<appId>\n<ts>.<nonce>.<payload>`.
+  const message = `v2\n${appId}\n${ts}.${nonce}.${payload}`;
 
   const key = await crypto.subtle.importKey(
     "raw",
@@ -35,7 +36,7 @@ async function buildSignedHeaders(appId, secret, payload) {
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
 
-  return { "x-app-id": appId, "x-ts": ts, "x-nonce": nonce, "x-signature": signature };
+  return { "x-app-id": appId, "x-ts": ts, "x-nonce": nonce, "x-signature": signature, "x-signature-version": "2" };
 }
 
 async function rpcCall(endpoint, appId, secret, method, params) {

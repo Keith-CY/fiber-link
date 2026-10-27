@@ -95,7 +95,9 @@ sign_payload() {
   local payload="$1"
   local ts="$2"
   local nonce="$3"
-  printf '%s' "${ts}.${nonce}.${payload}" \
+  local app_id="$4"
+  # Signature v2 binds the app id: v2\n<appId>\n<ts>.<nonce>.<payload>
+  printf 'v2\n%s\n%s' "${app_id}" "${ts}.${nonce}.${payload}" \
     | openssl dgst -sha256 -hmac "${FIBER_LINK_HMAC_SECRET}" -hex \
     | awk '{print $2}'
 }
@@ -105,13 +107,14 @@ rpc_call_signed() {
   local nonce="$2"
   local ts sig
   ts="$(date +%s)"
-  sig="$(sign_payload "${payload}" "${ts}" "${nonce}")"
+  sig="$(sign_payload "${payload}" "${ts}" "${nonce}" "local-dev")"
   curl -fsS "http://127.0.0.1:${RPC_PORT:-3000}/rpc" \
     -H "content-type: application/json" \
     -H "x-app-id: local-dev" \
     -H "x-ts: ${ts}" \
     -H "x-nonce: ${nonce}" \
     -H "x-signature: ${sig}" \
+    -H "x-signature-version: 2" \
     -d "${payload}"
 }
 
@@ -177,7 +180,7 @@ This returns the stack to a clean baseline for the next deterministic re-run.
 - Symptom: JSON-RPC error `Unauthorized`.
 - Fix:
   1. Ensure `.env` has non-empty `FIBER_LINK_HMAC_SECRET`.
-  2. Ensure signature input is exactly `ts.nonce.payload` (no extra whitespace/newlines).
+  2. Ensure signature input is exactly `v2\n<appId>\n<ts>.<nonce>.<payload>` (no other whitespace/newlines) and the request sends `x-signature-version: 2`.
   3. Use a fresh nonce and current timestamp.
 
 ### 3) `tip.create` does not return invoice within 120s

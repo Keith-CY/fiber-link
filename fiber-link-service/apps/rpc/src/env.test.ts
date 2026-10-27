@@ -40,6 +40,13 @@ describe("validateRpcEnv", () => {
     expect(warnings.some((w) => w.includes("FIBER_LINK_HMAC_SECRET"))).toBe(true);
   });
 
+  it("warns when legacy v1 RPC signatures are allowed", () => {
+    expect(validateRpcEnv(VALID_ENV).warnings.some((w) => w.includes("RPC_ALLOW_LEGACY_SIGNATURE"))).toBe(false);
+    const { errors, warnings } = validateRpcEnv({ ...VALID_ENV, RPC_ALLOW_LEGACY_SIGNATURE: "true" });
+    expect(errors).toEqual([]);
+    expect(warnings.some((w) => w.includes("RPC_ALLOW_LEGACY_SIGNATURE"))).toBe(true);
+  });
+
   it("warns when no Redis URL is configured for the nonce store", () => {
     const { errors, warnings } = validateRpcEnv({
       ...VALID_ENV,

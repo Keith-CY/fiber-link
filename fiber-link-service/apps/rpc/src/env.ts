@@ -34,6 +34,12 @@ export function validateRpcEnv(env: NodeJS.ProcessEnv = process.env): RpcEnvRepo
     warnings.push("FIBER_LINK_HMAC_SECRET is unset: only per-app secrets from the database can authenticate requests");
   }
 
+  if (env.RPC_ALLOW_LEGACY_SIGNATURE?.trim().toLowerCase() === "true") {
+    warnings.push(
+      "RPC_ALLOW_LEGACY_SIGNATURE=true: legacy v1 signatures do not cover x-app-id, so apps sharing a secret can impersonate each other; disable once all signers send x-signature-version: 2",
+    );
+  }
+
   if (isBlank(env.FIBER_LINK_NONCE_REDIS_URL) && isBlank(env.REDIS_URL)) {
     warnings.push(
       "No Redis URL configured (FIBER_LINK_NONCE_REDIS_URL / REDIS_URL): nonce replay protection falls back to in-process memory and is not safe across multiple instances",

@@ -228,6 +228,14 @@ describe("FiberLinkClient signed mode header generation", () => {
     expect(headers["x-ts"]).toMatch(/^\d+$/);
     expect(headers["x-nonce"]).toBeTruthy();
     expect(headers["x-signature"]).toMatch(/^[0-9a-f]+$/);
+    expect(headers["x-signature-version"]).toBe("2");
+
+    const { createHmac } = await import("node:crypto");
+    const body = call[1].body as string;
+    const expected = createHmac("sha256", "test-secret")
+      .update(`v2\ntest-app\n${headers["x-ts"]}.${headers["x-nonce"]}.${body}`)
+      .digest("hex");
+    expect(headers["x-signature"]).toBe(expected);
   });
 });
 

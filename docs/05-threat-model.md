@@ -31,7 +31,8 @@
 
 ## 0.1 Current implementation posture
 
-- `POST /rpc` uses HMAC auth with headers `x-app-id`, `x-ts`, `x-nonce`, and `x-signature`.
+- `POST /rpc` uses HMAC auth with headers `x-app-id`, `x-ts`, `x-nonce`, `x-signature`, and `x-signature-version: 2`.
+- Signature v2 covers `v2\n<appId>\n<ts>.<nonce>.<payload>`, so a request signed for one app cannot be re-labelled as another app that shares the secret (e.g. the `FIBER_LINK_HMAC_SECRET` fallback). Legacy v1 signatures (`ts.nonce.payload`, no app id) are rejected unless `RPC_ALLOW_LEGACY_SIGNATURE=true` is set during a migration.
 - Replay defense uses both bounded timestamp validation and nonce tracking (5-minute TTL).
 - `x-nonce` replay storage is in-memory by default and can use Redis when `FIBER_LINK_NONCE_REDIS_URL` is set.
 - Secret resolution is DB-first for app-level secrets with env fallback.
@@ -245,7 +246,8 @@ Below is a practical MVP-focused threat list. “Severity” is relative (H/M/L)
 
 ### 6.1 Auth between Discourse and Fiber Link Service
 - **HMAC signed requests** (implemented):
-  - headers: `x-app-id`, `x-ts`, `x-nonce`, `x-signature` over the raw request payload and timestamp/nonce
+  - headers: `x-app-id`, `x-ts`, `x-nonce`, `x-signature`, `x-signature-version: 2`; the signature (v2) covers the app id, timestamp, nonce, and raw request payload as `v2\n<appId>\n<ts>.<nonce>.<payload>`
+  - legacy v1 signatures (`<ts>.<nonce>.<payload>`, app id not covered) are accepted only with `RPC_ALLOW_LEGACY_SIGNATURE=true`
   - replay protection:
     - reject stale/invalid timestamps (5-minute window),
     - reject duplicate nonce within TTL per `app_id`
