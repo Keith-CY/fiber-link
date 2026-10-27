@@ -271,6 +271,26 @@ describe("rpc contracts", () => {
     ).toBe("LIQUIDITY_PENDING");
   });
 
+  it.each(["CKB", "USDI"] as const)("limits %s amounts to 8 decimal places", (asset) => {
+    const destination = { kind: "PAYMENT_REQUEST", paymentRequest: "fiber:invoice:example" } as const;
+    const tip = (amount: string) =>
+      TipCreateParamsSchema.safeParse({ postId: "p1", fromUserId: "u1", toUserId: "u2", asset, amount }).success;
+    const withdrawal = (amount: string) =>
+      WithdrawalRequestParamsSchema.safeParse({ userId: "u1", asset, amount, destination }).success;
+    const legacyWithdrawal = (amount: string) =>
+      WithdrawalRequestParamsSchema.safeParse({ userId: "u1", asset, amount, toAddress: "fiber:invoice:example" })
+        .success;
+    const quote = (amount: string) =>
+      WithdrawalQuoteParamsSchema.safeParse({ userId: "u1", asset, amount, destination }).success;
+
+    for (const parse of [tip, withdrawal, legacyWithdrawal, quote]) {
+      expect(parse("100.00000001")).toBe(true);
+      expect(parse("100.000000001")).toBe(false);
+      expect(parse("0.000000001")).toBe(false);
+      expect(parse("100.")).toBe(false);
+    }
+  });
+
   it("keeps rpc error code constants stable", () => {
     expect(RpcErrorCode.INVALID_REQUEST).toBe(-32600);
     expect(RpcErrorCode.INVALID_PARAMS).toBe(-32602);
