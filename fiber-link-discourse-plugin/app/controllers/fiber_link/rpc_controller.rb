@@ -206,7 +206,9 @@ module ::FiberLink
         nil
       end
       post = post_id && Post.find_by(id: post_id)
-      unless post
+      # A missing post and one the tipper may not tip get the same reply so
+      # the endpoint cannot be used to probe for hidden or private post ids.
+      unless post && tippable_post?(post)
         render_error(request_id, :bad_request, -32602, "Invalid params")
         return nil
       end
@@ -225,6 +227,14 @@ module ::FiberLink
         toUserId: post.user_id.to_s,
         message: params["message"].to_s.strip.presence,
       }.compact
+    end
+
+    # Tips create a ledger obligation for the post author, so the tipper must
+    # be able to see the post, the post and its topic must be live, and the
+    # author must be a real user (system/bot balances can never be withdrawn).
+    def tippable_post?(post)
+      post.topic.present? && !post.trashed? && !post.hidden? && guardian.can_see?(post) &&
+        post.user&.human?
     end
 
     def sanitize_dashboard_summary_params(params, request_id)
@@ -433,7 +443,7 @@ module ::FiberLink
         tip["counterpartyUsername"] = username if username.present?
 
         post = posts[tip["postId"].to_s]
-        next unless post
+        next unless post && guardian.can_see?(post)
 
         tip["postUrl"] = post.url
         tip["postContextLabel"] = post.post_number.to_i > 1 ? "View the Reply" : "View the Post"
