@@ -1,17 +1,61 @@
 import Fastify from "fastify";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { type StreamInvoiceRecord, registerStreamRoute } from "./stream";
+import { verifyHmac } from "./auth/hmac";
+import { type StreamAuth, type StreamInvoiceRecord, registerStreamRoute, streamSignaturePayload } from "./stream";
 
 const APP_ID = "app1";
-const APP_HEADERS = { "x-app-id": APP_ID };
+const SECRETS: Record<string, string> = {
+  [APP_ID]: "app1-secret",
+  "busy-app": "busy-secret",
+  "other-app": "other-secret",
+};
+
+let nonceCounter = 0;
+function signStream(invoice: string, appId = APP_ID, overrides: { ts?: string; secret?: string } = {}) {
+  const ts = overrides.ts ?? String(Math.floor(Date.now() / 1000));
+  const nonce = `nonce-${++nonceCounter}`;
+  const signature = verifyHmac.sign({
+    secret: overrides.secret ?? SECRETS[appId] ?? "",
+    payload: streamSignaturePayload(invoice),
+    ts,
+    nonce,
+  });
+  return { appId, ts, nonce, signature };
+}
+
+// Signed x-app-id/x-ts/x-nonce/x-signature headers, as server-side proxies send.
+function authHeaders(invoice: string, appId = APP_ID) {
+  const { ts, nonce, signature } = signStream(invoice, appId);
+  return { "x-app-id": appId, "x-ts": ts, "x-nonce": nonce, "x-signature": signature };
+}
+
+// Signed query string, as browser EventSource clients send.
+function authQuery(invoice: string, appId = APP_ID, overrides: { ts?: string; secret?: string } = {}) {
+  const creds = signStream(invoice, appId, overrides);
+  return `appId=${creds.appId}&ts=${creds.ts}&nonce=${creds.nonce}&signature=${creds.signature}`;
+}
+
+function testAuth(): StreamAuth {
+  const seenNonces = new Set<string>();
+  return {
+    resolveSecret: async (appId) => SECRETS[appId] ?? "",
+    isTimestampFresh: (ts) => Math.abs(Date.now() - Number(ts) * 1000) <= 5 * 60 * 1000,
+    isReplay: async (appId, nonce) => {
+      const key = `${appId}:${nonce}`;
+      if (seenNonces.has(key)) return true;
+      seenNonces.add(key);
+      return false;
+    },
+  };
+}
 
 function ownedInvoice(invoiceState: string, appId = APP_ID): StreamInvoiceRecord {
   return { invoiceState, appId };
 }
 
-function buildTestApp(options: Parameters<typeof registerStreamRoute>[1]) {
+function buildTestApp(options: Omit<Parameters<typeof registerStreamRoute>[1], "auth"> & { auth?: StreamAuth }) {
   const app = Fastify({ logger: false });
-  registerStreamRoute(app, options);
+  registerStreamRoute(app, { auth: testAuth(), ...options });
   return app;
 }
 
@@ -40,14 +84,79 @@ function makeMockSubscriber(onSubscribe?: (channel: string) => void) {
 describe("GET /rpc/stream", () => {
   it("returns 400 when invoice query param is missing", async () => {
     const app = buildTestApp({ getInvoice: async () => ownedInvoice("UNPAID") });
-    const res = await app.inject({ method: "GET", url: "/rpc/stream", headers: APP_HEADERS });
+    const res = await app.inject({ method: "GET", url: "/rpc/stream", headers: authHeaders("") });
     expect(res.statusCode).toBe(400);
   });
 
-  it("returns 401 when no app id is provided", async () => {
+  it("returns 401 when no credentials are provided", async () => {
     const app = buildTestApp({ getInvoice: async () => ownedInvoice("UNPAID") });
     const res = await app.inject({ method: "GET", url: "/rpc/stream?invoice=inv-1" });
     expect(res.statusCode).toBe(401);
+  });
+
+  it("returns 401 when only an unsigned app id is provided", async () => {
+    const app = buildTestApp({ getInvoice: async () => ownedInvoice("SETTLED") });
+    const viaHeader = await app.inject({
+      method: "GET",
+      url: "/rpc/stream?invoice=inv-unsigned",
+      headers: { "x-app-id": APP_ID },
+    });
+    expect(viaHeader.statusCode).toBe(401);
+    const viaQuery = await app.inject({ method: "GET", url: `/rpc/stream?invoice=inv-unsigned&appId=${APP_ID}` });
+    expect(viaQuery.statusCode).toBe(401);
+  });
+
+  it("returns 401 for a wrong secret, a signature for another invoice, or a stale timestamp", async () => {
+    const getInvoice = vi.fn(async () => ownedInvoice("SETTLED"));
+    const app = buildTestApp({ getInvoice });
+    const staleTs = String(Math.floor(Date.now() / 1000) - 10 * 60);
+    const otherInvoiceCreds = authQuery("inv-other");
+    for (const url of [
+      `/rpc/stream?invoice=inv-bad&${authQuery("inv-bad", APP_ID, { secret: "wrong-secret" })}`,
+      `/rpc/stream?invoice=inv-bad&${otherInvoiceCreds}`,
+      `/rpc/stream?invoice=inv-bad&${authQuery("inv-bad", APP_ID, { ts: staleTs })}`,
+      `/rpc/stream?invoice=inv-bad&${authQuery("inv-bad", "unknown-app")}`,
+    ]) {
+      const res = await app.inject({ method: "GET", url });
+      expect(res.statusCode).toBe(401);
+      expect(res.json()).toEqual({ error: "Unauthorized" });
+    }
+    expect(getInvoice).not.toHaveBeenCalled();
+  });
+
+  it("returns 401 when a signed request is replayed", async () => {
+    const app = buildTestApp({ getInvoice: async () => ownedInvoice("SETTLED") });
+    const headers = authHeaders("inv-replay");
+    const first = await app.inject({ method: "GET", url: "/rpc/stream?invoice=inv-replay", headers });
+    expect(first.statusCode).toBe(200);
+    const replayed = await app.inject({ method: "GET", url: "/rpc/stream?invoice=inv-replay", headers });
+    expect(replayed.statusCode).toBe(401);
+  });
+
+  it("does not let unauthenticated requests occupy the app's stream slots", async () => {
+    const subscriber = makeMockSubscriber();
+    const app = buildTestApp({
+      getInvoice: async () => ownedInvoice("UNPAID"),
+      createSubscriber: () => subscriber as never,
+      maxConnectionsPerApp: 1,
+    });
+
+    const unsigned = await app.inject({
+      method: "GET",
+      url: "/rpc/stream?invoice=inv-dos",
+      headers: { "x-app-id": APP_ID },
+    });
+    expect(unsigned.statusCode).toBe(401);
+    expect(subscriber.subscribe).not.toHaveBeenCalled();
+
+    const legit = app.inject({ method: "GET", url: "/rpc/stream?invoice=inv-dos", headers: authHeaders("inv-dos") });
+    await vi.waitFor(() => expect(subscriber.subscribe).toHaveBeenCalled());
+    subscriber.emit(
+      "message",
+      "fiber-link:settlement:inv-dos",
+      JSON.stringify({ invoice: "inv-dos", status: "SETTLED" }),
+    );
+    expect((await legit).statusCode).toBe(200);
   });
 
   it("returns 403 when the invoice belongs to a different app", async () => {
@@ -55,17 +164,17 @@ describe("GET /rpc/stream", () => {
     const res = await app.inject({
       method: "GET",
       url: "/rpc/stream?invoice=inv-foreign",
-      headers: APP_HEADERS,
+      headers: authHeaders("inv-foreign"),
     });
     expect(res.statusCode).toBe(403);
     expect(res.json()).toEqual({ error: "Invoice does not belong to this app" });
   });
 
-  it("accepts the app id via the appId query param for EventSource clients", async () => {
+  it("accepts signed query-param credentials for EventSource clients", async () => {
     const app = buildTestApp({ getInvoice: async () => ownedInvoice("SETTLED") });
     const res = await app.inject({
       method: "GET",
-      url: `/rpc/stream?invoice=inv-qs&appId=${APP_ID}`,
+      url: `/rpc/stream?invoice=inv-qs&${authQuery("inv-qs")}`,
     });
     expect(res.statusCode).toBe(200);
     expect(res.body).toContain('"status":"SETTLED"');
@@ -81,7 +190,7 @@ describe("GET /rpc/stream", () => {
     });
     const res = await app.inject({
       method: "GET",
-      url: `/rpc/stream?invoice=inv-dup&invoice=inv-other&appId=${APP_ID}&appId=other-app`,
+      url: `/rpc/stream?invoice=inv-dup&invoice=inv-other&${authQuery("inv-dup")}&appId=other-app`,
     });
     expect(res.statusCode).toBe(200);
     expect(res.body).toContain('"status":"SETTLED"');
@@ -93,7 +202,7 @@ describe("GET /rpc/stream", () => {
     const res = await app.inject({
       method: "GET",
       url: "/rpc/stream?invoice=missing",
-      headers: APP_HEADERS,
+      headers: authHeaders("missing"),
     });
     expect(res.statusCode).toBe(404);
   });
@@ -103,7 +212,7 @@ describe("GET /rpc/stream", () => {
     const res = await app.inject({
       method: "GET",
       url: "/rpc/stream?invoice=inv-settled",
-      headers: APP_HEADERS,
+      headers: authHeaders("inv-settled"),
     });
     expect(res.statusCode).toBe(200);
     expect(res.headers["content-type"]).toMatch(/text\/event-stream/);
@@ -129,7 +238,7 @@ describe("GET /rpc/stream", () => {
     const res = await app.inject({
       method: "GET",
       url: "/rpc/stream?invoice=inv-1",
-      headers: APP_HEADERS,
+      headers: authHeaders("inv-1"),
     });
     expect(res.statusCode).toBe(200);
     expect(res.body).toContain('"status":"LISTENING"');
@@ -151,7 +260,7 @@ describe("GET /rpc/stream", () => {
     const pending = app.inject({
       method: "GET",
       url: "/rpc/stream?invoice=inv-shutdown",
-      headers: APP_HEADERS,
+      headers: authHeaders("inv-shutdown"),
     });
     await vi.waitFor(() => {
       expect(subscribed).toBe(true);
@@ -177,7 +286,7 @@ describe("GET /rpc/stream", () => {
 
     const res = await second.inject({
       method: "GET",
-      url: `/rpc/stream?invoice=inv-multi&appId=${APP_ID}`,
+      url: `/rpc/stream?invoice=inv-multi&${authQuery("inv-multi")}`,
     });
     expect(res.statusCode).toBe(200);
     expect(res.body).toContain('"status":"SETTLED"');
@@ -189,6 +298,7 @@ describe("GET /rpc/stream", () => {
 
     const app = Fastify({ logger: false });
     registerStreamRoute(app, {
+      auth: testAuth(),
       getInvoice: async () => ownedInvoice("UNPAID"),
       createSubscriber: () => subscriber as unknown as InstanceType<typeof import("ioredis").default>,
       timeoutMs: 50,
@@ -197,7 +307,7 @@ describe("GET /rpc/stream", () => {
     const res = await app.inject({
       method: "GET",
       url: "/rpc/stream?invoice=inv-timeout",
-      headers: APP_HEADERS,
+      headers: authHeaders("inv-timeout"),
     });
     expect(res.statusCode).toBe(200);
     expect(res.body).toContain('"status":"TIMEOUT"');
@@ -209,7 +319,7 @@ describe("GET /rpc/stream", () => {
     const res = await app.inject({
       method: "GET",
       url: "/rpc/stream?invoice=inv-headers",
-      headers: APP_HEADERS,
+      headers: authHeaders("inv-headers"),
     });
     expect(res.headers["cache-control"]).toBe("no-cache");
     expect(res.headers["access-control-allow-origin"]).toBe("*");
@@ -221,6 +331,7 @@ describe("GET /rpc/stream", () => {
 
     const app = Fastify({ logger: false });
     registerStreamRoute(app, {
+      auth: testAuth(),
       getInvoice: async () => ownedInvoice("UNPAID"),
       createSubscriber: () => subscriber as unknown as InstanceType<typeof import("ioredis").default>,
       timeoutMs: 5000,
@@ -234,7 +345,7 @@ describe("GET /rpc/stream", () => {
     const res = await app.inject({
       method: "GET",
       url: "/rpc/stream?invoice=inv-poll",
-      headers: APP_HEADERS,
+      headers: authHeaders("inv-poll"),
     });
     expect(res.statusCode).toBe(200);
     expect(res.body).toContain('"status":"LISTENING"');
@@ -251,10 +362,14 @@ describe("GET /rpc/stream", () => {
       maxConnectionsPerApp: 1,
     });
 
-    const first = app.inject({ method: "GET", url: "/rpc/stream?invoice=inv-held", headers: APP_HEADERS });
+    const first = app.inject({ method: "GET", url: "/rpc/stream?invoice=inv-held", headers: authHeaders("inv-held") });
     await vi.waitFor(() => expect(subscriber.subscribe).toHaveBeenCalled());
 
-    const second = await app.inject({ method: "GET", url: "/rpc/stream?invoice=inv-blocked", headers: APP_HEADERS });
+    const second = await app.inject({
+      method: "GET",
+      url: "/rpc/stream?invoice=inv-blocked",
+      headers: authHeaders("inv-blocked"),
+    });
     expect(second.statusCode).toBe(429);
     expect(second.json()).toEqual({ error: "Too many concurrent streams" });
 
@@ -266,7 +381,11 @@ describe("GET /rpc/stream", () => {
     const firstRes = await first;
     expect(firstRes.statusCode).toBe(200);
 
-    const third = await app.inject({ method: "GET", url: "/rpc/stream?invoice=inv-fast", headers: APP_HEADERS });
+    const third = await app.inject({
+      method: "GET",
+      url: "/rpc/stream?invoice=inv-fast",
+      headers: authHeaders("inv-fast"),
+    });
     expect(third.statusCode).toBe(200);
   });
 
@@ -278,13 +397,17 @@ describe("GET /rpc/stream", () => {
       maxConnections: 1,
     });
 
-    const first = app.inject({ method: "GET", url: "/rpc/stream?invoice=inv-1", headers: { "x-app-id": "busy-app" } });
+    const first = app.inject({
+      method: "GET",
+      url: "/rpc/stream?invoice=inv-1",
+      headers: authHeaders("inv-1", "busy-app"),
+    });
     await vi.waitFor(() => expect(subscriber.subscribe).toHaveBeenCalled());
 
     const second = await app.inject({
       method: "GET",
       url: "/rpc/stream?invoice=inv-2",
-      headers: { "x-app-id": "other-app" },
+      headers: authHeaders("inv-2", "other-app"),
     });
     expect(second.statusCode).toBe(429);
 
@@ -297,7 +420,11 @@ describe("GET /rpc/stream", () => {
       getInvoice: async () => ownedInvoice("SETTLED"),
       corsOrigin: "https://forum.example.com",
     });
-    const res = await app.inject({ method: "GET", url: "/rpc/stream?invoice=inv-cors", headers: APP_HEADERS });
+    const res = await app.inject({
+      method: "GET",
+      url: "/rpc/stream?invoice=inv-cors",
+      headers: authHeaders("inv-cors"),
+    });
     expect(res.statusCode).toBe(200);
     expect(res.headers["access-control-allow-origin"]).toBe("https://forum.example.com");
   });
@@ -306,13 +433,14 @@ describe("GET /rpc/stream", () => {
     const subscriber = makeMockSubscriber();
     const app = Fastify({ logger: false });
     registerStreamRoute(app, {
+      auth: testAuth(),
       getInvoice: async () => ownedInvoice("UNPAID"),
       createSubscriber: () => subscriber as unknown as InstanceType<typeof import("ioredis").default>,
       timeoutMs: 80,
       heartbeatIntervalMs: 10,
     });
 
-    const res = await app.inject({ method: "GET", url: "/rpc/stream?invoice=inv-hb", headers: APP_HEADERS });
+    const res = await app.inject({ method: "GET", url: "/rpc/stream?invoice=inv-hb", headers: authHeaders("inv-hb") });
     expect(res.statusCode).toBe(200);
     expect(res.body).toContain(": heartbeat");
     expect(res.body).toContain('"status":"TIMEOUT"');
@@ -322,13 +450,18 @@ describe("GET /rpc/stream", () => {
     const subscriber = makeMockSubscriber();
     const app = Fastify({ logger: false });
     registerStreamRoute(app, {
+      auth: testAuth(),
       getInvoice: async () => ownedInvoice("UNPAID"),
       createSubscriber: () => subscriber as unknown as InstanceType<typeof import("ioredis").default>,
       timeoutMs: 40,
       heartbeatIntervalMs: 0,
     });
 
-    const res = await app.inject({ method: "GET", url: "/rpc/stream?invoice=inv-nohb", headers: APP_HEADERS });
+    const res = await app.inject({
+      method: "GET",
+      url: "/rpc/stream?invoice=inv-nohb",
+      headers: authHeaders("inv-nohb"),
+    });
     expect(res.statusCode).toBe(200);
     expect(res.body).not.toContain(": heartbeat");
   });

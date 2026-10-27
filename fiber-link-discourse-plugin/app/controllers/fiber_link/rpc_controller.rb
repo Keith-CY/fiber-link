@@ -47,8 +47,9 @@ module ::FiberLink
       begin
         backend_url = URI("#{service_url.chomp("/")}/rpc/stream?invoice=#{URI.encode_www_form_component(invoice)}")
         backend_request = Net::HTTP::Get.new(backend_url)
-        # The backend validates that the invoice belongs to this forum's app.
-        backend_request["x-app-id"] = SiteSetting.fiber_link_app_id
+        # The backend authenticates the stream with the forum app's HMAC
+        # secret and validates that the invoice belongs to that app.
+        service_client.stream_headers(invoice).each { |name, value| backend_request[name] = value }
         Net::HTTP.start(backend_url.host, backend_url.port, use_ssl: backend_url.scheme == "https", read_timeout: 65) do |http|
           http.request(backend_request) do |resp|
             if resp.code != "200"

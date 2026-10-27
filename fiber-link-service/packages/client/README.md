@@ -88,7 +88,7 @@ Polls the settlement state of an invoice.
 
 Opens a Server-Sent Events stream for real-time settlement. Falls back gracefully when `EventSource` is unavailable.
 
-The server only streams invoices that belong to the requesting app. In `signed` mode the configured `appId` is appended as a query param (`EventSource` cannot set headers); in `presigned` mode the server-side proxy supplies the `x-app-id` header.
+The stream requires the same HMAC credentials as `/rpc`, signed over the canonical payload `stream:<invoice>`, and the server only streams invoices that belong to the authenticated app. In `signed` mode the SDK signs the request itself and sends `appId`, `ts`, `nonce` and `signature` as query params (`EventSource` cannot set headers), so the stream opens asynchronously after signing; in `presigned` mode the server-side proxy signs the backend request with the `x-app-id`/`x-ts`/`x-nonce`/`x-signature` headers.
 
 **Returns:** `StreamHandle | null`  
 **`onEvent` receives:** `{ invoice, status: "LISTENING" | "SETTLED" | "TIMEOUT" | "SSE_ERROR", settledAt? }` — `settledAt` is an ISO timestamp present on `SETTLED` events published by the settlement worker.

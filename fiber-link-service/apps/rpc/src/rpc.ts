@@ -205,6 +205,23 @@ export function registerRpc(
   const metricsToken = options.metricsToken !== undefined ? options.metricsToken : parseMetricsToken();
 
   registerStreamRoute(app, {
+    // The stream authenticates with the same per-app HMAC secret, timestamp
+    // window and nonce store as POST /rpc.
+    auth: {
+      resolveSecret: async (appId: string) => {
+        const appRepo = options.appRepo ?? getDefaultAppRepo();
+        if (appRepo) {
+          return resolveSecretForApp(appId, {
+            appRepo,
+            envSecretMap: secretMap,
+            envFallbackSecret: getFallbackSecret(),
+          });
+        }
+        return secretMap?.[appId] ?? getFallbackSecret();
+      },
+      isTimestampFresh,
+      isReplay: (appId: string, nonce: string) => nonceStore.isReplay(appId, nonce, NONCE_TTL_MS),
+    },
     pollInvoiceStateFn: async (invoice: string) => {
       try {
         const adapter = getDefaultAdapterForStream();

@@ -172,7 +172,7 @@ describe("FiberLinkClient#streamTipStatus", () => {
     expect(() => client.streamTipStatus("", vi.fn())).toThrow(FiberLinkValidationError);
   });
 
-  it("appends the appId query param in signed mode so the server can check ownership", () => {
+  it("signs the stream request with HMAC query params in signed mode", async () => {
     const seenUrls: string[] = [];
     class FakeEventSource {
       onmessage: unknown = null;
@@ -188,14 +188,49 @@ describe("FiberLinkClient#streamTipStatus", () => {
       const signedClient = makeClient({ mode: "signed", appId: "app1", hmacSecret: "s" });
       const handle = signedClient.streamTipStatus(FAKE_INVOICE, vi.fn());
       expect(handle).not.toBeNull();
-      expect(seenUrls[0]).toBe(
-        `http://localhost:3000/rpc/stream?invoice=${encodeURIComponent(FAKE_INVOICE)}&appId=app1`,
-      );
+      await vi.waitFor(() => expect(seenUrls).toHaveLength(1));
+
+      const url = new URL(seenUrls[0]);
+      expect(url.pathname).toBe("/rpc/stream");
+      expect(url.searchParams.get("invoice")).toBe(FAKE_INVOICE);
+      expect(url.searchParams.get("appId")).toBe("app1");
+      const ts = url.searchParams.get("ts") ?? "";
+      const nonce = url.searchParams.get("nonce") ?? "";
+      const { createHmac } = await import("node:crypto");
+      const expected = createHmac("sha256", "s").update(`${ts}.${nonce}.stream:${FAKE_INVOICE}`).digest("hex");
+      expect(url.searchParams.get("signature")).toBe(expected);
       handle?.close();
 
       const presignedClient = makeClient();
       presignedClient.streamTipStatus(FAKE_INVOICE, vi.fn())?.close();
       expect(seenUrls[1]).toBe(`http://localhost:3000/rpc/stream?invoice=${encodeURIComponent(FAKE_INVOICE)}`);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("does not open the signed stream when closed before signing completes", async () => {
+    const seenUrls: string[] = [];
+    vi.stubGlobal(
+      "EventSource",
+      class {
+        constructor(url: string) {
+          seenUrls.push(url);
+        }
+        close() {}
+      },
+    );
+
+    try {
+      const onEvent = vi.fn();
+      const handle = makeClient({ mode: "signed", appId: "app1", hmacSecret: "s" }).streamTipStatus(
+        FAKE_INVOICE,
+        onEvent,
+      );
+      handle?.close();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(seenUrls).toEqual([]);
+      expect(onEvent).not.toHaveBeenCalled();
     } finally {
       vi.unstubAllGlobals();
     }

@@ -83,12 +83,14 @@ document.getElementById("tipBtn").addEventListener("click", async () => {
 
     setStatus(`Invoice created: <code>${invoice.slice(0, 40)}…</code><br/>Waiting for payment…`);
 
-    // Try SSE first (requires /rpc/stream on the backend). EventSource cannot
-    // set headers, so the app id rides along as a query param for the
-    // backend's invoice-ownership check.
+    // Try SSE first (requires /rpc/stream on the backend). The stream needs the
+    // same HMAC credentials as /rpc, signed over "stream:<invoice>"; EventSource
+    // cannot set headers, so they ride along as query params.
+    const streamAuth = await buildSignedHeaders(appId, secret, `stream:${invoice}`);
     const streamUrl =
       endpoint.replace(/\/rpc\/?$/, "/rpc/stream") +
-      `?invoice=${encodeURIComponent(invoice)}&appId=${encodeURIComponent(appId)}`;
+      `?invoice=${encodeURIComponent(invoice)}&appId=${encodeURIComponent(appId)}` +
+      `&ts=${streamAuth["x-ts"]}&nonce=${streamAuth["x-nonce"]}&signature=${streamAuth["x-signature"]}`;
     let sseHandled = false;
 
     if (typeof EventSource !== "undefined") {

@@ -6,8 +6,8 @@ This runbook closes the real-time settlement milestone tracked in [Issue #414](h
 
 1. The Discourse tip modal creates an invoice through the forum RPC proxy.
 2. Once an invoice exists, the modal calls `streamTipStatus(invoice, onEvent)` and opens an `EventSource` against `/fiber-link/rpc/stream?invoice=<id>`.
-3. The Discourse plugin proxies that stream to the backend RPC service endpoint `/rpc/stream?invoice=<id>`, attaching the forum's `x-app-id` header.
-4. The backend RPC stream route resolves the requesting app id (`x-app-id` header, or the `appId` query param for direct `EventSource` clients that cannot set headers), validates that the invoice exists and belongs to that app (`401` when no app id is supplied, `403` on ownership mismatch), subscribes to the Redis channel `fiber-link:settlement:<invoice>`, and emits `LISTENING` once the SSE subscription is ready.
+3. The Discourse plugin (gated by the Discourse login session) proxies that stream to the backend RPC service endpoint `/rpc/stream?invoice=<id>`, signing the backend request with the forum app's HMAC secret.
+4. The backend RPC stream route authenticates the request with the same HMAC scheme as `POST /rpc` (see [Stream authentication](#stream-authentication)), validates that the invoice exists and belongs to the authenticated app (`401` on missing/invalid credentials, `403` on ownership mismatch), subscribes to the Redis channel `fiber-link:settlement:<invoice>`, and emits `LISTENING` once the SSE subscription is ready.
 5. When the worker settles the tip intent and credits the recipient ledger, it publishes `{ invoice, status: "SETTLED", settledAt }` to the same Redis channel.
 6. The browser receives the `SETTLED` event, closes the SSE handle, cancels pending status-poll timers, and moves the modal to the confirmation state.
 
@@ -94,6 +94,27 @@ withdrawal reaches `FAILED` due to transient chain/faucet conditions (exit code 
 `withdrawal <id> reached FAILED`). This is unrelated to the SSE settlement path — re-run
 the workflow when phases 1–4 pass and only the withdrawal gate fails.
 # Re-run trigger 20260611T021036Z
+
+## Stream authentication
+
+`GET /rpc/stream` requires the same per-app HMAC credentials as `POST /rpc`:
+the same secret resolution (DB, then `FIBER_LINK_HMAC_SECRET_MAP`, then
+`FIBER_LINK_HMAC_SECRET`), the same 5-minute timestamp window, and the same
+nonce replay store. The request has no body, so the signature covers the
+canonical payload `stream:<invoice>` (the trimmed `invoice` query value):
+
+```
+signature = hex(HMAC-SHA256(secret, "<ts>.<nonce>.stream:<invoice>"))
+```
+
+Credentials are read from the `x-app-id`, `x-ts`, `x-nonce` and `x-signature`
+headers (server-side proxies such as the Discourse plugin), or — when no
+`x-signature` header is present — from the `appId`, `ts`, `nonce` and
+`signature` query params (browser `EventSource` clients, which cannot set
+headers; the `@fiber-link/client` SDK does this in `signed` mode). Each
+signed URL is single-use and expires with the timestamp window. Missing or
+invalid credentials return `401 Unauthorized` before a connection slot is
+taken, so unauthenticated callers cannot exhaust an app's stream quota.
 
 ## Connection limits and CORS
 
