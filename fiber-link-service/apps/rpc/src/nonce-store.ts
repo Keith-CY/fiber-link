@@ -1,15 +1,19 @@
 import Redis from "ioredis";
 
 export type NonceStore = {
-  isReplay(appId: string, nonce: string, ttlMs: number): Promise<boolean>;
+  /**
+   * Records `key` and returns true if it was already seen within `ttlMs`.
+   * Callers must derive the key from what the request signature covers, not from
+   * unsigned headers such as `x-app-id`, so a replay cannot dodge it.
+   */
+  isReplay(key: string, ttlMs: number): Promise<boolean>;
   close(): Promise<void>;
 };
 
 export class InMemoryNonceStore implements NonceStore {
   private cache = new Map<string, NodeJS.Timeout>();
 
-  async isReplay(appId: string, nonce: string, ttlMs: number) {
-    const key = `${appId}:${nonce}`;
+  async isReplay(key: string, ttlMs: number) {
     if (this.cache.has(key)) return true;
     const timer = setTimeout(() => this.cache.delete(key), ttlMs);
     this.cache.set(key, timer);
@@ -30,9 +34,8 @@ export class RedisNonceStore implements NonceStore {
     private owned = false,
   ) {}
 
-  async isReplay(appId: string, nonce: string, ttlMs: number) {
-    const key = `nonce:${appId}:${nonce}`;
-    const result = await this.client.set(key, "1", "PX", ttlMs, "NX");
+  async isReplay(key: string, ttlMs: number) {
+    const result = await this.client.set(`nonce:${key}`, "1", "PX", ttlMs, "NX");
     return result !== "OK";
   }
 
@@ -70,16 +73,16 @@ export class FaultTolerantRedisNonceStore implements NonceStore {
     private readonly options: FaultTolerantNonceStoreOptions = {},
   ) {}
 
-  async isReplay(appId: string, nonce: string, ttlMs: number): Promise<boolean> {
+  async isReplay(key: string, ttlMs: number): Promise<boolean> {
     try {
-      return await this.primary.isReplay(appId, nonce, ttlMs);
+      return await this.primary.isReplay(key, ttlMs);
     } catch (error) {
       try {
         this.options.onFallback?.(error);
       } catch {
         // Observer errors must not prevent fallback replay protection.
       }
-      return this.fallback.isReplay(appId, nonce, ttlMs);
+      return this.fallback.isReplay(key, ttlMs);
     }
   }
 

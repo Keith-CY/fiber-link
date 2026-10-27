@@ -25,4 +25,12 @@ describe("hmac", () => {
     });
     expect(result).toBe(false);
   });
+
+  it("returns false for a non-ASCII signature with the same string length", () => {
+    const payload = "{}";
+    const ts = "1700000000";
+    const nonce = "n1";
+    const signature = "\u00e9".repeat(64);
+    expect(verifyHmac.check({ secret, payload, ts, nonce, signature })).toBe(false);
+  });
 });

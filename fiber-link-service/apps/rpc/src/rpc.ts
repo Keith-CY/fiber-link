@@ -148,7 +148,7 @@ async function runDefaultReadinessProbe(appRepo: AppRepo | null): Promise<Readin
 
   try {
     const nonce = `healthz-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-    await nonceStore.isReplay("__healthz_probe__", nonce, 1000);
+    await nonceStore.isReplay(nonce, 1000);
     checks.redis = { status: "ok" };
   } catch (error) {
     checks.redis = {
@@ -327,7 +327,10 @@ export function registerRpc(
         return reply.send(rpcErrorResponse(rpc.id, RpcErrorCode.UNAUTHORIZED, "Unauthorized"));
       }
 
-      const isReplay = await nonceStore.isReplay(appId, nonce, NONCE_TTL_MS);
+      // x-app-id is not covered by the signature, and several appIds can resolve to the
+      // same secret (shared fallback, reused per-app secrets). Key replay protection on
+      // the verified signature so a captured request cannot be replayed under another appId.
+      const isReplay = await nonceStore.isReplay(`sig:${signature}`, NONCE_TTL_MS);
       if (isReplay) {
         return reply.send(rpcErrorResponse(rpc.id, RpcErrorCode.UNAUTHORIZED, "Unauthorized"));
       }

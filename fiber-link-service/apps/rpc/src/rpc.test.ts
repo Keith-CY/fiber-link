@@ -263,6 +263,61 @@ describe("json-rpc", () => {
     expect(resValid.statusCode).toBe(200);
   });
 
+  it("rejects a captured request replayed under a different x-app-id", async () => {
+    const app = buildServer();
+    const rawPayload = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "health.ping", params: {} });
+    const ts = String(Math.floor(Date.now() / 1000));
+    const nonce = "n-cross-app-replay";
+    // Signed with the shared fallback secret, which resolves for every unregistered appId.
+    const signature = verifyHmac.sign({ secret: "replace-with-lookup", payload: rawPayload, ts, nonce });
+
+    const send = (appId: string) =>
+      app.inject({
+        method: "POST",
+        url: "/rpc",
+        payload: rawPayload,
+        headers: {
+          "content-type": "application/json",
+          "x-app-id": appId,
+          "x-ts": ts,
+          "x-nonce": nonce,
+          "x-signature": signature,
+        },
+      });
+
+    const original = await send("app-replay-a");
+    const replayedB = await send("app-replay-b");
+    const replayedC = await send("app-replay-c");
+
+    expect(original.json()).toEqual({ jsonrpc: "2.0", id: 1, result: { status: "ok" } });
+    for (const res of [replayedB, replayedC]) {
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({ jsonrpc: "2.0", id: 1, error: { code: -32001, message: "Unauthorized" } });
+    }
+  });
+
+  it("returns Unauthorized for a non-ASCII signature of hex length", async () => {
+    const app = buildServer();
+    const rawPayload = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "health.ping", params: {} });
+    const ts = String(Math.floor(Date.now() / 1000));
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/rpc",
+      payload: rawPayload,
+      headers: {
+        "content-type": "application/json",
+        "x-app-id": "app1",
+        "x-ts": ts,
+        "x-nonce": "n-non-ascii-sig",
+        "x-signature": "\u00e9".repeat(64),
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ jsonrpc: "2.0", id: 1, error: { code: -32001, message: "Unauthorized" } });
+  });
+
   it("returns JSON-RPC error when raw body is missing", async () => {
     const app = buildServer();
     const rawPayload = JSON.stringify({
