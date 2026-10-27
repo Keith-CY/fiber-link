@@ -200,6 +200,20 @@ export const tipIntents = pgTable(
       table.id,
     ),
     byAppSettledAt: index("tip_intents_app_settled_at_idx").on(table.appId, table.settledAt, table.id),
+    // Creator dashboards: recent tips received (dashboard.summary) and settled
+    // tips in a range (dashboard.analytics) filter by recipient within an app.
+    byAppToUserCreatedAt: index("tip_intents_app_to_user_created_at_idx").on(
+      table.appId,
+      table.toUserId,
+      table.createdAt,
+      table.id,
+    ),
+    byAppToUserStateSettledAt: index("tip_intents_app_to_user_state_settled_at_idx").on(
+      table.appId,
+      table.toUserId,
+      table.invoiceState,
+      table.settledAt,
+    ),
   }),
 );
 

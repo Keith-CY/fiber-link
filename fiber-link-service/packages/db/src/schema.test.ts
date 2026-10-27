@@ -1,5 +1,9 @@
-import { getTableConfig } from "drizzle-orm/pg-core";
+import { readFileSync, readdirSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { is } from "drizzle-orm";
+import { PgTable, getTableConfig } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
+import * as schema from "./schema";
 import {
   assetEnum,
   invoiceStateEnum,
@@ -170,5 +174,42 @@ describe("schema", () => {
     expect(checkTokens).toContain("liquidity_request_id");
     expect(checkTokens).toContain("liquidity_pending_reason");
     expect(checkTokens).toContain("liquidity_checked_at");
+  });
+
+  it("indexes creator dashboard lookups by (app_id, to_user_id)", () => {
+    const config = getTableConfig(tipIntents);
+    const columnsOf = (name: string) =>
+      config.indexes
+        .find((index) => index.config.name === name)
+        ?.config.columns.map((column) => (column as { name: string }).name);
+
+    expect(columnsOf("tip_intents_app_to_user_created_at_idx")).toEqual(["app_id", "to_user_id", "created_at", "id"]);
+    expect(columnsOf("tip_intents_app_to_user_state_settled_at_idx")).toEqual([
+      "app_id",
+      "to_user_id",
+      "invoice_state",
+      "settled_at",
+    ]);
+  });
+
+  it("creates every declared index in a committed migration", () => {
+    const migrationsDir = resolve(__dirname, "..", "drizzle");
+    const migrations = readdirSync(migrationsDir)
+      .filter((name) => name.endsWith(".sql"))
+      .map((name) => readFileSync(join(migrationsDir, name), "utf8"))
+      .join("\n");
+
+    const tables = Object.values(schema as Record<string, unknown>).filter((value): value is PgTable =>
+      is(value, PgTable),
+    );
+    expect(tables).toContain(tipIntents);
+    for (const table of tables) {
+      const config = getTableConfig(table);
+      for (const index of config.indexes) {
+        const columns = index.config.columns.map((column) => `"${(column as { name: string }).name}"`).join(",");
+        const ddl = `"${index.config.name}" ON "${config.name}" USING btree (${columns})`;
+        expect(migrations.includes(ddl), `missing from drizzle/*.sql: ${ddl}`).toBe(true);
+      }
+    }
   });
 });
