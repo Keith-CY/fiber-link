@@ -93,7 +93,7 @@
               },
               "amount": {
                 "type": "string",
-                "pattern": "^\\d+(?:\\.\\d+)?$"
+                "pattern": "^\\d+(?:\\.\\d{1,8})?$"
               },
               "message": {
                 "anyOf": [
@@ -1239,7 +1239,7 @@
               },
               "amount": {
                 "type": "string",
-                "pattern": "^\\d+(?:\\.\\d+)?$"
+                "pattern": "^\\d+(?:\\.\\d{1,8})?$"
               },
               "destination": {
                 "oneOf": [
@@ -1377,7 +1377,7 @@
                   },
                   "amount": {
                     "type": "string",
-                    "pattern": "^\\d+(?:\\.\\d+)?$"
+                    "pattern": "^\\d+(?:\\.\\d{1,8})?$"
                   },
                   "clientRequestId": {
                     "type": "string",
@@ -1446,7 +1446,7 @@
                   },
                   "amount": {
                     "type": "string",
-                    "pattern": "^\\d+(?:\\.\\d+)?$"
+                    "pattern": "^\\d+(?:\\.\\d{1,8})?$"
                   },
                   "clientRequestId": {
                     "type": "string",

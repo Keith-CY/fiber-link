@@ -716,6 +716,63 @@ describe("json-rpc", () => {
     });
   });
 
+  it.each([
+    { method: "tip.create", params: { postId: "p1", fromUserId: "u1", toUserId: "u2" } },
+    { method: "withdrawal.request", params: { userId: "u1", toAddress: "fiber:invoice:example" } },
+    {
+      method: "withdrawal.quote",
+      params: { userId: "u1", destination: { kind: "PAYMENT_REQUEST", paymentRequest: "fiber:invoice:example" } },
+    },
+  ])("returns invalid params for $method amounts with more than 8 decimal places", async ({ method, params }) => {
+    const app = buildServer();
+    const tipCreateSpy = vi.spyOn(tipMethods, "handleTipCreate");
+    const requestSpy = vi.spyOn(withdrawalMethods, "requestWithdrawal");
+    const quoteSpy = vi.spyOn(withdrawalMethods, "quoteWithdrawal");
+    try {
+      const payload = {
+        jsonrpc: "2.0",
+        id: "precision-1",
+        method,
+        params: { ...params, asset: "CKB", amount: "100.000000001" },
+      };
+      const ts = String(Math.floor(Date.now() / 1000));
+      const nonce = `precision-${method}`;
+      const signature = verifyHmac.sign({
+        secret: "replace-with-lookup",
+        payload: JSON.stringify(payload),
+        ts,
+        nonce,
+      });
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/rpc",
+        payload,
+        headers: {
+          "content-type": "application/json",
+          "x-app-id": "app1",
+          "x-ts": ts,
+          "x-nonce": nonce,
+          "x-signature": signature,
+        },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toMatchObject({
+        jsonrpc: "2.0",
+        id: "precision-1",
+        error: { code: -32602, message: "Invalid params" },
+      });
+      expect(tipCreateSpy).not.toHaveBeenCalled();
+      expect(requestSpy).not.toHaveBeenCalled();
+      expect(quoteSpy).not.toHaveBeenCalled();
+    } finally {
+      tipCreateSpy.mockRestore();
+      requestSpy.mockRestore();
+      quoteSpy.mockRestore();
+    }
+  });
+
   it("returns withdrawal.request result from handler", async () => {
     const app = buildServer();
     const withdrawalSpy = vi.spyOn(withdrawalMethods, "requestWithdrawal").mockResolvedValue({

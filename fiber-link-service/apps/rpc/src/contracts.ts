@@ -12,9 +12,11 @@ export const RpcRequestSchema = z.object({
 });
 export type RpcRequest = z.infer<typeof RpcRequestSchema>;
 
+// At most 8 decimal places: CKB's shannon precision, which the adapters enforce downstream.
+// USDI decimals are deployment config (FIBER_USDI_UDT_DECIMALS), so the same bound applies to every asset.
 const PositiveAmountStringSchema = z
   .string()
-  .regex(/^\d+(?:\.\d+)?$/)
+  .regex(/^\d+(?:\.\d{1,8})?$/, "amount must be a decimal with at most 8 decimal places")
   .refine((value) => !/^0+(?:\.0+)?$/.test(value), "amount must be greater than 0");
 
 export const TipCreateParamsSchema = z.object({
