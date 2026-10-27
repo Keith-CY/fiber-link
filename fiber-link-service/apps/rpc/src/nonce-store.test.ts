@@ -6,8 +6,8 @@ import { FaultTolerantRedisNonceStore, InMemoryNonceStore, RedisNonceStore } fro
 describe("nonce store", () => {
   it("InMemoryNonceStore marks a repeated nonce as replay", async () => {
     const store = new InMemoryNonceStore();
-    const first = await store.isReplay("app1", "nonce1", 1_000);
-    const second = await store.isReplay("app1", "nonce1", 1_000);
+    const first = await store.isReplay("nonce1", 1_000);
+    const second = await store.isReplay("nonce1", 1_000);
 
     expect(first).toBe(false);
     expect(second).toBe(true);
@@ -19,8 +19,8 @@ describe("nonce store", () => {
     const storeA = new RedisNonceStore(client);
     const storeB = new RedisNonceStore(client);
 
-    const first = await storeA.isReplay("app1", "nonce2", 1_000);
-    const second = await storeB.isReplay("app1", "nonce2", 1_000);
+    const first = await storeA.isReplay("nonce2", 1_000);
+    const second = await storeB.isReplay("nonce2", 1_000);
 
     expect(first).toBe(false);
     expect(second).toBe(true);
@@ -36,8 +36,8 @@ describe("nonce store", () => {
       const primary = new RedisNonceStore(client);
       const store = new FaultTolerantRedisNonceStore(primary);
 
-      const first = await store.isReplay("app1", "nonce-ft-1", 1_000);
-      const second = await store.isReplay("app1", "nonce-ft-1", 1_000);
+      const first = await store.isReplay("nonce-ft-1", 1_000);
+      const second = await store.isReplay("nonce-ft-1", 1_000);
 
       expect(first).toBe(false);
       expect(second).toBe(true);
@@ -59,8 +59,8 @@ describe("nonce store", () => {
         onFallback: (err) => errors.push(err),
       });
 
-      const first = await store.isReplay("app1", "nonce-fallback", 1_000);
-      const second = await store.isReplay("app1", "nonce-fallback", 1_000);
+      const first = await store.isReplay("nonce-fallback", 1_000);
+      const second = await store.isReplay("nonce-fallback", 1_000);
 
       expect(first).toBe(false);
       expect(second).toBe(true);
@@ -84,8 +84,8 @@ describe("nonce store", () => {
         },
       });
 
-      const first = await store.isReplay("app1", "nonce-obs-throw", 1_000);
-      const second = await store.isReplay("app1", "nonce-obs-throw", 1_000);
+      const first = await store.isReplay("nonce-obs-throw", 1_000);
+      const second = await store.isReplay("nonce-obs-throw", 1_000);
 
       expect(first).toBe(false);
       expect(second).toBe(true);
@@ -103,8 +103,8 @@ describe("nonce store", () => {
       const primary = new RedisNonceStore(failingRedis);
       const store = new FaultTolerantRedisNonceStore(primary);
 
-      const a = await store.isReplay("app1", "nonce-a", 1_000);
-      const b = await store.isReplay("app1", "nonce-b", 1_000);
+      const a = await store.isReplay("nonce-a", 1_000);
+      const b = await store.isReplay("nonce-b", 1_000);
 
       expect(a).toBe(false);
       expect(b).toBe(false);

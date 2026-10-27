@@ -11,7 +11,11 @@ export const verifyHmac = {
   },
   check({ secret, payload, ts, nonce, signature }: CheckArgs) {
     const expected = verifyHmac.sign({ secret, payload, ts, nonce });
-    if (expected.length !== signature.length) return false;
-    return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature));
+    const expectedBuf = Buffer.from(expected);
+    const signatureBuf = Buffer.from(signature);
+    // Compare byte lengths: timingSafeEqual throws on mismatch, and non-ASCII input
+    // can have the same string length but a different byte length.
+    if (expectedBuf.length !== signatureBuf.length) return false;
+    return crypto.timingSafeEqual(expectedBuf, signatureBuf);
   },
 };
