@@ -2,6 +2,7 @@ import {
   type CreateWithdrawalInput,
   type LedgerRepo,
   type LiquidityRequestRepo,
+  type WithdrawalPolicyGuard,
   type WithdrawalPolicyRepo,
   type WithdrawalRepo,
   compareDecimalStrings,
@@ -245,6 +246,21 @@ export async function requestWithdrawal(input: RequestWithdrawalInput, options: 
   const minimumRequiredAmount = await resolveMinimumRequiredAmount(input);
   assertWithdrawalPolicy(input, policy, usage, now, minimumRequiredAmount);
   await assertSufficientCreatorBalance(input, { repo, ledgerRepo });
+  // The checks above fail fast but read usage without a lock; the repo re-reads
+  // usage under the lock that serializes creation so concurrent requests cannot
+  // jointly exceed the daily limits or skip the cooldown.
+  const policyGuard: WithdrawalPolicyGuard | undefined = policyRepo
+    ? {
+        now,
+        assertUsage: (lockedUsage) => {
+          // A concurrent request may be recorded after `now`; evaluate as of its
+          // timestamp so the cooldown is not skipped as a negative elapsed time.
+          const lastRequestedAt = lockedUsage.lastRequestedAt;
+          const checkedAt = lastRequestedAt && lastRequestedAt > now ? lastRequestedAt : now;
+          assertWithdrawalPolicy(input, policy, lockedUsage, checkedAt, minimumRequiredAmount);
+        },
+      }
+    : undefined;
 
   const createInput: CreateWithdrawalInput = {
     appId: input.appId,
@@ -293,12 +309,12 @@ export async function requestWithdrawal(input: RequestWithdrawalInput, options: 
           liquidityRequestId: liquidityDecision.liquidityRequestId,
           liquidityPendingReason: liquidityDecision.liquidityPendingReason,
         },
-        { ledgerRepo },
+        { ledgerRepo, policyGuard },
       );
       return { id: record.id, state: record.state };
     }
 
-    const record = await repo.createWithBalanceCheck(createInput, { ledgerRepo });
+    const record = await repo.createWithBalanceCheck(createInput, { ledgerRepo, policyGuard });
     return { id: record.id, state: record.state };
   };
 

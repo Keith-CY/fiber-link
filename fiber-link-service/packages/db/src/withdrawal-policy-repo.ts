@@ -79,8 +79,55 @@ function toRecord(row: typeof withdrawalPolicies.$inferSelect): WithdrawalPolicy
   };
 }
 
-function usageWindowStart(now: Date): Date {
+export function usageWindowStart(now: Date): Date {
   return new Date(now.getTime() - 24 * 60 * 60 * 1000);
+}
+
+/**
+ * Daily totals and last request time for policy checks. Takes a client so the
+ * withdrawal repo can run it inside the transaction that inserts the row.
+ */
+export async function getWithdrawalPolicyUsageWithClient(
+  client: DbClient,
+  input: WithdrawalPolicyUsageInput,
+): Promise<WithdrawalPolicyUsage> {
+  const since = usageWindowStart(input.now);
+
+  const [userRow] = await client
+    .select({
+      total: sql<string>`COALESCE(SUM(${withdrawals.amount}), 0)`,
+      lastRequestedAt: sql<Date | null>`MAX(${withdrawals.createdAt})`,
+    })
+    .from(withdrawals)
+    .where(
+      and(
+        eq(withdrawals.appId, input.appId),
+        eq(withdrawals.userId, input.userId),
+        eq(withdrawals.asset, input.asset),
+        ne(withdrawals.state, "FAILED"),
+        gte(withdrawals.createdAt, since),
+      ),
+    );
+
+  const [appRow] = await client
+    .select({
+      total: sql<string>`COALESCE(SUM(${withdrawals.amount}), 0)`,
+    })
+    .from(withdrawals)
+    .where(
+      and(
+        eq(withdrawals.appId, input.appId),
+        eq(withdrawals.asset, input.asset),
+        ne(withdrawals.state, "FAILED"),
+        gte(withdrawals.createdAt, since),
+      ),
+    );
+
+  return {
+    userDailyTotal: userRow ? String(userRow.total) : "0",
+    appDailyTotal: appRow ? String(appRow.total) : "0",
+    lastRequestedAt: userRow?.lastRequestedAt ? new Date(userRow.lastRequestedAt) : null,
+  };
 }
 
 export function createDbWithdrawalPolicyRepo(db: DbClient): WithdrawalPolicyRepo {
@@ -139,43 +186,7 @@ export function createDbWithdrawalPolicyRepo(db: DbClient): WithdrawalPolicyRepo
     },
 
     async getUsage(input) {
-      const since = usageWindowStart(input.now);
-
-      const [userRow] = await db
-        .select({
-          total: sql<string>`COALESCE(SUM(${withdrawals.amount}), 0)`,
-          lastRequestedAt: sql<Date | null>`MAX(${withdrawals.createdAt})`,
-        })
-        .from(withdrawals)
-        .where(
-          and(
-            eq(withdrawals.appId, input.appId),
-            eq(withdrawals.userId, input.userId),
-            eq(withdrawals.asset, input.asset),
-            ne(withdrawals.state, "FAILED"),
-            gte(withdrawals.createdAt, since),
-          ),
-        );
-
-      const [appRow] = await db
-        .select({
-          total: sql<string>`COALESCE(SUM(${withdrawals.amount}), 0)`,
-        })
-        .from(withdrawals)
-        .where(
-          and(
-            eq(withdrawals.appId, input.appId),
-            eq(withdrawals.asset, input.asset),
-            ne(withdrawals.state, "FAILED"),
-            gte(withdrawals.createdAt, since),
-          ),
-        );
-
-      return {
-        userDailyTotal: userRow ? String(userRow.total) : "0",
-        appDailyTotal: appRow ? String(appRow.total) : "0",
-        lastRequestedAt: userRow?.lastRequestedAt ? new Date(userRow.lastRequestedAt) : null,
-      };
+      return getWithdrawalPolicyUsageWithClient(db, input);
     },
   };
 }

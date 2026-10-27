@@ -523,6 +523,154 @@ describe("requestWithdrawal", () => {
     });
   });
 
+  // Usage that reflects withdrawals already written to `repo`, like the DB
+  // policy repo does, so concurrent requests race on the same totals.
+  function createUsageBackedPolicyRepo(userIds: string[]) {
+    return {
+      ...policyRepo,
+      async getUsage(input: { appId: string; userId: string; asset: "CKB" | "USDI" }) {
+        const totals = await Promise.all(
+          userIds.map((userId) => repo.getPendingTotal({ appId: input.appId, userId, asset: input.asset })),
+        );
+        const userIndex = userIds.indexOf(input.userId);
+        return {
+          userDailyTotal: userIndex >= 0 ? totals[userIndex] : "0",
+          appDailyTotal: String(totals.reduce((sum, total) => sum + Number(total), 0)),
+          lastRequestedAt: null,
+        };
+      },
+    };
+  }
+
+  it("enforces per-user daily limit across concurrent requests", async () => {
+    const ledger = createInMemoryLedgerRepo();
+    await ledger.creditOnce({
+      appId: "app1",
+      userId: "u1",
+      asset: "USDI",
+      amount: "100",
+      refId: "t1",
+      idempotencyKey: "credit:t1",
+    });
+    await policyRepo.upsert({
+      appId: "app1",
+      allowedAssets: ["USDI"],
+      maxPerRequest: "10",
+      perUserDailyMax: "15",
+      perAppDailyMax: "500",
+      cooldownSeconds: 0,
+      updatedBy: "admin-1",
+    });
+    const usageBackedPolicyRepo = createUsageBackedPolicyRepo(["u1"]);
+
+    const results = await Promise.allSettled(
+      ["a", "b"].map((suffix) =>
+        requestWithdrawal(
+          {
+            appId: "app1",
+            userId: "u1",
+            asset: "USDI",
+            amount: "10",
+            destination: { kind: "PAYMENT_REQUEST", paymentRequest: `fiber:invoice:concurrent-user-${suffix}` },
+          },
+          { repo, ledgerRepo: ledger, policyRepo: usageBackedPolicyRepo },
+        ),
+      ),
+    );
+
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(results.find((result) => result.status === "rejected")).toMatchObject({
+      reason: { name: "WithdrawalPolicyViolationError", reason: "PER_USER_DAILY_LIMIT_EXCEEDED" },
+    });
+    expect(await repo.getPendingTotal({ appId: "app1", userId: "u1", asset: "USDI" })).toBe("10");
+  });
+
+  it("enforces per-app daily limit across concurrent requests from different users", async () => {
+    const ledger = createInMemoryLedgerRepo();
+    for (const userId of ["u1", "u2"]) {
+      await ledger.creditOnce({
+        appId: "app1",
+        userId,
+        asset: "USDI",
+        amount: "100",
+        refId: `t-${userId}`,
+        idempotencyKey: `credit:t-${userId}`,
+      });
+    }
+    await policyRepo.upsert({
+      appId: "app1",
+      allowedAssets: ["USDI"],
+      maxPerRequest: "10",
+      perUserDailyMax: "100",
+      perAppDailyMax: "15",
+      cooldownSeconds: 0,
+      updatedBy: "admin-1",
+    });
+    const usageBackedPolicyRepo = createUsageBackedPolicyRepo(["u1", "u2"]);
+
+    const results = await Promise.allSettled(
+      ["u1", "u2"].map((userId) =>
+        requestWithdrawal(
+          {
+            appId: "app1",
+            userId,
+            asset: "USDI",
+            amount: "10",
+            destination: { kind: "PAYMENT_REQUEST", paymentRequest: `fiber:invoice:concurrent-app-${userId}` },
+          },
+          { repo, ledgerRepo: ledger, policyRepo: usageBackedPolicyRepo },
+        ),
+      ),
+    );
+
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(results.find((result) => result.status === "rejected")).toMatchObject({
+      reason: { name: "WithdrawalPolicyViolationError", reason: "PER_APP_DAILY_LIMIT_EXCEEDED" },
+    });
+  });
+
+  it("enforces cooldown across concurrent requests", async () => {
+    const ledger = createInMemoryLedgerRepo();
+    await ledger.creditOnce({
+      appId: "app1",
+      userId: "u1",
+      asset: "USDI",
+      amount: "100",
+      refId: "t1",
+      idempotencyKey: "credit:t1",
+    });
+    await policyRepo.upsert({
+      appId: "app1",
+      allowedAssets: ["USDI"],
+      maxPerRequest: "10",
+      perUserDailyMax: "100",
+      perAppDailyMax: "500",
+      cooldownSeconds: 300,
+      updatedBy: "admin-1",
+    });
+
+    const results = await Promise.allSettled(
+      ["a", "b"].map((suffix) =>
+        requestWithdrawal(
+          {
+            appId: "app1",
+            userId: "u1",
+            asset: "USDI",
+            amount: "10",
+            destination: { kind: "PAYMENT_REQUEST", paymentRequest: `fiber:invoice:concurrent-cooldown-${suffix}` },
+          },
+          // `now` predates the rows the repo writes, as when a sibling request inserts after this one started.
+          { repo, ledgerRepo: ledger, policyRepo, now: new Date(Date.now() - 1000) },
+        ),
+      ),
+    );
+
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(results.find((result) => result.status === "rejected")).toMatchObject({
+      reason: { name: "WithdrawalPolicyViolationError", reason: "COOLDOWN_ACTIVE" },
+    });
+  });
+
   it("rejects CKB address destination for non-CKB asset", async () => {
     const ledger = createInMemoryLedgerRepo();
     await ledger.creditOnce({

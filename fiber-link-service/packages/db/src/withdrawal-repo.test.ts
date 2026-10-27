@@ -438,6 +438,44 @@ describe("createDbWithdrawalRepo", () => {
     expect(txInsert).toHaveBeenCalledTimes(1);
   });
 
+  it("locks app scope before user scope and checks policy usage inside the transaction", async () => {
+    const txSelectWhere = vi
+      .fn()
+      .mockResolvedValueOnce([{ balance: "100" }])
+      .mockResolvedValueOnce([{ total: "20" }])
+      .mockResolvedValueOnce([{ total: "20", lastRequestedAt: null }])
+      .mockResolvedValueOnce([{ total: "95" }]);
+    const txSelectFrom = vi.fn(() => ({ where: txSelectWhere }));
+    const txSelect = vi.fn(() => ({ from: txSelectFrom }));
+    const txInsert = vi.fn();
+    const tx = {
+      execute: vi.fn(),
+      select: txSelect,
+      insert: txInsert,
+    } as unknown as DbClient;
+    const db = {
+      transaction: vi.fn(async (fn: (client: DbClient) => Promise<unknown>) => fn(tx)),
+    } as unknown as DbClient;
+    const assertUsage = vi.fn(() => {
+      throw new Error("PER_APP_DAILY_LIMIT_EXCEEDED");
+    });
+
+    const repo = createDbWithdrawalRepo(db);
+    await expect(
+      repo.createWithBalanceCheck(
+        { appId: "app1", userId: "u1", asset: "USDI", amount: "10", toAddress: "fiber:invoice:new" },
+        { ledgerRepo: createInMemoryLedgerRepo(), policyGuard: { now: new Date(), assertUsage } },
+      ),
+    ).rejects.toThrow("PER_APP_DAILY_LIMIT_EXCEEDED");
+
+    const lockKeys = vi.mocked(tx.execute).mock.calls.map(([query]) => collectSqlTokens(query));
+    expect(lockKeys).toHaveLength(2);
+    expect(lockKeys[0]).toContain("app1:USDI:withdrawal-policy");
+    expect(lockKeys[1]).toContain("app1:u1:USDI");
+    expect(assertUsage).toHaveBeenCalledWith({ userDailyTotal: "20", appDailyTotal: "95", lastRequestedAt: null });
+    expect(txInsert).not.toHaveBeenCalled();
+  });
+
   it("returns pending total and defaults to 0 when query is empty", async () => {
     const selectWhere = vi
       .fn()
