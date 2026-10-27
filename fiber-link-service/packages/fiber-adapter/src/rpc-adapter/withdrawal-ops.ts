@@ -12,7 +12,7 @@ function generateFallbackRequestId({ invoice, amount, asset }: { invoice: string
 
 export async function executeWithdrawal(
   endpoint: FiberRpcEndpoint,
-  { amount, asset, destination, requestId }: ExecuteWithdrawalArgs,
+  { amount, asset, destination, requestId, beforeBroadcast }: ExecuteWithdrawalArgs,
 ) {
   if (destination.kind === "CKB_ADDRESS") {
     if (asset === "USDI") {
@@ -24,7 +24,7 @@ export async function executeWithdrawal(
         udtTypeScript: toWithdrawalUdtTypeScript(await resolveUsdiUdtScript(endpoint)),
       });
     }
-    return executeCkbOnchainWithdrawal({ amount, asset, destination, requestId });
+    return executeCkbOnchainWithdrawal({ amount, asset, destination, requestId, beforeBroadcast });
   }
 
   const paymentRequest = destination.paymentRequest;

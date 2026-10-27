@@ -22,6 +22,9 @@ export type ExecuteWithdrawalArgs = {
   destination: WithdrawalDestination;
   requestId: string;
   udtTypeScript?: UdtTypeScript;
+  // Called with the signed tx hash before broadcast (CKB on-chain only) so the
+  // caller can persist it and resolve an ambiguous broadcast by that hash.
+  beforeBroadcast?: (txHash: string) => Promise<void>;
 };
 
 export type EnsureChainLiquidityArgs = {
