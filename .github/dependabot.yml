@@ -11,17 +11,18 @@ updates:
   # The service workspace is managed by bun. The `bun` ecosystem rewrites the
   # text bun.lock alongside package.json, so `bun install --frozen-lockfile`
   # in CI accepts the update (the `npm` ecosystem only touched package.json).
+  #
+  # Dependabot supports version updates for bun but not security updates, so
+  # there are no automatic security PRs here. Patched direct dependencies
+  # arrive through the weekly minor/patch groups below; advisories that need a
+  # major bump or a transitive fix are handled manually with `bun audit` and
+  # the root package.json `overrides`.
   - package-ecosystem: bun
     directory: "/fiber-link-service"
     schedule:
       interval: weekly
     open-pull-requests-limit: 10
     groups:
-      # Security fixes land as one grouped PR so they are not throttled by
-      # the version-update PR limit.
-      security:
-        applies-to: security-updates
-        patterns: ["*"]
       dev-dependencies:
         applies-to: version-updates
         dependency-type: development

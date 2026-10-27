@@ -172,8 +172,16 @@ jobs:
           git worktree add --detach "$base_root" "$base_ref"
 
           (cd "$base_root/fiber-link-service" && bun install --frozen-lockfile)
-          # base branch may not include coverage provider dependency yet
-          (cd "$base_root/fiber-link-service" && bun add -d @vitest/coverage-v8@1.6.0)
+          # Use the coverage provider frozen in the base lockfile. Only an older
+          # base without one gets a fallback, and it must match that base's
+          # vitest version (mismatched majors crash before collecting coverage).
+          (
+            cd "$base_root/fiber-link-service"
+            if [ ! -f node_modules/@vitest/coverage-v8/package.json ]; then
+              vitest_version="$(bun -e 'console.log(require("./node_modules/vitest/package.json").version)')"
+              bun add -d "@vitest/coverage-v8@${vitest_version}"
+            fi
+          )
 
           run_base_pkg() {
             local pkg="$1"
