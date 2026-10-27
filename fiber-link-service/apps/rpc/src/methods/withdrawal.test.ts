@@ -244,6 +244,48 @@ describe("requestWithdrawal", () => {
     ).rejects.toBeInstanceOf(InsufficientFundsError);
   });
 
+  it("does not lock already-debited BROADCASTED withdrawals against the creator balance", async () => {
+    const ledger = createInMemoryLedgerRepo();
+    await ledger.creditOnce({
+      appId: "app1",
+      userId: "u1",
+      asset: "USDI",
+      amount: "100",
+      refId: "t1",
+      idempotencyKey: "credit:t1",
+    });
+    const broadcasted = await repo.create({
+      appId: "app1",
+      userId: "u1",
+      asset: "USDI",
+      amount: "60",
+      toAddress: "fiber:invoice:broadcasted",
+    });
+    const now = new Date("2026-10-27T00:00:00.000Z");
+    await repo.markProcessing(broadcasted.id, now);
+    await repo.markBroadcastedWithDebit(broadcasted.id, { now, txHash: "0xbroadcasted" }, { ledgerRepo: ledger });
+
+    const input = (amount: string, paymentRequest: string) => ({
+      appId: "app1",
+      userId: "u1",
+      asset: "USDI" as const,
+      amount,
+      destination: { kind: "PAYMENT_REQUEST" as const, paymentRequest },
+    });
+
+    const { quoteWithdrawal } = await import("./withdrawal");
+    const quote = await quoteWithdrawal(input("30", "fiber:invoice:quote"), { repo, ledgerRepo: ledger });
+    expect(quote.availableBalance).toBe("40");
+    expect(quote.lockedBalance).toBe("0");
+    expect(quote.validationMessage).toBeNull();
+
+    await expect(
+      requestWithdrawal(input("50", "fiber:invoice:too-much"), { repo, ledgerRepo: ledger }),
+    ).rejects.toBeInstanceOf(InsufficientFundsError);
+    const res = await requestWithdrawal(input("30", "fiber:invoice:fits"), { repo, ledgerRepo: ledger });
+    expect(res.state).toBe("PENDING");
+  });
+
   it("rejects when policy max-per-request is exceeded", async () => {
     const ledger = createInMemoryLedgerRepo();
     await ledger.creditOnce({
