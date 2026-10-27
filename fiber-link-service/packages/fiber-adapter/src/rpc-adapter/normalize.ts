@@ -1,3 +1,5 @@
+import type { Asset } from "../types";
+
 export function normalizeRpcAmount(value: unknown): string {
   if (typeof value === "number" && Number.isFinite(value)) {
     return String(value);
@@ -63,6 +65,15 @@ export function parseCkbDecimalToShannons(value: string): bigint {
 
 export function ckbDecimalToHexQuantity(value: string): string {
   return `0x${parseCkbDecimalToShannons(value).toString(16)}`;
+}
+
+// Ledger CKB amounts are decimal CKB while Fiber RPC expects shannons. USDI amounts
+// are still passed through as integer base units (decimals handling tracked in #441).
+export function toFiberAmountHexQuantity(asset: Asset, amount: string): string {
+  if (asset === "CKB") {
+    return ckbDecimalToHexQuantity(amount);
+  }
+  return toHexQuantity(amount);
 }
 
 export function pickStringCandidate(value: unknown): string | null {

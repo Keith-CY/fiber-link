@@ -14,7 +14,7 @@ import type {
   RebalanceStatusState,
 } from "../types";
 import { hasWithdrawalPrivateKey } from "../withdrawal-key";
-import { ckbDecimalToHexQuantity, toHexQuantity } from "./normalize";
+import { toFiberAmountHexQuantity } from "./normalize";
 
 type LocalSweepState = Exclude<RebalanceStatusState, "IDLE">;
 
@@ -217,13 +217,6 @@ async function getOrRefreshLocalSweepTracking(args: GetRebalanceStatusArgs): Pro
   return pending;
 }
 
-function toRebalanceRequiredAmountHex(args: EnsureChainLiquidityArgs): string {
-  if (args.asset === "CKB") {
-    return ckbDecimalToHexQuantity(args.requiredAmount);
-  }
-  return toHexQuantity(args.requiredAmount);
-}
-
 async function getLocalChainLiquidityStatus(args: GetRebalanceStatusArgs): Promise<GetRebalanceStatusResult | null> {
   const tracking = await getOrRefreshLocalSweepTracking(args);
   if (!tracking) {
@@ -243,7 +236,7 @@ export async function ensureChainLiquidity(endpoint: FiberRpcEndpoint, args: Ens
       request_id: args.requestId,
       asset: args.asset,
       network: args.network,
-      required_amount: toRebalanceRequiredAmountHex(args),
+      required_amount: toFiberAmountHexQuantity(args.asset, args.requiredAmount),
       source_kind: args.sourceKind,
     })) as Record<string, unknown> | undefined;
     return parseEnsureChainLiquidityResult(result);

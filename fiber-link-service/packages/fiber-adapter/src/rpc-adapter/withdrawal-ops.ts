@@ -4,7 +4,7 @@ import { type FiberRpcEndpoint, rpcCall } from "../fiber-client";
 import type { Asset, ExecuteWithdrawalArgs } from "../types";
 import { executeUdtOnchainWithdrawal } from "../udt-onchain-withdrawal";
 import { mapAssetToCurrency, pickPaymentHash, resolveUsdiUdtScript, toWithdrawalUdtTypeScript } from "./invoice-ops";
-import { pickTxEvidence, toHexQuantity } from "./normalize";
+import { pickTxEvidence, toFiberAmountHexQuantity } from "./normalize";
 
 function generateFallbackRequestId({ invoice, amount, asset }: { invoice: string; amount: string; asset: Asset }) {
   return `fiber:${createHash("sha256").update(`${invoice}|${amount}|${asset}`).digest("hex").slice(0, 20)}`;
@@ -38,7 +38,7 @@ export async function executeWithdrawal(
   const resolvedRequestId = requestId?.trim() || generateFallbackRequestId({ invoice: paymentRequest, amount, asset });
   const result = (await rpcCall(endpoint, "send_payment", {
     payment_hash: paymentHash,
-    amount: toHexQuantity(amount),
+    amount: toFiberAmountHexQuantity(asset, amount),
     currency: mapAssetToCurrency(asset),
     request_id: resolvedRequestId,
     invoice: paymentRequest,

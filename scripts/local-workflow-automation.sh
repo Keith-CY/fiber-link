@@ -160,14 +160,6 @@ get_env_value() {
   printf '%s' "${line#*=}"
 }
 
-to_hex_quantity() {
-  local amount="$1"
-  if ! [[ "${amount}" =~ ^[0-9]+$ ]]; then
-    fatal "${EXIT_PRECHECK}" "amount must be a positive integer, got '${amount}'"
-  fi
-  printf '0x%x' "${amount}"
-}
-
 contains_jsonrpc_error() {
   local payload="$1"
   printf '%s' "${payload}" | jq -e 'has("error") and .error != null' >/dev/null 2>&1
@@ -878,7 +870,6 @@ create_tip_invoice() {
 pay_invoice_from_payer() {
   local label="$1"
   local invoice="$2"
-  local amount="$3"
   local dir="${ARTIFACT_DIR}/tips/${label}"
 
   local parse_payload parse_response payment_hash target_pubkey final_tlc_expiry_delta
@@ -898,8 +889,12 @@ pay_invoice_from_payer() {
     fatal "${EXIT_TIP}" "parse_invoice did not return payment_hash for ${label}"
   fi
 
+  # Pay exactly what the invoice encodes (shannons for CKB) instead of re-deriving it from the tip amount.
   local send_payload send_response tx_hash amount_hex
-  amount_hex="$(to_hex_quantity "${amount}")"
+  amount_hex="$(printf '%s' "${parse_response}" | jq -r '.result.invoice.amount // empty')"
+  if ! [[ "${amount_hex}" =~ ^0x[0-9a-fA-F]+$ ]]; then
+    fatal "${EXIT_TIP}" "parse_invoice did not return a hex invoice amount for ${label}"
+  fi
   send_payload="$(jq -cn \
     --arg id "send-${label}-$(date +%s)-$RANDOM" \
     --arg payment_hash "${payment_hash}" \
@@ -1345,11 +1340,11 @@ fi
 CURRENT_STEP="tipping topic and reply"
 log "step 4/6: tip post and tip reply"
 TOPIC_INVOICE="$(create_tip_invoice "topic-post" "${TOPIC_POST_ID}" "${TIPPER_USER_ID}" "${AUTHOR_USER_ID}")"
-TOPIC_TX_HASH="$(pay_invoice_from_payer "topic-post" "${TOPIC_INVOICE}" "${TIP_AMOUNT}")"
+TOPIC_TX_HASH="$(pay_invoice_from_payer "topic-post" "${TOPIC_INVOICE}")"
 wait_tip_settled "topic-post" "${TOPIC_INVOICE}"
 
 REPLY_INVOICE="$(create_tip_invoice "reply-post" "${REPLY_POST_ID}" "${TIPPER_USER_ID}" "${AUTHOR_USER_ID}")"
-REPLY_TX_HASH="$(pay_invoice_from_payer "reply-post" "${REPLY_INVOICE}" "${TIP_AMOUNT}")"
+REPLY_TX_HASH="$(pay_invoice_from_payer "reply-post" "${REPLY_INVOICE}")"
 wait_tip_settled "reply-post" "${REPLY_INVOICE}"
 
 CURRENT_STEP="verifying author dashboard"

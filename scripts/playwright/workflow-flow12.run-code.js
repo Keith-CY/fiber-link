@@ -41,14 +41,6 @@ async (page) => {
     return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   }
 
-  function toHexIntegerString(value) {
-    const normalized = String(value).trim();
-    if (!/^\d+$/.test(normalized)) {
-      throw new Error(`tip amount must be a positive integer for payer settlement, got '${value}'`);
-    }
-    return `0x${BigInt(normalized).toString(16)}`;
-  }
-
   async function readGeneratedInvoice(payStep) {
     const invoiceValue = payStep.locator("[data-fiber-link-tip-modal='invoice-value']").first();
     const invoiceFromValue = await invoiceValue
@@ -165,6 +157,8 @@ async (page) => {
       throw new Error(`parse_invoice failed (${parseInvoiceResult.status})`);
     }
 
+    // Pay exactly what the invoice encodes (shannons for CKB) instead of re-deriving it from the UI tip amount.
+    const invoiceAmount = parseInvoiceResult.response?.result?.invoice?.amount;
     const invoiceData = parseInvoiceResult.response?.result?.invoice?.data ?? {};
     const attrs = Array.isArray(invoiceData?.attrs) ? invoiceData.attrs : [];
     const paymentHash = invoiceData?.payment_hash;
@@ -174,10 +168,13 @@ async (page) => {
     if (!paymentHash) {
       throw new Error("parse_invoice did not return payment_hash");
     }
+    if (typeof invoiceAmount !== "string" || !/^0x[0-9a-f]+$/i.test(invoiceAmount)) {
+      throw new Error("parse_invoice did not return a hex invoice amount");
+    }
 
     const paymentParams = {
       payment_hash: paymentHash,
-      amount: toHexIntegerString(tipAmount),
+      amount: invoiceAmount,
       currency: paymentCurrency,
       request_id: buildRpcId("pw-flow12-send-payment"),
       invoice,
