@@ -5,6 +5,7 @@
 Detect payout accounting drift between:
 - withdrawal execution evidence (`withdrawals.tx_hash`)
 - ledger debits (`ledger_entries` with idempotency key `withdrawal:debit:<withdrawal_id>`)
+- reversal credits (`ledger_entries` with idempotency key `withdrawal:reversal:<withdrawal_id>`) that refund the debit of a broadcast the chain rejected; a `FAILED` withdrawal with both a debit and a matching reversal is healthy, while a reversal without a debit, on a non-`FAILED` withdrawal, or with a mismatched amount/account is reported as `INVALID_WITHDRAWAL_REVERSAL`
 
 ## Command
 

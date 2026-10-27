@@ -384,10 +384,12 @@ async function runWithdrawalBatchInner(options: RunWithdrawalBatchOptions = {}) 
       continue;
     }
     if (confirmation.status === "REJECTED") {
-      const failedRecord = await repo.markFailedFromBroadcasted(item.id, {
-        now,
-        error: confirmation.reason ?? "CKB transaction rejected",
-      });
+      // The rejected tx never moved funds, so this also refunds the broadcast debit.
+      const failedRecord = await repo.markFailedFromBroadcasted(
+        item.id,
+        { now, error: confirmation.reason ?? "CKB transaction rejected" },
+        { ledgerRepo: options.ledgerRepo ?? getDefaultLedgerRepo() },
+      );
       failed += 1;
       withdrawalFailuresTotal.inc({ kind: "broadcast_rejected" });
       await dispatchWithdrawalEvent(notificationDispatcher, {

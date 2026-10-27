@@ -1,6 +1,7 @@
 import type { Asset, WithdrawalState } from "@fiber-link/db";
 
 const WITHDRAWAL_DEBIT_PREFIX = "withdrawal:debit:";
+const WITHDRAWAL_REVERSAL_PREFIX = "withdrawal:reversal:";
 
 export type WithdrawalParityWithdrawalRow = {
   id: string;
@@ -21,6 +22,9 @@ export type WithdrawalParityDebitRow = {
   idempotencyKey: string;
 };
 
+/** Credit refunding the broadcast debit of a withdrawal the chain rejected. */
+export type WithdrawalParityReversalRow = WithdrawalParityDebitRow;
+
 export type WithdrawalParityIssueKind =
   | "MALFORMED_DEBIT_IDEMPOTENCY_KEY"
   | "ORPHAN_DEBIT_ENTRY"
@@ -29,7 +33,9 @@ export type WithdrawalParityIssueKind =
   | "NON_COMPLETED_WITHDRAWAL_HAS_DEBIT"
   | "DUPLICATE_DEBIT_ENTRIES"
   | "DEBIT_ACCOUNT_MISMATCH"
-  | "DEBIT_AMOUNT_MISMATCH";
+  | "DEBIT_AMOUNT_MISMATCH"
+  | "ORPHAN_REVERSAL_ENTRY"
+  | "INVALID_WITHDRAWAL_REVERSAL";
 
 export type WithdrawalParityIssue = {
   kind: WithdrawalParityIssueKind;
@@ -60,6 +66,8 @@ const ISSUE_KINDS: WithdrawalParityIssueKind[] = [
   "DUPLICATE_DEBIT_ENTRIES",
   "DEBIT_ACCOUNT_MISMATCH",
   "DEBIT_AMOUNT_MISMATCH",
+  "ORPHAN_REVERSAL_ENTRY",
+  "INVALID_WITHDRAWAL_REVERSAL",
 ];
 
 function createIssueCounter(): Record<WithdrawalParityIssueKind, number> {
@@ -74,14 +82,24 @@ export function parseWithdrawalIdFromDebitIdempotencyKey(idempotencyKey: string)
   return withdrawalId ? withdrawalId : null;
 }
 
+export function parseWithdrawalIdFromReversalIdempotencyKey(idempotencyKey: string): string | null {
+  if (!idempotencyKey.startsWith(WITHDRAWAL_REVERSAL_PREFIX)) {
+    return null;
+  }
+  const withdrawalId = idempotencyKey.slice(WITHDRAWAL_REVERSAL_PREFIX.length).trim();
+  return withdrawalId ? withdrawalId : null;
+}
+
 export function buildWithdrawalParityReport(args: {
   withdrawals: WithdrawalParityWithdrawalRow[];
   debits: WithdrawalParityDebitRow[];
+  reversals?: WithdrawalParityReversalRow[];
 }): WithdrawalParityReport {
   const issues: WithdrawalParityIssue[] = [];
   const issuesByKind = createIssueCounter();
   const withdrawalsById = new Map(args.withdrawals.map((row) => [row.id, row]));
   const debitsByWithdrawalId = new Map<string, WithdrawalParityDebitRow[]>();
+  const reversalsByWithdrawalId = new Map<string, WithdrawalParityReversalRow[]>();
   let matchedDebits = 0;
 
   const addIssue = (issue: WithdrawalParityIssue) => {
@@ -117,8 +135,33 @@ export function buildWithdrawalParityReport(args: {
     matchedDebits += 1;
   }
 
+  for (const reversal of args.reversals ?? []) {
+    const withdrawalId = parseWithdrawalIdFromReversalIdempotencyKey(reversal.idempotencyKey);
+    if (!withdrawalId) {
+      addIssue({
+        kind: "INVALID_WITHDRAWAL_REVERSAL",
+        idempotencyKey: reversal.idempotencyKey,
+        detail: "reversal idempotency key does not follow withdrawal:reversal:<withdrawal_id>",
+      });
+      continue;
+    }
+    if (!withdrawalsById.has(withdrawalId)) {
+      addIssue({
+        kind: "ORPHAN_REVERSAL_ENTRY",
+        withdrawalId,
+        idempotencyKey: reversal.idempotencyKey,
+        detail: "reversal entry references withdrawal id not present in report window",
+      });
+      continue;
+    }
+    const linked = reversalsByWithdrawalId.get(withdrawalId) ?? [];
+    linked.push(reversal);
+    reversalsByWithdrawalId.set(withdrawalId, linked);
+  }
+
   for (const withdrawal of args.withdrawals) {
     const linkedDebits = debitsByWithdrawalId.get(withdrawal.id) ?? [];
+    const linkedReversals = reversalsByWithdrawalId.get(withdrawal.id) ?? [];
 
     if (withdrawal.state === "COMPLETED" || withdrawal.state === "BROADCASTED") {
       if (!withdrawal.txHash) {
@@ -135,7 +178,8 @@ export function buildWithdrawalParityReport(args: {
           detail: `${withdrawal.state.toLowerCase()} withdrawal has no matching debit entry`,
         });
       }
-    } else if (linkedDebits.length > 0) {
+    } else if (linkedDebits.length > 0 && !(withdrawal.state === "FAILED" && linkedReversals.length > 0)) {
+      // A FAILED withdrawal whose broadcast debit was reversed is consistent.
       addIssue({
         kind: "NON_COMPLETED_WITHDRAWAL_HAS_DEBIT",
         withdrawalId: withdrawal.id,
@@ -172,6 +216,32 @@ export function buildWithdrawalParityReport(args: {
           withdrawalId: withdrawal.id,
           idempotencyKey: debit.idempotencyKey,
           detail: `debit amount ${debit.amount} != withdrawal amount ${withdrawal.amount}`,
+        });
+      }
+    }
+
+    for (const reversal of linkedReversals) {
+      let problem: string | null = null;
+      if (withdrawal.state !== "FAILED") {
+        problem = `withdrawal state ${withdrawal.state} should not have a reversal`;
+      } else if (linkedDebits.length === 0) {
+        problem = "reversal has no matching debit to reverse";
+      } else if (
+        reversal.appId !== withdrawal.appId ||
+        reversal.userId !== withdrawal.userId ||
+        reversal.asset !== withdrawal.asset ||
+        reversal.refId !== withdrawal.id
+      ) {
+        problem = "reversal app/user/asset/refId does not match withdrawal account dimensions";
+      } else if (reversal.amount !== withdrawal.amount) {
+        problem = `reversal amount ${reversal.amount} != withdrawal amount ${withdrawal.amount}`;
+      }
+      if (problem) {
+        addIssue({
+          kind: "INVALID_WITHDRAWAL_REVERSAL",
+          withdrawalId: withdrawal.id,
+          idempotencyKey: reversal.idempotencyKey,
+          detail: problem,
         });
       }
     }

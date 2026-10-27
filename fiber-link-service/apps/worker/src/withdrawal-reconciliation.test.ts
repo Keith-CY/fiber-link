@@ -138,6 +138,56 @@ describe("withdrawal reconciliation report", () => {
     expect(report.issuesByKind.DEBIT_AMOUNT_MISMATCH).toBe(1);
   });
 
+  it("treats a FAILED withdrawal whose broadcast debit was reversed as healthy", () => {
+    const failed = {
+      id: "wd-rejected",
+      appId: "app-1",
+      userId: "u-1",
+      asset: "CKB" as const,
+      amount: "60",
+      state: "FAILED" as const,
+      txHash: "0xrejected",
+    };
+    const ledgerRow = { appId: "app-1", userId: "u-1", asset: "CKB" as const, amount: "60", refId: "wd-rejected" };
+    const debit = { ...ledgerRow, idempotencyKey: "withdrawal:debit:wd-rejected" };
+    const reversal = { ...ledgerRow, idempotencyKey: "withdrawal:reversal:wd-rejected" };
+
+    expect(buildWithdrawalParityReport({ withdrawals: [failed], debits: [debit], reversals: [reversal] }).healthy).toBe(
+      true,
+    );
+    // Without the reversal the stuck debit is still an anomaly.
+    expect(
+      buildWithdrawalParityReport({ withdrawals: [failed], debits: [debit] }).issuesByKind
+        .NON_COMPLETED_WITHDRAWAL_HAS_DEBIT,
+    ).toBe(1);
+  });
+
+  it("flags reversals without a debit, on non-FAILED withdrawals, with mismatched amounts, or orphaned", () => {
+    const base = { appId: "app-1", userId: "u-1", asset: "CKB" as const, amount: "60", txHash: "0xtx" };
+    const report = buildWithdrawalParityReport({
+      withdrawals: [
+        { ...base, id: "wd-no-debit", state: "FAILED" },
+        { ...base, id: "wd-completed", state: "COMPLETED" },
+        { ...base, id: "wd-mismatch", state: "FAILED" },
+      ],
+      debits: [
+        { ...base, refId: "wd-completed", idempotencyKey: "withdrawal:debit:wd-completed" },
+        { ...base, refId: "wd-mismatch", idempotencyKey: "withdrawal:debit:wd-mismatch" },
+      ],
+      reversals: [
+        { ...base, refId: "wd-no-debit", idempotencyKey: "withdrawal:reversal:wd-no-debit" },
+        { ...base, refId: "wd-completed", idempotencyKey: "withdrawal:reversal:wd-completed" },
+        { ...base, amount: "59", refId: "wd-mismatch", idempotencyKey: "withdrawal:reversal:wd-mismatch" },
+        { ...base, refId: "wd-orphan", idempotencyKey: "withdrawal:reversal:wd-orphan" },
+      ],
+    });
+
+    expect(report.healthy).toBe(false);
+    expect(report.issuesByKind.INVALID_WITHDRAWAL_REVERSAL).toBe(3);
+    expect(report.issuesByKind.ORPHAN_REVERSAL_ENTRY).toBe(1);
+    expect(report.issuesByKind.NON_COMPLETED_WITHDRAWAL_HAS_DEBIT).toBe(0);
+  });
+
   it("parses withdrawal id from debit idempotency key", () => {
     expect(parseWithdrawalIdFromDebitIdempotencyKey("withdrawal:debit:wd-123")).toBe("wd-123");
     expect(parseWithdrawalIdFromDebitIdempotencyKey("withdrawal:debit:")).toBeNull();

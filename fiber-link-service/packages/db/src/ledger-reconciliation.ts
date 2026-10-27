@@ -10,6 +10,9 @@ import type { LedgerEntryType } from "./ledger-repo";
  * - a settled tip intent produces exactly one ledger credit with
  *   `refId = tipIntent.id`;
  * - a broadcasted/completed withdrawal produces exactly one ledger debit with
+ *   `refId = withdrawal.id`;
+ * - a broadcast the chain rejected moves the withdrawal to FAILED and refunds
+ *   that debit with exactly one reversal credit of the same amount, also with
  *   `refId = withdrawal.id`.
  */
 
@@ -48,6 +51,7 @@ export const LEDGER_ANOMALY_KINDS = [
   "DEBIT_WITHOUT_COMPLETED_WITHDRAWAL",
   "NEGATIVE_BALANCE_ACCOUNT",
   "DUPLICATE_REFERENCE_ENTRIES",
+  "INVALID_WITHDRAWAL_REVERSAL",
 ] as const;
 
 export type LedgerAnomalyKind = (typeof LEDGER_ANOMALY_KINDS)[number];
@@ -76,6 +80,11 @@ export type LedgerReconciliationReport = {
 /** Debits are written on the PROCESSING -> BROADCASTED transition and remain valid through COMPLETED. */
 const DEBIT_BEARING_WITHDRAWAL_STATES = new Set(["BROADCASTED", "COMPLETED"]);
 
+/** Whether the reversal credits exactly cancel the debits (credits minus debits sum to zero). */
+function reversalsCancelDebits(reversals: LedgerReconciliationEntry[], debits: LedgerReconciliationEntry[]): boolean {
+  return signedSum([...reversals, ...debits]).value === 0n;
+}
+
 function signedSum(entries: LedgerReconciliationEntry[]): { value: bigint; scale: number } {
   const parsed = entries.map((entry) => {
     const decimal = parseDecimal(entry.amount);
@@ -94,17 +103,20 @@ export function reconcileLedger(input: {
 }): LedgerReconciliationReport {
   const anomalies: LedgerAnomaly[] = [];
 
+  const tipById = new Map(input.tipIntents.map((tip) => [tip.id, tip]));
+  const withdrawalById = new Map(input.withdrawals.map((withdrawal) => [withdrawal.id, withdrawal]));
+
   const creditsByRef = new Map<string, LedgerReconciliationEntry[]>();
   const debitsByRef = new Map<string, LedgerReconciliationEntry[]>();
+  // Credits referencing a withdrawal are reversals of its broadcast debit.
+  const reversalsByRef = new Map<string, LedgerReconciliationEntry[]>();
   for (const entry of input.entries) {
-    const byRef = entry.type === "credit" ? creditsByRef : debitsByRef;
+    const byRef =
+      entry.type === "debit" ? debitsByRef : withdrawalById.has(entry.refId) ? reversalsByRef : creditsByRef;
     const linked = byRef.get(entry.refId) ?? [];
     linked.push(entry);
     byRef.set(entry.refId, linked);
   }
-
-  const tipById = new Map(input.tipIntents.map((tip) => [tip.id, tip]));
-  const withdrawalById = new Map(input.withdrawals.map((withdrawal) => [withdrawal.id, withdrawal]));
 
   for (const tip of input.tipIntents) {
     if (tip.invoiceState !== "SETTLED") {
@@ -170,7 +182,7 @@ export function reconcileLedger(input: {
         entryIds,
         detail: `ledger debit references unknown withdrawal ${refId}`,
       });
-    } else if (!DEBIT_BEARING_WITHDRAWAL_STATES.has(withdrawal.state)) {
+    } else if (!DEBIT_BEARING_WITHDRAWAL_STATES.has(withdrawal.state) && !reversalsByRef.has(refId)) {
       anomalies.push({
         kind: "DEBIT_WITHOUT_COMPLETED_WITHDRAWAL",
         refId,
@@ -184,6 +196,36 @@ export function reconcileLedger(input: {
         refId,
         entryIds,
         detail: `${debits.length} debit entries share ref ${refId}`,
+      });
+    }
+  }
+
+  for (const [refId, reversals] of reversalsByRef) {
+    const entryIds = reversals.map((entry) => entry.id);
+    const withdrawal = withdrawalById.get(refId);
+    const debits = debitsByRef.get(refId) ?? [];
+    let problem: string | null = null;
+    if (withdrawal?.state !== "FAILED") {
+      problem = `withdrawal ${refId} is ${withdrawal?.state}, not FAILED`;
+    } else if (debits.length === 0) {
+      problem = `withdrawal ${refId} has no debit to reverse`;
+    } else if (!reversalsCancelDebits(reversals, debits)) {
+      problem = `reversal does not match the debited amount of withdrawal ${refId}`;
+    }
+    if (problem) {
+      anomalies.push({
+        kind: "INVALID_WITHDRAWAL_REVERSAL",
+        refId,
+        entryIds,
+        detail: `ledger reversal credit is invalid: ${problem}`,
+      });
+    }
+    if (reversals.length > 1) {
+      anomalies.push({
+        kind: "DUPLICATE_REFERENCE_ENTRIES",
+        refId,
+        entryIds,
+        detail: `${reversals.length} reversal credit entries share ref ${refId}`,
       });
     }
   }

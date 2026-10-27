@@ -101,6 +101,7 @@ Traceable code path:
 1. `apps/worker/src/withdrawal-batch.ts#runWithdrawalBatch` orchestrates transitions and retry matrix.
 2. `packages/db/src/withdrawal-repo.ts` enforces state transitions (`PENDING -> PROCESSING -> COMPLETED/RETRY_PENDING/FAILED`).
 3. `packages/db/src/ledger-repo.ts#debitOnce` ensures debit idempotency with `withdrawal:debit:<withdrawalId>`.
+4. When the chain rejects a broadcast CKB-address withdrawal, `markFailedFromBroadcasted` moves it `BROADCASTED -> FAILED` and, in the same transaction, refunds the debit with a write-once credit keyed `withdrawal:reversal:<withdrawalId>`.
 
 ## State and integrity invariants
 

@@ -24,13 +24,13 @@ function baseInput() {
 }
 
 /** Drives a withdrawal to FAILED while keeping its broadcast tx_hash, mirroring
- * the worker's markFailedFromBroadcasted path (debit already happened). */
+ * the worker's markFailedFromBroadcasted path (debit then reversal). */
 async function broadcastThenFail(repo: ReturnType<typeof createInMemoryWithdrawalRepo>) {
   const ledgerRepo = createInMemoryLedgerRepo();
   const w = await repo.create(baseInput());
   await repo.markProcessing(w.id, new Date());
   await repo.markBroadcastedWithDebit(w.id, { now: new Date(), txHash: "0xdeadbeef" }, { ledgerRepo });
-  await repo.markFailedFromBroadcasted(w.id, { now: new Date(), error: "stuck after broadcast" });
+  await repo.markFailedFromBroadcasted(w.id, { now: new Date(), error: "stuck after broadcast" }, { ledgerRepo });
   return w.id;
 }
 

@@ -38,6 +38,8 @@ function createParityReport(overrides: Partial<WithdrawalParityReport> = {}): Wi
       DUPLICATE_DEBIT_ENTRIES: 0,
       DEBIT_ACCOUNT_MISMATCH: 0,
       DEBIT_AMOUNT_MISMATCH: 0,
+      ORPHAN_REVERSAL_ENTRY: 0,
+      INVALID_WITHDRAWAL_REVERSAL: 0,
     },
     issues: [],
     ...overrides,
