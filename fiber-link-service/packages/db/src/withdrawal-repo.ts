@@ -6,6 +6,11 @@ import { withdrawalDebitIdempotencyKey } from "./idempotency";
 import { type LedgerRepo, createDbLedgerRepo } from "./ledger-repo";
 import { computeRetryDelay } from "./retry";
 import { type Asset, type WithdrawalDestinationKind, type WithdrawalState, withdrawals } from "./schema";
+import {
+  type WithdrawalPolicyUsage,
+  getWithdrawalPolicyUsageWithClient,
+  usageWindowStart,
+} from "./withdrawal-policy-repo";
 
 export type WithdrawalAsset = Asset;
 
@@ -95,8 +100,15 @@ export type PendingTotalInput = {
   asset: WithdrawalAsset;
 };
 
+export type WithdrawalPolicyGuard = {
+  now: Date;
+  /** Throws when the request violates policy given usage read under the creation lock. */
+  assertUsage(usage: WithdrawalPolicyUsage): void;
+};
+
 export type BalanceCheckDeps = {
   ledgerRepo: LedgerRepo;
+  policyGuard?: WithdrawalPolicyGuard;
 };
 
 export type ActiveCkbAddressReservationTotalInput = {
@@ -239,6 +251,36 @@ async function acquireClientRequestLock(
 
   const clientRequestLockKey = `${input.appId}:${input.userId}:client-request:${input.clientRequestId}`;
   await client.execute(sql`select pg_advisory_xact_lock(hashtext(${clientRequestLockKey}))`);
+}
+
+async function acquirePolicyLock(
+  client: DbClient,
+  input: { appId: string; asset: WithdrawalAsset },
+  deps: BalanceCheckDeps,
+): Promise<void> {
+  if (!deps.policyGuard) return;
+
+  // The per-app daily limit spans every user of the app, so policy-checked
+  // creations serialize on app+asset. Taken before the per-user lock so the
+  // lock order is always app -> user.
+  const policyLockKey = `${input.appId}:${input.asset}:withdrawal-policy`;
+  await client.execute(sql`select pg_advisory_xact_lock(hashtext(${policyLockKey}))`);
+}
+
+async function assertPolicyUsageWithClient(
+  client: DbClient,
+  input: { appId: string; userId: string; asset: WithdrawalAsset },
+  deps: BalanceCheckDeps,
+): Promise<void> {
+  if (!deps.policyGuard) return;
+
+  const usage = await getWithdrawalPolicyUsageWithClient(client, {
+    appId: input.appId,
+    userId: input.userId,
+    asset: input.asset,
+    now: deps.policyGuard.now,
+  });
+  deps.policyGuard.assertUsage(usage);
 }
 
 async function findExistingClientRequestWithdrawal(
@@ -424,9 +466,10 @@ export function createDbWithdrawalRepo(db: DbClient): WithdrawalRepo {
       }
     },
 
-    async createLiquidityPendingWithBalanceCheck(input, _deps) {
+    async createLiquidityPendingWithBalanceCheck(input, deps) {
       assertPositiveAmount(input.amount);
       return db.transaction(async (tx) => {
+        await acquirePolicyLock(tx, input, deps);
         const lockKey = `${input.appId}:${input.userId}:${input.asset}`;
         await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${lockKey}))`);
         await acquireClientRequestLock(tx, input);
@@ -448,6 +491,7 @@ export function createDbWithdrawalRepo(db: DbClient): WithdrawalRepo {
         if (isInsufficient(balance, pending, input.amount)) {
           throw new InsufficientFundsError(input.appId, input.userId, input.asset, input.amount);
         }
+        await assertPolicyUsageWithClient(tx, input, deps);
 
         const now = new Date();
         const [row] = await tx
@@ -478,9 +522,10 @@ export function createDbWithdrawalRepo(db: DbClient): WithdrawalRepo {
       });
     },
 
-    async createWithBalanceCheck(input, _deps) {
+    async createWithBalanceCheck(input, deps) {
       assertPositiveAmount(input.amount);
       return db.transaction(async (tx) => {
+        await acquirePolicyLock(tx, input, deps);
         const lockKey = `${input.appId}:${input.userId}:${input.asset}`;
         await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${lockKey}))`);
         await acquireClientRequestLock(tx, input);
@@ -502,6 +547,7 @@ export function createDbWithdrawalRepo(db: DbClient): WithdrawalRepo {
         if (isInsufficient(balance, pending, input.amount)) {
           throw new InsufficientFundsError(input.appId, input.userId, input.asset, input.amount);
         }
+        await assertPolicyUsageWithClient(tx, input, deps);
 
         const now = new Date();
         const [row] = await tx
@@ -839,6 +885,34 @@ export function createInMemoryWithdrawalRepo(): WithdrawalRepo {
     };
   }
 
+  // Must stay synchronous: callers run it right before inserting so no other
+  // request can interleave between the usage read and the insert.
+  function assertPolicyUsage(
+    input: { appId: string; userId: string; asset: WithdrawalAsset },
+    guard: WithdrawalPolicyGuard | undefined,
+  ): void {
+    if (!guard) return;
+
+    const since = usageWindowStart(guard.now).getTime();
+    const counted = records.filter(
+      (item) =>
+        item.appId === input.appId &&
+        item.asset === input.asset &&
+        item.state !== "FAILED" &&
+        item.createdAt.getTime() >= since,
+    );
+    const userCounted = counted.filter((item) => item.userId === input.userId);
+    const lastRequestedAt = userCounted.reduce<Date | null>(
+      (latest, item) => (!latest || item.createdAt > latest ? item.createdAt : latest),
+      null,
+    );
+    guard.assertUsage({
+      appDailyTotal: sumAmounts(counted.map((item) => item.amount)),
+      userDailyTotal: sumAmounts(userCounted.map((item) => item.amount)),
+      lastRequestedAt: lastRequestedAt ? new Date(lastRequestedAt) : null,
+    });
+  }
+
   function findExistingClientRequest(input: {
     appId: string;
     userId: string;
@@ -936,6 +1010,7 @@ export function createInMemoryWithdrawalRepo(): WithdrawalRepo {
       if (isInsufficient(balance, pending, input.amount)) {
         throw new InsufficientFundsError(input.appId, input.userId, input.asset, input.amount);
       }
+      assertPolicyUsage(input, deps.policyGuard);
       return this.createLiquidityPending(input);
     },
 
@@ -955,6 +1030,7 @@ export function createInMemoryWithdrawalRepo(): WithdrawalRepo {
       if (isInsufficient(balance, pending, input.amount)) {
         throw new InsufficientFundsError(input.appId, input.userId, input.asset, input.amount);
       }
+      assertPolicyUsage(input, deps.policyGuard);
       return this.create(input);
     },
 
