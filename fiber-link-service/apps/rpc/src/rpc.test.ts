@@ -1223,6 +1223,32 @@ describe("json-rpc", () => {
     });
   });
 
+  it("authenticates GET /rpc/stream with the app's resolved HMAC secret", async () => {
+    const app = buildServerWithAppRepo();
+    const invoice = "inv-stream-auth";
+    const signedHeaders = (secret: string, nonce: string) => {
+      const ts = String(Math.floor(Date.now() / 1000));
+      const signature = verifyHmac.sign({ secret, payload: `stream:${invoice}`, ts, nonce });
+      return { "x-app-id": "app1", "x-ts": ts, "x-nonce": nonce, "x-signature": signature };
+    };
+    const url = `/rpc/stream?invoice=${invoice}`;
+
+    const unsigned = await app.inject({ method: "GET", url, headers: { "x-app-id": "app1" } });
+    expect(unsigned.statusCode).toBe(401);
+
+    // The DB secret takes precedence, so the env fallback secret is rejected.
+    const fallbackSigned = await app.inject({
+      method: "GET",
+      url,
+      headers: signedHeaders("replace-with-lookup", "stream-nonce-1"),
+    });
+    expect(fallbackSigned.statusCode).toBe(401);
+
+    // Authenticated: the request proceeds past auth to the invoice lookup.
+    const dbSigned = await app.inject({ method: "GET", url, headers: signedHeaders("db-secret", "stream-nonce-2") });
+    expect(dbSigned.statusCode).not.toBe(401);
+  });
+
   it("returns 503 when readinessProbe throws unexpectedly", async () => {
     const app = Fastify({ logger: false });
     registerRpc(app, {

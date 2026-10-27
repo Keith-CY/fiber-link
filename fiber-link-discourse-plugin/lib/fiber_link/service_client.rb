@@ -38,6 +38,12 @@ module ::FiberLink
       raise Error, "Fiber Link RPC JSON parse failed: #{error.message}"
     end
 
+    # GET /rpc/stream has no body, so the backend verifies the same HMAC
+    # headers over the canonical "stream:<invoice>" payload instead.
+    def stream_headers(invoice)
+      signed_headers("stream:#{invoice}").except("Content-Type")
+    end
+
     private
 
     def build_payload(method:, params:, request_id:)

@@ -688,7 +688,7 @@ RSpec.describe ::FiberLink::RpcController, type: :request do
       expect(JSON.parse(response.body).fetch("error")).to eq("Missing invoice")
     end
 
-    it "proxies the backend SSE stream with the forum app id header" do
+    it "proxies the backend SSE stream with HMAC-signed forum app headers" do
       sign_in(user)
 
       stub_request(:get, "https://fiber-link.example/rpc/stream?invoice=inv-1").to_return(
@@ -701,8 +701,25 @@ RSpec.describe ::FiberLink::RpcController, type: :request do
 
       expect(response).to have_http_status(:ok)
       expect(response.body).to include("\"status\":\"SETTLED\"")
-      expect(WebMock).to have_requested(:get, "https://fiber-link.example/rpc/stream?invoice=inv-1")
-        .with(headers: { "x-app-id" => "app1" })
+      expect(WebMock).to(
+        have_requested(:get, "https://fiber-link.example/rpc/stream?invoice=inv-1").with do |req|
+          ts = req.headers["X-Ts"]
+          nonce = req.headers["X-Nonce"]
+          expected = OpenSSL::HMAC.hexdigest("sha256", "secret", "#{ts}.#{nonce}.stream:inv-1")
+          req.headers["X-App-Id"] == "app1" && ts.present? && nonce.present? &&
+            req.headers["X-Signature"] == expected
+        end,
+      )
+    end
+
+    it "emits SSE_ERROR without calling the backend when the app secret is missing" do
+      sign_in(user)
+      SiteSetting.fiber_link_app_secret = ""
+
+      get "/fiber-link/rpc/stream", params: { invoice: "inv-1" }
+
+      expect(response.body).to include("\"status\":\"SSE_ERROR\"")
+      expect(WebMock).not_to have_requested(:get, %r{fiber-link\.example/rpc/stream})
     end
 
     it "emits SSE_ERROR when the backend rejects the stream" do

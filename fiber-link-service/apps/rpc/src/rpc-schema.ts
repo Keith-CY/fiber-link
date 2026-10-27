@@ -186,7 +186,7 @@ export function buildRpcSchemaDocument() {
       authentication:
         "HMAC-SHA256 request signing via x-app-id, x-ts, x-nonce, and x-signature headers; see docs and @fiber-link/client for the signing scheme.",
       streaming:
-        "GET /rpc/stream?invoice=... serves Server-Sent Events for settlement updates (LISTENING, SETTLED, TIMEOUT).",
+        'GET /rpc/stream?invoice=... serves Server-Sent Events for settlement updates (LISTENING, SETTLED, TIMEOUT). Requires the same HMAC credentials signed over the payload "stream:<invoice>", as headers or as appId/ts/nonce/signature query params.',
     },
     errorCodes: RpcErrorCode,
     methods,

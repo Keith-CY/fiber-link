@@ -1,6 +1,7 @@
 import { TipIntentNotFoundError, createDbClient, createDbTipIntentRepo } from "@fiber-link/db";
 import type { FastifyInstance } from "fastify";
 import Redis from "ioredis";
+import { verifyHmac } from "./auth/hmac";
 
 const STREAM_TIMEOUT_MS = 60_000;
 
@@ -112,9 +113,29 @@ function parseNonNegativeIntEnv(name: string, fallback: number): number {
 
 export type StreamInvoiceRecord = { invoiceState: string; appId: string };
 
+/**
+ * HMAC verification hooks supplied by the RPC registration, so the stream
+ * shares POST /rpc's secret resolution, timestamp window and nonce store.
+ */
+export type StreamAuth = {
+  resolveSecret: (appId: string) => Promise<string>;
+  isTimestampFresh: (ts: string) => boolean;
+  isReplay?: (appId: string, nonce: string) => Promise<boolean>;
+};
+
+/**
+ * Canonical payload signed for GET /rpc/stream. The request has no body, so
+ * the signature covers the invoice (binding the credential to one stream)
+ * under a fixed prefix that can never equal a JSON-RPC request body.
+ */
+export function streamSignaturePayload(invoice: string): string {
+  return `stream:${invoice}`;
+}
+
 export function registerStreamRoute(
   app: FastifyInstance,
   options: {
+    auth: StreamAuth;
     getInvoice?: (invoice: string) => Promise<StreamInvoiceRecord | null>;
     pollInvoiceStateFn?: (invoice: string) => Promise<string | null>;
     pollIntervalMs?: number;
@@ -124,7 +145,7 @@ export function registerStreamRoute(
     maxConnectionsPerApp?: number;
     corsOrigin?: string;
     heartbeatIntervalMs?: number;
-  } = {},
+  },
 ) {
   // Track the finisher of every open SSE response so a graceful shutdown ends
   // them promptly instead of waiting out long-lived connections, and release
@@ -206,11 +227,36 @@ export function registerStreamRoute(
       return reply.status(400).send({ error: "Missing invoice" });
     }
 
-    // Server-side proxies identify via the x-app-id header; browser EventSource
-    // clients cannot set headers, so the appId query param is the fallback.
-    const requesterAppId = (firstValue(req.headers["x-app-id"]) || firstValue(query.appId)).trim();
-    if (!requesterAppId) {
-      return reply.status(401).send({ error: "Missing app id" });
+    // Same HMAC credentials as POST /rpc, verified before taking a slot so
+    // unauthenticated callers cannot exhaust an app's stream quota. Server-side
+    // proxies send x-app-id/x-ts/x-nonce/x-signature headers; browser
+    // EventSource clients cannot set headers, so they send the same values as
+    // appId/ts/nonce/signature query params.
+    const fromHeaders = firstValue(req.headers["x-signature"]) !== "";
+    const credential = (header: string, param: string) =>
+      (fromHeaders ? firstValue(req.headers[header]) : firstValue(query[param])).trim();
+    const requesterAppId = credential("x-app-id", "appId");
+    const ts = credential("x-ts", "ts");
+    const nonce = credential("x-nonce", "nonce");
+    const signature = credential("x-signature", "signature");
+    if (!requesterAppId || !ts || !nonce || !signature) {
+      return reply.status(401).send({ error: "Unauthorized" });
+    }
+
+    let authorized: boolean;
+    try {
+      const secret = await options.auth.resolveSecret(requesterAppId);
+      authorized =
+        Boolean(secret) &&
+        options.auth.isTimestampFresh(ts) &&
+        verifyHmac.check({ secret, payload: streamSignaturePayload(invoice), ts, nonce, signature }) &&
+        // Replay is checked last so only a verified signature consumes its nonce.
+        !(await options.auth.isReplay?.(requesterAppId, nonce));
+    } catch {
+      return reply.status(503).send({ error: "Stream temporarily unavailable" });
+    }
+    if (!authorized) {
+      return reply.status(401).send({ error: "Unauthorized" });
     }
 
     const releaseSlot = tryAcquireStreamSlot(requesterAppId);

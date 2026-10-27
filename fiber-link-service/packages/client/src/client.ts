@@ -194,26 +194,57 @@ export class FiberLinkClient {
    * Falls back gracefully when `EventSource` is unavailable (e.g., Node.js).
    * Returns a `StreamHandle` with `.close()`, or `null` if SSE is not available.
    *
-   * In "signed" mode the configured appId is sent as a query param —
-   * `EventSource` cannot set headers — so the server can verify the invoice
-   * belongs to this app. In "presigned" mode the server-side proxy injects
-   * the `x-app-id` header instead.
+   * The stream requires the same HMAC credentials as the JSON-RPC route. In
+   * "signed" mode they are sent as `appId`/`ts`/`nonce`/`signature` query
+   * params — `EventSource` cannot set headers — signed over `stream:<invoice>`;
+   * signing is async, so the stream opens on a later tick. In "presigned"
+   * mode the server-side proxy signs the backend request instead.
    *
    * `onEvent` receives `StreamEvent` objects: LISTENING → SETTLED | TIMEOUT | SSE_ERROR.
    */
   streamTipStatus(invoice: string, onEvent: (event: StreamEvent) => void): StreamHandle | null {
     if (!invoice?.trim()) throw new FiberLinkValidationError("invoice", "invoice is required");
 
-    const appIdParam = this.appId ? `&appId=${encodeURIComponent(this.appId)}` : "";
-    const streamUrl = `${this.endpoint}/stream?invoice=${encodeURIComponent(invoice)}${appIdParam}`;
+    const streamUrl = `${this.endpoint}/stream?invoice=${encodeURIComponent(invoice)}`;
 
     if (typeof EventSource === "undefined") {
       return null;
     }
 
+    if (this.mode === "signed" && this.appId && this.hmacSecret) {
+      let closed = false;
+      let es: EventSource | null = null;
+      buildSignedHeaders(this.appId, this.hmacSecret, `stream:${invoice.trim()}`)
+        .then((headers) => {
+          if (closed) return;
+          const auth = [
+            `appId=${encodeURIComponent(headers["x-app-id"])}`,
+            `ts=${headers["x-ts"]}`,
+            `nonce=${headers["x-nonce"]}`,
+            `signature=${headers["x-signature"]}`,
+          ].join("&");
+          es = this.openStream(`${streamUrl}&${auth}`, invoice, onEvent);
+          if (!es) onEvent({ invoice, status: "SSE_ERROR" });
+        })
+        .catch(() => {
+          if (!closed) onEvent({ invoice, status: "SSE_ERROR" });
+        });
+      return {
+        close: () => {
+          closed = true;
+          es?.close();
+        },
+      };
+    }
+
+    const es = this.openStream(streamUrl, invoice, onEvent);
+    return es ? { close: () => es.close() } : null;
+  }
+
+  private openStream(url: string, invoice: string, onEvent: (event: StreamEvent) => void): EventSource | null {
     let es: EventSource;
     try {
-      es = new EventSource(streamUrl);
+      es = new EventSource(url);
     } catch {
       return null;
     }
@@ -237,6 +268,6 @@ export class FiberLinkClient {
       onEvent({ invoice, status: "SSE_ERROR" });
     };
 
-    return { close: () => es.close() };
+    return es;
   }
 }

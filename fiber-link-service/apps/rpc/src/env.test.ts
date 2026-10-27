@@ -68,7 +68,7 @@ describe("shared stream resource cleanup", () => {
 
   it("app.close() triggers the stream onClose cleanup hook", async () => {
     const app = Fastify({ logger: false });
-    registerStreamRoute(app);
+    registerStreamRoute(app, { auth: { resolveSecret: async () => "", isTimestampFresh: () => false } });
     await app.ready();
     // No shared connection was opened, so close must resolve cleanly through
     // the onClose hook (exercises the wiring, not a live Redis).
