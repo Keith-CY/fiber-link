@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# The bundle contains the database dump and (with --include-fnn-state) FNN key
+# material, so every file and directory it creates must be owner-only.
+umask 077
+
 EXIT_OK=0
 EXIT_USAGE=2
 EXIT_PRECHECK=10
@@ -247,7 +251,7 @@ run_capture_step "git-head" \
 
 run_capture_step "compose-config" \
   "${BACKUP_DIR}/snapshots/compose-config.txt" \
-  "cd \"${ROOT_DIR}\" && docker compose --env-file \"${ENV_FILE}\" -f \"${COMPOSE_FILE}\" config" \
+  "cd \"${ROOT_DIR}\" && docker compose --env-file \"${ENV_FILE}\" -f \"${COMPOSE_FILE}\" config --no-interpolate" \
   "DRY_RUN compose config"
 
 run_capture_step "compose-ps" \
@@ -255,29 +259,32 @@ run_capture_step "compose-ps" \
   "cd \"${ROOT_DIR}\" && docker compose --env-file \"${ENV_FILE}\" -f \"${COMPOSE_FILE}\" ps" \
   "DRY_RUN compose ps"
 
+# Container Env holds resolved secrets (DATABASE_URL, HMAC secret, keys); drop it.
 run_capture_step "postgres-inspect" \
   "${BACKUP_DIR}/runtime/postgres-container-inspect.json" \
-  "docker inspect fiber-link-postgres" \
+  "set -o pipefail; docker inspect fiber-link-postgres | jq 'map(del(.Config.Env))'" \
   "{}"
 
 run_capture_step "worker-inspect" \
   "${BACKUP_DIR}/runtime/worker-container-inspect.json" \
-  "docker inspect fiber-link-worker" \
+  "set -o pipefail; docker inspect fiber-link-worker | jq 'map(del(.Config.Env))'" \
   "{}"
 
 run_capture_step "fnn-inspect" \
   "${BACKUP_DIR}/runtime/fnn-container-inspect.json" \
-  "docker inspect fiber-link-fnn" \
+  "set -o pipefail; docker inspect fiber-link-fnn | jq 'map(del(.Config.Env))'" \
   "{}"
 
 run_capture_step "fnn2-inspect" \
   "${BACKUP_DIR}/runtime/fnn2-container-inspect.json" \
-  "docker inspect fiber-link-fnn2" \
+  "set -o pipefail; docker inspect fiber-link-fnn2 | jq 'map(del(.Config.Env))'" \
   "{}"
 
-run_capture_step "postgres-dump" \
+# pg_dump stderr goes to a separate log so warnings never land in the SQL replayed by restore.
+run_file_capture_step "postgres-dump" \
   "${BACKUP_DIR}/db/postgres.sql" \
-  "docker exec fiber-link-postgres pg_dump --clean --if-exists --create --format=plain --no-owner --no-privileges -U \"${POSTGRES_USER}\" -d \"${POSTGRES_DB}\"" \
+  "${BACKUP_DIR}/db/postgres.sql.log" \
+  "docker exec fiber-link-postgres pg_dump --clean --if-exists --create --format=plain --no-owner --no-privileges -U \"${POSTGRES_USER}\" -d \"${POSTGRES_DB}\" > \"${BACKUP_DIR}/db/postgres.sql\"" \
   "-- DRY_RUN postgres dump placeholder"
 
 run_capture_step "worker-cursor" \

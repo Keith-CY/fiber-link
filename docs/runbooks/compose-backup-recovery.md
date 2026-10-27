@@ -54,6 +54,8 @@ deploy/compose/backups/<UTC_TIMESTAMP>/
   status/
 ```
 
+The bundle is sensitive: `db/postgres.sql` holds the full ledger, and with `--include-fnn-state` the FNN tarballs contain node wallet key material. The script runs with `umask 077`, so the bundle directory, its files, and the `.tar.gz` archive are owner-only (dirs `0700`, files `0600`); keep those permissions when copying it to long-term storage. Compose config is captured with `--no-interpolate` (variable references, not resolved `.env` values) and `Config.Env` is stripped from the `docker inspect` snapshots, so neither contains resolved secrets. `pg_dump` stderr is written to `db/postgres.sql.log`, never into the SQL file.
+
 ## Restore Command
 
 Restore is destructive for the target compose database. Run it only after validating the chosen backup source.
@@ -78,6 +80,8 @@ RESULT=PASS CODE=0 BACKUP_SOURCE=... RESTORE_MODE=...
 ```
 
 Restore validates `metadata/manifest.json`, `status/step-results.tsv`, and `metadata/checksums.sha256` before any restore command is planned. Live restore refuses bundles produced with `--dry-run`. If the manifest says FNN state was included, restore also requires `fnn/data.tar.gz` and `fnn2/data.tar.gz` and replays those tarballs before the application services are started.
+
+If `postgres-restore`, `fnn-state-restore`, or `fnn2-state-restore` fails, restore aborts immediately with `RESULT=FAIL CODE=11 STEP=<step>`: it does not restore the worker cursor or start `rpc`/`worker` against a half-restored database or node. Inspect `restore/<step>.log` in the bundle, fix the cause, and rerun the restore.
 
 ## Restore Rehearsal
 

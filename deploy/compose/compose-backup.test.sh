@@ -41,6 +41,36 @@ if [[ "${1:-}" == "compose" && "${2:-}" == "version" ]]; then
   exit 0
 fi
 
+if [[ "${1:-}" == "compose" && " $* " == *" config "* ]]; then
+  # Real compose interpolates .env values unless --no-interpolate is passed.
+  if [[ " $* " == *" --no-interpolate "* ]]; then
+    printf 'FIBER_LINK_HMAC_SECRET: ${FIBER_LINK_HMAC_SECRET:?Set FIBER_LINK_HMAC_SECRET in .env}\n'
+  else
+    printf 'FIBER_LINK_HMAC_SECRET: %s\n' "${FAKE_PLANTED_SECRET:-}"
+  fi
+  exit 0
+fi
+
+if [[ "${1:-}" == "inspect" ]]; then
+  printf '[{"Name":"/%s","Config":{"Image":"fake","Env":["FIBER_LINK_HMAC_SECRET=%s"]}}]\n' "${2:-}" "${FAKE_PLANTED_SECRET:-}"
+  exit 0
+fi
+
+if [[ "${1:-}" == "exec" && " $* " == *" pg_dump "* ]]; then
+  printf 'pg_dump: warning: fake stderr warning\n' >&2
+  printf -- '-- fake postgres dump\n'
+  exit 0
+fi
+
+if [[ "${1:-}" == "exec" && "${2:-}" == "-i" && " $* " == *" psql "* ]]; then
+  cat >/dev/null
+  if [[ "${FAKE_PSQL_FAIL:-0}" == "1" ]]; then
+    printf 'psql: ERROR: fake restore failure\n' >&2
+    exit 3
+  fi
+  exit 0
+fi
+
 if [[ "${1:-}" == "run" ]]; then
   backup_mount=""
   for arg in "$@"; do
@@ -220,12 +250,14 @@ run_backup_live_fnn_state_uses_separate_log() {
   local output_root="${TMP_DIR}/backup-output-live-fnn-state"
   local output
   local backup_dir
+  local bad_modes
 
   export FAKE_DOCKER_LOG="${TMP_DIR}/fake-docker-live-fnn-state.log"
   make_fake_docker "${fake_bin}"
 
   output="$(
     PATH="${fake_bin}:${PATH}" \
+    FAKE_PLANTED_SECRET="planted-hmac-secret-value" \
       "${BACKUP_SCRIPT}" \
       --include-fnn-state \
       --output-root "${output_root}"
@@ -239,6 +271,71 @@ run_backup_live_fnn_state_uses_separate_log() {
   assert_file_contains "${backup_dir}/fnn2/data.tar.gz" "tarball-bytes-from-fake-docker"
   assert_file_contains "${backup_dir}/fnn2/data.tar.gz.log" "fake docker command log on stdout"
   (cd "${backup_dir}" && sha256sum -c metadata/checksums.sha256 >/dev/null) || fail "checksum validation failed for live fnn-state backup"
+
+  # The bundle holds the database dump and FNN key material: owner-only access.
+  bad_modes="$(find "${backup_dir}" "${backup_dir}.tar.gz" \( -type f ! -perm 0600 \) -o \( -type d ! -perm 0700 \) -print)"
+  [[ -z "${bad_modes}" ]] || fail "expected bundle files 0600 and dirs 0700, found: ${bad_modes}"
+
+  # Resolved secrets must not be written to compose config or inspect snapshots.
+  if grep -rFq -- "planted-hmac-secret-value" "${backup_dir}"; then
+    fail "planted secret leaked into backup bundle: $(grep -rlF -- "planted-hmac-secret-value" "${backup_dir}")"
+  fi
+  assert_file_contains "${backup_dir}/snapshots/compose-config.txt" '${FIBER_LINK_HMAC_SECRET'
+  jq -e '.[0].Config.Image == "fake" and (.[0].Config | has("Env") | not)' "${backup_dir}/runtime/postgres-container-inspect.json" >/dev/null \
+    || fail "expected inspect snapshot without Config.Env"
+
+  # pg_dump stderr must not be mixed into the SQL that restore replays.
+  if grep -Fq -- "fake stderr warning" "${backup_dir}/db/postgres.sql"; then
+    fail "pg_dump stderr leaked into db/postgres.sql"
+  fi
+  assert_file_contains "${backup_dir}/db/postgres.sql" "-- fake postgres dump"
+  assert_file_contains "${backup_dir}/db/postgres.sql.log" "fake stderr warning"
+
+  printf '%s\n' "${backup_dir}" > "${TMP_DIR}/live-backup-dir.txt"
+}
+
+run_restore_live() {
+  local fake_bin="${TMP_DIR}/fake-bin-live-fnn-state"
+  local backup_dir
+  local output
+  local rc
+
+  backup_dir="$(cat "${TMP_DIR}/live-backup-dir.txt")"
+
+  export FAKE_DOCKER_LOG="${TMP_DIR}/fake-docker-live-restore.log"
+  output="$(
+    PATH="${fake_bin}:${PATH}" \
+      "${RESTORE_SCRIPT}" \
+      --backup "${backup_dir}" \
+      --yes
+  )"
+  assert_contains "${output}" "RESULT=PASS CODE=0"
+  assert_contains "${output}" "RESTORE_MODE=LIVE"
+  assert_file_contains "${FAKE_DOCKER_LOG}" "up -d rpc worker"
+
+  export FAKE_DOCKER_LOG="${TMP_DIR}/fake-docker-live-restore-psql-fail.log"
+  set +e
+  output="$(
+    PATH="${fake_bin}:${PATH}" \
+    FAKE_PSQL_FAIL=1 \
+      "${RESTORE_SCRIPT}" \
+      --backup "${backup_dir}" \
+      --yes 2>&1
+  )"
+  rc=$?
+  set -e
+  if grep -F -- "up -d" "${FAKE_DOCKER_LOG}" | grep -vFq -- "up -d postgres"; then
+    fail "restore started services after failed postgres-restore: $(cat "${FAKE_DOCKER_LOG}")"
+  fi
+  if grep -Eq -- '^\[fake-docker\] cp ' "${FAKE_DOCKER_LOG}"; then
+    fail "restore copied worker cursor after failed postgres-restore"
+  fi
+  if grep -Fq -- "--volumes-from" "${FAKE_DOCKER_LOG}"; then
+    fail "restore touched FNN state after failed postgres-restore"
+  fi
+  [[ "${rc}" -eq 11 ]] || fail "expected failed psql restore to exit 11, got ${rc}: ${output}"
+  assert_contains "${output}" "RESULT=FAIL CODE=11 STEP=postgres-restore"
+  assert_file_contains "${backup_dir}/restore/step-results.tsv" $'postgres-restore\tFAIL:3'
 }
 
 assert_repo_wiring() {
@@ -260,5 +357,6 @@ run_restore_dry_run
 run_backup_dry_run_with_fnn_state
 run_backup_dry_run_with_env_override
 run_backup_live_fnn_state_uses_separate_log
+run_restore_live
 
 printf 'compose-backup checks passed\n'
