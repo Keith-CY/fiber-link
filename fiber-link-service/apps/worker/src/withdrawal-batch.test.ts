@@ -646,6 +646,34 @@ describe("runWithdrawalBatch", () => {
     expect(saved.retryCount).toBe(1);
   });
 
+  it("leaves the in-flight withdrawal PROCESSING and claims nothing else when shutdown aborts the batch", async () => {
+    const first = await createPendingWithdrawal("shutdown-1");
+    const second = await createPendingWithdrawal("shutdown-2");
+    const third = await createPendingWithdrawal("shutdown-3");
+    const controller = new AbortController();
+    const executeWithdrawal = vi.fn(async () => {
+      // Mirrors the Fiber RPC client, which rethrows the caller's abort reason.
+      controller.abort(new Error("Worker shutdown requested by SIGTERM"));
+      throw controller.signal.reason;
+    });
+
+    await expect(
+      runWithdrawalBatch({
+        now: new Date("2026-02-07T12:47:00.000Z"),
+        executeWithdrawal,
+        repo,
+        signal: controller.signal,
+      }),
+    ).rejects.toThrow("Worker shutdown requested by SIGTERM");
+
+    expect(executeWithdrawal).toHaveBeenCalledTimes(1);
+    const savedFirst = await repo.findByIdOrThrow(first.id);
+    expect(savedFirst.state).toBe("PROCESSING");
+    expect(savedFirst.lastError).toBeNull();
+    expect((await repo.findByIdOrThrow(second.id)).state).toBe("PENDING");
+    expect((await repo.findByIdOrThrow(third.id)).state).toBe("PENDING");
+  });
+
   it("uses adapter execution for USDI withdrawals to CKB addresses by default", async () => {
     const adapterExecuteWithdrawal = vi.fn().mockResolvedValue({ txHash: "0xusdi-chain" });
     const createAdapter = vi.fn(() => ({

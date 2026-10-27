@@ -65,6 +65,7 @@ export type SettlementDiscoveryOptions = {
   publisher?: SettlementPublisher;
   nowMsFn?: () => number;
   logger?: SettlementLogger;
+  signal?: AbortSignal;
 };
 
 export type SettlementDiscoverySummary = {
@@ -283,6 +284,7 @@ export async function runSettlementDiscovery(options: SettlementDiscoveryOptions
   const retryDelayMs = options.retryDelayMs ?? 60_000;
   const pendingTimeoutMs = options.pendingTimeoutMs ?? 30 * 60_000;
   const logger = options.logger ?? defaultLogger;
+  const signal = options.signal;
 
   const baseQueryOptions = {
     appId: options.appId,
@@ -361,6 +363,8 @@ export async function runSettlementDiscovery(options: SettlementDiscoveryOptions
   };
 
   for (const intent of intents) {
+    // Stop scanning once worker shutdown has been requested.
+    signal?.throwIfAborted();
     const previousState = intent.invoiceState as SettlementState;
     const nowMs = nowMsFn();
     const now = new Date(nowMs);
@@ -475,6 +479,10 @@ export async function runSettlementDiscovery(options: SettlementDiscoveryOptions
       summary.events.push(event);
       await appendTimelineEvent(intent, event);
     } catch (error) {
+      if (signal?.aborted) {
+        // Shutdown interrupted the status lookup; do not consume a settlement retry for it.
+        throw signal.reason;
+      }
       const decision = classifySettlementError(error);
       try {
         if (decision.kind === "TRANSIENT") {

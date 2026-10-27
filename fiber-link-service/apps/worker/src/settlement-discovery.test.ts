@@ -465,6 +465,39 @@ describe("runSettlementDiscovery", () => {
     expect(summary.stillUnpaid).toBe(1);
   });
 
+  it("does not consume settlement retries when shutdown aborts the scan", async () => {
+    for (const invoice of ["inv-shutdown-1", "inv-shutdown-2"]) {
+      await tipIntentRepo.create({
+        appId: "app-a",
+        postId: `p-${invoice}`,
+        fromUserId: "u1",
+        toUserId: "u2",
+        asset: "USDI",
+        amount: "10",
+        invoice,
+      });
+    }
+    const controller = new AbortController();
+    const adapter = {
+      getInvoiceStatus: vi.fn(async () => {
+        controller.abort(new Error("Worker shutdown requested by SIGTERM"));
+        throw controller.signal.reason;
+      }),
+    };
+
+    await expect(
+      runDiscovery({ limit: 100, tipIntentRepo, ledgerRepo, adapter, signal: controller.signal }),
+    ).rejects.toThrow("Worker shutdown requested by SIGTERM");
+
+    expect(adapter.getInvoiceStatus).toHaveBeenCalledTimes(1);
+    for (const invoice of ["inv-shutdown-1", "inv-shutdown-2"]) {
+      const saved = await tipIntentRepo.findByInvoiceOrThrow(invoice);
+      expect(saved.invoiceState).toBe("UNPAID");
+      expect(saved.settlementRetryCount).toBe(0);
+      expect(saved.settlementNextRetryAt).toBeNull();
+    }
+  });
+
   it("skips intents whose retry delay is in the future", async () => {
     const now = new Date("2026-02-11T10:00:00.000Z");
     await tipIntentRepo.create({
