@@ -36,10 +36,9 @@ export const withdrawalPolicyRouter = router({
       if (error instanceof UnknownAppError) {
         throw new TRPCError({ code: "NOT_FOUND", message: error.message });
       }
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message: error instanceof Error ? error.message : "failed to persist withdrawal policy",
-      });
+      // Driver errors carry the failed SQL text; keep that detail in the server log only.
+      console.error("[admin] failed to persist withdrawal policy", { appId: input.appId, error });
+      throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "failed to persist withdrawal policy" });
     }
   }),
 });

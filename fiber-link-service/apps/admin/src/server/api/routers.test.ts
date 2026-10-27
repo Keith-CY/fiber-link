@@ -1,6 +1,9 @@
+import type { DbClient } from "@fiber-link/db";
 import { TRPCError } from "@trpc/server";
 import { describe, expect, it } from "vitest";
+import { createDbAdminServices } from "../services/db-services";
 import { type DashboardFixture, createFixtureAdminServices } from "../services/fixture-services";
+import { encodeLedgerCursor } from "../services/types";
 import { appRouter } from "./root";
 import { createCallerFactory } from "./trpc";
 import type { TrpcContext } from "./trpc";
@@ -467,5 +470,71 @@ describe("admin mutation audit trail (#468)", () => {
       code: "FORBIDDEN",
     });
     expect(services.__listAuditEventsForTests?.() ?? []).toHaveLength(0);
+  });
+});
+
+describe("admin input validation against the Postgres backend", () => {
+  // Postgres rejects a non-UUID literal against a `uuid` column; any query that
+  // reaches this fake fails the same way, with the SQL text in the message.
+  const failingDb = {
+    query: {
+      withdrawals: {
+        findMany: async () => {
+          throw new Error('Failed query: select "id" from "withdrawals" where "withdrawals"."id" = $1');
+        },
+      },
+    },
+  } as unknown as DbClient;
+
+  it("answers a shortened withdrawal id with an empty page instead of leaking SQL", async () => {
+    const caller = createCaller({
+      role: "SUPER_ADMIN",
+      adminUserId: "ops",
+      services: createDbAdminServices(failingDb),
+    });
+    await expect(caller.withdrawals.list({ id: "1234abcd…ef" })).resolves.toEqual({ items: [], nextCursor: null });
+  });
+
+  it("answers a forged keyset cursor without querying", async () => {
+    const caller = createCaller({
+      role: "SUPER_ADMIN",
+      adminUserId: "ops",
+      services: createDbAdminServices(failingDb),
+    });
+    const cursor = encodeLedgerCursor({ createdAt: "2026-03-18T00:00:00.000Z", id: "not-a-uuid" });
+    await expect(caller.withdrawals.list({ cursor })).resolves.toEqual({ items: [], nextCursor: null });
+  });
+
+  it("does not echo unexpected persistence errors from withdrawal policy upserts", async () => {
+    const services = createFixtureAdminServices(fixture());
+    services.upsertPolicy = async () => {
+      throw new Error('Failed query: insert into "withdrawal_policies" ... value "1000000000000" is out of range');
+    };
+    const caller = createCaller({ role: "SUPER_ADMIN", adminUserId: "ops", services });
+    const error = await caller.withdrawalPolicy
+      .upsert({
+        appId: "app-alpha",
+        allowedAssets: ["CKB"],
+        maxPerRequest: "1",
+        perUserDailyMax: "1",
+        perAppDailyMax: "1",
+        cooldownSeconds: 0,
+      })
+      .catch((caught: unknown) => caught);
+    expect(error).toMatchObject({ code: "INTERNAL_SERVER_ERROR", message: "failed to persist withdrawal policy" });
+  });
+
+  it("rejects out-of-range cooldowns before they reach the int4 column", async () => {
+    const caller = createCaller(ctxFor("SUPER_ADMIN", "ops"));
+    await expect(
+      caller.withdrawalPolicy.upsert({
+        appId: "app-alpha",
+        allowedAssets: ["CKB"],
+        maxPerRequest: "1",
+        perUserDailyMax: "1",
+        perAppDailyMax: "1",
+        cooldownSeconds: 1e12,
+      }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
   });
 });

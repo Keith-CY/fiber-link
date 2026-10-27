@@ -114,7 +114,7 @@ describe("withdrawal policy input", () => {
         perAppDailyMax: "3",
         cooldownSeconds: "-1",
       }),
-    ).toThrow("cooldownSeconds must be an integer >= 0");
+    ).toThrow("cooldownSeconds must be an integer between 0 and 2147483647");
 
     expect(() =>
       parseWithdrawalPolicyInput({
@@ -125,6 +125,55 @@ describe("withdrawal policy input", () => {
         perAppDailyMax: "3",
         cooldownSeconds: "2.5",
       }),
-    ).toThrow("cooldownSeconds must be an integer >= 0");
+    ).toThrow("cooldownSeconds must be an integer between 0 and 2147483647");
+  });
+
+  it.each([
+    ["exponent number", 1e12],
+    ["exponent string", "1e3"],
+    ["boolean", true],
+    ["empty string", ""],
+    ["blank string", "   "],
+    ["null", null],
+    ["missing", undefined],
+    ["hex string", "0x10"],
+    ["int4 overflow", 2147483648],
+    ["int4 overflow string", "2147483648"],
+  ])("rejects a %s cooldown instead of coercing it", (_label, cooldownSeconds) => {
+    expect(() =>
+      parseWithdrawalPolicyInput({
+        appId: "app-alpha",
+        allowedAssets: "CKB",
+        maxPerRequest: "1",
+        perUserDailyMax: "2",
+        perAppDailyMax: "3",
+        cooldownSeconds,
+      }),
+    ).toThrow("cooldownSeconds must be an integer between 0 and 2147483647");
+  });
+
+  it("accepts the int4 maximum cooldown and a trimmed digit string", () => {
+    const base = {
+      appId: "app-alpha",
+      allowedAssets: "CKB",
+      maxPerRequest: "1",
+      perUserDailyMax: "2",
+      perAppDailyMax: "3",
+    };
+    expect(parseWithdrawalPolicyInput({ ...base, cooldownSeconds: 2147483647 }).cooldownSeconds).toBe(2147483647);
+    expect(parseWithdrawalPolicyInput({ ...base, cooldownSeconds: " 60 " }).cooldownSeconds).toBe(60);
+  });
+
+  it("rejects a per-app daily max below the per-user daily max", () => {
+    expect(() =>
+      parseWithdrawalPolicyInput({
+        appId: "app-alpha",
+        allowedAssets: "CKB",
+        maxPerRequest: "1",
+        perUserDailyMax: "10",
+        perAppDailyMax: "5",
+        cooldownSeconds: 0,
+      }),
+    ).toThrow("perUserDailyMax must be <= perAppDailyMax");
   });
 });
