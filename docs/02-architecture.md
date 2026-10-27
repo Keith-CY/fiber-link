@@ -25,7 +25,8 @@ This document reflects the current code layout and runtime boundaries for the in
 - Browser/client -> Discourse plugin UI:
   untrusted client boundary (XSS/CSRF/session risks).
 - Discourse plugin -> `apps/rpc`:
-  authenticated API boundary using `x-app-id`, `x-ts`, `x-nonce`, `x-signature`.
+  authenticated API boundary using `x-app-id`, `x-ts`, `x-nonce`, `x-signature`
+  (signature v2, `x-signature-version: 2`, which also covers `x-app-id`).
 - `apps/rpc` + `apps/worker` -> FNN:
   external RPC boundary through `packages/fiber-adapter`.
 - `apps/rpc` + `apps/worker` -> Postgres:

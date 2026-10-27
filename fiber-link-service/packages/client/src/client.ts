@@ -40,7 +40,8 @@ function buildRequestId(): string {
 async function buildSignedHeaders(appId: string, secret: string, payload: string): Promise<Record<string, string>> {
   const ts = String(Math.floor(Date.now() / 1000));
   const nonce = buildRequestId().replace(/-/g, "").slice(0, 16);
-  const message = `${ts}.${nonce}.${payload}`;
+  // Signature v2 binds the app id: `v2\n<appId>\n<ts>.<nonce>.<payload>`.
+  const message = `v2\n${appId}\n${ts}.${nonce}.${payload}`;
 
   let signature: string;
   if (typeof crypto !== "undefined" && crypto.subtle) {
@@ -66,6 +67,7 @@ async function buildSignedHeaders(appId: string, secret: string, payload: string
     "x-ts": ts,
     "x-nonce": nonce,
     "x-signature": signature,
+    "x-signature-version": "2",
   };
 }
 

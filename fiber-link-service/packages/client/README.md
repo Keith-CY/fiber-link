@@ -59,6 +59,8 @@ const client = new FiberLinkClient({
 });
 ```
 
+Requests are signed with signature v2: `x-signature` is the hex HMAC-SHA256 of `v2\n<appId>\n<ts>.<nonce>.<rawBody>` and is sent with `x-signature-version: 2`, so the signature also authenticates `x-app-id`.
+
 ## API reference
 
 ### `new FiberLinkClient(options)`

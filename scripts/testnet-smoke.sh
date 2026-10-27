@@ -236,7 +236,9 @@ sign_payload() {
   local payload="$1"
   local ts="$2"
   local nonce="$3"
-  printf '%s' "${ts}.${nonce}.${payload}" \
+  local app_id="$4"
+  # Signature v2 binds the app id: v2\n<appId>\n<ts>.<nonce>.<payload>
+  printf 'v2\n%s\n%s' "${app_id}" "${ts}.${nonce}.${payload}" \
     | openssl dgst -sha256 -hmac "${HMAC_SECRET}" -hex \
     | awk '{print $2}'
 }
@@ -246,13 +248,14 @@ rpc_call_signed() {
   local nonce="$2"
   local ts sig
   ts="$(date +%s)"
-  sig="$(sign_payload "${payload}" "${ts}" "${nonce}")"
+  sig="$(sign_payload "${payload}" "${ts}" "${nonce}" "local-dev")"
   curl -fsS "http://127.0.0.1:${RPC_PORT}/rpc" \
     -H "content-type: application/json" \
     -H "x-app-id: local-dev" \
     -H "x-ts: ${ts}" \
     -H "x-nonce: ${nonce}" \
     -H "x-signature: ${sig}" \
+    -H "x-signature-version: 2" \
     -d "${payload}"
 }
 

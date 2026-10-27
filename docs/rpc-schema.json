@@ -5,7 +5,7 @@
   "transport": {
     "endpoint": "POST /rpc",
     "protocol": "JSON-RPC 2.0",
-    "authentication": "HMAC-SHA256 request signing via x-app-id, x-ts, x-nonce, and x-signature headers; see docs and @fiber-link/client for the signing scheme.",
+    "authentication": "HMAC-SHA256 request signing via x-app-id, x-ts, x-nonce, x-signature, and x-signature-version: 2 headers over `v2\\n<appId>\\n<ts>.<nonce>.<rawBody>`; see docs and @fiber-link/client for the signing scheme.",
     "streaming": "GET /rpc/stream?invoice=... serves Server-Sent Events for settlement updates (LISTENING, SETTLED, TIMEOUT)."
   },
   "errorCodes": {

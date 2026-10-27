@@ -52,7 +52,8 @@ module ::FiberLink
     def signed_headers(payload)
       ts = Time.now.to_i.to_s
       nonce = SecureRandom.hex(8)
-      signature = OpenSSL::HMAC.hexdigest("sha256", @app_secret, "#{ts}.#{nonce}.#{payload}")
+      # Signature v2 binds the app id so the request cannot be re-labelled as another app.
+      signature = OpenSSL::HMAC.hexdigest("sha256", @app_secret, "v2\n#{@app_id}\n#{ts}.#{nonce}.#{payload}")
 
       {
         "Content-Type" => "application/json",
@@ -60,6 +61,7 @@ module ::FiberLink
         "x-ts" => ts,
         "x-nonce" => nonce,
         "x-signature" => signature,
+        "x-signature-version" => "2",
       }
     end
   end

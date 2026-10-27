@@ -152,7 +152,8 @@ describe("json-rpc", () => {
     const payload = { jsonrpc: "2.0", id: 1, method: "health.ping", params: {} };
     const ts = String(Math.floor(Date.now() / 1000));
     const nonce = "n1";
-    const signature = verifyHmac.sign({
+    const signature = verifyHmac.signV2({
+      appId: "app1",
       secret: "replace-with-lookup",
       payload: JSON.stringify(payload),
       ts,
@@ -168,11 +169,82 @@ describe("json-rpc", () => {
         "x-ts": ts,
         "x-nonce": nonce,
         "x-signature": signature,
+        "x-signature-version": "2",
       },
     });
 
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ jsonrpc: "2.0", id: 1, result: { status: "ok" } });
+  });
+
+  it("rejects a signature for one app re-labelled as another app sharing the secret", async () => {
+    const app = buildServer();
+    const rawPayload = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "health.ping", params: {} });
+    const ts = String(Math.floor(Date.now() / 1000));
+    const nonce = "n-relabel";
+    // Both apps resolve to the shared FIBER_LINK_HMAC_SECRET fallback.
+    const signature = verifyHmac.signV2({
+      secret: "replace-with-lookup",
+      payload: rawPayload,
+      ts,
+      nonce,
+      appId: "app-a",
+    });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/rpc",
+      payload: rawPayload,
+      headers: {
+        "content-type": "application/json",
+        "x-app-id": "app-b",
+        "x-ts": ts,
+        "x-nonce": nonce,
+        "x-signature": signature,
+        "x-signature-version": "2",
+      },
+    });
+
+    expect(res.json()).toEqual({ jsonrpc: "2.0", id: 1, error: { code: -32001, message: "Unauthorized" } });
+  });
+
+  it("accepts legacy v1 signatures only when RPC_ALLOW_LEGACY_SIGNATURE=true", async () => {
+    const app = buildServer();
+    const rawPayload = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "health.ping", params: {} });
+    const ts = String(Math.floor(Date.now() / 1000));
+    const send = (nonce: string, signatureVersion?: string) =>
+      app.inject({
+        method: "POST",
+        url: "/rpc",
+        payload: rawPayload,
+        headers: {
+          "content-type": "application/json",
+          "x-app-id": "app1",
+          "x-ts": ts,
+          "x-nonce": nonce,
+          "x-signature": verifyHmac.sign({ secret: "replace-with-lookup", payload: rawPayload, ts, nonce }),
+          ...(signatureVersion ? { "x-signature-version": signatureVersion } : {}),
+        },
+      });
+    const unauthorized = { jsonrpc: "2.0", id: 1, error: { code: -32001, message: "Unauthorized" } };
+    const original = process.env.RPC_ALLOW_LEGACY_SIGNATURE;
+
+    try {
+      delete process.env.RPC_ALLOW_LEGACY_SIGNATURE;
+      expect((await send("n-legacy-default")).json()).toEqual(unauthorized);
+
+      process.env.RPC_ALLOW_LEGACY_SIGNATURE = "true";
+      expect((await send("n-legacy-allowed")).json()).toEqual({ jsonrpc: "2.0", id: 1, result: { status: "ok" } });
+      // A v1 signature must not pass as v2, nor under an unknown version.
+      expect((await send("n-legacy-as-v2", "2")).json()).toEqual(unauthorized);
+      expect((await send("n-legacy-as-v3", "3")).json()).toEqual(unauthorized);
+    } finally {
+      if (original === undefined) {
+        delete process.env.RPC_ALLOW_LEGACY_SIGNATURE;
+      } else {
+        process.env.RPC_ALLOW_LEGACY_SIGNATURE = original;
+      }
+    }
   });
 
   it("verifies HMAC against raw body payload", async () => {
@@ -185,7 +257,8 @@ describe("json-rpc", () => {
 }`;
     const ts = String(Math.floor(Date.now() / 1000));
     const nonce = "n2";
-    const signature = verifyHmac.sign({
+    const signature = verifyHmac.signV2({
+      appId: "app1",
       secret: "replace-with-lookup",
       payload: rawPayload,
       ts,
@@ -202,6 +275,7 @@ describe("json-rpc", () => {
         "x-ts": ts,
         "x-nonce": nonce,
         "x-signature": signature,
+        "x-signature-version": "2",
       },
     });
 
@@ -219,7 +293,8 @@ describe("json-rpc", () => {
     });
     const ts = String(Math.floor(Date.now() / 1000));
     const nonce = "n-invalid-sig";
-    const validSig = verifyHmac.sign({
+    const validSig = verifyHmac.signV2({
+      appId: "app1",
       secret: "replace-with-lookup",
       payload: rawPayload,
       ts,
@@ -238,6 +313,7 @@ describe("json-rpc", () => {
         "x-ts": ts,
         "x-nonce": nonce,
         "x-signature": invalidSig,
+        "x-signature-version": "2",
       },
     });
 
@@ -251,6 +327,7 @@ describe("json-rpc", () => {
         "x-ts": ts,
         "x-nonce": nonce,
         "x-signature": validSig,
+        "x-signature-version": "2",
       },
     });
 
@@ -294,7 +371,8 @@ describe("json-rpc", () => {
     const rawPayload = "null";
     const ts = String(Math.floor(Date.now() / 1000));
     const nonce = "n-unexpected";
-    const signature = verifyHmac.sign({
+    const signature = verifyHmac.signV2({
+      appId: "app1",
       secret: "replace-with-lookup",
       payload: rawPayload,
       ts,
@@ -311,6 +389,7 @@ describe("json-rpc", () => {
         "x-ts": ts,
         "x-nonce": nonce,
         "x-signature": signature,
+        "x-signature-version": "2",
       },
     });
 
@@ -333,7 +412,8 @@ describe("json-rpc", () => {
     });
     const ts = String(Math.floor(Date.now() / 1000));
     const nonce = "n3";
-    const signature = verifyHmac.sign({
+    const signature = verifyHmac.signV2({
+      appId: "app1",
       secret: "replace-with-lookup",
       payload: rawPayload,
       ts,
@@ -350,6 +430,7 @@ describe("json-rpc", () => {
         "x-ts": ts,
         "x-nonce": nonce,
         "x-signature": signature,
+        "x-signature-version": "2",
       },
     });
 
@@ -368,7 +449,8 @@ describe("json-rpc", () => {
       const payload = { jsonrpc: "2.0", id: "s1", method: "tip.status", params: { invoice: "inv-1" } };
       const ts = String(Math.floor(Date.now() / 1000));
       const nonce = "status-ok";
-      const signature = verifyHmac.sign({
+      const signature = verifyHmac.signV2({
+        appId: "app1",
         secret: "replace-with-lookup",
         payload: JSON.stringify(payload),
         ts,
@@ -385,6 +467,7 @@ describe("json-rpc", () => {
           "x-ts": ts,
           "x-nonce": nonce,
           "x-signature": signature,
+          "x-signature-version": "2",
         },
       });
 
@@ -406,7 +489,8 @@ describe("json-rpc", () => {
       const payload = { jsonrpc: "2.0", id: "g1", method: "tip.get", params: { invoice: "inv-1" } };
       const ts = String(Math.floor(Date.now() / 1000));
       const nonce = "get-ok";
-      const signature = verifyHmac.sign({
+      const signature = verifyHmac.signV2({
+        appId: "app1",
         secret: "replace-with-lookup",
         payload: JSON.stringify(payload),
         ts,
@@ -423,6 +507,7 @@ describe("json-rpc", () => {
           "x-ts": ts,
           "x-nonce": nonce,
           "x-signature": signature,
+          "x-signature-version": "2",
         },
       });
 
@@ -442,7 +527,8 @@ describe("json-rpc", () => {
     const payload = { jsonrpc: "2.0", id: "s2", method: "tip.status", params: {} };
     const ts = String(Math.floor(Date.now() / 1000));
     const nonce = "status-bad";
-    const signature = verifyHmac.sign({
+    const signature = verifyHmac.signV2({
+      appId: "app1",
       secret: "replace-with-lookup",
       payload: JSON.stringify(payload),
       ts,
@@ -459,6 +545,7 @@ describe("json-rpc", () => {
         "x-ts": ts,
         "x-nonce": nonce,
         "x-signature": signature,
+        "x-signature-version": "2",
       },
     });
 
@@ -475,7 +562,8 @@ describe("json-rpc", () => {
     const payload = { jsonrpc: "2.0", id: "g2", method: "tip.get", params: {} };
     const ts = String(Math.floor(Date.now() / 1000));
     const nonce = "get-bad";
-    const signature = verifyHmac.sign({
+    const signature = verifyHmac.signV2({
+      appId: "app1",
       secret: "replace-with-lookup",
       payload: JSON.stringify(payload),
       ts,
@@ -492,6 +580,7 @@ describe("json-rpc", () => {
         "x-ts": ts,
         "x-nonce": nonce,
         "x-signature": signature,
+        "x-signature-version": "2",
       },
     });
 
@@ -581,7 +670,8 @@ describe("json-rpc", () => {
       };
       const ts = String(Math.floor(Date.now() / 1000));
       const nonce = "dashboard-ok";
-      const signature = verifyHmac.sign({
+      const signature = verifyHmac.signV2({
+        appId: "app1",
         secret: "replace-with-lookup",
         payload: JSON.stringify(payload),
         ts,
@@ -598,6 +688,7 @@ describe("json-rpc", () => {
           "x-ts": ts,
           "x-nonce": nonce,
           "x-signature": signature,
+          "x-signature-version": "2",
         },
       });
 
@@ -688,7 +779,8 @@ describe("json-rpc", () => {
     const payload = { jsonrpc: "2.0", id: "dash-2", method: "dashboard.summary", params: {} };
     const ts = String(Math.floor(Date.now() / 1000));
     const nonce = "dashboard-bad";
-    const signature = verifyHmac.sign({
+    const signature = verifyHmac.signV2({
+      appId: "app1",
       secret: "replace-with-lookup",
       payload: JSON.stringify(payload),
       ts,
@@ -705,6 +797,7 @@ describe("json-rpc", () => {
         "x-ts": ts,
         "x-nonce": nonce,
         "x-signature": signature,
+        "x-signature-version": "2",
       },
     });
 
@@ -739,7 +832,8 @@ describe("json-rpc", () => {
       };
       const ts = String(Math.floor(Date.now() / 1000));
       const nonce = "withdrawal-request-ok";
-      const signature = verifyHmac.sign({
+      const signature = verifyHmac.signV2({
+        appId: "app1",
         secret: "replace-with-lookup",
         payload: JSON.stringify(payload),
         ts,
@@ -756,6 +850,7 @@ describe("json-rpc", () => {
           "x-ts": ts,
           "x-nonce": nonce,
           "x-signature": signature,
+          "x-signature-version": "2",
         },
       });
 
@@ -824,7 +919,8 @@ describe("json-rpc", () => {
     };
     const ts = String(Math.floor(Date.now() / 1000));
     const nonce = "withdrawal-request-live-liquidity";
-    const signature = verifyHmac.sign({
+    const signature = verifyHmac.signV2({
+      appId: "app1",
       secret: "replace-with-lookup",
       payload: JSON.stringify(payload),
       ts,
@@ -845,6 +941,7 @@ describe("json-rpc", () => {
           "x-ts": ts,
           "x-nonce": nonce,
           "x-signature": signature,
+          "x-signature-version": "2",
         },
       });
 
@@ -893,7 +990,8 @@ describe("json-rpc", () => {
       };
       const ts = String(Math.floor(Date.now() / 1000));
       const nonce = "withdrawal-policy-reject";
-      const signature = verifyHmac.sign({
+      const signature = verifyHmac.signV2({
+        appId: "app1",
         secret: "replace-with-lookup",
         payload: JSON.stringify(payload),
         ts,
@@ -910,6 +1008,7 @@ describe("json-rpc", () => {
           "x-ts": ts,
           "x-nonce": nonce,
           "x-signature": signature,
+          "x-signature-version": "2",
         },
       });
 
@@ -950,7 +1049,8 @@ describe("json-rpc", () => {
     const payload = { jsonrpc: "2.0", id: "rate-1", method: "health.ping", params: {} };
     const ts = String(Math.floor(Date.now() / 1000));
 
-    const signatureA = verifyHmac.sign({
+    const signatureA = verifyHmac.signV2({
+      appId: "app1",
       secret: "db-secret",
       payload: JSON.stringify(payload),
       ts,
@@ -966,10 +1066,12 @@ describe("json-rpc", () => {
         "x-ts": ts,
         "x-nonce": "rate-limit-a",
         "x-signature": signatureA,
+        "x-signature-version": "2",
       },
     });
 
-    const signatureB = verifyHmac.sign({
+    const signatureB = verifyHmac.signV2({
+      appId: "app1",
       secret: "db-secret",
       payload: JSON.stringify(payload),
       ts,
@@ -985,6 +1087,7 @@ describe("json-rpc", () => {
         "x-ts": ts,
         "x-nonce": "rate-limit-b",
         "x-signature": signatureB,
+        "x-signature-version": "2",
       },
     });
 
@@ -1009,7 +1112,8 @@ describe("json-rpc", () => {
       const payload = { jsonrpc: "2.0", id: "s3", method: "tip.status", params: { invoice: "missing-invoice" } };
       const ts = String(Math.floor(Date.now() / 1000));
       const nonce = "status-not-found";
-      const signature = verifyHmac.sign({
+      const signature = verifyHmac.signV2({
+        appId: "app1",
         secret: "replace-with-lookup",
         payload: JSON.stringify(payload),
         ts,
@@ -1026,6 +1130,7 @@ describe("json-rpc", () => {
           "x-ts": ts,
           "x-nonce": nonce,
           "x-signature": signature,
+          "x-signature-version": "2",
         },
       });
 
@@ -1056,7 +1161,8 @@ describe("json-rpc", () => {
       };
       const createTs = String(Math.floor(Date.now() / 1000));
       const createNonce = "create-ok";
-      const createSignature = verifyHmac.sign({
+      const createSignature = verifyHmac.signV2({
+        appId: "app1",
         secret: "replace-with-lookup",
         payload: JSON.stringify(createPayload),
         ts: createTs,
@@ -1073,6 +1179,7 @@ describe("json-rpc", () => {
           "x-ts": createTs,
           "x-nonce": createNonce,
           "x-signature": createSignature,
+          "x-signature-version": "2",
         },
       });
 
@@ -1102,7 +1209,8 @@ describe("json-rpc", () => {
       };
       const getTs = String(Math.floor(Date.now() / 1000));
       const getNonce = "get-after-create";
-      const getSignature = verifyHmac.sign({
+      const getSignature = verifyHmac.signV2({
+        appId: "app1",
         secret: "replace-with-lookup",
         payload: JSON.stringify(getPayload),
         ts: getTs,
@@ -1119,6 +1227,7 @@ describe("json-rpc", () => {
           "x-ts": getTs,
           "x-nonce": getNonce,
           "x-signature": getSignature,
+          "x-signature-version": "2",
         },
       });
 
@@ -1174,13 +1283,15 @@ describe("json-rpc", () => {
     });
     const ts = String(Math.floor(Date.now() / 1000));
 
-    const dbSignature = verifyHmac.sign({
+    const dbSignature = verifyHmac.signV2({
+      appId: "app1",
       secret: "db-secret",
       payload: rawPayload,
       ts,
       nonce: "n-db-priority-1",
     });
-    const envFallbackSignature = verifyHmac.sign({
+    const envFallbackSignature = verifyHmac.signV2({
+      appId: "app1",
       secret: "replace-with-lookup",
       payload: rawPayload,
       ts,
@@ -1197,6 +1308,7 @@ describe("json-rpc", () => {
         "x-ts": ts,
         "x-nonce": "n-db-priority-1",
         "x-signature": dbSignature,
+        "x-signature-version": "2",
       },
     });
 
@@ -1210,6 +1322,7 @@ describe("json-rpc", () => {
         "x-ts": ts,
         "x-nonce": "n-db-priority-2",
         "x-signature": envFallbackSignature,
+        "x-signature-version": "2",
       },
     });
 
@@ -1270,7 +1383,8 @@ describe("json-rpc", () => {
     const rawPayload = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "health.ping", params: {} });
     const ts = String(Math.floor(Date.now() / 1000));
     const nonce = "missing-secret";
-    const signature = verifyHmac.sign({
+    const signature = verifyHmac.signV2({
+      appId: "app-without-secret",
       secret: "replace-with-lookup",
       payload: rawPayload,
       ts,
@@ -1289,6 +1403,7 @@ describe("json-rpc", () => {
           "x-ts": ts,
           "x-nonce": nonce,
           "x-signature": signature,
+          "x-signature-version": "2",
         },
       });
 

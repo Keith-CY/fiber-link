@@ -57,6 +57,31 @@ RSpec.describe ::FiberLink::RpcController, type: :request do
       }
     end
 
+    it "signs upstream requests with signature v2 binding the app id" do
+      sign_in(user)
+
+      stub_request(:post, "https://fiber-link.example/rpc").to_return(
+        status: 200,
+        body: { jsonrpc: "2.0", id: "sig1", result: { state: "UNPAID" } }.to_json,
+        headers: { "Content-Type" => "application/json" },
+      )
+
+      post "/fiber-link/rpc",
+           params: { jsonrpc: "2.0", id: "sig1", method: "tip.status", params: { invoice: "inv-1" } },
+           as: :json
+
+      expect(response).to have_http_status(:ok)
+      expect(WebMock).to have_requested(:post, "https://fiber-link.example/rpc").with { |request|
+        headers = request.headers
+        ts = headers["X-Ts"]
+        nonce = headers["X-Nonce"]
+        expected = OpenSSL::HMAC.hexdigest("sha256", "secret", "v2\napp1\n#{ts}.#{nonce}.#{request.body}")
+        headers["X-App-Id"] == "app1" &&
+          headers["X-Signature-Version"] == "2" &&
+          headers["X-Signature"] == expected
+      }
+    end
+
     it "server-enforces dashboard.summary params and enriches local usernames" do
       sign_in(user)
 

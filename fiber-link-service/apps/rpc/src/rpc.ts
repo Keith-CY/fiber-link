@@ -92,6 +92,12 @@ function getFallbackSecret() {
   return process.env.FIBER_LINK_HMAC_SECRET ?? "";
 }
 
+// Legacy v1 signatures do not cover x-app-id, so they are refused unless an operator
+// explicitly opts in while migrating external signers to v2.
+function isLegacySignatureAllowed() {
+  return process.env.RPC_ALLOW_LEGACY_SIGNATURE?.trim().toLowerCase() === "true";
+}
+
 function extractRpcId(body: unknown): RpcId {
   if (!body || typeof body !== "object" || !("id" in body)) {
     return null;
@@ -273,6 +279,7 @@ export function registerRpc(
       const ts = String(req.headers["x-ts"] ?? "");
       const nonce = String(req.headers["x-nonce"] ?? "");
       const signature = String(req.headers["x-signature"] ?? "");
+      const signatureVersion = String(req.headers["x-signature-version"] ?? "");
 
       const parsedRequest = RpcRequestSchema.safeParse(body);
       if (!parsedRequest.success) {
@@ -323,7 +330,15 @@ export function registerRpc(
       }
 
       // HMAC is always verified after resolving the secret with DB precedence over env secrets.
-      if (!verifyHmac.check({ secret, payload, ts, nonce, signature })) {
+      // v2 binds x-app-id into the signature so a request cannot be re-labelled as another
+      // app sharing the same secret; unversioned (v1) signatures need the legacy opt-in.
+      const verified =
+        signatureVersion === "2"
+          ? verifyHmac.checkV2({ secret, payload, ts, nonce, appId, signature })
+          : (signatureVersion === "" || signatureVersion === "1") &&
+            isLegacySignatureAllowed() &&
+            verifyHmac.check({ secret, payload, ts, nonce, signature });
+      if (!verified) {
         return reply.send(rpcErrorResponse(rpc.id, RpcErrorCode.UNAUTHORIZED, "Unauthorized"));
       }
 
