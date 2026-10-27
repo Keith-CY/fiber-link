@@ -16,9 +16,9 @@ describe("parseTrustProxy", () => {
     expect(parseTrustProxy("off")).toBe(false);
   });
 
-  it("parses bare integers as hop counts", () => {
-    expect(parseTrustProxy("1")).toBe(1);
-    expect(parseTrustProxy("2")).toBe(2);
+  it("fails closed on bare integer hop counts (unsupported by fastify 5)", () => {
+    expect(parseTrustProxy("1")).toBe(false);
+    expect(parseTrustProxy("2")).toBe(false);
   });
 
   it("passes address/CIDR lists through verbatim", () => {

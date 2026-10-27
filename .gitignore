@@ -5,10 +5,9 @@ node_modules
 coverage/
 coverage-reports/
 
-# bun 1.3+ writes a text bun.lock on install; this repo's canonical lockfile is
-# the binary bun.lockb (referenced by CI cache keys and the service Dockerfile).
-# Ignore the text variant so it is never committed alongside the binary one.
-fiber-link-service/bun.lock
+# The canonical lockfile is the text fiber-link-service/bun.lock (Dependabot can
+# only update the text format). Never commit the legacy binary variant.
+fiber-link-service/bun.lockb
 /tmp/
 .tmp/
 .playwright-cli/

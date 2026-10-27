@@ -1,6 +1,5 @@
 import type { ZodTypeAny } from "zod";
 import { z } from "zod";
-import { zodToJsonSchema } from "zod-to-json-schema";
 import {
   DashboardAnalyticsParamsSchema,
   DashboardAnalyticsResultSchema,
@@ -108,7 +107,7 @@ const METHOD_SCHEMAS: Record<string, MethodSchemaEntry> = {
   },
 };
 
-// zod-to-json-schema renders some optional/effect wrappers (e.g. `.trim()`)
+// JSON Schema generators can render some optional/effect wrappers
 // as an `anyOf` containing `{ "not": {} }` — an uninhabited alternative that
 // matches nothing and confuses automated client generators.
 function isUninhabited(value: unknown): boolean {
@@ -145,10 +144,18 @@ function cleanSchema(node: unknown): unknown {
   return cleaned;
 }
 
-function toJsonSchema(schema: ZodTypeAny, name: string): unknown {
-  // $refStrategy none inlines shared schemas so each method document is
-  // self-contained for integrators.
-  return cleanSchema(zodToJsonSchema(schema, { name, $refStrategy: "none" }));
+function toJsonSchema(schema: ZodTypeAny, name: string, io: "input" | "output"): unknown {
+  // reused "inline" inlines shared schemas so each method document is
+  // self-contained for integrators. The named-definition wrapper keeps the
+  // published document shape stable across the zod-to-json-schema -> zod 4
+  // native generator switch.
+  const { $schema, ...definition } = z.toJSONSchema(schema, {
+    target: "draft-7",
+    io,
+    reused: "inline",
+    unrepresentable: "any",
+  });
+  return cleanSchema({ $ref: `#/definitions/${name}`, definitions: { [name]: definition }, $schema });
 }
 
 /**
@@ -163,8 +170,8 @@ export function buildRpcSchemaDocument() {
     methods[name] = {
       description: entry.description,
       ...(entry.aliasOf ? { aliasOf: entry.aliasOf } : {}),
-      params: toJsonSchema(entry.params, `${name}.params`),
-      result: toJsonSchema(entry.result, `${name}.result`),
+      params: toJsonSchema(entry.params, `${name}.params`, "input"),
+      result: toJsonSchema(entry.result, `${name}.result`, "output"),
     };
   }
 

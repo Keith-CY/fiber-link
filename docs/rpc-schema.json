@@ -27,7 +27,7 @@
           "health.ping.params": {
             "type": "object",
             "properties": {},
-            "additionalProperties": true,
+            "additionalProperties": {},
             "description": "Ignored; any params are accepted."
           }
         },
@@ -113,8 +113,7 @@
               "toUserId",
               "asset",
               "amount"
-            ],
-            "additionalProperties": false
+            ]
           }
         },
         "$schema": "http://json-schema.org/draft-07/schema#"
@@ -154,8 +153,7 @@
             },
             "required": [
               "invoice"
-            ],
-            "additionalProperties": false
+            ]
           }
         },
         "$schema": "http://json-schema.org/draft-07/schema#"
@@ -208,8 +206,7 @@
             },
             "required": [
               "invoice"
-            ],
-            "additionalProperties": false
+            ]
           }
         },
         "$schema": "http://json-schema.org/draft-07/schema#"
@@ -264,7 +261,8 @@
                 "properties": {
                   "settledAt": {
                     "type": "string",
-                    "format": "date-time"
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
                   },
                   "id": {
                     "type": "string",
@@ -274,11 +272,9 @@
                 "required": [
                   "settledAt",
                   "id"
-                ],
-                "additionalProperties": false
+                ]
               }
-            },
-            "additionalProperties": false
+            }
           }
         },
         "$schema": "http://json-schema.org/draft-07/schema#"
@@ -333,7 +329,8 @@
                     },
                     "settledAt": {
                       "type": "string",
-                      "format": "date-time"
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
                     }
                   },
                   "required": [
@@ -357,7 +354,8 @@
                     "properties": {
                       "settledAt": {
                         "type": "string",
-                        "format": "date-time"
+                        "format": "date-time",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
                       },
                       "id": {
                         "type": "string",
@@ -431,14 +429,12 @@
                       "FAILED"
                     ]
                   }
-                },
-                "additionalProperties": false
+                }
               }
             },
             "required": [
               "userId"
-            ],
-            "additionalProperties": false
+            ]
           }
         },
         "$schema": "http://json-schema.org/draft-07/schema#"
@@ -523,15 +519,18 @@
                 "properties": {
                   "pendingCount": {
                     "type": "integer",
-                    "minimum": 0
+                    "minimum": 0,
+                    "maximum": 9007199254740991
                   },
                   "completedCount": {
                     "type": "integer",
-                    "minimum": 0
+                    "minimum": 0,
+                    "maximum": 9007199254740991
                   },
                   "failedCount": {
                     "type": "integer",
-                    "minimum": 0
+                    "minimum": 0,
+                    "maximum": 9007199254740991
                   }
                 },
                 "required": [
@@ -603,13 +602,15 @@
                     },
                     "createdAt": {
                       "type": "string",
-                      "format": "date-time"
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
                     },
                     "settledAt": {
                       "anyOf": [
                         {
                           "type": "string",
-                          "format": "date-time"
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
                         },
                         {
                           "type": "null"
@@ -710,7 +711,8 @@
                         },
                         "createdAt": {
                           "type": "string",
-                          "format": "date-time"
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
                         }
                       },
                       "required": [
@@ -758,15 +760,18 @@
                         },
                         "retryCount": {
                           "type": "integer",
-                          "minimum": 0
+                          "minimum": 0,
+                          "maximum": 9007199254740991
                         },
                         "createdAt": {
                           "type": "string",
-                          "format": "date-time"
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
                         },
                         "updatedAt": {
                           "type": "string",
-                          "format": "date-time"
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
                         },
                         "txHash": {
                           "type": [
@@ -778,7 +783,8 @@
                           "anyOf": [
                             {
                               "type": "string",
-                              "format": "date-time"
+                              "format": "date-time",
+                              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
                             },
                             {
                               "type": "null"
@@ -839,17 +845,20 @@
                         },
                         "retryCount": {
                           "type": "integer",
-                          "minimum": 0
+                          "minimum": 0,
+                          "maximum": 9007199254740991
                         },
                         "createdAt": {
                           "type": "string",
-                          "format": "date-time"
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
                         },
                         "settledAt": {
                           "anyOf": [
                             {
                               "type": "string",
-                              "format": "date-time"
+                              "format": "date-time",
+                              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
                             },
                             {
                               "type": "null"
@@ -860,7 +869,8 @@
                           "anyOf": [
                             {
                               "type": "string",
-                              "format": "date-time"
+                              "format": "date-time",
+                              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
                             },
                             {
                               "type": "null"
@@ -871,7 +881,8 @@
                           "anyOf": [
                             {
                               "type": "string",
-                              "format": "date-time"
+                              "format": "date-time",
+                              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
                             },
                             {
                               "type": "null"
@@ -926,7 +937,8 @@
                             },
                             "count": {
                               "type": "integer",
-                              "minimum": 0
+                              "minimum": 0,
+                              "maximum": 9007199254740991
                             }
                           },
                           "required": [
@@ -974,7 +986,8 @@
                             },
                             "createdAt": {
                               "type": "string",
-                              "format": "date-time"
+                              "format": "date-time",
+                              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
                             },
                             "timelineHref": {
                               "type": "string",
@@ -1012,7 +1025,8 @@
               },
               "generatedAt": {
                 "type": "string",
-                "format": "date-time"
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
               }
             },
             "required": [
@@ -1042,19 +1056,18 @@
                 "minLength": 1
               },
               "range": {
+                "default": "30d",
                 "type": "string",
                 "enum": [
                   "7d",
                   "30d",
                   "all"
-                ],
-                "default": "30d"
+                ]
               }
             },
             "required": [
               "userId"
-            ],
-            "additionalProperties": false
+            ]
           }
         },
         "$schema": "http://json-schema.org/draft-07/schema#"
@@ -1110,7 +1123,9 @@
                       "type": "string"
                     },
                     "tipCount": {
-                      "type": "integer"
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
                     }
                   },
                   "required": [
@@ -1134,7 +1149,9 @@
                       "type": "string"
                     },
                     "tipCount": {
-                      "type": "integer"
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
                     }
                   },
                   "required": [
@@ -1225,7 +1242,7 @@
                 "pattern": "^\\d+(?:\\.\\d+)?$"
               },
               "destination": {
-                "anyOf": [
+                "oneOf": [
                   {
                     "type": "object",
                     "properties": {
@@ -1241,8 +1258,7 @@
                     "required": [
                       "kind",
                       "address"
-                    ],
-                    "additionalProperties": false
+                    ]
                   },
                   {
                     "type": "object",
@@ -1259,8 +1275,7 @@
                     "required": [
                       "kind",
                       "paymentRequest"
-                    ],
-                    "additionalProperties": false
+                    ]
                   }
                 ]
               }
@@ -1270,8 +1285,7 @@
               "asset",
               "amount",
               "destination"
-            ],
-            "additionalProperties": false
+            ]
           }
         },
         "$schema": "http://json-schema.org/draft-07/schema#"
@@ -1371,7 +1385,7 @@
                     "maxLength": 128
                   },
                   "destination": {
-                    "anyOf": [
+                    "oneOf": [
                       {
                         "type": "object",
                         "properties": {
@@ -1387,8 +1401,7 @@
                         "required": [
                           "kind",
                           "address"
-                        ],
-                        "additionalProperties": false
+                        ]
                       },
                       {
                         "type": "object",
@@ -1405,8 +1418,7 @@
                         "required": [
                           "kind",
                           "paymentRequest"
-                        ],
-                        "additionalProperties": false
+                        ]
                       }
                     ]
                   }
@@ -1416,8 +1428,7 @@
                   "asset",
                   "amount",
                   "destination"
-                ],
-                "additionalProperties": false
+                ]
               },
               {
                 "type": "object",
@@ -1452,8 +1463,7 @@
                   "asset",
                   "amount",
                   "toAddress"
-                ],
-                "additionalProperties": false
+                ]
               }
             ]
           }
@@ -1527,6 +1537,7 @@
                 ]
               },
               "events": {
+                "minItems": 1,
                 "type": "array",
                 "items": {
                   "type": "string",
@@ -1536,8 +1547,7 @@
                     "WITHDRAWAL_FAILED",
                     "WITHDRAWAL_RETRY_PENDING"
                   ]
-                },
-                "minItems": 1
+                }
               }
             },
             "required": [
@@ -1545,8 +1555,7 @@
               "kind",
               "target",
               "events"
-            ],
-            "additionalProperties": false
+            ]
           }
         },
         "$schema": "http://json-schema.org/draft-07/schema#"
@@ -1579,7 +1588,8 @@
               },
               "createdAt": {
                 "type": "string",
-                "format": "date-time"
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
               }
             },
             "required": [
@@ -1606,13 +1616,13 @@
             "properties": {
               "channelId": {
                 "type": "string",
-                "format": "uuid"
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
               }
             },
             "required": [
               "channelId"
-            ],
-            "additionalProperties": false
+            ]
           }
         },
         "$schema": "http://json-schema.org/draft-07/schema#"
@@ -1651,13 +1661,13 @@
             "properties": {
               "channelId": {
                 "type": "string",
-                "format": "uuid"
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
               }
             },
             "required": [
               "channelId"
-            ],
-            "additionalProperties": false
+            ]
           }
         },
         "$schema": "http://json-schema.org/draft-07/schema#"
@@ -1695,8 +1705,7 @@
         "definitions": {
           "notification.channel.list.params": {
             "type": "object",
-            "properties": {},
-            "additionalProperties": false
+            "properties": {}
           }
         },
         "$schema": "http://json-schema.org/draft-07/schema#"
@@ -1737,7 +1746,8 @@
                     },
                     "createdAt": {
                       "type": "string",
-                      "format": "date-time"
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
                     }
                   },
                   "required": [

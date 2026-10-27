@@ -9,14 +9,15 @@ import {
 } from "@fiber-link/db";
 import type { AnalyticsRange } from "@fiber-link/db";
 import { and, desc, eq, or, sql } from "drizzle-orm";
+import type { z } from "zod";
 import type {
   DashboardSettlementStateFilterSchema,
   DashboardSummaryResult,
   DashboardWithdrawalStateFilterSchema,
 } from "../contracts";
 
-type DashboardWithdrawalStateFilter = typeof DashboardWithdrawalStateFilterSchema._type;
-type DashboardSettlementStateFilter = typeof DashboardSettlementStateFilterSchema._type;
+type DashboardWithdrawalStateFilter = z.infer<typeof DashboardWithdrawalStateFilterSchema>;
+type DashboardSettlementStateFilter = z.infer<typeof DashboardSettlementStateFilterSchema>;
 type DashboardAdminResult = NonNullable<DashboardSummaryResult["admin"]>;
 
 const ADMIN_APPS_LIMIT = 25;

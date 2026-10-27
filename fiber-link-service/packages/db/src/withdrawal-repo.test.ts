@@ -43,7 +43,7 @@ function createDbMock() {
   const insertValues = vi.fn((..._args: unknown[]) => ({ returning: insertReturning }));
   const insert = vi.fn(() => ({ values: insertValues }));
 
-  const selectLimit = vi.fn<unknown[], unknown>();
+  const selectLimit = vi.fn<(...args: unknown[]) => unknown>();
   const selectWhere = vi.fn((..._args: unknown[]): unknown => ({ limit: selectLimit }));
   const selectFrom = vi.fn(() => ({ where: selectWhere }));
   const select = vi.fn(() => ({ from: selectFrom }));

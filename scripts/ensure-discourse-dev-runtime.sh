@@ -158,6 +158,7 @@ ensure_container_running() {
   [[ -x "$boot_dev" ]] || fatal "missing boot_dev wrapper: $boot_dev"
 
   local boot_log="$ARTIFACT_DIR/boot-dev.log"
+  "$ROOT_DIR/scripts/pin-discourse-dev-image.sh" "$DISCOURSE_DEV_ROOT"
   log "booting discourse_dev via $boot_dev"
   if ! script -q /dev/null "$boot_dev" >"$boot_log" 2>&1; then
     tail -n 80 "$boot_log" >&2 || true

@@ -16,7 +16,7 @@ export type RpcServerConfig = {
   logLevel: string;
   bodyLimitBytes: number;
   requestTimeoutMs: number;
-  trustProxy: boolean | string | number;
+  trustProxy: boolean | string;
 };
 
 function parsePositiveInt(raw: string | undefined, fallback: number): number {
@@ -26,19 +26,20 @@ function parsePositiveInt(raw: string | undefined, fallback: number): number {
 }
 
 /**
- * RPC_TRUST_PROXY accepts fastify's trustProxy shapes: "true"/"false" style
- * booleans, a bare integer hop count, or an address/CIDR list passed through
- * verbatim — fastify itself splits comma-separated lists before handing them
- * to proxy-addr (lib/request.js getTrustProxyFn). Unset keeps the current
- * behavior (proxies not trusted).
+ * RPC_TRUST_PROXY accepts "true"/"false" style booleans or an address/CIDR
+ * list passed through verbatim — fastify itself splits comma-separated lists
+ * before handing them to proxy-addr (lib/request.js getTrustProxyFn). Unset
+ * keeps the current behavior (proxies not trusted). Bare integer hop counts
+ * are no longer supported: fastify 5 ignores them because they cannot
+ * validate the immediate peer, so they fail closed here too.
  */
-export function parseTrustProxy(raw: string | undefined): boolean | string | number {
+export function parseTrustProxy(raw: string | undefined): boolean | string {
   const trimmed = raw?.trim();
   if (!trimmed) return false;
   const lowered = trimmed.toLowerCase();
   if (lowered === "true" || lowered === "yes" || lowered === "on") return true;
   if (lowered === "false" || lowered === "no" || lowered === "off") return false;
-  if (/^[0-9]+$/.test(trimmed)) return Number(trimmed);
+  if (/^[0-9]+$/.test(trimmed)) return false;
   return trimmed;
 }
 

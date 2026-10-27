@@ -36,13 +36,16 @@ jobs:
           path: |
             ~/.bun/install/cache
             fiber-link-service/node_modules
-          key: ${{ runner.os }}-bun-${{ hashFiles('fiber-link-service/bun.lockb') }}-visual-acceptance
+          key: ${{ runner.os }}-bun-${{ hashFiles('fiber-link-service/bun.lock') }}-visual-acceptance
           restore-keys: |
             ${{ runner.os }}-bun-
 
       - name: Install service dependencies
         working-directory: fiber-link-service
         run: bun install --frozen-lockfile
+
+      - name: Prime Dockerfile base images from mirror
+        run: .github/scripts/prime-base-images-from-mirror.sh
 
       - name: Run visual acceptance in Docker
         env:

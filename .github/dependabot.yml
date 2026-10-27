@@ -8,20 +8,42 @@ updates:
       actions:
         patterns: ["*"]
 
-  - package-ecosystem: npm
+  # The service workspace is managed by bun. The `bun` ecosystem rewrites the
+  # text bun.lock alongside package.json, so `bun install --frozen-lockfile`
+  # in CI accepts the update (the `npm` ecosystem only touched package.json).
+  #
+  # Dependabot supports version updates for bun but not security updates, so
+  # there are no automatic security PRs here. Patched direct dependencies
+  # arrive through the weekly minor/patch groups below; advisories that need a
+  # major bump or a transitive fix are handled manually with `bun audit` and
+  # the root package.json `overrides`.
+  - package-ecosystem: bun
     directory: "/fiber-link-service"
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 10
     groups:
       dev-dependencies:
+        applies-to: version-updates
         dependency-type: development
+        update-types: ["minor", "patch"]
+      production-dependencies:
+        applies-to: version-updates
+        dependency-type: production
+        update-types: ["minor", "patch"]
     ignore:
       # Major upgrades need coordinated migration work; keep them manual.
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
 
   - package-ecosystem: docker
-    directory: "/deploy/compose"
+    directories:
+      - "/deploy/compose"
+      - "/deploy/compose/fnn"
+      - "/harness/visual-acceptance"
     schedule:
       interval: weekly
+    ignore:
+      # Node major upgrades (base image) are coordinated manually.
+      - dependency-name: "docker/library/node"
+        update-types: ["version-update:semver-major"]
