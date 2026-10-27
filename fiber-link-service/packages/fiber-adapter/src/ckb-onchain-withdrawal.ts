@@ -1,4 +1,5 @@
-import { BI, Indexer, RPC, commons, config, hd, helpers } from "@ckb-lumos/lumos";
+import { BI, Indexer, RPC, commons, config, hd, helpers, utils } from "@ckb-lumos/lumos";
+import { blockchain } from "@ckb-lumos/lumos/codec";
 import { SHANNONS_PER_CKB, parseCkbDecimalToShannons } from "./rpc-adapter/normalize";
 import type { Asset, CkbNetwork, ExecuteWithdrawalArgs, WithdrawalExecutionKind } from "./types";
 import { readWithdrawalPrivateKeyRaw } from "./withdrawal-key";
@@ -211,6 +212,20 @@ export function classifyUnknownRuntimeError(error: unknown): WithdrawalExecution
   return "permanent";
 }
 
+// lumos RPC raises ResponseException(JSON.stringify(rpcError)) when the node
+// answers with a JSON-RPC error, i.e. it explicitly refused the transaction.
+function isNodeRejection(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  try {
+    const parsed = JSON.parse(error.message) as { code?: unknown } | null;
+    return typeof parsed?.code === "number";
+  } catch {
+    return false;
+  }
+}
+
 function resolvePolicyMinimumShannons(): bigint {
   const configured = parseOptionalBigIntEnv("FIBER_WITHDRAWAL_CKB_MIN_SHANNONS");
   if (configured === null) {
@@ -293,6 +308,7 @@ export type ExecuteCkbOnchainTransferArgs = {
   network?: CkbNetwork;
   privateKey: string;
   requestId: string;
+  beforeBroadcast?: (txHash: string) => Promise<void>;
 };
 
 async function submitCkbTransfer(args: ExecuteCkbOnchainTransferArgs): Promise<{ txHash: string }> {
@@ -340,12 +356,43 @@ async function submitCkbTransfer(args: ExecuteCkbOnchainTransferArgs): Promise<{
 
   const signatures = signingEntries.map((entry) => hd.key.signRecoverable(entry.message, privateKey));
   const signedTx = helpers.sealTransaction(txSkeleton, signatures);
+  const localTxHash = utils.ckbHash(blockchain.RawTransaction.pack(signedTx));
+
+  // Let the caller persist the hash before the node can possibly accept the
+  // transaction, so an ambiguous broadcast is resolved by this hash instead of
+  // signing a second payout.
+  if (args.beforeBroadcast) {
+    try {
+      await args.beforeBroadcast(localTxHash);
+    } catch (error) {
+      throw new WithdrawalExecutionError(
+        `failed to persist tx hash before broadcast: ${normalizeErrorMessage(error)}`,
+        "transient",
+        { cause: error },
+      );
+    }
+  }
 
   const rpc = new RPC(rpcUrl) as unknown as {
     sendTransaction: (tx: unknown, outputsValidator?: "default" | "passthrough") => Promise<string>;
     getTransaction: (txHash: string) => Promise<{ txStatus?: { status?: string } } | null>;
   };
-  const txHash = await rpc.sendTransaction(signedTx, "passthrough");
+  let txHash: string;
+  try {
+    txHash = await rpc.sendTransaction(signedTx, "passthrough");
+  } catch (error) {
+    // Without a persisted hash a retry would sign a new transaction, so only
+    // callers that persisted it get the non-terminal classification.
+    if (!args.beforeBroadcast || isNodeRejection(error)) {
+      throw error;
+    }
+    // Timeout or lost connection: the node may still have accepted the tx.
+    throw new WithdrawalExecutionError(
+      `broadcast of ${localTxHash} has unknown outcome: ${normalizeErrorMessage(error)}`,
+      "transient",
+      { cause: error },
+    );
+  }
   if (typeof txHash !== "string" || !txHash) {
     throw new WithdrawalExecutionError("sendTransaction returned empty tx hash", "transient");
   }
@@ -406,5 +453,6 @@ export async function executeCkbOnchainWithdrawal(args: ExecuteWithdrawalArgs): 
     destination: args.destination,
     privateKey: resolvePrivateKey(),
     requestId: args.requestId,
+    beforeBroadcast: args.beforeBroadcast,
   });
 }

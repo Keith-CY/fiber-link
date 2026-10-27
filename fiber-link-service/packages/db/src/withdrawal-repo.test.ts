@@ -174,6 +174,36 @@ describe("createDbWithdrawalRepo", () => {
     expect(setArg.retryCount).not.toBe(withdrawals.retryCount);
   });
 
+  it("records the pre-broadcast tx hash only on a PROCESSING row without one", async () => {
+    const mock = createDbMock();
+    const repo = createDbWithdrawalRepo(mock.db);
+    const now = new Date("2026-02-07T00:04:00.000Z");
+
+    mock.updateReturning.mockResolvedValueOnce([mockRow({ state: "PROCESSING", txHash: "0xsigned" })]);
+    const saved = await repo.recordBroadcastTxHash("w1", { now, txHash: "0xsigned" });
+    expect(saved.txHash).toBe("0xsigned");
+    expect(mock.updateSet.mock.calls[0][0]).toEqual({ txHash: "0xsigned", updatedAt: now });
+
+    mock.updateReturning.mockResolvedValueOnce([]);
+    mock.selectLimit.mockResolvedValueOnce([mockRow({ state: "PROCESSING", txHash: "0xsigned" })]);
+    await expect(repo.recordBroadcastTxHash("w1", { now, txHash: "0xother" })).rejects.toBeInstanceOf(
+      WithdrawalTransitionConflictError,
+    );
+  });
+
+  it("clears txHash in markFailed only when asked", async () => {
+    const mock = createDbMock();
+    const repo = createDbWithdrawalRepo(mock.db);
+    const now = new Date("2026-02-07T00:05:00.000Z");
+
+    mock.updateReturning.mockResolvedValue([mockRow({ state: "FAILED" })]);
+    await repo.markFailed("w1", { now, error: "rejected" });
+    await repo.markFailed("w1", { now, error: "rejected", clearTxHash: true });
+
+    expect(mock.updateSet.mock.calls[0][0]).not.toHaveProperty("txHash");
+    expect(mock.updateSet.mock.calls[1][0]).toHaveProperty("txHash", null);
+  });
+
   it("acquires advisory lock and rejects when balance is insufficient", async () => {
     const selectWhere = vi
       .fn()

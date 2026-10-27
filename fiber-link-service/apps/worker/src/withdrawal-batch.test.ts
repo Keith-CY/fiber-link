@@ -689,6 +689,7 @@ describe("runWithdrawalBatch", () => {
         address: "ckt1qyqwyxfa75whssgkq9ukkdd30d8c7txct0gq5f9mxs",
       },
       requestId: created.id,
+      beforeBroadcast: expect.any(Function),
     });
     const saved = await localRepo.findByIdOrThrow(created.id);
     expect(saved.state).toBe("BROADCASTED");
@@ -732,5 +733,115 @@ describe("runWithdrawalBatch", () => {
     const completed = await repo.findByIdOrThrow(created.id);
     expect(completed.state).toBe("COMPLETED");
     expect(completed.completedAt?.toISOString()).toBe("2026-03-07T12:51:00.000Z");
+  });
+
+  it("does not build a second transaction when a CKB broadcast times out and is retried", async () => {
+    const ledger = createInMemoryLedgerRepo();
+    const created = await repo.create({
+      appId: "app1",
+      userId: "u-chain-timeout",
+      asset: "CKB",
+      amount: "63",
+      toAddress: "ckt1qchaintimeout",
+    });
+
+    // Every build signs a fresh transaction (new inputs/fee), so each attempt
+    // yields a distinct hash. The first broadcast times out after the node may
+    // already have accepted the transaction.
+    const sentTxHashes: string[] = [];
+    const executeWithdrawal = async (
+      _withdrawal: unknown,
+      hooks?: { beforeBroadcast?: (txHash: string) => Promise<void> },
+    ) => {
+      const txHash = `0xsigned-${sentTxHashes.length + 1}`;
+      await hooks?.beforeBroadcast?.(txHash);
+      sentTxHashes.push(txHash);
+      if (sentTxHashes.length === 1) {
+        throw Object.assign(new Error("The operation was aborted"), { name: "AbortError" });
+      }
+      return { ok: true as const, txHash };
+    };
+
+    await runWithdrawalBatch({
+      now: new Date("2026-03-07T13:00:00.000Z"),
+      executeWithdrawal,
+      confirmWithdrawal: async () => ({ status: "PENDING" }),
+      repo,
+      ledgerRepo: ledger,
+    });
+    await runWithdrawalBatch({
+      now: new Date("2026-03-07T13:05:00.000Z"),
+      executeWithdrawal,
+      confirmWithdrawal: async () => ({ status: "PENDING" }),
+      repo,
+      ledgerRepo: ledger,
+    });
+
+    expect(sentTxHashes).toEqual(["0xsigned-1"]);
+    const saved = await repo.findByIdOrThrow(created.id);
+    expect(saved.state).toBe("BROADCASTED");
+    expect(saved.txHash).toBe("0xsigned-1");
+  });
+
+  it("hands a tx hash persisted before a crash to confirmation instead of re-executing", async () => {
+    const ledger = createInMemoryLedgerRepo();
+    const created = await repo.create({
+      appId: "app1",
+      userId: "u-chain-crash",
+      asset: "CKB",
+      amount: "63",
+      toAddress: "ckt1qchaincrash",
+    });
+    const crashedAt = new Date("2026-03-07T13:00:00.000Z");
+    await repo.markProcessing(created.id, crashedAt);
+    await repo.recordBroadcastTxHash(created.id, { now: crashedAt, txHash: "0xsigned-before-crash" });
+
+    const executeWithdrawal = vi.fn();
+    const res = await runWithdrawalBatch({
+      now: new Date("2026-03-07T13:10:00.000Z"),
+      processingLeaseMs: 60_000,
+      executeWithdrawal,
+      confirmWithdrawal: async () => ({ status: "PENDING" }),
+      repo,
+      ledgerRepo: ledger,
+    });
+    expect(res.reapedProcessing).toBe(1);
+
+    await runWithdrawalBatch({
+      now: new Date("2026-03-07T13:30:00.000Z"),
+      executeWithdrawal,
+      confirmWithdrawal: async () => ({ status: "PENDING" }),
+      repo,
+      ledgerRepo: ledger,
+    });
+
+    expect(executeWithdrawal).not.toHaveBeenCalled();
+    const saved = await repo.findByIdOrThrow(created.id);
+    expect(saved.state).toBe("BROADCASTED");
+    expect(saved.txHash).toBe("0xsigned-before-crash");
+  });
+
+  it("keeps an explicit node rejection permanent and clears the unbroadcast tx hash", async () => {
+    const created = await repo.create({
+      appId: "app1",
+      userId: "u-chain-rejected",
+      asset: "CKB",
+      amount: "63",
+      toAddress: "ckt1qchainrejected",
+    });
+
+    const res = await runWithdrawalBatch({
+      now: new Date("2026-03-07T13:00:00.000Z"),
+      executeWithdrawal: async (_withdrawal, hooks) => {
+        await hooks?.beforeBroadcast?.("0xrejected");
+        throw new WithdrawalExecutionError("PoolRejectedTransactionByMinFeeRate", "permanent");
+      },
+      repo,
+    });
+
+    expect(res.failed).toBe(1);
+    const saved = await repo.findByIdOrThrow(created.id);
+    expect(saved.state).toBe("FAILED");
+    expect(saved.txHash).toBeNull();
   });
 });

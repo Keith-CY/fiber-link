@@ -30,19 +30,30 @@ export type WithdrawalConfirmationResult =
   | { status: "COMMITTED" }
   | { status: "REJECTED"; reason?: string };
 
+export type WithdrawalExecutionHooks = {
+  // Persists the signed tx hash before broadcast (CKB on-chain only).
+  beforeBroadcast: (txHash: string) => Promise<void>;
+};
+
 export type RunWithdrawalBatchOptions = {
   now?: Date;
   maxRetries?: number;
   retryDelayMs?: number;
   processingLeaseMs?: number;
-  executeWithdrawal?: (withdrawal: WithdrawalRecord) => Promise<WithdrawalExecutionResult>;
+  executeWithdrawal?: (
+    withdrawal: WithdrawalRecord,
+    hooks: WithdrawalExecutionHooks,
+  ) => Promise<WithdrawalExecutionResult>;
   confirmWithdrawal?: (withdrawal: WithdrawalRecord) => Promise<WithdrawalConfirmationResult>;
   ledgerRepo?: LedgerRepo;
   repo?: WithdrawalRepo;
   notificationDispatcher?: NotificationDispatcher;
 };
 
-async function defaultExecuteWithdrawal(withdrawal: WithdrawalRecord): Promise<WithdrawalExecutionResult> {
+async function defaultExecuteWithdrawal(
+  withdrawal: WithdrawalRecord,
+  hooks: WithdrawalExecutionHooks,
+): Promise<WithdrawalExecutionResult> {
   const endpoint = process.env.FIBER_RPC_URL;
   if (!endpoint) {
     throw new Error("FIBER_RPC_URL is required for withdrawal execution");
@@ -59,6 +70,7 @@ async function defaultExecuteWithdrawal(withdrawal: WithdrawalRecord): Promise<W
             ? { kind: "CKB_ADDRESS", address: withdrawal.toAddress }
             : { kind: "PAYMENT_REQUEST", paymentRequest: withdrawal.toAddress },
         requestId: withdrawal.id,
+        ...(withdrawal.destinationKind === "CKB_ADDRESS" ? { beforeBroadcast: hooks.beforeBroadcast } : {}),
       })
     ).txHash,
   };
@@ -270,11 +282,30 @@ async function runWithdrawalBatchInner(options: RunWithdrawalBatchOptions = {}) 
     }
 
     let result: WithdrawalExecutionResult;
-    try {
-      result = await executeWithdrawal(current);
-    } catch (error) {
-      const classified = classifyExecutionError(error);
-      result = { ok: false, ...classified };
+    let recordedTxHash: string | null = null;
+    if (current.txHash) {
+      // An earlier attempt persisted a signed tx hash but never resolved its
+      // broadcast (worker crashed mid-send). Building again would sign a second
+      // payout, so let the confirmation path decide on the persisted hash.
+      result = { ok: true, txHash: current.txHash };
+    } else {
+      try {
+        result = await executeWithdrawal(current, {
+          beforeBroadcast: async (txHash) => {
+            await repo.recordBroadcastTxHash(item.id, { now, txHash });
+            recordedTxHash = txHash;
+          },
+        });
+      } catch (error) {
+        const classified = classifyExecutionError(error);
+        result = { ok: false, ...classified };
+      }
+      if (!result.ok && result.kind === "transient" && recordedTxHash) {
+        // Ambiguous broadcast (timeout, dropped connection): the node may have
+        // accepted the tx, so treat it as broadcast rather than retrying with a
+        // new one. The confirmation path resolves it by the persisted hash.
+        result = { ok: true, txHash: recordedTxHash };
+      }
     }
 
     processed += 1;
@@ -347,7 +378,13 @@ async function runWithdrawalBatchInner(options: RunWithdrawalBatchOptions = {}) 
       continue;
     }
 
-    const failedRecord = await repo.markFailed(item.id, { now, error: result.reason });
+    // A permanent failure after the hash was recorded is an explicit node
+    // rejection; clear the hash so the row is not mistaken for a broadcast one.
+    const failedRecord = await repo.markFailed(item.id, {
+      now,
+      error: result.reason,
+      clearTxHash: recordedTxHash !== null,
+    });
     failed += 1;
     withdrawalFailuresTotal.inc({ kind: "permanent" });
     await dispatchWithdrawalEvent(notificationDispatcher, {

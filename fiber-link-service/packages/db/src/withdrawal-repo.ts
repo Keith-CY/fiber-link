@@ -140,6 +140,12 @@ export type WithdrawalRepo = {
   reapStaleProcessing(input: ReapStaleProcessingInput): Promise<WithdrawalRecord[]>;
   markPendingFromLiquidity(id: string, now: Date): Promise<WithdrawalRecord>;
   markProcessing(id: string, now: Date): Promise<WithdrawalRecord>;
+  /**
+   * Persists the signed tx hash on a PROCESSING withdrawal before broadcast so
+   * an ambiguous broadcast (timeout, crash) is resolved by that hash instead of
+   * signing a second payout. Never overwrites an already persisted hash.
+   */
+  recordBroadcastTxHash(id: string, params: { now: Date; txHash: string }): Promise<WithdrawalRecord>;
   markBroadcastedWithDebit(
     id: string,
     params: { now: Date; txHash: string },
@@ -155,7 +161,7 @@ export type WithdrawalRepo = {
   markFailedFromBroadcasted(id: string, params: { now: Date; error: string }): Promise<WithdrawalRecord>;
   markFailed(
     id: string,
-    params: { now: Date; error: string; incrementRetryCount?: boolean },
+    params: { now: Date; error: string; incrementRetryCount?: boolean; clearTxHash?: boolean },
   ): Promise<WithdrawalRecord>;
   /**
    * Operator interventions. These are guarded state transitions (never raw
@@ -615,6 +621,18 @@ export function createDbWithdrawalRepo(db: DbClient): WithdrawalRepo {
       return toRecord(row);
     },
 
+    async recordBroadcastTxHash(id, params) {
+      const [row] = await db
+        .update(withdrawals)
+        .set({ txHash: params.txHash, updatedAt: params.now })
+        .where(and(eq(withdrawals.id, id), eq(withdrawals.state, "PROCESSING"), isNull(withdrawals.txHash)))
+        .returning();
+      if (!row) {
+        await throwInvalidTransition(db, id, "PROCESSING");
+      }
+      return toRecord(row);
+    },
+
     async markBroadcastedWithDebit(id, params, _deps) {
       return db.transaction(async (tx) => {
         const [row] = await tx
@@ -755,6 +773,7 @@ export function createDbWithdrawalRepo(db: DbClient): WithdrawalRepo {
           nextRetryAt: null,
           lastError: params.error,
           updatedAt: params.now,
+          ...(params.clearTxHash ? { txHash: null } : {}),
         })
         .where(and(eq(withdrawals.id, id), eq(withdrawals.state, "PROCESSING")))
         .returning();
@@ -1063,6 +1082,19 @@ export function createInMemoryWithdrawalRepo(): WithdrawalRepo {
       return clone(record);
     },
 
+    async recordBroadcastTxHash(id, params) {
+      const record = records.find((item) => item.id === id);
+      if (!record) {
+        throw new WithdrawalNotFoundError(id);
+      }
+      if (record.state !== "PROCESSING" || record.txHash) {
+        throw new WithdrawalTransitionConflictError("PROCESSING", record.state, id);
+      }
+      record.txHash = params.txHash;
+      record.updatedAt = params.now;
+      return clone(record);
+    },
+
     async markBroadcastedWithDebit(id, params, deps) {
       const record = records.find((item) => item.id === id);
       if (!record) {
@@ -1177,6 +1209,9 @@ export function createInMemoryWithdrawalRepo(): WithdrawalRepo {
       record.nextRetryAt = null;
       record.lastError = params.error;
       record.updatedAt = params.now;
+      if (params.clearTxHash) {
+        record.txHash = null;
+      }
       return clone(record);
     },
 

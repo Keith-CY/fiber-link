@@ -29,7 +29,13 @@ describe("executeCkbOnchainWithdrawal", () => {
       sealTransaction: vi.fn(),
       transactionSkeleton: vi.fn(),
       biFrom: vi.fn((value: bigint) => value),
+      ckbHash: vi.fn(),
+      packRawTransaction: vi.fn(),
     };
+
+    vi.doMock("@ckb-lumos/lumos/codec", () => ({
+      blockchain: { RawTransaction: { pack: mocks.packRawTransaction } },
+    }));
 
     vi.doMock("@ckb-lumos/lumos", () => {
       class MockIndexer {}
@@ -69,6 +75,7 @@ describe("executeCkbOnchainWithdrawal", () => {
           TransactionSkeleton: mocks.transactionSkeleton,
           sealTransaction: mocks.sealTransaction,
         },
+        utils: { ckbHash: mocks.ckbHash },
       };
     });
 
@@ -96,6 +103,8 @@ describe("executeCkbOnchainWithdrawal", () => {
     mocks.encodeToConfigAddress.mockReturnValue("ckt1from");
     mocks.signRecoverable.mockReturnValue("0xsig");
     mocks.sealTransaction.mockReturnValue(signedTx);
+    mocks.packRawTransaction.mockReturnValue(new Uint8Array([1]));
+    mocks.ckbHash.mockReturnValue("0xtxhash");
     mocks.sendTransaction.mockResolvedValue("0xtxhash");
 
     const mod = await import("./ckb-onchain-withdrawal");
@@ -157,5 +166,96 @@ describe("executeCkbOnchainWithdrawal", () => {
     ).rejects.toMatchObject({
       kind: "permanent",
     });
+  });
+
+  it("persists the locally computed tx hash before broadcasting", async () => {
+    const { executeCkbOnchainWithdrawal, mocks, signedTx } = await setupLumosMocks();
+    const order: string[] = [];
+    const beforeBroadcast = vi.fn(async (txHash: string) => {
+      order.push(`persist:${txHash}`);
+    });
+    mocks.sendTransaction.mockImplementation(async () => {
+      order.push("send");
+      return "0xtxhash";
+    });
+
+    await executeCkbOnchainWithdrawal({
+      amount: "61",
+      asset: "CKB",
+      destination: {
+        kind: "CKB_ADDRESS",
+        address: "ckt1qyqwyxfa75whssgkq9ukkdd30d8c7txct0gq5f9mxs",
+      },
+      requestId: "w-ckb-4",
+      beforeBroadcast,
+    });
+
+    expect(mocks.packRawTransaction).toHaveBeenCalledWith(signedTx);
+    expect(order).toEqual(["persist:0xtxhash", "send"]);
+  });
+
+  it("does not broadcast when persisting the tx hash fails", async () => {
+    const { executeCkbOnchainWithdrawal, mocks } = await setupLumosMocks();
+
+    await expect(
+      executeCkbOnchainWithdrawal({
+        amount: "61",
+        asset: "CKB",
+        destination: {
+          kind: "CKB_ADDRESS",
+          address: "ckt1qyqwyxfa75whssgkq9ukkdd30d8c7txct0gq5f9mxs",
+        },
+        requestId: "w-ckb-5",
+        beforeBroadcast: async () => {
+          throw Object.assign(new Error("connect ECONNREFUSED db"), { code: "ECONNREFUSED" });
+        },
+      }),
+    ).rejects.toMatchObject({ kind: "transient" });
+    expect(mocks.sendTransaction).not.toHaveBeenCalled();
+  });
+
+  it("treats a broadcast timeout as transient, not permanent", async () => {
+    const { executeCkbOnchainWithdrawal, mocks } = await setupLumosMocks();
+    // lumos RPC aborts the fetch on timeout; the node may still have accepted the tx.
+    mocks.sendTransaction.mockRejectedValue(
+      Object.assign(new Error("The user aborted a request."), { name: "AbortError" }),
+    );
+
+    await expect(
+      executeCkbOnchainWithdrawal({
+        amount: "61",
+        asset: "CKB",
+        destination: {
+          kind: "CKB_ADDRESS",
+          address: "ckt1qyqwyxfa75whssgkq9ukkdd30d8c7txct0gq5f9mxs",
+        },
+        requestId: "w-ckb-6",
+        beforeBroadcast: async () => {},
+      }),
+    ).rejects.toMatchObject({ kind: "transient" });
+  });
+
+  it("keeps an explicit node rejection of the broadcast permanent", async () => {
+    const { executeCkbOnchainWithdrawal, mocks } = await setupLumosMocks();
+    // lumos RPC surfaces a JSON-RPC error response as ResponseException(JSON.stringify(error)).
+    mocks.sendTransaction.mockRejectedValue(
+      Object.assign(
+        new Error(JSON.stringify({ code: -1104, message: "PoolRejectedTransactionByMinFeeRate", data: null })),
+        { code: 204 },
+      ),
+    );
+
+    await expect(
+      executeCkbOnchainWithdrawal({
+        amount: "61",
+        asset: "CKB",
+        destination: {
+          kind: "CKB_ADDRESS",
+          address: "ckt1qyqwyxfa75whssgkq9ukkdd30d8c7txct0gq5f9mxs",
+        },
+        requestId: "w-ckb-7",
+        beforeBroadcast: async () => {},
+      }),
+    ).rejects.toMatchObject({ kind: "permanent" });
   });
 });
