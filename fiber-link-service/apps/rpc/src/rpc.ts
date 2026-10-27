@@ -360,7 +360,7 @@ export function registerRpc(
         "tip.status": {
           paramsSchema: TipStatusParamsSchema,
           resultSchema: TipStatusResultSchema,
-          handler: (params, ctx) => handleTipStatus({ ...params }, { log: ctx.log }),
+          handler: (params, ctx) => handleTipStatus({ ...params, appId }, { log: ctx.log }),
           errorMap: [
             {
               match: (e) => e instanceof TipIntentNotFoundError,

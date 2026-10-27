@@ -1,6 +1,7 @@
 import {
   type LedgerRepo,
   type TipIntentEventRepo,
+  TipIntentNotFoundError,
   type TipIntentRepo,
   createDbClient,
   createDbLedgerRepo,
@@ -107,6 +108,7 @@ export type HandleTipCreateInput = {
 };
 
 export type HandleTipStatusInput = {
+  appId: string;
   invoice: string;
 };
 
@@ -217,24 +219,15 @@ export async function handleTipStatus(input: HandleTipStatusInput, options: Hand
   const eventRepo = options.tipIntentEventRepo ?? getDefaultTipIntentEventRepo();
   const adapter = options.adapter ?? getDefaultAdapter();
   const tipIntent = await tipIntentRepo.findByInvoiceOrThrow(input.invoice);
+  // A tip owned by another app is indistinguishable from a missing one, so a
+  // caller cannot probe, settle or write timeline rows for foreign invoices.
+  if (tipIntent.appId !== input.appId) {
+    throw new TipIntentNotFoundError(input.invoice);
+  }
 
+  // Terminal states are already recorded by whoever made the transition;
+  // repeated polls must not append a timeline row each time.
   if (tipIntent.invoiceState !== "UNPAID") {
-    await appendTipTimelineEvent(
-      eventRepo,
-      {
-        tipIntentId: tipIntent.id,
-        invoice: tipIntent.invoice,
-        source: "TIP_STATUS",
-        type: statusStateToTimelineType(tipIntent.invoiceState),
-        previousInvoiceState: tipIntent.invoiceState,
-        nextInvoiceState: tipIntent.invoiceState,
-        metadata: {
-          observedState: tipIntent.invoiceState,
-          skippedUpstreamCheck: true,
-        },
-      },
-      options.log,
-    );
     return { state: tipIntent.invoiceState, asset: tipIntent.asset };
   }
 
@@ -309,21 +302,8 @@ export async function handleTipStatus(input: HandleTipStatusInput, options: Hand
     return { state: nextState, asset: tipIntent.asset };
   }
 
-  await appendTipTimelineEvent(
-    eventRepo,
-    {
-      tipIntentId: tipIntent.id,
-      invoice: tipIntent.invoice,
-      source: "TIP_STATUS",
-      type: "TIP_STATUS_UNPAID_OBSERVED",
-      previousInvoiceState: tipIntent.invoiceState,
-      nextInvoiceState: tipIntent.invoiceState,
-      metadata: {
-        observedState: "UNPAID",
-      },
-    },
-    options.log,
-  );
+  // Still UNPAID: no state change, so nothing is appended. Clients poll this
+  // method every second while the tip modal is open.
   return { state: tipIntent.invoiceState, asset: tipIntent.asset };
 }
 
