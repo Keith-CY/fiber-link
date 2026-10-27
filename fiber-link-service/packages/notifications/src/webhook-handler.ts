@@ -54,8 +54,9 @@ function signPayload(secret: string, body: string): string {
  * `X-Fiber-Link-Signature` header containing an HMAC-SHA256 signature of the
  * request body so receivers can authenticate the payload.
  *
- * Non-2xx responses and network errors are treated as delivery failures and
- * will increment the `failed` counter in the dispatch summary.
+ * Non-2xx responses (including 3xx: redirects are never followed) and network
+ * errors are treated as delivery failures and will increment the `failed`
+ * counter in the dispatch summary.
  */
 export function createWebhookChannelHandler(options: WebhookDeliveryOptions = {}): NotificationChannelHandler {
   const fetchImpl = options.fetch ?? globalThis.fetch;
@@ -124,7 +125,19 @@ export function createWebhookChannelHandler(options: WebhookDeliveryOptions = {}
           headers,
           body,
           signal: controller.signal,
+          // Never follow redirects: the target URL is only validated when the
+          // channel is created, so a redirect could re-POST the signed payload
+          // to an internal host and leak its response into the delivery log.
+          redirect: "manual",
         });
+
+        if (response.status >= 300 && response.status < 400) {
+          // Do not read the body or echo the Location header into the error.
+          await response.body?.cancel().catch(() => {});
+          throw new Error(
+            `Webhook delivery failed: HTTP ${response.status} redirect from ${target.target}; redirects are not followed`,
+          );
+        }
 
         if (!response.ok) {
           // Read only the first chunk of the error body: a misconfigured
