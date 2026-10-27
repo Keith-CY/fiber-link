@@ -81,7 +81,7 @@ describe("tip defaults", () => {
       asset: "USDI",
       amount: "10",
     });
-    await handleTipStatus({ invoice: first.invoice });
+    await handleTipStatus({ appId: "app-default", invoice: first.invoice });
 
     const second = await handleTipCreate({
       appId: "app-default",

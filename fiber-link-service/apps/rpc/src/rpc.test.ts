@@ -391,7 +391,7 @@ describe("json-rpc", () => {
       expect(res.statusCode).toBe(200);
       expect(res.json()).toEqual({ jsonrpc: "2.0", id: "s1", result: { state: "UNPAID", asset: "CKB" } });
       expect(tipStatusSpy).toHaveBeenCalledWith(
-        { invoice: "inv-1" },
+        { invoice: "inv-1", appId: "app1" },
         expect.objectContaining({ log: expect.anything() }),
       );
     } finally {
@@ -429,7 +429,7 @@ describe("json-rpc", () => {
       expect(res.statusCode).toBe(200);
       expect(res.json()).toEqual({ jsonrpc: "2.0", id: "g1", result: { state: "UNPAID", asset: "CKB" } });
       expect(tipStatusSpy).toHaveBeenCalledWith(
-        { invoice: "inv-1" },
+        { invoice: "inv-1", appId: "app1" },
         expect.objectContaining({ log: expect.anything() }),
       );
     } finally {
@@ -1129,7 +1129,7 @@ describe("json-rpc", () => {
         result: { state: "UNPAID", asset: "CKB" },
       });
       expect(tipStatusSpy).toHaveBeenCalledWith(
-        { invoice: "inv-happy-1" },
+        { invoice: "inv-happy-1", appId: "app1" },
         expect.objectContaining({ log: expect.anything() }),
       );
     } finally {
