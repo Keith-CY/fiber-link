@@ -676,6 +676,92 @@ RSpec.describe ::FiberLink::RpcController, type: :request do
 
       expect(WebMock).not_to have_requested(:post, "https://fiber-link.example/rpc")
     end
+
+    describe "tip.create post eligibility" do
+      def request_tip(post_id)
+        post "/fiber-link/rpc",
+             params: {
+               jsonrpc: "2.0",
+               id: "ineligible-post",
+               method: "tip.create",
+               params: {
+                 amount: "1",
+                 asset: "CKB",
+                 postId: post_id,
+               },
+             },
+             as: :json
+        [response.status, JSON.parse(response.body)]
+      end
+
+      def expect_rejected_like_missing_post(post_id)
+        missing_status, missing_body = request_tip(999_999_999)
+        status, body = request_tip(post_id)
+
+        expect(status).to eq(400)
+        expect(body.dig("error", "code")).to eq(-32602)
+        expect(body.dig("error", "message")).to eq("Invalid params")
+        expect([status, body]).to eq([missing_status, missing_body])
+        expect(WebMock).not_to have_requested(:post, "https://fiber-link.example/rpc")
+      end
+
+      before do
+        sign_in(user)
+        stub_request(:post, "https://fiber-link.example/rpc").to_return(status: 200, body: "{}")
+      end
+
+      it "rejects a post in a private message the user is not part of" do
+        pm_topic = Fabricate(:private_message_topic)
+        pm_post = Fabricate(:post, topic: pm_topic, user: pm_topic.user)
+
+        expect_rejected_like_missing_post(pm_post.id)
+      end
+
+      it "rejects a post in a category the user cannot see" do
+        restricted_category = Fabricate(:private_category, group: Fabricate(:group))
+        restricted_topic = Fabricate(:topic, category: restricted_category)
+        restricted_post = Fabricate(:post, topic: restricted_topic)
+
+        expect_rejected_like_missing_post(restricted_post.id)
+      end
+
+      it "rejects a hidden post" do
+        hidden_post = Fabricate(:post, topic: topic, hidden: true, hidden_at: Time.zone.now)
+
+        expect_rejected_like_missing_post(hidden_post.id)
+      end
+
+      it "rejects a post whose topic was deleted" do
+        orphan_post = Fabricate(:post, topic: topic)
+        topic.trash!
+
+        expect_rejected_like_missing_post(orphan_post.id)
+      end
+
+      it "rejects a post authored by the system user" do
+        system_post = Fabricate(:post, topic: topic, user: Discourse.system_user)
+
+        expect_rejected_like_missing_post(system_post.id)
+      end
+
+      it "still forwards a tip on a visible reply by another user" do
+        reply = Fabricate(:post, topic: topic, user: tipper)
+        stub_request(:post, "https://fiber-link.example/rpc").to_return(
+          status: 200,
+          body: { jsonrpc: "2.0", id: "ineligible-post", result: { invoice: "inv-ok" } }.to_json,
+          headers: { "Content-Type" => "application/json" },
+        )
+
+        status, body = request_tip(reply.id)
+
+        expect(status).to eq(200)
+        expect(body.dig("result", "invoice")).to eq("inv-ok")
+        expect(WebMock).to have_requested(:post, "https://fiber-link.example/rpc").with { |request|
+          payload = JSON.parse(request.body)
+          payload.dig("params", "postId") == reply.id.to_s && payload.dig("params", "toUserId") == tipper.id.to_s
+        }
+      end
+    end
   end
 
   describe "GET /fiber-link/rpc/stream" do
