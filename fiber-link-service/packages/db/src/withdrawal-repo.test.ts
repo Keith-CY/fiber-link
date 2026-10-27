@@ -468,14 +468,13 @@ describe("createDbWithdrawalRepo", () => {
     expect(collectSqlTokens(whereArg)).toContain("LIQUIDITY_PENDING");
   });
 
-  it("counts only active on-chain reservations for a specific network", async () => {
+  it("counts only active on-chain reservations for a specific network across all apps", async () => {
     const mock = createDbMock();
     const repo = createDbWithdrawalRepo(mock.db);
 
     mock.selectWhere.mockResolvedValueOnce([{ total: "80" }]);
 
     const total = await repo.getActiveCkbAddressReservationTotal({
-      appId: "app1",
       asset: "CKB",
       network: "AGGRON4",
     });
@@ -488,6 +487,8 @@ describe("createDbWithdrawalRepo", () => {
     expect(tokens).toContain("PROCESSING");
     expect(tokens).toContain("RETRY_PENDING");
     expect(tokens).toContain("ckt1%");
+    // The hot wallet is shared by every app, so the reservation must not be scoped to one app.
+    expect(tokens).not.toContain("app_id");
   });
 
   it("finds rows by id and lists ready withdrawals", async () => {
@@ -831,18 +832,49 @@ describe("createInMemoryWithdrawalRepo balance gating", () => {
 
     await expect(
       repo.getActiveCkbAddressReservationTotal({
-        appId: "app1",
         asset: "CKB",
         network: "AGGRON4",
       }),
     ).resolves.toBe("30");
     await expect(
       repo.getActiveCkbAddressReservationTotal({
-        appId: "app1",
         asset: "CKB",
         network: "LINA",
       }),
     ).resolves.toBe("15");
+  });
+
+  it("sums active CKB address reservations across every app sharing the hot wallet", async () => {
+    const repo = createInMemoryWithdrawalRepo();
+
+    await repo.create({
+      appId: "app1",
+      userId: "u1",
+      asset: "CKB",
+      amount: "30",
+      toAddress: "ckt1qappone",
+    });
+    await repo.create({
+      appId: "app2",
+      userId: "u1",
+      asset: "CKB",
+      amount: "50",
+      toAddress: "ckt1qapptwo",
+    });
+    await repo.create({
+      appId: "app2",
+      userId: "u1",
+      asset: "USDI",
+      amount: "7",
+      toAddress: "ckt1qotherasset",
+    });
+
+    await expect(
+      repo.getActiveCkbAddressReservationTotal({
+        asset: "CKB",
+        network: "AGGRON4",
+      }),
+    ).resolves.toBe("80");
   });
 
   it("rejects non-positive withdrawal amounts", async () => {

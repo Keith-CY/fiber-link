@@ -213,4 +213,39 @@ describe("decideWithdrawalRequestLiquidity", () => {
 
     expect(result.state).toBe("LIQUIDITY_PENDING");
   });
+
+  it("counts every app's active chain reservations against the shared hot wallet", async () => {
+    const repo = createInMemoryWithdrawalRepo();
+    const liquidityRequestRepo = createInMemoryLiquidityRequestRepo();
+    const hotWalletInventoryProvider = vi.fn(async () => ({
+      asset: "CKB" as const,
+      network: "AGGRON4" as const,
+      availableAmount: "200",
+    }));
+    const destination = {
+      kind: "CKB_ADDRESS" as const,
+      address: "ckt1qyqfth8m4fevfzh5hhd088s78qcdjjp8cehs7z8jhw",
+    };
+
+    const first = await decideWithdrawalRequestLiquidity(
+      { appId: "app1", asset: "CKB", amount: "80", destination },
+      { repo, hotWalletInventoryProvider, liquidityRequestRepo },
+    );
+    expect(first.state).toBe("PENDING");
+    await repo.create({
+      appId: "app1",
+      userId: "u1",
+      asset: "CKB",
+      amount: "80",
+      toAddress: destination.address,
+    });
+
+    // Fits on its own, but together with app1's reservation it exceeds the shared hot wallet.
+    const second = await decideWithdrawalRequestLiquidity(
+      { appId: "app2", asset: "CKB", amount: "80", destination },
+      { repo, hotWalletInventoryProvider, liquidityRequestRepo },
+    );
+
+    expect(second.state).toBe("LIQUIDITY_PENDING");
+  });
 });

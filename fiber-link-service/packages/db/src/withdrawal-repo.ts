@@ -99,8 +99,8 @@ export type BalanceCheckDeps = {
   ledgerRepo: LedgerRepo;
 };
 
+// Not scoped by app: the hot wallet is shared, so every app's active reservations count against it.
 export type ActiveCkbAddressReservationTotalInput = {
-  appId: string;
   asset: WithdrawalAsset;
   network: "AGGRON4" | "LINA";
 };
@@ -306,7 +306,6 @@ async function getActiveCkbAddressReservationTotalWithClient(
     .from(withdrawals)
     .where(
       and(
-        eq(withdrawals.appId, input.appId),
         eq(withdrawals.asset, input.asset),
         eq(withdrawals.destinationKind, "CKB_ADDRESS"),
         inArray(withdrawals.state, ["PENDING", "PROCESSING", "BROADCASTED", "RETRY_PENDING"]),
@@ -973,7 +972,6 @@ export function createInMemoryWithdrawalRepo(): WithdrawalRepo {
       const prefix = input.network === "AGGRON4" ? "ckt1" : "ckb1";
       const active = records.filter(
         (item) =>
-          item.appId === input.appId &&
           item.asset === input.asset &&
           item.destinationKind === "CKB_ADDRESS" &&
           item.toAddress.toLowerCase().startsWith(prefix) &&

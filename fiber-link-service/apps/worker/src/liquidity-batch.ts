@@ -104,7 +104,6 @@ async function promoteCoveredWithdrawals(
     network: request.network as CkbNetwork,
   });
   let reserved = await options.repo.getActiveCkbAddressReservationTotal({
-    appId: request.appId,
     asset: request.asset,
     network: request.network as CkbNetwork,
   });
