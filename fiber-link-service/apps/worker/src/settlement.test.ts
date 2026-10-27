@@ -99,6 +99,78 @@ describe("settlement worker", () => {
     expect(saved.settledAt).not.toBeNull();
   });
 
+  describe("settlement vs pending-timeout race", () => {
+    async function createIntent(invoice: string) {
+      return tipIntentRepo.create({
+        appId: "app1",
+        postId: "p-race",
+        fromUserId: "u1",
+        toUserId: "u2",
+        asset: "USDI",
+        amount: "10",
+        invoice,
+      });
+    }
+
+    function markTimedOut(invoice: string) {
+      return tipIntentRepo.markSettlementTerminalFailure(invoice, {
+        now: new Date(),
+        reason: "FAILED_PENDING_TIMEOUT",
+        error: "invoice remained UNPAID past timeout",
+      });
+    }
+
+    it("settles when the timeout marks the intent FAILED while the credit is being written", async () => {
+      const intent = await createIntent("inv-race-interleaved");
+      const racingLedgerRepo = {
+        ...ledgerRepo,
+        async creditOnce(input: Parameters<typeof ledgerRepo.creditOnce>[0]) {
+          const result = await ledgerRepo.creditOnce(input);
+          // The worker's pending-timeout path lands between credit and state update.
+          await markTimedOut(intent.invoice);
+          return result;
+        },
+      };
+
+      const result = await markSettled({ invoice: intent.invoice }, { tipIntentRepo, ledgerRepo: racingLedgerRepo });
+      expect(result.credited).toBe(true);
+
+      const saved = await tipIntentRepo.findByInvoiceOrThrow(intent.invoice);
+      expect(saved.invoiceState).toBe("SETTLED");
+      expect(saved.settledAt).not.toBeNull();
+      expect(saved.settlementFailureReason).toBeNull();
+      expect(ledgerRepo.__listForTests!()).toHaveLength(1);
+    });
+
+    it("credits and settles a payment that arrives after the intent already timed out", async () => {
+      const intent = await createIntent("inv-race-late-settle");
+      const failed = await markTimedOut(intent.invoice);
+      expect(failed.invoiceState).toBe("FAILED");
+
+      const result = await markSettled({ invoice: intent.invoice }, { tipIntentRepo, ledgerRepo });
+      expect(result.credited).toBe(true);
+
+      const saved = await tipIntentRepo.findByInvoiceOrThrow(intent.invoice);
+      expect(saved.invoiceState).toBe("SETTLED");
+      expect(saved.settledAt).not.toBeNull();
+      expect(saved.settlementFailureReason).toBeNull();
+      expect(saved.settlementLastError).toBeNull();
+      const entries = ledgerRepo.__listForTests!();
+      expect(entries).toHaveLength(1);
+      expect(entries[0].idempotencyKey).toBe(settlementCreditIdempotencyKey(intent.id));
+    });
+
+    it("does not let a timeout that lands after settlement overwrite SETTLED", async () => {
+      const intent = await createIntent("inv-race-late-timeout");
+      await markSettled({ invoice: intent.invoice }, { tipIntentRepo, ledgerRepo });
+
+      const afterTimeout = await markTimedOut(intent.invoice);
+      expect(afterTimeout.invoiceState).toBe("SETTLED");
+      expect(afterTimeout.settlementFailureReason).toBeNull();
+      expect(ledgerRepo.__listForTests!()).toHaveLength(1);
+    });
+  });
+
   it("fails settlement when invoice does not resolve to exactly one tip_intent", async () => {
     await expect(markSettled({ invoice: "missing-invoice" }, { tipIntentRepo, ledgerRepo })).rejects.toThrow(
       "tip intent not found",

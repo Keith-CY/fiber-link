@@ -237,8 +237,7 @@ it("supports retry-safe settlement after transient ledger credit failure", async
   expect(retryLedgerRepo.__listForTests?.()).toHaveLength(1);
 });
 
-it("returns latest intent state when upstream transition becomes invalid after status read and stays retry-safe", async () => {
-  const repository = createInMemoryTipIntentRepo();
+it("settles and credits once when the pending timeout marks the intent FAILED during settlement", async () => {
   const response = await handleTipCreate(
     {
       appId: "app1",
@@ -248,49 +247,40 @@ it("returns latest intent state when upstream transition becomes invalid after s
       asset: "USDI",
       amount: "10",
     },
-    { tipIntentRepo: repository, tipIntentEventRepo, adapter },
+    { tipIntentRepo, tipIntentEventRepo, adapter },
   );
   invoiceStatusByInvoice[response.invoice] = "SETTLED";
 
-  const conflictRepo = {
-    ...repository,
-    async updateInvoiceState(invoice: string, state: "UNPAID" | "SETTLED" | "FAILED") {
-      const current = await repository.findByInvoiceOrThrow(invoice);
-      await repository.updateInvoiceState(invoice, "FAILED");
-      const conflict = new Error(`invalid invoice state transition: ${current.invoiceState} -> ${state}`);
-      conflict.name = "InvoiceStateTransitionError";
-      throw conflict;
+  const racingLedgerRepo = {
+    ...ledgerRepo,
+    async creditOnce(input: LedgerWriteInput) {
+      const result = await ledgerRepo.creditOnce(input);
+      // The worker's pending-timeout path lands between credit and state update.
+      await tipIntentRepo.markSettlementTerminalFailure(response.invoice, {
+        now: new Date(),
+        reason: "FAILED_PENDING_TIMEOUT",
+        error: "invoice remained UNPAID past timeout",
+      });
+      return result;
     },
   };
 
   const status = await handleTipStatus(
-    {
-      invoice: response.invoice,
-    },
-    {
-      tipIntentRepo: conflictRepo,
-      ledgerRepo,
-      tipIntentEventRepo,
-      adapter,
-    },
+    { invoice: response.invoice },
+    { tipIntentRepo, ledgerRepo: racingLedgerRepo, tipIntentEventRepo, adapter },
   );
 
-  expect(status.state).toBe("FAILED");
+  expect(status.state).toBe("SETTLED");
+  const saved = await tipIntentRepo.findByInvoiceOrThrow(response.invoice);
+  expect(saved.invoiceState).toBe("SETTLED");
+  expect(saved.settlementFailureReason).toBeNull();
   expect(ledgerRepo.__listForTests?.()).toHaveLength(1);
 
   const retried = await handleTipStatus(
-    {
-      invoice: response.invoice,
-    },
-    {
-      tipIntentRepo: conflictRepo,
-      ledgerRepo,
-      tipIntentEventRepo,
-      adapter,
-    },
+    { invoice: response.invoice },
+    { tipIntentRepo, ledgerRepo, tipIntentEventRepo, adapter },
   );
-
-  expect(retried.state).toBe("FAILED");
+  expect(retried.state).toBe("SETTLED");
   expect(ledgerRepo.__listForTests?.()).toHaveLength(1);
 });
 
@@ -382,7 +372,7 @@ it("rethrows non-conflict errors while settling", async () => {
 
   const repoWithUnexpectedFailure = {
     ...tipIntentRepo,
-    async updateInvoiceState() {
+    async markSettledWithCredit() {
       throw new Error("db down");
     },
   };
