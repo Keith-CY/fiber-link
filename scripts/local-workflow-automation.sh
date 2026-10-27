@@ -39,6 +39,8 @@ WITHDRAW_AMOUNT="${WORKFLOW_WITHDRAW_AMOUNT:-61}"
 WITHDRAW_TO_ADDRESS="${WORKFLOW_WITHDRAW_TO_ADDRESS:-}"
 POLL_INTERVAL_SECONDS="${WORKFLOW_POLL_INTERVAL_SECONDS:-5}"
 SETTLEMENT_TIMEOUT_SECONDS="${WORKFLOW_SETTLEMENT_TIMEOUT_SECONDS:-240}"
+PAYMENT_TIMEOUT_SECONDS="${WORKFLOW_PAYMENT_TIMEOUT_SECONDS:-60}"
+PAYMENT_MAX_ATTEMPTS="${WORKFLOW_PAYMENT_MAX_ATTEMPTS:-3}"
 WITHDRAWAL_TIMEOUT_SECONDS="${WORKFLOW_WITHDRAWAL_TIMEOUT_SECONDS:-360}"
 
 TOPIC_LABEL="${WORKFLOW_TOPIC_TITLE:-Fiber Link Local Workflow Topic}"
@@ -76,6 +78,8 @@ Environment knobs:
   WORKFLOW_WITHDRAW_TO_ADDRESS=ckt1...
   WORKFLOW_POLL_INTERVAL_SECONDS=5
   WORKFLOW_SETTLEMENT_TIMEOUT_SECONDS=240
+  WORKFLOW_PAYMENT_TIMEOUT_SECONDS=60
+  WORKFLOW_PAYMENT_MAX_ATTEMPTS=3
   WORKFLOW_WITHDRAWAL_TIMEOUT_SECONDS=360
   WORKFLOW_PAUSE_START_EMBER_CLI=1
   DISCOURSE_DEV_ROOT=/tmp/discourse-dev
@@ -926,19 +930,75 @@ pay_invoice_from_payer() {
         ]
       }
     ')"
-  printf '%s\n' "${send_payload}" > "${dir}/send-payment.request.json"
+  local attempt payment_status
+  for (( attempt = 1; attempt <= PAYMENT_MAX_ATTEMPTS; attempt++ )); do
+    if [[ "${attempt}" -gt 1 ]]; then
+      # A fresh request_id per retry so the payer node treats it as a new send.
+      send_payload="$(printf '%s' "${send_payload}" | jq -c --arg request_id "local-workflow-${label}-$(date +%s)-$RANDOM-retry${attempt}" '.params[0].request_id = $request_id')"
+    fi
+    printf '%s\n' "${send_payload}" > "${dir}/send-payment.request.json"
 
-  send_response="$(fnn_payer_rpc_call "${send_payload}")"
-  printf '%s\n' "${send_response}" > "${dir}/send-payment.response.json"
-  if contains_jsonrpc_error "${send_response}"; then
-    fatal "${EXIT_TIP}" "send_payment failed for ${label}: $(jsonrpc_error_message "${send_response}")"
-  fi
+    send_response="$(fnn_payer_rpc_call "${send_payload}")"
+    printf '%s\n' "${send_response}" > "${dir}/send-payment.response.json"
+    if contains_jsonrpc_error "${send_response}"; then
+      if [[ "${attempt}" -lt "${PAYMENT_MAX_ATTEMPTS}" ]]; then
+        printf '[local-workflow] send_payment attempt %s/%s failed for %s: %s; retrying\n' \
+          "${attempt}" "${PAYMENT_MAX_ATTEMPTS}" "${label}" "$(jsonrpc_error_message "${send_response}")" >&2
+        sleep "${POLL_INTERVAL_SECONDS}"
+        continue
+      fi
+      fatal "${EXIT_TIP}" "send_payment failed for ${label}: $(jsonrpc_error_message "${send_response}")"
+    fi
 
-  tx_hash="$(printf '%s' "${send_response}" | jq -r '.result.tx_hash // .result.txHash // .result.payment_hash // .result.paymentHash // .result.hash // empty')"
-  if [[ -z "${tx_hash}" ]]; then
-    fatal "${EXIT_TIP}" "send_payment returned no tx hash for ${label}"
-  fi
+    tx_hash="$(printf '%s' "${send_response}" | jq -r '.result.tx_hash // .result.txHash // .result.payment_hash // .result.paymentHash // .result.hash // empty')"
+    if [[ -z "${tx_hash}" ]]; then
+      fatal "${EXIT_TIP}" "send_payment returned no tx hash for ${label}"
+    fi
+
+    payment_status="$(wait_payer_payment_final "${label}" "${payment_hash}" "${attempt}")"
+    if [[ "${payment_status}" != "FAILED" ]]; then
+      break
+    fi
+    if [[ "${attempt}" -ge "${PAYMENT_MAX_ATTEMPTS}" ]]; then
+      fatal "${EXIT_TIP}" "payment for ${label} failed on the payer node after ${PAYMENT_MAX_ATTEMPTS} attempts (see ${dir}/payment-status.poll.log)"
+    fi
+    printf '[local-workflow] payment for %s failed on the payer node (attempt %s/%s); retrying\n' \
+      "${label}" "${attempt}" "${PAYMENT_MAX_ATTEMPTS}" >&2
+    sleep "${POLL_INTERVAL_SECONDS}"
+  done
   printf '%s' "${tx_hash}"
+}
+
+# Poll the payer node until the payment is final. Prints SUCCESS, FAILED, or
+# PENDING (still in flight at the timeout; settlement polling then decides).
+# Every response is appended to payment-status.poll.log so a stalled tip shows
+# the payer-side state instead of only an UNPAID invoice.
+wait_payer_payment_final() {
+  local label="$1"
+  local payment_hash="$2"
+  local attempt="$3"
+  local poll_log="${ARTIFACT_DIR}/tips/${label}/payment-status.poll.log"
+  local deadline=$(( $(date +%s) + PAYMENT_TIMEOUT_SECONDS ))
+  local payload response status
+
+  while [[ "$(date +%s)" -lt "${deadline}" ]]; do
+    payload="$(jq -cn --arg id "get-payment-${label}-${attempt}-$(date +%s)-$RANDOM" --arg payment_hash "${payment_hash}" '{jsonrpc:"2.0",id:$id,method:"get_payment",params:[{payment_hash:$payment_hash}]}')"
+    response="$(fnn_payer_rpc_call "${payload}" 2>/dev/null || true)"
+    printf '%s\n' "${response}" >> "${poll_log}"
+    status="$(printf '%s' "${response}" | jq -r '.result.status // empty' 2>/dev/null | tr '[:lower:]' '[:upper:]')"
+    case "${status}" in
+      SUCCESS)
+        printf 'SUCCESS'
+        return 0
+        ;;
+      FAILED)
+        printf 'FAILED'
+        return 0
+        ;;
+    esac
+    sleep 1
+  done
+  printf 'PENDING'
 }
 
 wait_tip_settled() {
