@@ -55,6 +55,7 @@ Edit `.env` minimally:
   - `WORKER_SETTLEMENT_PENDING_TIMEOUT_MS`
   - `WORKER_SETTLEMENT_CURSOR_STORE` (default `db`: cursor persists in the `worker_state` table and survives container replacement; set `file` for the legacy file store)
   - `WORKER_SETTLEMENT_CURSOR_FILE` (default `/var/lib/fiber-link/settlement-cursor.json`; in `db` mode read once to adopt a pre-existing legacy cursor)
+- Optional: tune `WORKER_WITHDRAWAL_BROADCAST_STUCK_THRESHOLD_MS` (default `3600000`): a BROADCASTED on-chain withdrawal whose tx is still unknown to the CKB node after this long is flagged via the `worker.withdrawal.broadcast_stuck` error log and the `fiber_link_withdrawal_broadcast_stuck` gauge. It is never failed or refunded automatically (the tx may still confirm); see `docs/runbooks/metrics-and-alerting.md`.
 - Optional: tune readiness probe timeouts:
   - `RPC_HEALTHCHECK_TIMEOUT_MS`
   - `WORKER_READINESS_TIMEOUT_MS`

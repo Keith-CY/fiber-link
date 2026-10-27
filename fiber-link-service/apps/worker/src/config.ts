@@ -10,6 +10,7 @@ export type WorkerConfig = {
   settlementMaxRetries: number;
   settlementRetryDelayMs: number;
   settlementPendingTimeoutMs: number;
+  withdrawalBroadcastStuckThresholdMs: number;
   shutdownTimeoutMs: number;
   settlementStrategy: WorkerSettlementStrategy;
   settlementCursorFile: string;
@@ -67,6 +68,12 @@ export function parseWorkerConfig(env: NodeJS.ProcessEnv = process.env): WorkerC
   const settlementMaxRetries = parseInteger(env, "WORKER_SETTLEMENT_MAX_RETRIES", maxRetries, 0);
   const settlementRetryDelayMs = parseInteger(env, "WORKER_SETTLEMENT_RETRY_DELAY_MS", retryDelayMs, 1);
   const settlementPendingTimeoutMs = parseInteger(env, "WORKER_SETTLEMENT_PENDING_TIMEOUT_MS", 30 * 60_000, 1);
+  const withdrawalBroadcastStuckThresholdMs = parseInteger(
+    env,
+    "WORKER_WITHDRAWAL_BROADCAST_STUCK_THRESHOLD_MS",
+    60 * 60_000,
+    1,
+  );
   const shutdownTimeoutMs = parseInteger(env, "WORKER_SHUTDOWN_TIMEOUT_MS", 15_000, 1);
   const settlementStrategy = parseStrategy(env);
   const settlementCursorFile = (
@@ -112,6 +119,7 @@ export function parseWorkerConfig(env: NodeJS.ProcessEnv = process.env): WorkerC
     settlementMaxRetries,
     settlementRetryDelayMs,
     settlementPendingTimeoutMs,
+    withdrawalBroadcastStuckThresholdMs,
     shutdownTimeoutMs,
     settlementStrategy,
     settlementCursorFile,
