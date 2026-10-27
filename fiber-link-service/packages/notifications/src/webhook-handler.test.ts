@@ -1,5 +1,7 @@
 import crypto from "node:crypto";
-import { describe, expect, it, vi } from "vitest";
+import { type IncomingMessage, type ServerResponse, createServer } from "node:http";
+import type { AddressInfo } from "node:net";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
   TipSettledNotificationEvent,
   WithdrawalCompletedNotificationEvent,
@@ -281,5 +283,78 @@ describe("createWebhookChannelHandler retry and delivery log", () => {
     });
 
     await expect(handler({ target: BASE_TARGET, event: COMPLETED_EVENT })).resolves.toBeUndefined();
+  });
+});
+
+describe("createWebhookChannelHandler redirect handling", () => {
+  type LocalServer = { url: string; requests: string[]; close: () => Promise<void> };
+
+  async function startServer(respond: (res: ServerResponse) => void): Promise<LocalServer> {
+    const requests: string[] = [];
+    const server = createServer((req: IncomingMessage, res) => {
+      requests.push(`${req.method} ${req.url}`);
+      req.resume();
+      req.on("end", () => respond(res));
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const { port } = server.address() as AddressInfo;
+    return {
+      url: `http://127.0.0.1:${port}`,
+      requests,
+      close: () => new Promise<void>((resolve) => server.close(() => resolve())),
+    };
+  }
+
+  const servers: LocalServer[] = [];
+  afterEach(async () => {
+    await Promise.all(servers.splice(0).map((server) => server.close()));
+  });
+
+  it("does not follow a redirect to an internal host and fails the delivery", async () => {
+    const internal = await startServer((res) => {
+      res.writeHead(500).end("internal-secret-data");
+    });
+    servers.push(internal);
+    const redirector = await startServer((res) => {
+      res.writeHead(307, { location: `${internal.url}/admin` }).end();
+    });
+    servers.push(redirector);
+    const errors: (string | undefined)[] = [];
+
+    // Real global fetch against real sockets: a mocked fetch cannot prove
+    // whether redirects are followed.
+    const handler = createWebhookChannelHandler({
+      sleep: async () => {},
+      onAttempt: (a) => {
+        errors.push(a.error);
+      },
+    });
+
+    await expect(
+      handler({
+        target: { ...BASE_TARGET, target: `${redirector.url}/hook`, secret: "s3cret" },
+        event: COMPLETED_EVENT,
+      }),
+    ).rejects.toThrow(`HTTP 307 redirect from ${redirector.url}/hook; redirects are not followed`);
+    expect(internal.requests).toEqual([]);
+    expect(redirector.requests).toEqual(["POST /hook", "POST /hook", "POST /hook"]);
+    expect(errors).toHaveLength(3);
+    for (const error of errors) {
+      expect(error).not.toContain("internal-secret-data");
+      expect(error).not.toContain(internal.url);
+    }
+  });
+
+  it("still delivers to a target that responds 200", async () => {
+    const receiver = await startServer((res) => {
+      res.writeHead(200).end("ok");
+    });
+    servers.push(receiver);
+
+    const handler = createWebhookChannelHandler({ sleep: async () => {} });
+    await expect(
+      handler({ target: { ...BASE_TARGET, target: `${receiver.url}/hook` }, event: COMPLETED_EVENT }),
+    ).resolves.toBeUndefined();
+    expect(receiver.requests).toEqual(["POST /hook"]);
   });
 });
