@@ -202,6 +202,54 @@ describe("db admin services", () => {
     ).rejects.toThrow(/COMMUNITY_ADMIN/);
   });
 
+  it("treats a non-UUID withdrawal id filter as no match instead of querying a uuid column", async () => {
+    // Postgres rejects a non-UUID literal against a `uuid` column with a
+    // "Failed query: select ..." error; the fake mirrors that so any query
+    // reaching the database fails the test.
+    const db = {
+      query: {
+        withdrawals: {
+          findMany: async () => {
+            throw new Error('Failed query: select "id" from "withdrawals" where "withdrawals"."id" = $1');
+          },
+        },
+      },
+    } as unknown as DbClient;
+    const services = createDbAdminServices(db);
+    // The queue shows shortened ids such as `1234abcd…ef`; operators paste those.
+    await expect(services.listWithdrawals({ role: "SUPER_ADMIN" }, { id: "1234abcd…ef" })).resolves.toEqual({
+      items: [],
+      nextCursor: null,
+    });
+  });
+
+  it("returns an empty page for keyset cursors whose id is not a UUID", async () => {
+    const failingFindMany = async () => {
+      throw new Error("Failed query: select ... invalid input syntax for type uuid");
+    };
+    const db = {
+      query: { withdrawals: { findMany: failingFindMany }, tipIntents: { findMany: failingFindMany } },
+      select: () => {
+        throw new Error("Failed query: select ... invalid input syntax for type uuid");
+      },
+    } as unknown as DbClient;
+    const services = createDbAdminServices(db);
+    const after = { createdAt: "2026-03-18T00:00:00.000Z", id: "forged" };
+
+    await expect(services.listWithdrawals({ role: "SUPER_ADMIN" }, { after })).resolves.toEqual({
+      items: [],
+      nextCursor: null,
+    });
+    await expect(services.listSettlements({ role: "SUPER_ADMIN" }, { after })).resolves.toEqual({
+      items: [],
+      nextCursor: null,
+    });
+    await expect(services.listLedgerEntries({ role: "SUPER_ADMIN" }, { appId: "app-alpha", after })).resolves.toEqual({
+      entries: [],
+      nextCursor: null,
+    });
+  });
+
   it("delegates rate-limit and backup helpers", async () => {
     const { db } = makeDb();
     const services = createDbAdminServices(db);

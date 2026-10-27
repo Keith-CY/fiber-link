@@ -32,6 +32,28 @@ function normalizeAllowedAssets(raw: unknown): Asset[] {
   return [];
 }
 
+/** Upper bound of the `cooldown_seconds` int4 column. */
+const MAX_COOLDOWN_SECONDS = 2_147_483_647;
+
+/**
+ * Accept only a plain non-negative integer (a number, or a string of digits from
+ * a form field / CLI flag). `Number(...)` coercion is avoided on purpose: it
+ * turns a cleared field (`""`/`null`) into 0 ("no cooldown") and accepts
+ * `true`, `"1e3"` and values that overflow the int4 column.
+ */
+function parseCooldownSeconds(raw: unknown): number {
+  const value =
+    typeof raw === "number"
+      ? raw
+      : typeof raw === "string" && /^\d+$/.test(raw.trim())
+        ? Number(raw.trim())
+        : Number.NaN;
+  if (!Number.isInteger(value) || value < 0 || value > MAX_COOLDOWN_SECONDS) {
+    throw new Error(`cooldownSeconds must be an integer between 0 and ${MAX_COOLDOWN_SECONDS}`);
+  }
+  return value;
+}
+
 export function parseWithdrawalPolicyInput(raw: unknown): WithdrawalPolicyInput {
   if (!raw || typeof raw !== "object") {
     throw new Error("input must be an object");
@@ -67,10 +89,11 @@ export function parseWithdrawalPolicyInput(raw: unknown): WithdrawalPolicyInput 
     throw new Error("maxPerRequest must be <= perUserDailyMax");
   }
 
-  const cooldownSeconds = Number(input.cooldownSeconds);
-  if (!Number.isInteger(cooldownSeconds) || cooldownSeconds < 0) {
-    throw new Error("cooldownSeconds must be an integer >= 0");
+  if (compareDecimalStrings(perUserDailyMax, perAppDailyMax) > 0) {
+    throw new Error("perUserDailyMax must be <= perAppDailyMax");
   }
+
+  const cooldownSeconds = parseCooldownSeconds(input.cooldownSeconds);
 
   return {
     appId,

@@ -81,13 +81,20 @@ export default function AppDetailPage() {
 
   function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    // `Number("")` is 0, so a cleared field would silently save "no cooldown";
+    // require digits here and leave the range check to the server.
+    const cooldownSeconds = form.cooldownSeconds.trim();
+    if (!/^\d+$/.test(cooldownSeconds)) {
+      toast.error("Cooldown seconds must be a whole number (use 0 for no cooldown)");
+      return;
+    }
     upsert.mutate({
       appId,
       allowedAssets: form.allowedAssets,
       maxPerRequest: form.maxPerRequest,
       perUserDailyMax: form.perUserDailyMax,
       perAppDailyMax: form.perAppDailyMax,
-      cooldownSeconds: Number(form.cooldownSeconds),
+      cooldownSeconds: Number(cooldownSeconds),
     });
   }
 

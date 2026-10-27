@@ -70,6 +70,17 @@ function clampListLimit(limit: number | undefined): number {
   return Math.min(Math.max(limit ?? ADMIN_LIST_DEFAULT_LIMIT, 1), ADMIN_LIST_MAX_LIMIT);
 }
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Row ids are Postgres `uuid` columns: comparing one to a non-UUID literal (a
+ * shortened id pasted from the queue, a forged cursor) fails the whole query
+ * rather than matching nothing, so such values are answered as an empty page.
+ */
+function isUuid(value: string): boolean {
+  return UUID_PATTERN.test(value);
+}
+
 /** Keyset "strictly older than" predicate over (createdAt, id), newest-first. */
 function keysetAfter(after: AdminLedgerCursor | undefined) {
   return after ? { createdAt: new Date(after.createdAt), id: after.id } : undefined;
@@ -208,6 +219,9 @@ export function createDbAdminServices(db: DbClient = createDbClient()): AdminSer
     async listWithdrawals(scope, filters?: AdminWithdrawalFilters): Promise<AdminWithdrawalPage> {
       const scoped = await resolveScopedAppIds(db, scope);
       if (scoped !== "ALL" && scoped.length === 0) {
+        return { items: [], nextCursor: null };
+      }
+      if ((filters?.id && !isUuid(filters.id)) || (filters?.after && !isUuid(filters.after.id))) {
         return { items: [], nextCursor: null };
       }
 
@@ -391,6 +405,9 @@ export function createDbAdminServices(db: DbClient = createDbClient()): AdminSer
       if (scoped !== "ALL" && scoped.length === 0) {
         return { items: [], nextCursor: null };
       }
+      if (filters?.after && !isUuid(filters.after.id)) {
+        return { items: [], nextCursor: null };
+      }
 
       const limit = clampListLimit(filters?.limit);
       const after = keysetAfter(filters?.after);
@@ -519,6 +536,9 @@ export function createDbAdminServices(db: DbClient = createDbClient()): AdminSer
     async listLedgerEntries(scope, filters: AdminLedgerFilters): Promise<AdminLedgerPage> {
       const scoped = await resolveScopedAppIds(db, scope);
       if (scoped !== "ALL" && !scoped.includes(filters.appId)) {
+        return { entries: [], nextCursor: null };
+      }
+      if (filters.after && !isUuid(filters.after.id)) {
         return { entries: [], nextCursor: null };
       }
 
