@@ -62,5 +62,17 @@ expect_fail malformed-sha FNN_ASSET_SHA256 'not-a-sha'
 expect_fail malformed-url FIBER_CHANNEL_ACCEPT_RPC_URL 'fnn2:8227'
 expect_fail bad-port FNN2_RPC_PORT '70000'
 expect_fail bad-number WORKER_SETTLEMENT_BATCH_SIZE '0'
+expect_fail bind-hostname FNN_RPC_BIND 'localhost'
+expect_fail bind-with-port REDIS_BIND '127.0.0.1:6379'
+expect_fail bind-bad-octet POSTGRES_BIND '127.0.0.256'
+expect_fail port-with-bind FNN2_RPC_PORT '127.0.0.1:9227'
+
+BIND_ENV="${TMP_DIR}/bind.env"
+cp "${VALID_ENV}" "${BIND_ENV}"
+set_env FNN_RPC_BIND '0.0.0.0' "${BIND_ENV}"
+set_env FNN2_RPC_BIND '172.17.0.1' "${BIND_ENV}"
+set_env REDIS_BIND '::1' "${BIND_ENV}"
+set_env POSTGRES_BIND '[fd00::10]' "${BIND_ENV}"
+"${VALIDATOR}" "${BIND_ENV}" >/dev/null
 
 echo "compose env validation checks passed"

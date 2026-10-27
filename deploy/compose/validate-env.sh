@@ -148,6 +148,25 @@ validate_port() {
   (( value >= 1 && value <= 65535 )) || fail "${key} must be between 1 and 65535"
 }
 
+# Host interface a published port binds to; must be an IP literal (IPv6 may be
+# bracketed). Defaults keep internal services on loopback.
+validate_bind() {
+  local key="$1" default="$2" value octet
+  value="$(get_env_value "${key}")"
+  value="${value:-${default}}"
+  if [[ "${value}" =~ ^([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})$ ]]; then
+    for octet in "${BASH_REMATCH[@]:1}"; do
+      (( 10#${octet} <= 255 )) || fail "${key} must be an IPv4 or IPv6 address"
+    done
+    return 0
+  fi
+  if [[ "${value}" =~ ^\[(.*)\]$ ]]; then
+    value="${BASH_REMATCH[1]}"
+  fi
+  [[ "${value}" =~ ^[0-9A-Fa-f]*:[0-9A-Fa-f]*:[0-9A-Fa-f:.]*$ ]] \
+    || fail "${key} must be an IPv4 or IPv6 address"
+}
+
 validate_int() {
   local key="$1" default="$2" min="$3" max="${4:-}" value
   value="$(get_env_value "${key}")"
@@ -173,6 +192,11 @@ for key_default in \
   POSTGRES_PORT:5432 REDIS_PORT:6379 RPC_PORT:3000 \
   FNN_RPC_PORT:8227 FNN_P2P_PORT:8228 FNN2_RPC_PORT:9227 FNN2_P2P_PORT:9228; do
   validate_port "${key_default%%:*}" "${key_default##*:}"
+done
+
+for key_default in \
+  POSTGRES_BIND:127.0.0.1 REDIS_BIND:127.0.0.1 FNN_RPC_BIND:127.0.0.1 FNN2_RPC_BIND:127.0.0.1; do
+  validate_bind "${key_default%%:*}" "${key_default#*:}"
 done
 
 for int_default_min in \

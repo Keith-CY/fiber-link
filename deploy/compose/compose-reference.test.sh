@@ -271,6 +271,50 @@ if ! grep -Fq '${FNN_P2P_PORT:-8228}:8228' "${COMPOSE_FILE}"; then
   exit 1
 fi
 
+# Render the compose file (offline) and assert which host interface each port
+# is published on: the unauthenticated FNN RPC, Redis and Postgres must default
+# to loopback, while FNN P2P and the rpc service stay on all interfaces.
+render_compose_ports() {
+  local env_file
+  env_file="$(mktemp)"
+  env -u FNN_RPC_BIND -u FNN2_RPC_BIND -u REDIS_BIND -u POSTGRES_BIND \
+    POSTGRES_PASSWORD=compose-reference FNN_ASSET_SHA256=compose-reference \
+    FIBER_SECRET_KEY_PASSWORD=compose-reference FIBER_LINK_HMAC_SECRET=compose-reference \
+    "$@" \
+    docker compose --env-file "${env_file}" -f "${COMPOSE_FILE}" config --format json \
+    | jq -r '.services | to_entries[] | .key as $svc | (.value.ports // [])[]
+        | "\($svc):\(.target)=\(.host_ip // "*")"'
+  rm -f "${env_file}"
+}
+
+expect_port_bind() {
+  local rendered="$1" service_target="$2" expected="$3" context="$4"
+  if ! grep -qxF "${service_target}=${expected}" <<<"${rendered}"; then
+    echo "docker-compose ${service_target} must be published on ${expected} (${context}); got:" >&2
+    grep "^${service_target}=" <<<"${rendered}" >&2 || echo "  (not published)" >&2
+    exit 1
+  fi
+}
+
+if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+  default_ports="$(render_compose_ports)"
+  for service_target in fnn:8227 fnn2:8227 redis:6379 postgres:5432; do
+    expect_port_bind "${default_ports}" "${service_target}" "127.0.0.1" "default"
+  done
+  for service_target in fnn:8228 fnn2:8228 rpc:3000; do
+    expect_port_bind "${default_ports}" "${service_target}" "*" "default"
+  done
+
+  override_ports="$(render_compose_ports \
+    FNN_RPC_BIND=10.0.0.5 FNN2_RPC_BIND=10.0.0.6 REDIS_BIND=10.0.0.7 POSTGRES_BIND=10.0.0.8)"
+  expect_port_bind "${override_ports}" "fnn:8227" "10.0.0.5" "FNN_RPC_BIND override"
+  expect_port_bind "${override_ports}" "fnn2:8227" "10.0.0.6" "FNN2_RPC_BIND override"
+  expect_port_bind "${override_ports}" "redis:6379" "10.0.0.7" "REDIS_BIND override"
+  expect_port_bind "${override_ports}" "postgres:5432" "10.0.0.8" "POSTGRES_BIND override"
+else
+  echo "SKIP: docker compose unavailable; rendered port bind checks not run" >&2
+fi
+
 if ! grep -q "apps/rpc/src/scripts/healthcheck-ready.ts" "${COMPOSE_FILE}"; then
   echo "docker-compose missing RPC readiness healthcheck script command" >&2
   exit 1

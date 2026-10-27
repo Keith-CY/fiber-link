@@ -155,6 +155,10 @@ expected_backend_ready_url="${EXPECTED_BACKEND_READY_URL:-http://host.docker.int
 grep -Eq '^FNN_ASSET_SHA256=[0-9a-f]{64}$' "${runtime_root}/compose.env"
 grep -q '^POSTGRES_PASSWORD=visual-acceptance-postgres-password$' "${runtime_root}/compose.env"
 grep -q '^FIBER_LINK_HMAC_SECRET=visual-acceptance-hmac-secret$' "${runtime_root}/compose.env"
+grep -q "^FNN2_RPC_BIND=${EXPECTED_FNN2_RPC_BIND:-0.0.0.0}\$" "${runtime_root}/compose.env" || {
+  echo "unexpected FNN2_RPC_BIND in runtime compose env" >&2
+  exit 1
+}
 
 mkdir -p "${artifact_root}/evidence/fake/screenshots"
 touch "${artifact_root}/evidence/fake/screenshots/step1-forum-tip-entrypoints.png"
@@ -196,6 +200,8 @@ EXPECTED_HOST_ACCESS_HOST="127.0.0.1" \
 EXPECTED_UI_BASE_URL="http://127.0.0.1:4200" \
 EXPECTED_PAYER_RPC_BASE_URL="http://127.0.0.1" \
 EXPECTED_BACKEND_READY_URL="http://127.0.0.1:9292/session/csrf.json" \
+EXPECTED_FNN2_RPC_BIND="127.0.0.1" \
+VISUAL_ACCEPTANCE_COMPOSE_ENV_FILE="${ROOT_DIR}/deploy/compose/.env.example" \
 VISUAL_ACCEPTANCE_PLAYWRIGHT_DOCKER_NETWORK_MODE="host" \
 VISUAL_ACCEPTANCE_RUNNER_SCRIPT="${FAKE_RUNNER_DIR}/visual-acceptance-runner" \
 VISUAL_ACCEPTANCE_FNN_ASSET_SHA256=8f9a69361f662438fa1fc29ddc668192810b13021536ebd1101c84dc0cfa330f \

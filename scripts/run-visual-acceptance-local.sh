@@ -52,6 +52,9 @@ Environment:
                                            Default: host.docker.internal
   VISUAL_ACCEPTANCE_DISCOURSE_UI_BASE_URL  UI base URL used by the four-flow browser steps.
                                            Default: http://host.docker.internal:4200
+  VISUAL_ACCEPTANCE_FNN2_RPC_BIND          Host interface for fnn2's RPC port in the runtime env.
+                                           Default: 0.0.0.0 for a bridge-network sidecar,
+                                           unchanged (127.0.0.1) with host network mode
   VISUAL_ACCEPTANCE_KEEP_RUNTIME=1         Preserve the temp runtime dir for debugging.
 USAGE
 }
@@ -108,7 +111,16 @@ compose_env_args=(--output "${RUNTIME_DIR}/compose.env")
 if [[ -n "${COMPOSE_ENV_SOURCE}" ]]; then
   compose_env_args+=(--source "${COMPOSE_ENV_SOURCE}")
 fi
-"${ROOT_DIR}/scripts/prepare-visual-acceptance-compose-env.sh" "${compose_env_args[@]}" >/dev/null
+# A bridge-network sidecar pays invoices through fnn2's RPC via
+# host.docker.internal (the docker bridge gateway), which cannot reach the
+# default loopback-only bind, so publish it on all interfaces for this
+# throwaway runtime. Host-network sidecars (CI) keep the loopback default.
+fnn2_rpc_bind="${VISUAL_ACCEPTANCE_FNN2_RPC_BIND:-}"
+if [[ -z "${fnn2_rpc_bind}" && "${PLAYWRIGHT_DOCKER_NETWORK_MODE}" != "host" ]]; then
+  fnn2_rpc_bind="0.0.0.0"
+fi
+VISUAL_ACCEPTANCE_FNN2_RPC_BIND="${fnn2_rpc_bind}" \
+  "${ROOT_DIR}/scripts/prepare-visual-acceptance-compose-env.sh" "${compose_env_args[@]}" >/dev/null
 
 print_paths() {
   local manifest_path="${OUTPUT_DIR}/manifest.json"
