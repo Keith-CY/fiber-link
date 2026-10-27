@@ -18,7 +18,7 @@ jobs:
   test-service:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 1
       - name: Check compose docs and backup scripts
@@ -40,7 +40,7 @@ jobs:
         with:
           bun-version: 1.3.11
       - name: Cache Bun install artifacts
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             ~/.bun/install/cache
@@ -103,7 +103,7 @@ jobs:
       contents: read
       pull-requests: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           ref: ${{ github.event.pull_request.head.sha }}
@@ -111,7 +111,7 @@ jobs:
         with:
           bun-version: 1.3.11
       - name: Cache Bun install artifacts
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             ~/.bun/install/cache
@@ -461,7 +461,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Prepare compose env
         run: |
@@ -524,7 +524,7 @@ jobs:
       PLUGIN_SMOKE_REQUEST_SPECS: "plugins/fiber-link/spec/requests/fiber_link_spec.rb plugins/fiber-link/spec/requests/fiber_link/rpc_controller_spec.rb"
       PLUGIN_SMOKE_EXTRA_SPECS: ""
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Checkout Discourse (pinned)
         run: |
