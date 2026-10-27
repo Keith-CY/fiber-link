@@ -169,13 +169,12 @@ export type WithdrawalRepo = {
 };
 
 type WithdrawalRow = typeof withdrawals.$inferSelect;
-const reservedWithdrawalStates: WithdrawalState[] = [
-  "LIQUIDITY_PENDING",
-  "PENDING",
-  "PROCESSING",
-  "BROADCASTED",
-  "RETRY_PENDING",
-];
+// States whose amount is reserved against the creator's ledger balance but not
+// yet debited. BROADCASTED is excluded: its debit is written on the
+// PROCESSING -> BROADCASTED transition, so counting it here would subtract it
+// twice. It still reserves hot-wallet liquidity (see
+// getActiveCkbAddressReservationTotal).
+const reservedWithdrawalStates: WithdrawalState[] = ["LIQUIDITY_PENDING", "PENDING", "PROCESSING", "RETRY_PENDING"];
 
 function toRecord(row: WithdrawalRow): WithdrawalRecord {
   return {
