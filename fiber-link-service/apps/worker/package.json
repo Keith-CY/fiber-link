@@ -15,7 +15,7 @@
     "@fiber-link/fiber-adapter": "workspace:*",
     "@fiber-link/notifications": "workspace:*",
     "drizzle-orm": "^0.45.4",
-    "ioredis": "^5.4.1",
+    "ioredis": "^5.11.1",
     "prom-client": "^15.1.3"
   },
   "devDependencies": {
