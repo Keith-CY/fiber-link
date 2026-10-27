@@ -98,6 +98,24 @@ run_restore_step() {
   return 0
 }
 
+# A failed database or FNN state restore leaves the ledger/node half-restored;
+# stop before restoring the cursor or starting any services against it.
+run_critical_restore_step() {
+  local name="$1"
+  local prior_failure="${OVERALL_FAILURE}"
+
+  OVERALL_FAILURE=0
+  run_restore_step "$@"
+
+  if [[ "${OVERALL_FAILURE}" -eq 0 ]]; then
+    OVERALL_FAILURE="${prior_failure}"
+  else
+    log "critical restore step failed: ${name}; not starting rpc/worker. See ${RESTORE_DIR}/${name}.log"
+    printf 'RESULT=FAIL CODE=%s STEP=%s BACKUP_SOURCE=%s RESTORE_MODE=LIVE\n' "${EXIT_RESTORE_FAILURE}" "${name}" "${BACKUP_DIR}"
+    exit "${EXIT_RESTORE_FAILURE}"
+  fi
+}
+
 validate_backup_integrity() {
   local manifest="${BACKUP_DIR}/metadata/manifest.json"
   local checksums="${BACKUP_DIR}/metadata/checksums.sha256"
@@ -247,7 +265,7 @@ run_restore_step "compose-stop-apps" \
 run_restore_step "postgres-terminate-clients" \
   "docker exec fiber-link-postgres psql -v ON_ERROR_STOP=1 -U \"${POSTGRES_USER}\" -d postgres -c \"SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '${POSTGRES_DB}' AND pid <> pg_backend_pid();\""
 
-run_restore_step "postgres-restore" \
+run_critical_restore_step "postgres-restore" \
   "cat \"${BACKUP_DIR}/db/postgres.sql\" | docker exec -i fiber-link-postgres psql -v ON_ERROR_STOP=1 -U \"${POSTGRES_USER}\" -d postgres"
 
 if [[ "$(cat "${BACKUP_DIR}/runtime/worker-settlement-cursor.json")" == "UNSET" ]]; then
@@ -261,9 +279,9 @@ fi
 if [[ "$(jq -r '.includeFnnState // false' "${BACKUP_DIR}/metadata/manifest.json")" == "true" ]]; then
   run_restore_step "compose-stop-fnn" \
     "cd \"${ROOT_DIR}\" && docker compose -f \"${COMPOSE_FILE}\" stop fnn fnn2 || true"
-  run_restore_step "fnn-state-restore" \
+  run_critical_restore_step "fnn-state-restore" \
     "docker run --rm --volumes-from fiber-link-fnn -v \"${BACKUP_DIR}/fnn:/backup:ro\" \"${BACKUP_HELPER_IMAGE}\" sh -lc 'cd /data && tar -xzf /backup/data.tar.gz'"
-  run_restore_step "fnn2-state-restore" \
+  run_critical_restore_step "fnn2-state-restore" \
     "docker run --rm --volumes-from fiber-link-fnn2 -v \"${BACKUP_DIR}/fnn2:/backup:ro\" \"${BACKUP_HELPER_IMAGE}\" sh -lc 'cd /data && tar -xzf /backup/data.tar.gz'"
   run_restore_step "compose-up-fnn" \
     "cd \"${ROOT_DIR}\" && docker compose -f \"${COMPOSE_FILE}\" up -d fnn fnn2"
