@@ -39,6 +39,7 @@ Edit `deploy/compose/.env` (minimum required values are marked ✅, optional/tun
 | `RPC_PORT` | ⚪ | Service exposed RPC port for local checks |
 | `FNN_RPC_PORT` | ⚪ | FNN host RPC port mapping |
 | `FNN_P2P_PORT` | ⚪ | FNN host P2P port mapping |
+| `POSTGRES_BIND` / `REDIS_BIND` / `FNN_RPC_BIND` / `FNN2_RPC_BIND` | ⚪ | Host interface for those published ports (IP literal, default `127.0.0.1`; set explicitly only for firewalled remote access) |
 | `FIBER_LINK_HMAC_SECRET_MAP` | ⚪ | Per-app secret overrides (JSON-style map) |
 | `FIBER_RPC_URL` | ⚪ | RPC endpoint override for service-to-FNN calls (compose default: `http://fnn:8227`) |
 | `RPC_HEALTHCHECK_TIMEOUT_MS` | ⚪ | RPC readiness timeout |

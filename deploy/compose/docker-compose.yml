@@ -8,7 +8,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-fiber}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "${POSTGRES_BIND:-127.0.0.1}:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./postgres/init:/docker-entrypoint-initdb.d:ro
@@ -23,7 +23,7 @@ services:
     container_name: fiber-link-redis
     restart: unless-stopped
     ports:
-      - "${REDIS_PORT:-6379}:6379"
+      - "${REDIS_BIND:-127.0.0.1}:${REDIS_PORT:-6379}:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -44,7 +44,7 @@ services:
     environment:
       FIBER_SECRET_KEY_PASSWORD: ${FIBER_SECRET_KEY_PASSWORD:?Set FIBER_SECRET_KEY_PASSWORD in .env}
     ports:
-      - "${FNN_RPC_PORT:-8227}:8227"
+      - "${FNN_RPC_BIND:-127.0.0.1}:${FNN_RPC_PORT:-8227}:8227"
       - "${FNN_P2P_PORT:-8228}:8228"
     volumes:
       - fnn-data:/data
@@ -69,7 +69,7 @@ services:
     environment:
       FIBER_SECRET_KEY_PASSWORD: ${FIBER_SECRET_KEY_PASSWORD:?Set FIBER_SECRET_KEY_PASSWORD in .env}
     ports:
-      - "${FNN2_RPC_PORT:-9227}:8227"
+      - "${FNN2_RPC_BIND:-127.0.0.1}:${FNN2_RPC_PORT:-9227}:8227"
       - "${FNN2_P2P_PORT:-9228}:8228"
     volumes:
       - fnn2-data:/data

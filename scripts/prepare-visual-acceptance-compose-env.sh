@@ -185,6 +185,10 @@ if [[ -n "${target_redis_image}" ]]; then
   set_env_value_in_file "${OUTPUT_PATH}" REDIS_IMAGE "${target_redis_image}"
 fi
 
+if [[ -n "${VISUAL_ACCEPTANCE_FNN2_RPC_BIND:-}" ]]; then
+  set_env_value_in_file "${OUTPUT_PATH}" FNN2_RPC_BIND "${VISUAL_ACCEPTANCE_FNN2_RPC_BIND}"
+fi
+
 if ! is_valid_sha256 "${current_fnn_asset_sha}"; then
   [[ -n "${fnn_version}" && -n "${fnn_asset}" ]] || {
     printf 'missing FNN_VERSION or FNN_ASSET in %s\n' "${OUTPUT_PATH}" >&2

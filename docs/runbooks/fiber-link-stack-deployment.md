@@ -118,6 +118,7 @@ Commonly important overrides:
 - `RPC_PORT`
 - `FNN_RPC_PORT`
 - `FNN_P2P_PORT`
+- `POSTGRES_BIND`, `REDIS_BIND`, `FNN_RPC_BIND`, `FNN2_RPC_BIND` (see host port exposure below)
 - `FIBER_RPC_URL`
 - `FIBER_LINK_HMAC_SECRET_MAP`
 - `RPC_HEALTHCHECK_TIMEOUT_MS`
@@ -125,6 +126,21 @@ Commonly important overrides:
 - `WORKER_SETTLEMENT_INTERVAL_MS`
 - `WORKER_SETTLEMENT_BATCH_SIZE`
 - `WORKER_READINESS_TIMEOUT_MS`
+
+### Host port exposure
+
+Compose publishes these ports on the host interface named by a `*_BIND` variable, defaulting to loopback (`127.0.0.1`):
+
+| Port variable | Bind variable | Default bind | Why it stays private |
+| --- | --- | --- | --- |
+| `FNN_RPC_PORT` | `FNN_RPC_BIND` | `127.0.0.1` | FNN JSON-RPC is unauthenticated (send payments, close channels) |
+| `FNN2_RPC_PORT` | `FNN2_RPC_BIND` | `127.0.0.1` | same as above, for the payer/accept node |
+| `REDIS_PORT` | `REDIS_BIND` | `127.0.0.1` | Redis has no password and holds replay nonces and settlement events |
+| `POSTGRES_PORT` | `POSTGRES_BIND` | `127.0.0.1` | ledger database |
+
+`FNN_P2P_PORT`, `FNN2_P2P_PORT` and `RPC_PORT` are still published on all interfaces: peers must reach P2P, and `RPC_PORT` is the signed Fiber Link RPC that Discourse (or a reverse proxy) calls.
+
+Upgrade note: earlier versions published the FNN RPC, Redis and Postgres ports on every host interface. If anything reached them remotely (for example a payer-side worker using this host's `FNN2_RPC_PORT` as `FIBER_CHANNEL_ACCEPT_RPC_URL`, or an external DB client), set the matching `*_BIND` to a specific private address (e.g. a VPN or LAN IP) and firewall that port. `0.0.0.0` restores the old behavior and is not recommended. Each `*_BIND` must be an IPv4 or IPv6 literal; `deploy/compose/validate-env.sh` rejects anything else. Use SSH port forwarding for ad-hoc remote access to loopback-bound ports.
 
 For production-style deployments, also explicitly set:
 

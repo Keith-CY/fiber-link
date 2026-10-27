@@ -78,6 +78,7 @@ Edit `.env` minimally:
   - FNN listens on `8227` (RPC) and `8228` (P2P) in `deploy/compose/fnn/config/testnet.yml`.
   - RPC service listens on `3000` in container.
 - `.env` port overrides (`FNN_RPC_PORT`, `FNN_P2P_PORT`, `RPC_PORT`) control host-published ports only.
+- `POSTGRES_BIND`, `REDIS_BIND`, `FNN_RPC_BIND` and `FNN2_RPC_BIND` choose the host interface for the Postgres, Redis and FNN RPC ports; they default to `127.0.0.1` because those services are unauthenticated or internal. FNN P2P ports and `RPC_PORT` stay published on all interfaces. See `docs/runbooks/fiber-link-stack-deployment.md` (Host port exposure) before setting a non-loopback bind.
 - `FIBER_RPC_URL` is the compose-network endpoint used by `rpc` and `worker`; default is `http://fnn:8227`.
 - `FIBER_LINK_RATE_LIMIT_REDIS_URL` defaults to a dedicated Redis DB (`redis://redis:6379/1`) so rate limiting stays shared across RPC instances instead of falling back to in-process memory.
 - Worker cursor persistence uses `worker-data` volume mounted at `/var/lib/fiber-link`.

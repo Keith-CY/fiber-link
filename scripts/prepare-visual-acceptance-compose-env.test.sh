@@ -20,6 +20,7 @@ EOF_ENV
 VISUAL_ACCEPTANCE_POSTGRES_IMAGE=mirror.gcr.io/library/postgres:16-alpine \
 VISUAL_ACCEPTANCE_REDIS_IMAGE=mirror.gcr.io/library/redis:7-alpine \
 VISUAL_ACCEPTANCE_FNN_ASSET_SHA256=8f9a69361f662438fa1fc29ddc668192810b13021536ebd1101c84dc0cfa330f \
+VISUAL_ACCEPTANCE_FNN2_RPC_BIND=0.0.0.0 \
   "${ROOT_DIR}/scripts/prepare-visual-acceptance-compose-env.sh" \
   --source "${SOURCE_ENV_FILE}" \
   --output "${OUTPUT_ENV_FILE}" \
@@ -32,3 +33,4 @@ grep -q '^FIBER_SECRET_KEY_PASSWORD=visual-acceptance-fiber-secret-password$' "$
 grep -q '^FIBER_LINK_HMAC_SECRET=visual-acceptance-hmac-secret$' "${OUTPUT_ENV_FILE}"
 grep -q '^FNN_ASSET_SHA256=8f9a69361f662438fa1fc29ddc668192810b13021536ebd1101c84dc0cfa330f$' "${OUTPUT_ENV_FILE}"
 grep -q '^FNN_ASSET_SHA256=replace-with-release-sha256$' "${SOURCE_ENV_FILE}"
+grep -q '^FNN2_RPC_BIND=0.0.0.0$' "${OUTPUT_ENV_FILE}"
