@@ -145,6 +145,7 @@ async function main() {
       return runWithdrawalBatch({
         maxRetries,
         retryDelayMs,
+        signal,
         executeWithdrawal: async (withdrawal) => {
           const withdrawalResult = await cycleFiberAdapter.executeWithdrawal({
             amount: withdrawal.amount,
@@ -172,6 +173,7 @@ async function main() {
         retryDelayMs: config.settlementRetryDelayMs,
         pendingTimeoutMs: config.settlementPendingTimeoutMs,
         publisher: settlementPublisher,
+        signal,
       });
       settlementCursor = summary.nextCursor ?? undefined;
       await cursorStore.save(settlementCursor);

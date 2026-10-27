@@ -40,6 +40,7 @@ export type RunWithdrawalBatchOptions = {
   ledgerRepo?: LedgerRepo;
   repo?: WithdrawalRepo;
   notificationDispatcher?: NotificationDispatcher;
+  signal?: AbortSignal;
 };
 
 async function defaultExecuteWithdrawal(withdrawal: WithdrawalRecord): Promise<WithdrawalExecutionResult> {
@@ -247,6 +248,7 @@ async function runWithdrawalBatchInner(options: RunWithdrawalBatchOptions = {}) 
   const confirmWithdrawal = options.confirmWithdrawal ?? defaultConfirmWithdrawal;
   const repo = options.repo ?? getDefaultRepo();
   const notificationDispatcher = options.notificationDispatcher ?? getDefaultNotificationDispatcher();
+  const signal = options.signal;
 
   const ready = await repo.listReadyForProcessing(now);
   let processed = 0;
@@ -257,6 +259,8 @@ async function runWithdrawalBatchInner(options: RunWithdrawalBatchOptions = {}) 
   let skipped = 0;
 
   for (const item of ready) {
+    // Stop claiming new withdrawals once worker shutdown has been requested.
+    signal?.throwIfAborted();
     let current: WithdrawalRecord;
     try {
       current = await repo.markProcessing(item.id, now);
@@ -273,6 +277,11 @@ async function runWithdrawalBatchInner(options: RunWithdrawalBatchOptions = {}) 
     try {
       result = await executeWithdrawal(current);
     } catch (error) {
+      if (signal?.aborted) {
+        // Shutdown interrupted execution, so the outcome is unknown (the node may already have accepted the
+        // payment). Leave the record PROCESSING for reapStaleProcessing instead of marking it FAILED.
+        throw signal.reason;
+      }
       const classified = classifyExecutionError(error);
       result = { ok: false, ...classified };
     }
