@@ -58,27 +58,18 @@ export async function markSettled(
   // DATABASE_URL, so unit tests keep their existing behavior.
   const dispatcher = options.dispatcher ?? getDefaultNotificationDispatcher();
 
-  const tipIntent = await tipIntentRepo.findByInvoiceOrThrow(invoice);
+  // Credit and SETTLED transition commit together, so a concurrent pending
+  // timeout can neither leave a credited intent FAILED nor overwrite SETTLED.
+  const { record: tipIntent, credited } = await tipIntentRepo.markSettledWithCredit(
+    invoice,
+    { now: new Date() },
+    { ledgerRepo },
+  );
   const idempotencyKey = settlementCreditIdempotencyKey(tipIntent.id);
+  const settledAt = tipIntent.settledAt;
 
-  const credited = await ledgerRepo.creditOnce({
-    appId: tipIntent.appId,
-    userId: tipIntent.toUserId,
-    asset: tipIntent.asset,
-    amount: tipIntent.amount,
-    refId: tipIntent.id,
-    idempotencyKey,
-  });
-
-  if (credited.applied) {
+  if (credited) {
     settlementCreditedTotal.inc();
-  }
-
-  // Keep invoice state convergent even if credit was already written earlier.
-  let settledAt = tipIntent.settledAt;
-  if (tipIntent.invoiceState !== "SETTLED") {
-    const updated = await tipIntentRepo.updateInvoiceState(invoice, "SETTLED");
-    settledAt = updated.settledAt;
   }
 
   dispatcher
@@ -102,5 +93,5 @@ export async function markSettled(
     });
   }
 
-  return { credited: credited.applied, idempotencyKey };
+  return { credited, idempotencyKey };
 }

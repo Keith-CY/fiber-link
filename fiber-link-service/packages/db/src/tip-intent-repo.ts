@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import { and, asc, eq, gt, gte, lte, or, sql } from "drizzle-orm";
 import { assertPositiveAmount } from "./amount";
 import type { DbClient } from "./client";
+import { settlementCreditIdempotencyKey } from "./idempotency";
+import { type LedgerRepo, createDbLedgerRepo } from "./ledger-repo";
 import { type Asset, type InvoiceState, tipIntents } from "./schema";
 
 export type TipAsset = Asset;
@@ -63,6 +65,15 @@ export type TipIntentSettledListOptions = {
   after?: TipIntentSettledCursor;
 };
 
+export type SettlementCreditDeps = {
+  ledgerRepo: LedgerRepo;
+};
+
+export type SettledWithCreditResult = {
+  record: TipIntentRecord;
+  credited: boolean;
+};
+
 export class TipIntentNotFoundError extends Error {
   constructor(public readonly invoice: string) {
     super("tip intent not found");
@@ -95,6 +106,18 @@ export type TipIntentRepo = {
   create(input: CreateTipIntentInput): Promise<TipIntentRecord>;
   findByInvoiceOrThrow(invoice: string): Promise<TipIntentRecord>;
   updateInvoiceState(invoice: string, state: InvoiceState): Promise<TipIntentRecord>;
+  /**
+   * Credits the recipient once and marks the intent SETTLED as one atomic step.
+   * Only call this once upstream confirms the payment was received. Settlement
+   * wins over a concurrent or earlier timeout/failure: a FAILED intent is moved
+   * to SETTLED so received funds are never left credited-but-FAILED (or lost).
+   * Failure transitions stay guarded on UNPAID, so they cannot overwrite SETTLED.
+   */
+  markSettledWithCredit(
+    invoice: string,
+    params: { now: Date },
+    deps: SettlementCreditDeps,
+  ): Promise<SettledWithCreditResult>;
   markSettlementRetryPending(
     invoice: string,
     params: { now: Date; nextRetryAt: Date; error: string },
@@ -257,6 +280,48 @@ export function createDbTipIntentRepo(db: DbClient): TipIntentRepo {
         throw new InvoiceStateTransitionError(invoice, currentState, state);
       }
       return toRecord(current);
+    },
+
+    async markSettledWithCredit(invoice, params, _deps) {
+      return db.transaction(async (tx) => {
+        // Row lock serializes against the UNPAID-guarded failure/timeout UPDATEs:
+        // they wait for this commit, then re-check their guard and no-op.
+        const [locked] = await tx
+          .select()
+          .from(tipIntents)
+          .where(eq(tipIntents.invoice, invoice))
+          .limit(1)
+          .for("update");
+        if (!locked) {
+          throw new TipIntentNotFoundError(invoice);
+        }
+
+        const ledgerRepo = createDbLedgerRepo(tx);
+        const credit = await ledgerRepo.creditOnce({
+          appId: locked.appId,
+          userId: locked.toUserId,
+          asset: locked.asset as TipAsset,
+          amount: typeof locked.amount === "string" ? locked.amount : String(locked.amount),
+          refId: locked.id,
+          idempotencyKey: settlementCreditIdempotencyKey(locked.id),
+        });
+
+        const [row] = await tx
+          .update(tipIntents)
+          .set({
+            invoiceState: "SETTLED",
+            settledAt: sql`COALESCE(${tipIntents.settledAt}, ${params.now})`,
+            settlementRetryCount: 0,
+            settlementNextRetryAt: null,
+            settlementLastError: null,
+            settlementFailureReason: null,
+            settlementLastCheckedAt: params.now,
+          })
+          .where(eq(tipIntents.id, locked.id))
+          .returning();
+
+        return { record: toRecord(row), credited: credit.applied };
+      });
     },
 
     async markSettlementRetryPending(invoice, params) {
@@ -447,6 +512,31 @@ export function createInMemoryTipIntentRepo(): TipIntentRepo {
       }
       record.settlementLastCheckedAt = new Date();
       return clone(record);
+    },
+
+    async markSettledWithCredit(invoice, params, deps) {
+      const record = records.find((item) => item.invoice === invoice);
+      if (!record) {
+        throw new TipIntentNotFoundError(invoice);
+      }
+
+      const credit = await deps.ledgerRepo.creditOnce({
+        appId: record.appId,
+        userId: record.toUserId,
+        asset: record.asset,
+        amount: record.amount,
+        refId: record.id,
+        idempotencyKey: settlementCreditIdempotencyKey(record.id),
+      });
+
+      record.invoiceState = "SETTLED";
+      record.settledAt = record.settledAt ?? new Date(params.now);
+      record.settlementRetryCount = 0;
+      record.settlementNextRetryAt = null;
+      record.settlementLastError = null;
+      record.settlementFailureReason = null;
+      record.settlementLastCheckedAt = new Date(params.now);
+      return { record: clone(record), credited: credit.applied };
     },
 
     async markSettlementRetryPending(invoice, params) {

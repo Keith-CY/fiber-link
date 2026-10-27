@@ -1,6 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { eq } from "drizzle-orm";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { InvalidAmountError } from "./amount";
 import type { DbClient } from "./client";
+import { settlementCreditIdempotencyKey } from "./idempotency";
+import { createDbLedgerRepo } from "./ledger-repo";
+import { ledgerEntries } from "./schema";
+import { type PgliteTestDb, createPgliteTestDb } from "./test-helpers/pglite";
 import {
   InvoiceStateTransitionError,
   TipIntentNotFoundError,
@@ -784,5 +789,101 @@ describe("tipIntentRepo (db error branches)", () => {
 
     expect(saved.invoiceState).toBe("FAILED");
     expect(saved.settlementFailureReason).toBe("FAILED_UPSTREAM_REPORTED");
+  });
+});
+
+describe("tipIntentRepo.markSettledWithCredit (PGlite: settlement vs timeout race)", () => {
+  let harness: PgliteTestDb;
+  let repo: ReturnType<typeof createDbTipIntentRepo>;
+  let ledgerRepo: ReturnType<typeof createDbLedgerRepo>;
+  let counter = 0;
+
+  beforeAll(async () => {
+    harness = await createPgliteTestDb();
+    repo = createDbTipIntentRepo(harness.db);
+    ledgerRepo = createDbLedgerRepo(harness.db);
+  }, 60_000);
+
+  afterAll(async () => {
+    await harness.close();
+  });
+
+  async function createIntent() {
+    counter += 1;
+    return repo.create({
+      appId: "app1",
+      postId: "p-race",
+      fromUserId: "u1",
+      toUserId: "u2",
+      asset: "USDI",
+      amount: "10",
+      invoice: `inv-race-${counter}`,
+    });
+  }
+
+  function markTimedOut(invoice: string) {
+    return repo.markSettlementTerminalFailure(invoice, {
+      now: new Date(),
+      reason: "FAILED_PENDING_TIMEOUT",
+      error: "invoice remained UNPAID past timeout",
+    });
+  }
+
+  async function creditsFor(tipIntentId: string) {
+    return harness.db
+      .select()
+      .from(ledgerEntries)
+      .where(eq(ledgerEntries.idempotencyKey, settlementCreditIdempotencyKey(tipIntentId)));
+  }
+
+  it("credits and settles atomically, and a later timeout cannot overwrite SETTLED", async () => {
+    const intent = await createIntent();
+
+    const settled = await repo.markSettledWithCredit(intent.invoice, { now: new Date() }, { ledgerRepo });
+    expect(settled.credited).toBe(true);
+    expect(settled.record.invoiceState).toBe("SETTLED");
+    expect(settled.record.settledAt).not.toBeNull();
+
+    const afterTimeout = await markTimedOut(intent.invoice);
+    expect(afterTimeout.invoiceState).toBe("SETTLED");
+    expect(afterTimeout.settlementFailureReason).toBeNull();
+    expect(await creditsFor(intent.id)).toHaveLength(1);
+  });
+
+  it("settles and credits a payment received after the intent timed out", async () => {
+    const intent = await createIntent();
+    expect((await markTimedOut(intent.invoice)).invoiceState).toBe("FAILED");
+
+    const settled = await repo.markSettledWithCredit(intent.invoice, { now: new Date() }, { ledgerRepo });
+    expect(settled.credited).toBe(true);
+    expect(settled.record.invoiceState).toBe("SETTLED");
+    expect(settled.record.settlementFailureReason).toBeNull();
+    expect(settled.record.settlementLastError).toBeNull();
+
+    const replay = await repo.markSettledWithCredit(intent.invoice, { now: new Date() }, { ledgerRepo });
+    expect(replay.credited).toBe(false);
+    expect(replay.record.settledAt).toEqual(settled.record.settledAt);
+    expect(await creditsFor(intent.id)).toHaveLength(1);
+  });
+
+  it("converges to SETTLED with exactly one credit when settle and timeout run concurrently", async () => {
+    const intent = await createIntent();
+
+    await Promise.all([
+      repo.markSettledWithCredit(intent.invoice, { now: new Date() }, { ledgerRepo }),
+      markTimedOut(intent.invoice),
+      repo.markSettledWithCredit(intent.invoice, { now: new Date() }, { ledgerRepo }),
+    ]);
+
+    const saved = await repo.findByInvoiceOrThrow(intent.invoice);
+    expect(saved.invoiceState).toBe("SETTLED");
+    expect(saved.settlementFailureReason).toBeNull();
+    expect(await creditsFor(intent.id)).toHaveLength(1);
+  });
+
+  it("throws TipIntentNotFoundError without crediting when the invoice is unknown", async () => {
+    await expect(repo.markSettledWithCredit("inv-missing", { now: new Date() }, { ledgerRepo })).rejects.toBeInstanceOf(
+      TipIntentNotFoundError,
+    );
   });
 });

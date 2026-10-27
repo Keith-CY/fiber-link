@@ -240,26 +240,10 @@ export async function handleTipStatus(input: HandleTipStatusInput, options: Hand
 
   const invoiceStatus = await adapter.getInvoiceStatus({ invoice: input.invoice });
   if (invoiceStatus.state === "SETTLED") {
-    await ledgerRepo.creditOnce({
-      appId: tipIntent.appId,
-      userId: tipIntent.toUserId,
-      asset: tipIntent.asset,
-      amount: tipIntent.amount,
-      refId: tipIntent.id,
-      idempotencyKey: `settlement:tip_intent:${tipIntent.id}`,
-    });
-    let nextState: InvoiceState;
-    try {
-      const settled = await tipIntentRepo.updateInvoiceState(input.invoice, "SETTLED");
-      nextState = settled.invoiceState;
-    } catch (error) {
-      if (isInvoiceStateConflictError(error)) {
-        const current = await tipIntentRepo.findByInvoiceOrThrow(input.invoice);
-        nextState = current.invoiceState;
-      } else {
-        throw error;
-      }
-    }
+    // Credit and SETTLED transition commit together; received funds win over a
+    // concurrent worker timeout, so the intent cannot end up credited but FAILED.
+    const settled = await tipIntentRepo.markSettledWithCredit(input.invoice, { now: new Date() }, { ledgerRepo });
+    const nextState: InvoiceState = settled.record.invoiceState;
     await appendTipTimelineEvent(
       eventRepo,
       {
