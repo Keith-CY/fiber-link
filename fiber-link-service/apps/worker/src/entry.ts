@@ -145,6 +145,7 @@ async function main() {
       return runWithdrawalBatch({
         maxRetries,
         retryDelayMs,
+        broadcastStuckThresholdMs: config.withdrawalBroadcastStuckThresholdMs,
         executeWithdrawal: async (withdrawal) => {
           const withdrawalResult = await cycleFiberAdapter.executeWithdrawal({
             amount: withdrawal.amount,

@@ -65,6 +65,7 @@ scrape_configs:
 | `fiber_link_withdrawal_state_count` | gauge | `state` | Current withdrawals per state (scrape-time DB count) |
 | `fiber_link_withdrawal_batch_duration_seconds` | histogram | — | Wall-clock duration of each withdrawal batch run |
 | `fiber_link_withdrawal_failures_total` | counter | `kind` | Failed withdrawals by classification (`transient_exhausted`, `permanent`, `broadcast_rejected`) |
+| `fiber_link_withdrawal_broadcast_stuck` | gauge | — | BROADCASTED withdrawals whose tx was still unknown to the CKB node after `WORKER_WITHDRAWAL_BROADCAST_STUCK_THRESHOLD_MS` (default 1h) at the last batch run; each is also logged as `worker.withdrawal.broadcast_stuck` |
 
 ### Worker — notifications and accounting
 
@@ -102,6 +103,16 @@ groups:
         labels: { severity: warning }
         annotations:
           summary: "Withdrawal failures in the last 30m"
+
+      # The tx may have been dropped from the mempool. The worker does NOT fail
+      # or refund it (it may still confirm; refunding risks a double spend):
+      # look up the txHash from the worker.withdrawal.broadcast_stuck log and
+      # rebroadcast or resolve it manually.
+      - alert: FiberLinkWithdrawalBroadcastStuck
+        expr: fiber_link_withdrawal_broadcast_stuck > 0
+        labels: { severity: critical }
+        annotations:
+          summary: "Broadcasted withdrawal tx unknown to the CKB node past the stuck threshold"
 
       - alert: FiberLinkWebhookDeliveryFailures
         expr: increase(fiber_link_webhook_delivery_failures_total[30m]) > 3

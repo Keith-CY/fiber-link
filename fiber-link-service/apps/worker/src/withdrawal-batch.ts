@@ -18,7 +18,8 @@ import {
   getCkbTransactionStatus,
 } from "@fiber-link/fiber-adapter";
 import type { NotificationDispatcher, WithdrawalNotificationEvent } from "@fiber-link/notifications";
-import { withdrawalBatchDuration, withdrawalFailuresTotal } from "./metrics";
+import { createComponentLogger } from "./logger";
+import { withdrawalBatchDuration, withdrawalBroadcastStuck, withdrawalFailuresTotal } from "./metrics";
 import { getDefaultNotificationDispatcher } from "./notification-dispatcher";
 
 export type WithdrawalExecutionResult =
@@ -35,6 +36,7 @@ export type RunWithdrawalBatchOptions = {
   maxRetries?: number;
   retryDelayMs?: number;
   processingLeaseMs?: number;
+  broadcastStuckThresholdMs?: number;
   executeWithdrawal?: (withdrawal: WithdrawalRecord) => Promise<WithdrawalExecutionResult>;
   confirmWithdrawal?: (withdrawal: WithdrawalRecord) => Promise<WithdrawalConfirmationResult>;
   ledgerRepo?: LedgerRepo;
@@ -86,6 +88,13 @@ async function defaultConfirmWithdrawal(withdrawal: WithdrawalRecord): Promise<W
   const status = await getCkbTransactionStatus({ txHash: withdrawal.txHash, network });
   return status === "REJECTED" ? { status, reason: "CKB transaction rejected" } : { status };
 }
+
+const logger = createComponentLogger("withdrawal-batch");
+
+// How long a BROADCASTED tx may stay unknown to the node before it is flagged
+// as possibly dropped from the mempool. Overridable via
+// WORKER_WITHDRAWAL_BROADCAST_STUCK_THRESHOLD_MS.
+const DEFAULT_BROADCAST_STUCK_THRESHOLD_MS = 60 * 60_000;
 
 let defaultRepo: WithdrawalRepo | null = null;
 let defaultLedgerRepo: LedgerRepo | null = null;
@@ -243,6 +252,7 @@ async function runWithdrawalBatchInner(options: RunWithdrawalBatchOptions = {}) 
   const maxRetries = options.maxRetries ?? 3;
   const retryDelayMs = options.retryDelayMs ?? 60_000;
   const processingLeaseMs = options.processingLeaseMs ?? 5 * 60_000;
+  const broadcastStuckThresholdMs = options.broadcastStuckThresholdMs ?? DEFAULT_BROADCAST_STUCK_THRESHOLD_MS;
   const executeWithdrawal = options.executeWithdrawal ?? defaultExecuteWithdrawal;
   const confirmWithdrawal = options.confirmWithdrawal ?? defaultConfirmWithdrawal;
   const repo = options.repo ?? getDefaultRepo();
@@ -255,6 +265,7 @@ async function runWithdrawalBatchInner(options: RunWithdrawalBatchOptions = {}) 
   let retryPending = 0;
   let failed = 0;
   let skipped = 0;
+  let stuckBroadcasted = 0;
 
   for (const item of ready) {
     let current: WithdrawalRecord;
@@ -402,7 +413,25 @@ async function runWithdrawalBatchInner(options: RunWithdrawalBatchOptions = {}) 
         error: failedRecord.lastError ?? "CKB transaction rejected",
       });
     }
+    // BROADCASTED rows are not touched while awaiting confirmation, so
+    // updatedAt is the broadcast time. A tx the node still does not know about
+    // past the threshold was likely dropped from the mempool. Only flag it for
+    // operators: it may still confirm, so failing/refunding here could allow a
+    // double spend.
+    const broadcastAgeMs = now.getTime() - item.updatedAt.getTime();
+    if (confirmation.status === "UNKNOWN" && broadcastAgeMs >= broadcastStuckThresholdMs) {
+      stuckBroadcasted += 1;
+      logger.error("worker.withdrawal.broadcast_stuck", {
+        withdrawalId: item.id,
+        appId: item.appId,
+        txHash: item.txHash,
+        broadcastedAt: item.updatedAt.toISOString(),
+        broadcastAgeMs,
+        thresholdMs: broadcastStuckThresholdMs,
+      });
+    }
   }
+  withdrawalBroadcastStuck.set(stuckBroadcasted);
 
   const reapedProcessing = (
     await repo.reapStaleProcessing({
@@ -413,5 +442,5 @@ async function runWithdrawalBatchInner(options: RunWithdrawalBatchOptions = {}) 
     })
   ).length;
 
-  return { processed, broadcasted, completed, retryPending, failed, skipped, reapedProcessing };
+  return { processed, broadcasted, completed, retryPending, failed, skipped, stuckBroadcasted, reapedProcessing };
 }

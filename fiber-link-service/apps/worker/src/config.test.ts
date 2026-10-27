@@ -16,6 +16,7 @@ describe("parseWorkerConfig", () => {
     expect(config.settlementMaxRetries).toBe(3);
     expect(config.retryDelayMs).toBe(60_000);
     expect(config.settlementRetryDelayMs).toBe(60_000);
+    expect(config.withdrawalBroadcastStuckThresholdMs).toBe(3_600_000);
     expect(config.settlementStrategy).toBe("subscription");
     expect(config.channelAcceptRpcUrl).toBe("http://127.0.0.1:8227");
     expect(config.subscriptionConcurrency).toBe(1);
@@ -36,6 +37,14 @@ describe("parseWorkerConfig", () => {
 
     expect(config.settlementStrategy).toBe("subscription");
     expect(config.settlementCursorFile).toBe("/tmp/worker-cursor.json");
+  });
+
+  it("parses the broadcasted withdrawal stuck threshold", () => {
+    const config = parseWorkerConfig({ ...baseEnv, WORKER_WITHDRAWAL_BROADCAST_STUCK_THRESHOLD_MS: "900000" });
+    expect(config.withdrawalBroadcastStuckThresholdMs).toBe(900_000);
+    expect(() => parseWorkerConfig({ ...baseEnv, WORKER_WITHDRAWAL_BROADCAST_STUCK_THRESHOLD_MS: "0" })).toThrow(
+      "Invalid WORKER_WITHDRAWAL_BROADCAST_STUCK_THRESHOLD_MS",
+    );
   });
 
   it("parses channel rotation fallback mode and reserves", () => {

@@ -6,6 +6,7 @@ import {
 import { FiberRpcError, WithdrawalExecutionError } from "@fiber-link/fiber-adapter";
 import type { NotificationDispatchSummary, WithdrawalNotificationEvent } from "@fiber-link/notifications";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { workerMetricsRegistry } from "./metrics";
 import { runWithdrawalBatch } from "./withdrawal-batch";
 
 const dispatchTipSettledEvent = async (): Promise<NotificationDispatchSummary> => ({
@@ -732,5 +733,70 @@ describe("runWithdrawalBatch", () => {
     const completed = await repo.findByIdOrThrow(created.id);
     expect(completed.state).toBe("COMPLETED");
     expect(completed.completedAt?.toISOString()).toBe("2026-03-07T12:51:00.000Z");
+  });
+
+  it("flags a broadcasted withdrawal whose tx stays unknown past the stuck threshold without failing it", async () => {
+    const ledger = createInMemoryLedgerRepo();
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const created = await repo.create({
+      appId: "app1",
+      userId: "u-chain-dropped",
+      asset: "CKB",
+      amount: "63",
+      toAddress: "ckt1qchaindropped",
+    });
+
+    await runWithdrawalBatch({
+      now: new Date("2026-03-07T12:00:00.000Z"),
+      executeWithdrawal: async () => ({ ok: true, txHash: "0xdroppedhash" }),
+      confirmWithdrawal: async () => ({ status: "UNKNOWN" }),
+      repo,
+      ledgerRepo: ledger,
+    });
+
+    const withinThreshold = await runWithdrawalBatch({
+      now: new Date("2026-03-07T12:30:00.000Z"),
+      broadcastStuckThresholdMs: 60 * 60_000,
+      confirmWithdrawal: async () => ({ status: "UNKNOWN" }),
+      repo,
+      ledgerRepo: ledger,
+    });
+    expect(withinThreshold.stuckBroadcasted).toBe(0);
+
+    const pastThresholdButPending = await runWithdrawalBatch({
+      now: new Date("2026-03-07T13:30:00.000Z"),
+      broadcastStuckThresholdMs: 60 * 60_000,
+      confirmWithdrawal: async () => ({ status: "PENDING" }),
+      repo,
+      ledgerRepo: ledger,
+    });
+    expect(pastThresholdButPending.stuckBroadcasted).toBe(0);
+
+    const pastThreshold = await runWithdrawalBatch({
+      now: new Date("2026-03-07T13:30:00.000Z"),
+      broadcastStuckThresholdMs: 60 * 60_000,
+      confirmWithdrawal: async () => ({ status: "UNKNOWN" }),
+      repo,
+      ledgerRepo: ledger,
+    });
+
+    expect(pastThreshold.stuckBroadcasted).toBe(1);
+    expect(pastThreshold.failed).toBe(0);
+    const saved = await repo.findByIdOrThrow(created.id);
+    expect(saved.state).toBe("BROADCASTED");
+    expect(saved.txHash).toBe("0xdroppedhash");
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: "worker.withdrawal.broadcast_stuck",
+        severity: "error",
+        withdrawalId: created.id,
+        txHash: "0xdroppedhash",
+        broadcastAgeMs: 90 * 60_000,
+        thresholdMs: 60 * 60_000,
+      }),
+    );
+    const gauge = await workerMetricsRegistry.getSingleMetric("fiber_link_withdrawal_broadcast_stuck")?.get();
+    expect(gauge?.values[0]?.value).toBe(1);
+    errorSpy.mockRestore();
   });
 });

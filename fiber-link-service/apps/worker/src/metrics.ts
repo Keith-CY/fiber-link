@@ -93,6 +93,12 @@ export const withdrawalBatchDuration = new Histogram({
   registers: [workerMetricsRegistry],
 });
 
+export const withdrawalBroadcastStuck = new Gauge({
+  name: "fiber_link_withdrawal_broadcast_stuck",
+  help: "BROADCASTED withdrawals whose tx was still unknown to the CKB node past the stuck threshold at the last batch run.",
+  registers: [workerMetricsRegistry],
+});
+
 export function recordWebhookDeliveryFailure(): void {
   webhookDeliveryFailuresTotal.inc();
 }
