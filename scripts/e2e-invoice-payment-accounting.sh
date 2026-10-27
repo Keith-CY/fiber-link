@@ -70,7 +70,10 @@ USDI_FAUCET_AMOUNT="${USDI_FAUCET_AMOUNT:-20}"
 USDI_FAUCET_WAIT_SECONDS="${USDI_FAUCET_WAIT_SECONDS:-20}"
 USDI_CHANNEL_FUNDING_AMOUNT="${E2E_USDI_CHANNEL_FUNDING_AMOUNT:-}"
 
-CHANNEL_FUNDING_AMOUNT="${E2E_CHANNEL_FUNDING_AMOUNT:-10000000000}"
+# Shannons. fnn reserves 99 CKB of the opener's funding (98 CKB commitment cell + 1 CKB shutdown fee),
+# so 500 CKB leaves 401 CKB outbound: enough for the four-flows run (5 x 31 CKB tips by default,
+# up to 31 + 4 x 61 CKB with --double-withdrawal-regression across both settlement modes).
+CHANNEL_FUNDING_AMOUNT="${E2E_CHANNEL_FUNDING_AMOUNT:-50000000000}"
 CHANNEL_TLC_FEE_PROPORTIONAL_MILLIONTHS="${E2E_CHANNEL_TLC_FEE_PROPORTIONAL_MILLIONTHS:-0x4B0}"
 TOPUP_INVOICE_NODE_CKB="${E2E_TOPUP_INVOICE_NODE_CKB:-0}"
 SKIP_CKB_FAUCET="${E2E_SKIP_CKB_FAUCET:-0}"
@@ -156,7 +159,7 @@ Optional env:
   #   -d "{\"address\":\"${E2E_FAUCET_ADDRESS}\",\"token\":\"usdi\"}"
   USDI_FAUCET_AMOUNT=20
   USDI_FAUCET_WAIT_SECONDS=20
-  E2E_CHANNEL_FUNDING_AMOUNT=10000000000
+  E2E_CHANNEL_FUNDING_AMOUNT=50000000000
   E2E_CHANNEL_TLC_FEE_PROPORTIONAL_MILLIONTHS=0x4B0
   E2E_ACCEPT_CHANNEL_FUNDING_AMOUNT_HEX=<auto from invoice node_info>
   E2E_OPEN_CHANNEL_INIT_RETRIES=10
@@ -1857,8 +1860,12 @@ pay_invoice() {
 
   local currency
   currency="$(currency_for_asset "${asset}")"
+  # Pay exactly what the invoice encodes (shannons for CKB) instead of re-deriving it from the tip amount.
   local amount_hex
-  amount_hex="$(to_hex_quantity "${amount}")"
+  amount_hex="$(printf '%s' "${parse_response}" | jq -r '.result.invoice.amount // empty')"
+  if ! [[ "${amount_hex}" =~ ^0x[0-9a-fA-F]+$ ]]; then
+    fatal "${EXIT_PAYMENT_FAILURE}" "parse_invoice missing hex amount for ${asset}"
+  fi
   local request_id="e2e-${asset,,}-pay-$(date +%s)-$RANDOM"
 
   local send_payload

@@ -99,6 +99,25 @@ describe("fiber adapter", () => {
     );
   });
 
+  it("createInvoice encodes CKB decimal amounts as shannons", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(
+      async () =>
+        ({
+          ok: true,
+          json: async () => ({ jsonrpc: "2.0", id: 1, result: { invoice_address: "fiber:CKB:real" } }),
+        }) as Response,
+    );
+
+    const adapter = createAdapter({ endpoint: "http://localhost:8119" });
+    await adapter.createInvoice({ amount: "1", asset: "CKB" });
+    await adapter.createInvoice({ amount: "1.5", asset: "CKB" });
+
+    const first = JSON.parse(fetchSpy.mock.calls[0]?.[1]?.body as string);
+    const second = JSON.parse(fetchSpy.mock.calls[1]?.[1]?.body as string);
+    expect(first.params[0].amount).toBe("0x5f5e100");
+    expect(second.params[0].amount).toBe("0x8f0d180");
+  });
+
   it("createInvoice throws when invoice is missing in rpc result", async () => {
     vi.spyOn(globalThis, "fetch")
       .mockResolvedValueOnce({
@@ -289,6 +308,38 @@ describe("fiber adapter", () => {
         body: expect.stringContaining('"currency":"Fibt"'),
       }),
     );
+  });
+
+  it("executeWithdrawal encodes CKB payment request amounts as shannons", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          jsonrpc: "2.0",
+          id: 1,
+          result: { invoice: { data: { payment_hash: "0xparsed-payment" } } },
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ jsonrpc: "2.0", id: 2, result: { payment_hash: "0xabc123" } }),
+      } as Response);
+
+    const adapter = createAdapter({ endpoint: "http://localhost:8119" });
+    await adapter.executeWithdrawal({
+      amount: "61.5",
+      asset: "CKB",
+      destination: {
+        kind: "PAYMENT_REQUEST",
+        paymentRequest: "fiber:invoice:example",
+      },
+      requestId: "w-ckb",
+    });
+
+    const sent = JSON.parse(fetchSpy.mock.calls[1]?.[1]?.body as string);
+    expect(sent.method).toBe("send_payment");
+    expect(sent.params[0].amount).toBe("0x16e918d80");
   });
 
   it("executeWithdrawal routes USDI CKB_ADDRESS payouts to the xUDT executor", async () => {

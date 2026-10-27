@@ -1,6 +1,6 @@
 import { type FiberRpcEndpoint, FiberRpcError, rpcCall } from "../fiber-client";
 import type { Asset, CreateInvoiceArgs, InvoiceState, UdtTypeScript } from "../types";
-import { normalizeOptionalName, toHexQuantity } from "./normalize";
+import { normalizeOptionalName, toFiberAmountHexQuantity } from "./normalize";
 
 type RpcUdtTypeScript = {
   code_hash: string;
@@ -149,7 +149,7 @@ export function toRpcUdtTypeScript(script: UdtTypeScript): RpcUdtTypeScript {
 
 export async function createInvoice(endpoint: FiberRpcEndpoint, { amount, asset }: CreateInvoiceArgs) {
   const payload: Record<string, unknown> = {
-    amount: toHexQuantity(amount),
+    amount: toFiberAmountHexQuantity(asset, amount),
     currency: mapAssetToCurrency(asset),
   };
   if (asset === "USDI") {
