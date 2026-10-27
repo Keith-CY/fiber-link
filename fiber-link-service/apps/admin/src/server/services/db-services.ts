@@ -680,11 +680,18 @@ export function createDbAdminServices(db: DbClient = createDbClient()): AdminSer
       const tipIds = new Set(tipRows.map((row) => row.id));
       const withdrawalIds = new Set(withdrawalRows.map((row) => row.id));
       const creditRefIds = entries
-        .filter((entry) => entry.type === "credit" && !tipIds.has(entry.refId))
+        .filter((entry) => entry.type === "credit" && !tipIds.has(entry.refId) && !withdrawalIds.has(entry.refId))
         .map((entry) => entry.refId);
-      const debitRefIds = entries
-        .filter((entry) => entry.type === "debit" && !withdrawalIds.has(entry.refId))
-        .map((entry) => entry.refId);
+      // Debits reference withdrawals; so do the credits reversing a rejected
+      // broadcast, which is why unmatched credit refs are looked up here too.
+      const withdrawalRefIds = [
+        ...new Set([
+          ...entries
+            .filter((entry) => entry.type === "debit" && !withdrawalIds.has(entry.refId))
+            .map((entry) => entry.refId),
+          ...creditRefIds,
+        ]),
+      ];
 
       const [extraTipRows, extraWithdrawalRows] = await Promise.all([
         creditRefIds.length > 0
@@ -701,7 +708,7 @@ export function createDbAdminServices(db: DbClient = createDbClient()): AdminSer
               .where(inArray(tipIntents.id, creditRefIds))
               .limit(RECONCILE_MAX_ROWS)
           : Promise.resolve([]),
-        debitRefIds.length > 0
+        withdrawalRefIds.length > 0
           ? db
               .select({
                 id: withdrawals.id,
@@ -712,7 +719,7 @@ export function createDbAdminServices(db: DbClient = createDbClient()): AdminSer
                 state: withdrawals.state,
               })
               .from(withdrawals)
-              .where(inArray(withdrawals.id, debitRefIds))
+              .where(inArray(withdrawals.id, withdrawalRefIds))
               .limit(RECONCILE_MAX_ROWS)
           : Promise.resolve([]),
       ]);

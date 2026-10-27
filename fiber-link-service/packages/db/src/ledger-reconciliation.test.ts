@@ -109,6 +109,51 @@ describe("reconcileLedger", () => {
     expect(report.countsByKind.DEBIT_WITHOUT_COMPLETED_WITHDRAWAL).toBe(2);
   });
 
+  it("treats a FAILED withdrawal whose debit was reversed as consistent", () => {
+    const report = reconcileLedger({
+      tipIntents: [tip()],
+      withdrawals: [withdrawal({ state: "FAILED", amount: "60" })],
+      entries: [
+        entry(),
+        entry({ id: "e-debit", type: "debit", refId: "w-1", amount: "60" }),
+        entry({ id: "e-reversal", type: "credit", refId: "w-1", amount: "60.00" }),
+      ],
+    });
+    expect(report.anomalies).toEqual([]);
+  });
+
+  it("flags a FAILED withdrawal whose debit was never reversed", () => {
+    const report = reconcileLedger({
+      tipIntents: [],
+      withdrawals: [withdrawal({ state: "FAILED", amount: "60" })],
+      entries: [entry({ id: "e-debit", type: "debit", refId: "w-1", amount: "60" })],
+    });
+    expect(report.countsByKind.DEBIT_WITHOUT_COMPLETED_WITHDRAWAL).toBe(1);
+  });
+
+  it("flags reversal credits without a debit, on a non-FAILED withdrawal, or with a mismatched amount", () => {
+    const report = reconcileLedger({
+      tipIntents: [],
+      withdrawals: [
+        withdrawal({ id: "w-no-debit", state: "FAILED" }),
+        withdrawal({ id: "w-completed", state: "COMPLETED" }),
+        withdrawal({ id: "w-mismatch", state: "FAILED" }),
+      ],
+      entries: [
+        entry({ id: "e-r1", type: "credit", refId: "w-no-debit", amount: "40" }),
+        entry({ id: "e-d2", type: "debit", refId: "w-completed", amount: "40" }),
+        entry({ id: "e-r2", type: "credit", refId: "w-completed", amount: "40" }),
+        entry({ id: "e-d3", type: "debit", refId: "w-mismatch", amount: "40" }),
+        entry({ id: "e-r3", type: "credit", refId: "w-mismatch", amount: "39" }),
+      ],
+    });
+    expect(report.countsByKind.INVALID_WITHDRAWAL_REVERSAL).toBe(3);
+    expect(report.countsByKind.CREDIT_WITHOUT_SETTLED_TIP).toBe(0);
+    expect(
+      report.anomalies.filter((anomaly) => anomaly.kind === "INVALID_WITHDRAWAL_REVERSAL").map((a) => a.refId),
+    ).toEqual(["w-no-debit", "w-completed", "w-mismatch"]);
+  });
+
   it("flags a negative balance account", () => {
     const report = reconcileLedger({
       tipIntents: [tip()],

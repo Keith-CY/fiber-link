@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { and, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import { assertPositiveAmount, formatDecimal, parseDecimal, pow10 } from "./amount";
 import type { DbClient } from "./client";
-import { withdrawalDebitIdempotencyKey } from "./idempotency";
+import { withdrawalDebitIdempotencyKey, withdrawalReversalIdempotencyKey } from "./idempotency";
 import { type LedgerRepo, createDbLedgerRepo } from "./ledger-repo";
 import { computeRetryDelay } from "./retry";
 import { type Asset, type WithdrawalDestinationKind, type WithdrawalState, withdrawals } from "./schema";
@@ -152,7 +152,16 @@ export type WithdrawalRepo = {
     deps: CompletionDeps,
   ): Promise<WithdrawalRecord>;
   markRetryPending(id: string, params: { now: Date; nextRetryAt: Date; error: string }): Promise<WithdrawalRecord>;
-  markFailedFromBroadcasted(id: string, params: { now: Date; error: string }): Promise<WithdrawalRecord>;
+  /**
+   * The chain rejected a broadcast tx, so the funds never left the hot wallet:
+   * transitions BROADCASTED -> FAILED and, atomically, refunds the broadcast
+   * debit with a write-once reversal credit.
+   */
+  markFailedFromBroadcasted(
+    id: string,
+    params: { now: Date; error: string },
+    deps: CompletionDeps,
+  ): Promise<WithdrawalRecord>;
   markFailed(
     id: string,
     params: { now: Date; error: string; incrementRetryCount?: boolean },
@@ -726,21 +735,36 @@ export function createDbWithdrawalRepo(db: DbClient): WithdrawalRepo {
       return toRecord(row);
     },
 
-    async markFailedFromBroadcasted(id, params) {
-      const [row] = await db
-        .update(withdrawals)
-        .set({
-          state: "FAILED",
-          nextRetryAt: null,
-          lastError: params.error,
-          updatedAt: params.now,
-        })
-        .where(and(eq(withdrawals.id, id), eq(withdrawals.state, "BROADCASTED")))
-        .returning();
-      if (!row) {
-        await throwInvalidTransition(db, id, "FAILED");
-      }
-      return toRecord(row);
+    async markFailedFromBroadcasted(id, params, _deps) {
+      return db.transaction(async (tx) => {
+        const [row] = await tx
+          .update(withdrawals)
+          .set({
+            state: "FAILED",
+            nextRetryAt: null,
+            lastError: params.error,
+            updatedAt: params.now,
+          })
+          .where(and(eq(withdrawals.id, id), eq(withdrawals.state, "BROADCASTED")))
+          .returning();
+
+        if (!row) {
+          await throwInvalidTransition(tx, id, "FAILED");
+        }
+
+        // Reverse the debit written at broadcast in the same transaction.
+        const ledgerRepo = createDbLedgerRepo(tx);
+        await ledgerRepo.creditOnce({
+          appId: row.appId,
+          userId: row.userId,
+          asset: row.asset as WithdrawalAsset,
+          amount: typeof row.amount === "string" ? row.amount : String(row.amount),
+          refId: row.id,
+          idempotencyKey: withdrawalReversalIdempotencyKey(row.id),
+        });
+
+        return toRecord(row);
+      });
     },
 
     async markFailed(id, params) {
@@ -1147,7 +1171,7 @@ export function createInMemoryWithdrawalRepo(): WithdrawalRepo {
       return clone(record);
     },
 
-    async markFailedFromBroadcasted(id, params) {
+    async markFailedFromBroadcasted(id, params, deps) {
       const record = records.find((item) => item.id === id);
       if (!record) {
         throw new WithdrawalNotFoundError(id);
@@ -1159,6 +1183,14 @@ export function createInMemoryWithdrawalRepo(): WithdrawalRepo {
       record.updatedAt = params.now;
       record.nextRetryAt = null;
       record.lastError = params.error;
+      await deps.ledgerRepo.creditOnce({
+        appId: record.appId,
+        userId: record.userId,
+        asset: record.asset,
+        amount: record.amount,
+        refId: record.id,
+        idempotencyKey: withdrawalReversalIdempotencyKey(record.id),
+      });
       return clone(record);
     },
 

@@ -99,7 +99,27 @@ export async function collectWithdrawalParityReport(input: {
 }): Promise<WithdrawalParityReport> {
   const now = input.now ?? new Date();
   const from = new Date(now.getTime() - input.lookbackHours * 60 * 60_000);
-  const [withdrawalRows, debitRows] = await Promise.all([
+  const withdrawalLedgerRows = (type: "credit" | "debit", idempotencyKeyPattern: string) =>
+    input.db
+      .select({
+        appId: ledgerEntries.appId,
+        userId: ledgerEntries.userId,
+        asset: ledgerEntries.asset,
+        amount: ledgerEntries.amount,
+        refId: ledgerEntries.refId,
+        idempotencyKey: ledgerEntries.idempotencyKey,
+      })
+      .from(ledgerEntries)
+      .where(
+        and(
+          eq(ledgerEntries.type, type),
+          like(ledgerEntries.idempotencyKey, idempotencyKeyPattern),
+          gte(ledgerEntries.createdAt, from),
+        ),
+      )
+      .orderBy(desc(ledgerEntries.createdAt), desc(ledgerEntries.id))
+      .limit(input.limit * 4);
+  const [withdrawalRows, debitRows, reversalRows] = await Promise.all([
     input.db
       .select({
         id: withdrawals.id,
@@ -114,25 +134,8 @@ export async function collectWithdrawalParityReport(input: {
       .where(gte(withdrawals.createdAt, from))
       .orderBy(desc(withdrawals.createdAt), desc(withdrawals.id))
       .limit(input.limit),
-    input.db
-      .select({
-        appId: ledgerEntries.appId,
-        userId: ledgerEntries.userId,
-        asset: ledgerEntries.asset,
-        amount: ledgerEntries.amount,
-        refId: ledgerEntries.refId,
-        idempotencyKey: ledgerEntries.idempotencyKey,
-      })
-      .from(ledgerEntries)
-      .where(
-        and(
-          eq(ledgerEntries.type, "debit"),
-          like(ledgerEntries.idempotencyKey, "withdrawal:debit:%"),
-          gte(ledgerEntries.createdAt, from),
-        ),
-      )
-      .orderBy(desc(ledgerEntries.createdAt), desc(ledgerEntries.id))
-      .limit(input.limit * 4),
+    withdrawalLedgerRows("debit", "withdrawal:debit:%"),
+    withdrawalLedgerRows("credit", "withdrawal:reversal:%"),
   ]);
 
   return buildWithdrawalParityReport({
@@ -141,6 +144,10 @@ export async function collectWithdrawalParityReport(input: {
       amount: String(row.amount),
     })),
     debits: debitRows.map((row) => ({
+      ...row,
+      amount: String(row.amount),
+    })),
+    reversals: reversalRows.map((row) => ({
       ...row,
       amount: String(row.amount),
     })),

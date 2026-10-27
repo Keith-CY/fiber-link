@@ -82,7 +82,37 @@ async function main() {
     debitPredicates.push(lte(ledgerEntries.createdAt, to));
   }
 
-  const [withdrawalRows, debitRows] = await Promise.all([
+  const reversalPredicates = [
+    sql`TRUE`,
+    eq(ledgerEntries.type, "credit"),
+    like(ledgerEntries.idempotencyKey, "withdrawal:reversal:%"),
+  ];
+  if (appId) {
+    reversalPredicates.push(eq(ledgerEntries.appId, appId));
+  }
+  if (from) {
+    reversalPredicates.push(gte(ledgerEntries.createdAt, from));
+  }
+  if (to) {
+    reversalPredicates.push(lte(ledgerEntries.createdAt, to));
+  }
+
+  const ledgerRows = (predicates: typeof debitPredicates) =>
+    db
+      .select({
+        appId: ledgerEntries.appId,
+        userId: ledgerEntries.userId,
+        asset: ledgerEntries.asset,
+        amount: ledgerEntries.amount,
+        refId: ledgerEntries.refId,
+        idempotencyKey: ledgerEntries.idempotencyKey,
+      })
+      .from(ledgerEntries)
+      .where(and(...predicates))
+      .orderBy(desc(ledgerEntries.createdAt), desc(ledgerEntries.id))
+      .limit(limit * 4);
+
+  const [withdrawalRows, debitRows, reversalRows] = await Promise.all([
     db
       .select({
         id: withdrawals.id,
@@ -97,19 +127,8 @@ async function main() {
       .where(and(...withdrawalPredicates))
       .orderBy(desc(withdrawals.createdAt), desc(withdrawals.id))
       .limit(limit),
-    db
-      .select({
-        appId: ledgerEntries.appId,
-        userId: ledgerEntries.userId,
-        asset: ledgerEntries.asset,
-        amount: ledgerEntries.amount,
-        refId: ledgerEntries.refId,
-        idempotencyKey: ledgerEntries.idempotencyKey,
-      })
-      .from(ledgerEntries)
-      .where(and(...debitPredicates))
-      .orderBy(desc(ledgerEntries.createdAt), desc(ledgerEntries.id))
-      .limit(limit * 4),
+    ledgerRows(debitPredicates),
+    ledgerRows(reversalPredicates),
   ]);
 
   const report = buildWithdrawalParityReport({
@@ -118,6 +137,10 @@ async function main() {
       amount: String(row.amount),
     })),
     debits: debitRows.map((row) => ({
+      ...row,
+      amount: String(row.amount),
+    })),
+    reversals: reversalRows.map((row) => ({
       ...row,
       amount: String(row.amount),
     })),

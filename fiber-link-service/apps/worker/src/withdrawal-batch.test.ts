@@ -733,4 +733,55 @@ describe("runWithdrawalBatch", () => {
     expect(completed.state).toBe("COMPLETED");
     expect(completed.completedAt?.toISOString()).toBe("2026-03-07T12:51:00.000Z");
   });
+
+  it("refunds the broadcast debit when the chain rejects a CKB-address withdrawal", async () => {
+    const ledger = createInMemoryLedgerRepo();
+    const account = { appId: "app1", userId: "u-chain-reject", asset: "CKB" as const };
+    await ledger.creditOnce({
+      ...account,
+      amount: "100",
+      refId: "tip-1",
+      idempotencyKey: "settlement:tip_intent:tip-1",
+    });
+    const created = await repo.createWithBalanceCheck(
+      { ...account, amount: "60", toAddress: "ckt1qchainreject" },
+      { ledgerRepo: ledger },
+    );
+
+    await runWithdrawalBatch({
+      now: new Date("2026-03-07T13:00:00.000Z"),
+      executeWithdrawal: async () => ({ ok: true, txHash: "0xrejectedhash" }),
+      confirmWithdrawal: async () => ({ status: "PENDING" }),
+      repo,
+      ledgerRepo: ledger,
+    });
+    expect(await ledger.getBalance(account)).toBe("40");
+
+    const rejected = await runWithdrawalBatch({
+      now: new Date("2026-03-07T13:01:00.000Z"),
+      confirmWithdrawal: async () => ({ status: "REJECTED", reason: "CKB transaction rejected" }),
+      repo,
+      ledgerRepo: ledger,
+    });
+    expect(rejected.failed).toBe(1);
+    const failed = await repo.findByIdOrThrow(created.id);
+    expect(failed.state).toBe("FAILED");
+    expect(failed.txHash).toBe("0xrejectedhash");
+    expect(await ledger.getBalance(account)).toBe("100");
+
+    // A later batch must not reverse the debit a second time.
+    const again = await runWithdrawalBatch({
+      now: new Date("2026-03-07T13:02:00.000Z"),
+      confirmWithdrawal: async () => ({ status: "REJECTED" }),
+      repo,
+      ledgerRepo: ledger,
+    });
+    expect(again.failed).toBe(0);
+    expect(await ledger.getBalance(account)).toBe("100");
+    const reversals = (ledger.__listForTests?.() ?? []).filter(
+      (entry) => entry.idempotencyKey === `withdrawal:reversal:${created.id}`,
+    );
+    expect(reversals).toHaveLength(1);
+    expect(reversals[0]).toMatchObject({ type: "credit", refId: created.id, amount: "60" });
+  });
 });
